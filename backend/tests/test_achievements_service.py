@@ -95,6 +95,7 @@ def _role_row(
     role_key: str = "marshal",
     platform_code: str = "five_verst",
     location_name: str = "Кузьминки",
+    location_key: str | None = None,
     occasions: int = 1,
 ) -> VolunteerRoleRow:
     return VolunteerRoleRow(
@@ -103,12 +104,13 @@ def _role_row(
         role_key=role_key,
         role_label=CANONICAL_ROLE_LABELS.get(role_key, role_key),
         location_name=location_name,
+        location_key=location_key or location_name,
         occasions=occasions,
     )
 
 
 def _parkrun_row(role_key: str, occasions: int) -> VolunteerRoleRow:
-    """Строка из сводки parkrun: смены есть, дат у них нет."""
+    """Строка из сводки parkrun: волонтёрства есть, дат у них нет."""
     return _role_row(
         event_date=None,
         role_key=role_key,
@@ -759,22 +761,22 @@ def test_photo_reporter_empty_has_no_level() -> None:
     assert challenge["best_level"] is None
 
 
-def test_v_index_needs_v_roles_done_v_times() -> None:
-    # Три роли по три раза — индекс 3; четвёртая роль одним разом его не двигает.
-    counts = {"marshal": 3, "timekeeper": 3, "barcode_scanning": 3, "pacer": 1}
+def test_v_index_needs_v_locations_visited_v_times() -> None:
+    # Три площадки по три волонтёрства — индекс 3; четвёртая одним разом его не двигает.
+    counts = {"fili": 3, "kuzminki": 3, "sokolniki": 3, "izmailovo": 1}
     assert _v_index(counts) == 3
-    # Одна роль двадцать раз — это всё ещё индекс 1.
-    assert _v_index({"marshal": 20}) == 1
+    # Двадцать волонтёрств на своей площадке — это всё ещё индекс 1.
+    assert _v_index({"kuzminki": 20}) == 1
     assert _v_index({}) == 0
 
 
 def test_v_index_challenge_dates_levels_by_history() -> None:
     rows = [
-        _role_row(role_key="marshal", event_date=date(2026, 1, 3)),
-        _role_row(role_key="timekeeper", event_date=date(2026, 1, 10)),
-        # Индекс 2 берётся только когда обе роли выполнены дважды.
-        _role_row(role_key="marshal", event_date=date(2026, 1, 17)),
-        _role_row(role_key="timekeeper", event_date=date(2026, 1, 24)),
+        _role_row(location_name="Кузьминки", event_date=date(2026, 1, 3)),
+        _role_row(location_name="Фили", event_date=date(2026, 1, 10)),
+        # Индекс 2 берётся только когда на обеих площадках отработано дважды.
+        _role_row(location_name="Кузьминки", event_date=date(2026, 1, 17)),
+        _role_row(location_name="Фили", event_date=date(2026, 1, 24)),
     ]
     challenge = _v_index_challenge(rows)
     assert challenge["current"] == 2
@@ -782,18 +784,29 @@ def test_v_index_challenge_dates_levels_by_history() -> None:
     # Пороги лёгкого тира 2/3/4: бронза взята вторым подъёмом индекса.
     assert easy["level_dates"]["bronze"] == "2026-01-24"
     assert easy["level_dates"]["silver"] is None
-    # Детали — роли с числом смен, самые освоенные сверху.
+    # Детали — площадки с числом волонтёрств, самые обжитые сверху.
     assert challenge["detail"]["items"][0]["count"] == 2
 
 
-def test_v_index_to_next_label_counts_missing_volunteerings() -> None:
-    # Две роли по два раза: до индекса 3 нужны третьи разы обеих ролей плюс
-    # три раза третьей роли — итого 5.
+def test_v_index_counts_one_shift_per_day_and_location() -> None:
+    # Две роли в одну субботу на одной площадке — одно волонтёрство, а не два.
     rows = [
-        _role_row(role_key="marshal", event_date=date(2026, 1, 3)),
-        _role_row(role_key="marshal", event_date=date(2026, 1, 10)),
-        _role_row(role_key="timekeeper", event_date=date(2026, 1, 17)),
-        _role_row(role_key="timekeeper", event_date=date(2026, 1, 24)),
+        _role_row(role_key="marshal", location_name="Кузьминки", event_date=date(2026, 1, 3)),
+        _role_row(role_key="timekeeper", location_name="Кузьминки", event_date=date(2026, 1, 3)),
+    ]
+    challenge = _v_index_challenge(rows)
+    assert challenge["current"] == 1
+    assert challenge["detail"]["items"][0]["count"] == 1
+
+
+def test_v_index_to_next_label_counts_missing_volunteerings() -> None:
+    # Две площадки по два волонтёрства: до индекса 3 нужны третьи на обеих
+    # плюс три на третьей — итого 5.
+    rows = [
+        _role_row(location_name="Кузьминки", event_date=date(2026, 1, 3)),
+        _role_row(location_name="Кузьминки", event_date=date(2026, 1, 10)),
+        _role_row(location_name="Фили", event_date=date(2026, 1, 17)),
+        _role_row(location_name="Фили", event_date=date(2026, 1, 24)),
     ]
     challenge = _v_index_challenge(rows)
     assert challenge["current"] == 2
@@ -848,6 +861,7 @@ def test_role_master_keeps_unknown_role_as_its_own_cell() -> None:
         role_key="raw:novaya_rol",
         role_label="Новая роль",
         location_name="Кузьминки",
+        location_key="kuzminki",
     )
     challenge = _role_master_challenge([unknown])
     assert challenge["current"] == 1
@@ -858,9 +872,9 @@ def test_role_master_keeps_unknown_role_as_its_own_cell() -> None:
 
 
 def test_v_index_ignores_parkrun_summary() -> None:
-    # Сводка parkrun в V-индекс не идёт вовсе: у смены нет ни локации, ни даты,
-    # а индекс меряет глубину освоения роли. Три роли по три смены дали бы
-    # индекс 3 — но здесь счётчик остаётся нулевым.
+    # Сводка parkrun в V-индекс не идёт вовсе: у волонтёрства нет ни локации, ни даты —
+    # ровно тех двух полей, на которых индекс и держится. Девять волонтёрств из сводки
+    # дали бы индекс 3, но счётчик остаётся нулевым.
     rows = [
         _parkrun_row("marshal", 3),
         _parkrun_row("timekeeper", 3),
@@ -873,18 +887,18 @@ def test_v_index_ignores_parkrun_summary() -> None:
 
 
 def test_v_index_counts_only_dated_shifts_next_to_parkrun() -> None:
-    # Пять parkrun-смен на каждую из двух ролей игнорируются целиком: индекс
-    # набирается только датированными стартами, и датируется по ним же.
+    # Десять parkrun-волонтёрств игнорируются целиком: индекс набирается только
+    # датированными стартами, и датируется по ним же.
     rows = [
         _parkrun_row("marshal", 5),
         _parkrun_row("timekeeper", 5),
-        _role_row(role_key="marshal", event_date=date(2026, 1, 3)),
-        _role_row(role_key="marshal", event_date=date(2026, 1, 10)),
-        _role_row(role_key="timekeeper", event_date=date(2026, 1, 17)),
-        _role_row(role_key="timekeeper", event_date=date(2026, 1, 24)),
+        _role_row(location_name="Кузьминки", event_date=date(2026, 1, 3)),
+        _role_row(location_name="Кузьминки", event_date=date(2026, 1, 10)),
+        _role_row(location_name="Фили", event_date=date(2026, 1, 17)),
+        _role_row(location_name="Фили", event_date=date(2026, 1, 24)),
     ]
     challenge = _v_index_challenge(rows)
-    # Со сводкой было бы 5, без неё — две роли по два раза.
+    # Со сводкой было бы 5, без неё — две площадки по два волонтёрства.
     assert challenge["current"] == 2
     easy = _tier(challenge, "easy")
     assert easy["level"] == "bronze"

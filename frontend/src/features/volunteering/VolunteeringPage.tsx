@@ -71,7 +71,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
   // parkrun volunteering: counted but not shown in table
   // счётчик — из parkrun_total_credits (см. parkrun_total_credits в бэкенде,
   // берётся из "Total Credits" профиля parkrun), а не числа строк ролей:
-  // одна смена волонтёрства может дать кредит сразу нескольким ролям.
+  // одно волонтёрство может дать кредит сразу нескольким ролям.
   const tableItems = useMemo(() => items.filter((i) => i.platform_code !== "parkrun"), [items]);
   const parkrunCount = useMemo(() => {
     const rowWithCredits = items.find(

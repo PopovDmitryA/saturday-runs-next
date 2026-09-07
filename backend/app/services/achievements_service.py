@@ -162,8 +162,8 @@ class VolunteerRoleRow:
     называют одну и ту же работу по-своему.
 
     event_date = None и occasions > 1 — это parkrun: он отдаёт не протоколы, а
-    сводку профиля («Marshal (12×)» — двенадцать смен маршалом без дат). Такие
-    смены в зачёт идут (иначе ветеран parkrun выглядел бы новичком), но
+    сводку профиля («Marshal (12×)» — двенадцать волонтёрств маршалом без дат). Такие
+    волонтёрства в зачёт идут (иначе ветеран parkrun выглядел бы новичком), но
     датировать уровни ими нельзя.
     """
 
@@ -172,6 +172,7 @@ class VolunteerRoleRow:
     role_key: str
     role_label: str
     location_name: str
+    location_key: str
     occasions: int = 1
 
 
@@ -298,6 +299,7 @@ def _collect_volunteer_role_rows(db: Session, user_id: UUID) -> list[VolunteerRo
                 role_key=canonical.key,
                 role_label=canonical.label,
                 location_name=catalog_index.display_name(location, platform_code),
+                location_key=catalog_index.canonical_identity_key(location, platform_code),
                 occasions=1 if dated else (role_occasions(role) or 1),
             )
         )
@@ -398,7 +400,7 @@ def _level_dates_optional(
 ) -> dict[str, str | None]:
     """Как _level_dates, но часть шагов счётчика может быть без даты.
 
-    Нужно там, где в зачёт идёт сводка parkrun: смены есть, дат у них нет.
+    Нужно там, где в зачёт идёт сводка parkrun: волонтёрства есть, дат у них нет.
     Недатированные шаги стоят в начале списка (parkrun-эпоха раньше 5 вёрст),
     и уровень, взятый на них, честно остаётся без даты — вместо того чтобы
     приписать ему дату первой российской субботы.
@@ -1219,7 +1221,7 @@ def _photo_reporter_challenge(rating_rows: list[RatingRow]) -> dict[str, object]
 
 
 def _v_index(counts: dict[str, int]) -> int:
-    """V такое, что найдётся V ролей, каждая выполнена минимум V раз."""
+    """V такое, что найдётся V локаций, на каждой минимум по V волонтёрств."""
     value = 0
     for index, count in enumerate(sorted(counts.values(), reverse=True), start=1):
         if count >= index:
@@ -1230,31 +1232,43 @@ def _v_index(counts: dict[str, int]) -> int:
 
 
 def _v_index_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
-    """V-индекс волонтёра — индекс Хирша, посчитанный по ролям.
+    """V-индекс волонтёра — тот же индекс Хирша, что и p-индекс, но по волонтёрствам.
+
+    V локаций, на каждой минимум по V волонтёрств: p-индекс меряет, где человек
+    бегает не разово, V-индекс — где он не разово ПОМОГАЕТ. Пороги общие с
+    p-индексом, чтобы две шкалы читались одинаково.
+
+    Волонтёрство — это (дата, локация), а не строка роли: две роли в одну
+    субботу на одной площадке — одно волонтёрство, иначе индекс рос бы у того, кому вписали
+    вторую роль, а не у того, кто приехал ещё раз. Так же считает и общий
+    счётчик волонтёрств (app/volunteering_occasions.py).
 
     **parkrun в зачёт не идёт (решение Дмитрия 07.09.2026).** Он отдаёт не
-    протоколы, а сводку профиля: у смены нет ни локации, ни даты, только
-    «Marshal (12×)». Считать по ней индекс, который меряет ГЛУБИНУ освоения
-    роли, не на чем — непонятно даже, на скольких разных площадках эти
-    двенадцать смен случились. В «Мастере на все роли» сводка, наоборот,
-    остаётся: там вопрос «выходил ли вообще», и на него она отвечает честно.
+    протоколы, а сводку профиля: у волонтёрства нет ни локации, ни даты, только
+    «Marshal (12×)» — то есть ровно те два поля, на которых этот индекс и
+    держится. В «Мастере на все роли» сводка, наоборот, остаётся: там вопрос
+    «выходил ли вообще», и на него она отвечает честно.
 
     Даты уровней считаются проигрыванием истории: индекс не может вырасти
     больше чем на 1 за одно волонтёрство, поэтому список «дат, когда индекс
     поднялся» ровно той же длины, что и сам индекс.
     """
-    counts: Counter[str] = Counter()
+    shifts: set[tuple[date, str]] = set()
     labels: dict[str, str] = {}
+    for row in rows:
+        if row.platform_code == MAP_HISTORIC_PLATFORM or row.event_date is None:
+            continue
+        shifts.add((row.event_date, row.location_key))
+        labels.setdefault(row.location_key, row.location_name)
+
+    counts: Counter[str] = Counter()
     growth_dates: list[date | None] = []
     current = 0
-    for row in rows:
-        if row.platform_code == MAP_HISTORIC_PLATFORM:
-            continue
-        counts[row.role_key] += row.occasions
-        labels.setdefault(row.role_key, row.role_label)
+    for event_date, location_key in sorted(shifts):
+        counts[location_key] += 1
         updated = _v_index(counts)
         while updated > current:
-            growth_dates.append(row.event_date)
+            growth_dates.append(event_date)
             current += 1
 
     def _to_next_label(levels: dict[str, int], next_level: str) -> str | None:
@@ -1270,9 +1284,9 @@ def _v_index_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
         title="V-индекс",
         icon="🧰",
         description=(
-            "V разных волонтёрских ролей, каждую минимум по V раз. "
-            "Индекс растёт не от того, что вы двадцатый раз сканируете коды, "
-            "а от того, что умеете подменить любого в субботней команде."
+            "V локаций, на каждой минимум по V волонтёрств. "
+            "Индекс растёт не от того, что вы двадцатый раз вышли на своей площадке, "
+            "а от того, что помогаете регулярно и не в одном месте."
         ),
         category="community",
         current=current,
@@ -1286,9 +1300,9 @@ def _v_index_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
 def _volunteerings_needed_for_v(counts: Counter[str], target: int) -> int:
     """Сколько волонтёрств не хватает до V-индекса target — дешевейшим путём.
 
-    Добираем target ролей, начиная с самых освоенных: каждая должна набрать
-    target выполнений. Роли, которых человек ещё не пробовал, стоят полные
-    target раз каждая, поэтому недостающие позиции считаем как нули.
+    Добираем target локаций, начиная с самых обжитых: на каждой нужно target
+    волонтёрств. Площадки, где человек ещё не помогал, стоят полные target
+    волонтёрств каждая, поэтому недостающие позиции считаем как нули.
     """
     have = sorted(counts.values(), reverse=True)[:target]
     have += [0] * (target - len(have))
@@ -1368,9 +1382,7 @@ def _role_master_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
         icon="🧑\u200d🔧",
         description=(
             "Освой как можно больше разных волонтёрских ролей — годятся любые. "
-            "Двадцать освоенных, золото сложного уровня, означают, что вас можно позвать "
-            "на любую позицию и старт состоится. Одна и та же работа в разных системах "
-            "считается одной ролью."
+            "Одна и та же работа в разных системах считается одной ролью."
         ),
         category="community",
         current=len(first_by_role),
