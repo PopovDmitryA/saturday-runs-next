@@ -35,6 +35,7 @@ celery_app.conf.update(
         "app.workers.tasks.sweep_hq_snapshot",
         "app.workers.tasks.email_send",
         "app.workers.tasks.user_names",
+        "app.workers.tasks.weather_collect",
     ),
     task_routes={
         "five_verst_sync.*": {"queue": "five_verst"},
@@ -112,6 +113,13 @@ celery_app.conf.update(
         # без -Q. Очередь с буквальным именем "default" не разбирает никто, и
         # правило молчания с 20.08.2026 копилось в ней невостребованным
         # (проверено на проде 27.08.2026: ни один статус пересчитан не был).
+        # Погода на стартах: лимит Open-Meteo сбрасывается в полночь UTC (03:00
+        # МСК); пока идёт бэкфил — по прогону в сутки, потом докачка суббот.
+        "weather-collect-daily": {
+            "task": "weather.collect_start_weather",
+            "schedule": crontab(hour=3, minute=20),
+            "options": {"queue": "celery"},
+        },
         "locations-activity-status": {
             "task": "locations.refresh_activity_status",
             "schedule": crontab(hour=21, minute=10),

@@ -1,5 +1,5 @@
 import enum
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -18,6 +18,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
     text,
@@ -168,6 +169,8 @@ class Location(Base):
     # Смещение локации от Москвы в часах (Якутск +6, Калининград −1): время
     # старта в описаниях — местное, момент фиксации протокола — UTC.
     tz_offset_moscow: Mapped[int | None] = mapped_column(Integer)
+    # Имя зоны IANA (Europe/Moscow, Asia/Yakutsk) — заполняет сбор погоды (миграция 083).
+    timezone: Mapped[str | None] = mapped_column(String(64))
     map_url: Mapped[str | None] = mapped_column(String(1024))
     source_url: Mapped[str | None] = mapped_column(String(1024))
     parser_version: Mapped[str | None] = mapped_column(String(32))
@@ -321,9 +324,7 @@ class LocationAnnounceSettings(Base):
     """Правила анонсов локации — одна строка на локацию (в легаси — contacts_location.not_report)."""
 
     __tablename__ = "location_announce_settings"
-    __table_args__ = (
-        UniqueConstraint("location_id", name="uq_location_announce_settings_location_id"),
-    )
+    __table_args__ = (UniqueConstraint("location_id", name="uq_location_announce_settings_location_id"),)
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
@@ -360,9 +361,7 @@ class LocationOpening(Base):
     location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
     opening_event_number: Mapped[int | None] = mapped_column(Integer)
     note: Mapped[str | None] = mapped_column(Text)
-    updated_by_user_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
+    updated_by_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -385,18 +384,14 @@ class LocationOrganizerAccess(Base):
 
     __tablename__ = "location_organizer_access"
     __table_args__ = (
-        UniqueConstraint(
-            "user_id", "location_key", name="uq_location_organizer_access_user_location"
-        ),
+        UniqueConstraint("user_id", "location_key", name="uq_location_organizer_access_user_location"),
         Index("ix_location_organizer_access_user_id", "user_id"),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     location_key: Mapped[str] = mapped_column(String(255), nullable=False)
-    granted_by_user_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
+    granted_by_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -663,7 +658,9 @@ class EventSummary(Base):
     parser_version: Mapped[str | None] = mapped_column(String(32))
     source_hash: Mapped[str | None] = mapped_column(String(64))
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    sync_status: Mapped[SyncStatus | None] = mapped_column(Enum(SyncStatus, name="sync_status_enum", create_constraint=False))
+    sync_status: Mapped[SyncStatus | None] = mapped_column(
+        Enum(SyncStatus, name="sync_status_enum", create_constraint=False)
+    )
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -697,7 +694,9 @@ class Event(Base):
     parser_version: Mapped[str | None] = mapped_column(String(32))
     source_hash: Mapped[str | None] = mapped_column(String(64))
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    sync_status: Mapped[SyncStatus | None] = mapped_column(Enum(SyncStatus, name="sync_status_enum", create_constraint=False))
+    sync_status: Mapped[SyncStatus | None] = mapped_column(
+        Enum(SyncStatus, name="sync_status_enum", create_constraint=False)
+    )
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -709,9 +708,7 @@ class Event(Base):
     summary: Mapped["EventSummary | None"] = relationship(back_populates="event", uselist=False)
     run_results: Mapped[list["RunResult"]] = relationship(back_populates="event")
     volunteer_results: Mapped[list["VolunteerResult"]] = relationship(back_populates="event")
-    protocol_sync_state: Mapped["ProtocolSyncState | None"] = relationship(
-        back_populates="event", uselist=False
-    )
+    protocol_sync_state: Mapped["ProtocolSyncState | None"] = relationship(back_populates="event", uselist=False)
 
 
 class EventCrosslink(Base):
@@ -780,9 +777,7 @@ class ProtocolUploadFact(Base):
     # False — протокол увидели уже лежащим (холодный старт наблюдателя или
     # перерыв в наблюдении), момент появления неизвестен. Для кабинета это
     # равно отсутствию факта: лучше прочерк, чем ложное опоздание.
-    first_seen_confirmed: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="true"
-    )
+    first_seen_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="site")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -874,7 +869,9 @@ class Participant(Base):
     # Когда страницу профиля реально открывали и парсили (в отличие от fetched_at,
     # который обновляется при любом касании строки, в т.ч. из импорта результатов).
     profile_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    sync_status: Mapped[SyncStatus | None] = mapped_column(Enum(SyncStatus, name="sync_status_enum", create_constraint=False))
+    sync_status: Mapped[SyncStatus | None] = mapped_column(
+        Enum(SyncStatus, name="sync_status_enum", create_constraint=False)
+    )
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -989,15 +986,11 @@ class User(Base):
     display_name_customized: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     # Как показывать имя: "auto" — полное («Иван Петров»), "initial" — «Иван П.».
     # Канон значений — DISPLAY_NAME_STYLES в user_display_name_service.
-    display_name_style: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="auto", server_default="auto"
-    )
+    display_name_style: Mapped[str] = mapped_column(String(16), nullable=False, default="auto", server_default="auto")
     # Зафиксированная система-источник имени. Пересматривается ТОЛЬКО при
     # привязке и отвязке профиля — фоновый пересчёт её не трогает, иначе имя
     # человека менялось бы само по себе. NULL — привязок нет, имя от провайдера.
-    display_name_platform_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("platforms.id", ondelete="SET NULL")
-    )
+    display_name_platform_id: Mapped[UUID | None] = mapped_column(ForeignKey("platforms.id", ondelete="SET NULL"))
     # Источник выбран человеком в настройках, а не алгоритмом. Такой выбор не
     # перебивается новой привязкой: молча меняем имя только тем, кто его не
     # выбирал сам.
@@ -1209,9 +1202,7 @@ class SyncWatermark(Base):
     protocols have been reconciled (for future ?since= incremental sync)."""
 
     __tablename__ = "sync_watermarks"
-    __table_args__ = (
-        UniqueConstraint("platform_id", "key", name="uq_sync_watermarks_platform_key"),
-    )
+    __table_args__ = (UniqueConstraint("platform_id", "key", name="uq_sync_watermarks_platform_key"),)
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     platform_id: Mapped[UUID] = mapped_column(ForeignKey("platforms.id", ondelete="CASCADE"), nullable=False)
@@ -1358,16 +1349,12 @@ class LocationRating(Base):
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     # Оценка привязана либо к пробежке (бегун), либо к волонтёрству — ровно одно
     # из двух заполнено (CHECK ck_location_ratings_one_source).
-    run_result_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("run_results.id", ondelete="CASCADE"), nullable=True
-    )
+    run_result_id: Mapped[UUID | None] = mapped_column(ForeignKey("run_results.id", ondelete="CASCADE"), nullable=True)
     volunteer_result_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("volunteer_results.id", ondelete="CASCADE"), nullable=True
     )
     # 'run' | 'volunteer' — как участник был на старте.
-    participation_type: Mapped[str] = mapped_column(
-        String(16), nullable=False, server_default="run"
-    )
+    participation_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="run")
     location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id"), nullable=False)
     # canonical identity key локации (как home_location_key) — для агрегации рейтинга
     location_key: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -1423,9 +1410,7 @@ class PageViewEvent(Base):
     """
 
     __tablename__ = "page_view_events"
-    __table_args__ = (
-        Index("ix_page_view_events_ts", "ts"),
-    )
+    __table_args__ = (Index("ix_page_view_events_ts", "ts"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     view_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), unique=True, nullable=False)
@@ -1746,9 +1731,7 @@ class LocationRatingPhoto(Base):
     __table_args__ = (Index("ix_location_rating_photos_rating", "rating_id", "sort_order"),)
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
-    rating_id: Mapped[UUID] = mapped_column(
-        ForeignKey("location_ratings.id", ondelete="CASCADE"), nullable=False
-    )
+    rating_id: Mapped[UUID] = mapped_column(ForeignKey("location_ratings.id", ondelete="CASCADE"), nullable=False)
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
     width: Mapped[int] = mapped_column(Integer, nullable=False)
     height: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -1771,3 +1754,45 @@ class BacklogCardPhoto(Base):
     byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
     sort_order: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class StartWeather(Base):
+    """Погода на локации в день и час старта — архив Open-Meteo (миграция 083).
+
+    Строка на локацию × дату: все субботы с первого старта плюс внесубботние
+    старты. Поля без префикса — в ближайший к времени старта час, day_* — за
+    местный календарный день. Часовой пояс — у локации (Location.timezone).
+    """
+
+    __tablename__ = "start_weather"
+    __table_args__ = (Index("ix_start_weather_obs_date", "obs_date"),)
+
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), primary_key=True)
+    obs_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    start_time_local: Mapped[time] = mapped_column(Time, nullable=False)
+
+    temperature_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    apparent_temperature_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    humidity_pct: Mapped[int | None] = mapped_column(SmallInteger)
+    precipitation_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    # Сумма за старт−1ч…старт+2ч (8–11 при старте в 9:00) и за старт−4ч…старт−1ч (5–8).
+    precipitation_run_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    precipitation_before_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    snowfall_cm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    snow_depth_cm: Mapped[Decimal | None] = mapped_column(Numeric(6, 1))
+    weather_code: Mapped[int | None] = mapped_column(SmallInteger)
+    cloud_cover_pct: Mapped[int | None] = mapped_column(SmallInteger)
+    wind_speed_ms: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    wind_gusts_ms: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+
+    day_temperature_min_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    day_temperature_max_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    day_precipitation_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    day_snowfall_cm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    day_precipitation_hours: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
+    day_wind_speed_max_ms: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    day_wind_gusts_max_ms: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    day_weather_code: Mapped[int | None] = mapped_column(SmallInteger)
+    sunrise_local: Mapped[time | None] = mapped_column(Time)
+    sunset_local: Mapped[time | None] = mapped_column(Time)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
