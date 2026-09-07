@@ -9,8 +9,8 @@
 координат и второго старта. Флаг держит их вне каталога, карты, туризма и
 рейтингов по локациям, оставляя в личных итогах и в протоколах.
 
-Revision ID: 082_location_community_event
-Revises: 081_volunteer_display_name
+Revision ID: 084_location_community_event
+Revises: 083_start_weather
 Create Date: 2026-09-07
 """
 
@@ -19,8 +19,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "082_location_community_event"
-down_revision = "081_volunteer_display_name"
+revision = "084_location_community_event"
+down_revision = "083_start_weather"
 branch_labels = None
 depends_on = None
 
