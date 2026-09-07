@@ -89,6 +89,7 @@ def _sync_one(
     db: Session,
     platform: Platform,
     slug: str,
+    display_name: str | None,
     result: CommunitySyncResult,
 ) -> None:
     # Транзакцию отпускаем ДО похода в сеть: фетч ждёт общий интервал между
@@ -96,7 +97,7 @@ def _sync_one(
     # а прод рвёт сессии, висящие «idle in transaction». Ровно на этом прогон
     # и упал на первом же живом запуске.
     release_before_fetch(db)
-    page, html = bulk_parser.fetch_community_event(slug)
+    page, html = bulk_parser.fetch_community_event(slug, display_name=display_name)
     if page is None:
         # Заголовок с датой — единственный источник даты старта; без него
         # событие завести не к чему.
@@ -156,7 +157,10 @@ def sync_community_events(
     # get_platform выше уже открыл транзакцию, а список слагов — это две
     # страницы с теми же паузами: отпускаем её перед ними.
     release_before_fetch(db)
-    slugs = [options.slug] if options.slug else bulk_parser.fetch_community_slugs()
+    entries = (
+        {options.slug: ""} if options.slug else bulk_parser.fetch_community_entries()
+    )
+    slugs = list(entries)
     if options.limit is not None:
         slugs = slugs[: options.limit]
     result.slugs_total = len(slugs)
@@ -169,7 +173,7 @@ def sync_community_events(
     try:
         for index, slug in enumerate(slugs):
             try:
-                _sync_one(db, platform, slug, result)
+                _sync_one(db, platform, slug, entries.get(slug) or None, result)
                 commit_step(db)
             except FiveVerstBanDetected as exc:
                 rollback_step(db)

@@ -65,17 +65,41 @@ def test_parse_community_event_without_heading_is_skipped() -> None:
     assert bulk_parser.parse_community_event_html("<h2>Просто заголовок</h2>", "x") is None
 
 
+SECTION_HTML = (
+    '<a href="https://5verst.ru/starti-soobshchestv/zelenye5km">Зелёные 5 км</a>'
+    '<a href="/starti-soobshchestv/denfizkulturnikatula/">День физкультурника. Тула</a>'
+    '<a href="/starti-soobshchestv/">раздел</a>'
+    '<a href="/vysota/results/all/">площадка</a>'
+)
+
+
 def test_community_slugs_collected_from_links() -> None:
-    html = (
-        '<a href="https://5verst.ru/starti-soobshchestv/zelenye5km">a</a>'
-        '<a href="/starti-soobshchestv/denfizkulturnikatula/">b</a>'
-        '<a href="/starti-soobshchestv/">раздел</a>'
-        '<a href="/vysota/results/all/">площадка</a>'
-    )
-    assert bulk_parser.parse_community_slugs_html(html) == [
+    assert bulk_parser.parse_community_slugs_html(SECTION_HTML) == [
         "zelenye5km",
         "denfizkulturnikatula",
     ]
+
+
+def test_community_name_comes_from_the_section_not_the_page_heading() -> None:
+    """Имя должно совпадать с тем, что человек видит у себя в профиле.
+
+    В разделе старт подписан «Зелёные 5 км» — ровно как в профиле, — а
+    заголовок самой страницы называет его «Сбер Зелёный марафон». Люди сверяют
+    свои числа по профилю, поэтому имя берём из раздела.
+    """
+    entries = bulk_parser.parse_community_entries_html(SECTION_HTML)
+    assert entries["zelenye5km"] == "Зелёные 5 км"
+    assert entries["denfizkulturnikatula"] == "День физкультурника. Тула"
+
+    page = bulk_parser.parse_community_event_html(
+        COMMUNITY_HTML, "denfizkulturnikatula", display_name="День физкультурника. Тула"
+    )
+    assert page is not None
+    assert page.name == "День физкультурника. Тула"
+    # Без имени из раздела остаётся заголовок страницы.
+    fallback = bulk_parser.parse_community_event_html(COMMUNITY_HTML, "denfizkulturnikatula")
+    assert fallback is not None
+    assert fallback.name == "День физкультурника Тула"
 
 
 def _platform(db: Session) -> Platform:

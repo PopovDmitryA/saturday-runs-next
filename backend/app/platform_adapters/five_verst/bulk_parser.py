@@ -773,18 +773,33 @@ def community_event_url(slug: str) -> str:
     return f"{BASE_URL}/{COMMUNITY_SECTION}/{slug}"
 
 
-def parse_community_slugs_html(html: str) -> list[str]:
-    """Слаги стартов сообществ со страницы-раздела или из реестра /events/."""
+def parse_community_entries_html(html: str) -> dict[str, str]:
+    """Слаг → название из текста ссылки на странице-разделе.
+
+    Имя берём именно отсюда: в разделе старт подписан так же, как в профиле
+    человека («Зелёные 5 км», «День физкультурника. Тула»), а заголовок самой
+    страницы старта называет его иначе («Сбер Зелёный марафон»). Числа люди
+    сверяют по профилю, поэтому и имя должно совпадать с профилем.
+    """
     soup = BeautifulSoup(html, "html.parser")
-    slugs: list[str] = []
+    entries: dict[str, str] = {}
     for link in soup.find_all("a", href=True):
         match = COMMUNITY_URL_RE.search(link["href"])
         if match is None:
             continue
         slug = match.group(1).lower()
-        if slug and slug != COMMUNITY_SECTION and slug not in slugs:
-            slugs.append(slug)
-    return slugs
+        if not slug or slug == COMMUNITY_SECTION:
+            continue
+        name = link.get_text(" ", strip=True)
+        if name and slug not in entries:
+            entries[slug] = name
+        entries.setdefault(slug, "")
+    return entries
+
+
+def parse_community_slugs_html(html: str) -> list[str]:
+    """Слаги стартов сообществ со страницы-раздела или из реестра /events/."""
+    return list(parse_community_entries_html(html))
 
 
 def _parse_community_heading(soup: BeautifulSoup) -> tuple[str, date] | None:
@@ -822,12 +837,18 @@ def _find_community_volunteer_table(soup: BeautifulSoup) -> Tag | None:
     return None
 
 
-def parse_community_event_html(html: str, slug: str) -> CommunityEventPage | None:
+def parse_community_event_html(
+    html: str, slug: str, *, display_name: str | None = None
+) -> CommunityEventPage | None:
     soup = BeautifulSoup(html, "html.parser")
     heading = _parse_community_heading(soup)
     if heading is None:
         return None
-    name, event_date = heading
+    heading_name, event_date = heading
+    # Имя из раздела совпадает с тем, что человек видит у себя в профиле;
+    # заголовок страницы бывает другим («Сбер Зелёный марафон» против
+    # «Зелёные 5 км»). Заголовок остаётся запасным вариантом.
+    name = display_name or heading_name
     source_url = community_event_url(slug)
 
     # Протокол разбирается тем же парсером, что и обычный: таблица финишёров у
@@ -865,20 +886,22 @@ def parse_community_event_html(html: str, slug: str) -> CommunityEventPage | Non
     )
 
 
-def fetch_community_slugs() -> list[str]:
-    """Слаги из раздела и из реестра /events/: раздел — основной список,
-    реестр — страховка на случай, если старт в раздел ещё не попал."""
-    slugs = parse_community_slugs_html(fetch_html(f"{BASE_URL}/{COMMUNITY_SECTION}/"))
+def fetch_community_entries() -> dict[str, str]:
+    """Старты сообществ: раздел — основной список, реестр /events/ — страховка
+    на случай, если старт в раздел ещё не попал (имени там может и не быть)."""
+    entries = parse_community_entries_html(fetch_html(f"{BASE_URL}/{COMMUNITY_SECTION}/"))
     _registry, registry_html = fetch_events_page()
-    for slug in parse_community_slugs_html(registry_html):
-        if slug not in slugs:
-            slugs.append(slug)
-    return slugs
+    for slug, name in parse_community_entries_html(registry_html).items():
+        if not entries.get(slug):
+            entries[slug] = name
+    return entries
 
 
-def fetch_community_event(slug: str) -> tuple[CommunityEventPage | None, str]:
+def fetch_community_event(
+    slug: str, *, display_name: str | None = None
+) -> tuple[CommunityEventPage | None, str]:
     html = fetch_html(community_event_url(slug))
-    return parse_community_event_html(html, slug), html
+    return parse_community_event_html(html, slug, display_name=display_name), html
 
 
 def fetch_run_protocol(

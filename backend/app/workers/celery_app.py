@@ -223,14 +223,21 @@ celery_app.conf.update(
             "kwargs": {"weeks_back": 2},
             "options": {"queue": "five_verst"},
         },
-        # Старты сообществ (/starti-soobshchestv/) — раз в сутки. Раздел
-        # крошечный (два старта на 07.09.2026) и пополняется редко, но его не
-        # видит ни один другой синк: там нет ни реестровой строки, ни таблицы
-        # площадки. Минута :40 свободна: сверка на :10, ротация на :30,
-        # latest на :00, обход недели на :20.
-        "five-verst-community-events": {
+        # Старты сообществ (/starti-soobshchestv/) — суббота вечером и среда
+        # (ритм Дмитрия 07.09.2026). Раздел крошечный (два старта на
+        # 07.09.2026) и пополняется редко, но его не видит ни один другой
+        # синк: там нет ни реестровой строки, ни таблицы площадки. Суббота —
+        # чтобы свежий старт приехал в тот же день, среда — чтобы поймать
+        # поздний разбор протокола. Минута :40 свободна: latest на :00,
+        # сверка на :10, обход недели на :20, ротация на :30.
+        "five-verst-community-events-saturday": {
             "task": "five_verst_sync.sync_community_events",
-            "schedule": crontab(hour=3, minute=40),
+            "schedule": crontab(hour=22, minute=40, day_of_week="6"),
+            "options": {"queue": "five_verst"},
+        },
+        "five-verst-community-events-wednesday": {
+            "task": "five_verst_sync.sync_community_events",
+            "schedule": crontab(hour=22, minute=40, day_of_week="3"),
             "options": {"queue": "five_verst"},
         },
         # Clubs list (/clubs/) — twice a week; changed rows are queued for detail re-sync.
