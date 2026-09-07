@@ -3,11 +3,14 @@ import { logout } from "../../lib/api";
 import { clearCachedUser, useOptionalUser } from "../../lib/useOptionalUser";
 import { PORTAL_LOGIN_HREF, cabinetTabHref } from "../../lib/portalRoutes";
 import {
+  RESULTS_SECTION_LINKS,
   SECONDARY_NAV,
   SITE_SECTIONS_NAV,
   icon,
+  locationSectionLinks,
   siteSectionKey,
   type SidebarExtraGroup,
+  type SiteSectionLink,
 } from "./SiteSidebar";
 import "./cabinet/cabinet.css";
 
@@ -24,6 +27,10 @@ import "./cabinet/cabinet.css";
  * `extraGroup` — группа страниц текущей сущности (вкладки чужого профиля). На
  * десктопе она живёт в сайдбаре; на телефоне попадает в шторку «Ещё», чтобы
  * разделы участника оставались доступны и оттуда, а не только чипами.
+ *
+ * Туда же уехала ветка текущего раздела из сайдбара — срезы открытой площадки
+ * и подпункты «Результатов». На телефоне сайдбара нет, и «Единый протокол» с
+ * «Постоянным составом» не открывались ниоткуда (репорт Дмитрия 07.09.2026).
  */
 const MORE_ICON = icon(
   <>
@@ -42,13 +49,31 @@ const CABINET_ICON = icon(
 
 export function PortalSectionBottomNav({
   active,
+  location,
   extraGroup,
 }: {
   active?: string | null;
+  /** Открытая площадка — в шторке появятся её срезы, как в сайдбаре. */
+  location?: { slug: string; name: string };
   extraGroup?: SidebarExtraGroup;
 }) {
   const user = useOptionalUser();
   const [moreOpen, setMoreOpen] = useState(false);
+
+  // Ветка текущего раздела: у открытой площадки — её срезы, в «Результатах» —
+  // последние пробежки и единый протокол. Каталог локаций и рейтинги своих
+  // подпунктов не имеют — там блока не будет.
+  const pathname = typeof window !== "undefined" ? window.location.pathname : "";
+  const sectionKey = siteSectionKey(active);
+  let sectionTitle: string | null = null;
+  let sectionLinks: SiteSectionLink[] = [];
+  if (location) {
+    sectionTitle = "Локации";
+    sectionLinks = locationSectionLinks(location);
+  } else if (sectionKey === "results") {
+    sectionTitle = "Результаты";
+    sectionLinks = RESULTS_SECTION_LINKS;
+  }
 
   // Гостю кнопка ведёт на вход — это и есть его путь в кабинет.
   const cabinetHref = user ? cabinetTabHref(user, "dashboard") : PORTAL_LOGIN_HREF;
@@ -97,6 +122,25 @@ export function PortalSectionBottomNav({
                     {item.label}
                   </button>
                 ))}
+                <div className="portal-cab-more-sep" />
+              </>
+            )}
+            {sectionTitle && sectionLinks.length > 0 && (
+              <>
+                <div className="portal-cab-more-title">{sectionTitle}</div>
+                {sectionLinks.map((item) => {
+                  const current = item.isCurrent(pathname, active ?? null);
+                  return (
+                    <a
+                      key={item.key}
+                      href={item.href}
+                      className={`portal-cab-more-item${current ? " active" : ""}`}
+                      aria-current={current ? "page" : undefined}
+                    >
+                      {item.label}
+                    </a>
+                  );
+                })}
                 <div className="portal-cab-more-sep" />
               </>
             )}

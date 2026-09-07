@@ -45,7 +45,7 @@ export function PortalSectionShell({
       <PortalFooter />
       {/* На телефоне сайдбар скрыт: без этой панели раздел оставался вообще
           без навигации — вернуться в кабинет было не по чему. */}
-      <PortalSectionBottomNav active={sidebar.active} />
+      <PortalSectionBottomNav active={sidebar.active} location={sidebar.location} />
     </div>
   );
 }

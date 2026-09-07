@@ -246,6 +246,80 @@ export const CABINET_NAV: CabinetNavItem[] = [
   { key: "share", href: PORTAL_CABINET_SHARE_HREF, label: "Поделиться", icon: NAV_ICONS.share },
 ];
 
+/**
+ * Подпункты разделов сайта — одним списком на сайдбар и на шторку «Ещё»
+ * телефона. Раньше это дерево жило только в разметке сайдбара, а на телефоне
+ * сайдбар скрыт: «Последние пробежки», «Единый протокол» и срезы открытой
+ * площадки с телефона были недостижимы вовсе (репорт Дмитрия 07.09.2026).
+ */
+export type SiteSectionLink = {
+  key: string;
+  href: string;
+  label: string;
+  icon: ReactNode;
+  /**
+   * Текущая ли это страница. У срезов площадки сверяем адрес (ключ раздела у
+   * них общий — «locations»), у общесайтовых хватает ключа.
+   */
+  isCurrent: (pathname: string, active: string | null) => boolean;
+};
+
+/**
+ * Срезы открытой площадки. Живут под самой локацией, а не в «Результатах»
+ * (правки Дмитрия 27–28.08.2026): это срезы конкретной площадки, тогда как
+ * «Результаты» — общесайтовая витрина. Потому и появляются только тогда,
+ * когда локация открыта.
+ */
+export function locationSectionLinks(location: { slug: string; name: string }): SiteSectionLink[] {
+  const base = `/locations/${location.slug}`;
+  return [
+    {
+      key: "location",
+      href: base,
+      label: location.name,
+      icon: LOCATION_PIN_ICON,
+      isCurrent: (pathname) => pathname === base,
+    },
+    {
+      key: "participants",
+      href: `${base}/participants`,
+      label: "Постоянный состав",
+      icon: REGULARS_ICON,
+      isCurrent: (pathname) => pathname === `${base}/participants`,
+    },
+    {
+      key: "events",
+      href: `${base}/events`,
+      label: "Журнал протоколов",
+      icon: PROTOCOL_ICON,
+      isCurrent: (pathname) => pathname.endsWith("/events"),
+    },
+  ];
+}
+
+/**
+ * «Результаты» — про то, что было на выходных, а не про каталог площадок.
+ * Заголовок раздела ведёт на витрину, но «Последние пробежки» перечислены и
+ * своим пунктом (просьба Дмитрия 25.08.2026): по одному заголовку не понять,
+ * что за ним.
+ */
+export const RESULTS_SECTION_LINKS: SiteSectionLink[] = [
+  {
+    key: "last-results",
+    href: "/results",
+    label: "Последние пробежки",
+    icon: LAST_RESULTS_ICON,
+    isCurrent: (_pathname, active) => active === "last-results",
+  },
+  {
+    key: "unified-protocol",
+    href: "/protocol",
+    label: "Единый протокол",
+    icon: UNIFIED_PROTOCOL_ICON,
+    isCurrent: (_pathname, active) => active === "unified-protocol",
+  },
+];
+
 export type SecondaryNavItem = { href: string; label: string; adminOnly?: boolean; authOnly?: boolean };
 
 /**
@@ -699,46 +773,22 @@ export function SiteSidebar({
           <span className="portal-cab-nav-icon">{LOCATIONS_ICON}</span>
           <span className="portal-cab-nav-label">Локации</span>
         </a>
-        {location && (
-          <a
-            href={`/locations/${location.slug}`}
-            className={`portal-cab-nav-item portal-cab-nav-subitem${
-              pathname === `/locations/${location.slug}` ? " active" : ""
-            }`}
-            title={collapsed ? location.name : undefined}
-          >
-            <span className="portal-cab-nav-icon">{LOCATION_PIN_ICON}</span>
-            <span className="portal-cab-nav-label">{location.name}</span>
-          </a>
-        )}
-        {/* Постоянный состав и журнал протоколов живут под самой площадкой, а
-            не в «Результатах» (правки Дмитрия 27–28.08.2026): это срезы
-            конкретной локации, тогда как «Результаты» — общесайтовая витрина.
-            Потому и появляются только тогда, когда локация открыта. */}
-        {location && (
-          <a
-            href={`/locations/${location.slug}/participants`}
-            className={`portal-cab-nav-item portal-cab-nav-subitem${
-              pathname === `/locations/${location.slug}/participants` ? " active" : ""
-            }`}
-            title={collapsed ? "Постоянный состав" : undefined}
-          >
-            <span className="portal-cab-nav-icon">{REGULARS_ICON}</span>
-            <span className="portal-cab-nav-label">Постоянный состав</span>
-          </a>
-        )}
-        {location && (
-          <a
-            href={`/locations/${location.slug}/events`}
-            className={`portal-cab-nav-item portal-cab-nav-subitem${
-              pathname.endsWith("/events") ? " active" : ""
-            }`}
-            title={collapsed ? "Журнал протоколов" : undefined}
-          >
-            <span className="portal-cab-nav-icon">{PROTOCOL_ICON}</span>
-            <span className="portal-cab-nav-label">Журнал протоколов</span>
-          </a>
-        )}
+        {location &&
+          locationSectionLinks(location).map((item) => {
+            const current = item.isCurrent(pathname, active);
+            return (
+              <a
+                key={item.key}
+                href={item.href}
+                className={`portal-cab-nav-item portal-cab-nav-subitem${current ? " active" : ""}`}
+                aria-current={current ? "page" : undefined}
+                title={collapsed ? item.label : undefined}
+              >
+                <span className="portal-cab-nav-icon">{item.icon}</span>
+                <span className="portal-cab-nav-label">{item.label}</span>
+              </a>
+            );
+          })}
 
         {/* Кабинет организатора — постоянный подпункт, как «Последние
             пробежки». Ведёт всегда к СПИСКУ своих локаций (/organizer): раньше
@@ -760,10 +810,8 @@ export function SiteSidebar({
         )}
 
 
-        {/* «Результаты» — про то, что было на выходных, а не про каталог
-            площадок. Заголовок ведёт на витрину раздела, но своим пунктом
-            «Последние пробежки» тоже перечислены (просьба Дмитрия
-            25.08.2026): по одному заголовку не понять, что за ним. */}
+        {/* Заголовок раздела ведёт на витрину, подпункты — общие с телефоном
+            (см. RESULTS_SECTION_LINKS). */}
         <a
           href="/results"
           className={`portal-cab-nav-item${active === "last-results" ? " active" : ""}`}
@@ -773,29 +821,21 @@ export function SiteSidebar({
           <span className="portal-cab-nav-icon">{LAST_RESULTS_ICON}</span>
           <span className="portal-cab-nav-label">Результаты</span>
         </a>
-        <a
-          href="/results"
-          className={`portal-cab-nav-item portal-cab-nav-subitem${
-            active === "last-results" ? " active" : ""
-          }`}
-          aria-current={active === "last-results" ? "page" : undefined}
-          title={collapsed ? "Последние пробежки" : undefined}
-        >
-          <span className="portal-cab-nav-icon">{LAST_RESULTS_ICON}</span>
-          <span className="portal-cab-nav-label">Последние пробежки</span>
-        </a>
-        {/* Единый протокол недели: все площадки всех систем одним списком. */}
-        <a
-          href="/protocol"
-          className={`portal-cab-nav-item portal-cab-nav-subitem${
-            active === "unified-protocol" ? " active" : ""
-          }`}
-          aria-current={active === "unified-protocol" ? "page" : undefined}
-          title={collapsed ? "Единый протокол" : undefined}
-        >
-          <span className="portal-cab-nav-icon">{UNIFIED_PROTOCOL_ICON}</span>
-          <span className="portal-cab-nav-label">Единый протокол</span>
-        </a>
+        {RESULTS_SECTION_LINKS.map((item) => {
+          const current = item.isCurrent(pathname, active);
+          return (
+            <a
+              key={item.key}
+              href={item.href}
+              className={`portal-cab-nav-item portal-cab-nav-subitem${current ? " active" : ""}`}
+              aria-current={current ? "page" : undefined}
+              title={collapsed ? item.label : undefined}
+            >
+              <span className="portal-cab-nav-icon">{item.icon}</span>
+              <span className="portal-cab-nav-label">{item.label}</span>
+            </a>
+          );
+        })}
         <a
           href="/ratings"
           className={`portal-cab-nav-item${active === "ratings" ? " active" : ""}`}
