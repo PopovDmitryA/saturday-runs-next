@@ -50,6 +50,7 @@ from app.models import (
     User,
     VolunteerResult,
 )
+from app.services.community_events import exclude_community_events
 from app.services.gender_position_service import GENDER_FEMALE, GENDER_MALE
 from app.services.location_catalog_service import (
     PARKRUN_PLATFORM_CODE,
@@ -222,7 +223,14 @@ def _location_directory(db: Session) -> tuple[dict[UUID, dict[str, Any]], set[UU
     parkrun 2014–2022 собран протоколами целиком и в зачёте остаётся.
     """
     catalog_index = LocationCatalogIndex(db)
-    rows = db.query(Location, Platform.code).join(Platform, Location.platform_id == Platform.id).all()
+    # Разовый старт сообщества («Зелёные 5 км» пришёлся на субботу) — не часть
+    # общестрановой субботы: в единый протокол недели он не входит.
+    rows = (
+        exclude_community_events(
+            db.query(Location, Platform.code).join(Platform, Location.platform_id == Platform.id)
+        )
+        .all()
+    )
     russian_parkrun = russian_parkrun_location_ids(db, catalog_index)
 
     identity_locations: dict[str, list[tuple[Location, str]]] = defaultdict(list)

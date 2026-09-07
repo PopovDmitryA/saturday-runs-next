@@ -742,6 +742,145 @@ def fetch_event_protocol(
     return run_results, volunteers, html
 
 
+# --- Старты сообществ (/starti-soobshchestv/) -------------------------------
+# Разовые старты, которых нет ни в реестре /events/, ни среди площадок: у них
+# нет страницы /{slug}/results/all/, только один протокол. 5 вёрст засчитывает
+# их финиши в личный счётчик человека, поэтому мы их собираем — но площадками
+# не считаем (см. app/services/community_events.py).
+COMMUNITY_SECTION = "starti-soobshchestv"
+COMMUNITY_URL_RE = re.compile(rf"/{COMMUNITY_SECTION}/([a-z0-9-]+)/?", re.I)
+RU_MONTHS = {
+    "января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6,
+    "июля": 7, "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12,
+}
+# «08 августа 2026 года. День физкультурника Тула» — заголовок h2 страницы.
+COMMUNITY_HEADING_RE = re.compile(
+    r"(\d{1,2})\s+([а-яё]+)\s+(\d{4})\s*(?:года)?\s*[.,]?\s*(.*)", re.I
+)
+
+
+@dataclass
+class CommunityEventPage:
+    slug: str
+    name: str
+    event_date: date
+    source_url: str
+    run_results: list[CanonicalRunResult]
+    volunteer_results: list[CanonicalVolunteerResult]
+
+
+def community_event_url(slug: str) -> str:
+    return f"{BASE_URL}/{COMMUNITY_SECTION}/{slug}"
+
+
+def parse_community_slugs_html(html: str) -> list[str]:
+    """Слаги стартов сообществ со страницы-раздела или из реестра /events/."""
+    soup = BeautifulSoup(html, "html.parser")
+    slugs: list[str] = []
+    for link in soup.find_all("a", href=True):
+        match = COMMUNITY_URL_RE.search(link["href"])
+        if match is None:
+            continue
+        slug = match.group(1).lower()
+        if slug and slug != COMMUNITY_SECTION and slug not in slugs:
+            slugs.append(slug)
+    return slugs
+
+
+def _parse_community_heading(soup: BeautifulSoup) -> tuple[str, date] | None:
+    for heading in soup.find_all(["h1", "h2", "h3"]):
+        match = COMMUNITY_HEADING_RE.match(heading.get_text(" ", strip=True))
+        if match is None:
+            continue
+        month = RU_MONTHS.get(match.group(2).lower())
+        if month is None:
+            continue
+        try:
+            event_date = date(int(match.group(3)), month, int(match.group(1)))
+        except ValueError:
+            continue
+        name = match.group(4).strip(" .")
+        if name:
+            return name, event_date
+    return None
+
+
+def _find_community_volunteer_table(soup: BeautifulSoup) -> Tag | None:
+    """Таблица волонтёров по шапке «Волонтёр | Роль».
+
+    На странице старта сообщества нет заголовка «Команда организаторов» —
+    таблица стоит под обычным абзацем «Волонтерство», поэтому ищем её по
+    собственной шапке, а не по тому, что написано выше.
+    """
+    for table in soup.find_all("table"):
+        first_row = table.find("tr")
+        if first_row is None:
+            continue
+        header = first_row.get_text(" ", strip=True).lower()
+        if "волонт" in header and "роль" in header:
+            return table
+    return None
+
+
+def parse_community_event_html(html: str, slug: str) -> CommunityEventPage | None:
+    soup = BeautifulSoup(html, "html.parser")
+    heading = _parse_community_heading(soup)
+    if heading is None:
+        return None
+    name, event_date = heading
+    source_url = community_event_url(slug)
+
+    # Протокол разбирается тем же парсером, что и обычный: таблица финишёров у
+    # старта сообщества ровно такая же (проверено на «Дне физкультурника»).
+    run_results = parse_run_protocol_html(
+        html, slug=slug, event_date=event_date, event_number=None
+    )
+    for item in run_results:
+        item.location_name = name
+        item.source_url = source_url
+
+    volunteer_table = _find_community_volunteer_table(soup)
+    volunteer_results = (
+        _parse_volunteer_table(
+            volunteer_table,
+            slug=slug,
+            event_date=event_date,
+            event_number=None,
+            limit=None,
+            source_url=source_url,
+        )
+        if volunteer_table is not None
+        else []
+    )
+    for item in volunteer_results:
+        item.location_name = name
+
+    return CommunityEventPage(
+        slug=slug,
+        name=name,
+        event_date=event_date,
+        source_url=source_url,
+        run_results=run_results,
+        volunteer_results=volunteer_results,
+    )
+
+
+def fetch_community_slugs() -> list[str]:
+    """Слаги из раздела и из реестра /events/: раздел — основной список,
+    реестр — страховка на случай, если старт в раздел ещё не попал."""
+    slugs = parse_community_slugs_html(fetch_html(f"{BASE_URL}/{COMMUNITY_SECTION}/"))
+    _registry, registry_html = fetch_events_page()
+    for slug in parse_community_slugs_html(registry_html):
+        if slug not in slugs:
+            slugs.append(slug)
+    return slugs
+
+
+def fetch_community_event(slug: str) -> tuple[CommunityEventPage | None, str]:
+    html = fetch_html(community_event_url(slug))
+    return parse_community_event_html(html, slug), html
+
+
 def fetch_run_protocol(
     slug: str,
     event_date: date,
@@ -785,7 +924,32 @@ def parse_volunteers_from_event_html(
     if table is None:
         return []
 
-    source_url = _results_date_url(slug, event_date)
+    return _parse_volunteer_table(
+        table,
+        slug=slug,
+        event_date=event_date,
+        event_number=event_number,
+        limit=limit,
+        source_url=_results_date_url(slug, event_date),
+    )
+
+
+def _parse_volunteer_table(
+    table: Tag,
+    *,
+    slug: str,
+    event_date: date,
+    event_number: int | None,
+    limit: int | None,
+    source_url: str,
+) -> list[CanonicalVolunteerResult]:
+    """Разбор таблицы «Волонтёр | Роль».
+
+    Вынесено из parse_volunteers_from_event_html, потому что у стартов
+    сообществ (/starti-soobshchestv/) та же таблица стоит под обычным
+    абзацем «Волонтерство», а не под заголовком «Команда организаторов»:
+    искать её приходится иначе, а разбирать — точно так же.
+    """
     results: list[CanonicalVolunteerResult] = []
     unregistered_seen = 0
 

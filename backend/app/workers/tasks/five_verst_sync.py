@@ -9,6 +9,7 @@ from app.db.session import get_session_factory
 from app.services.sync_run_params import (
     five_verst_clubs_details_details,
     five_verst_clubs_registry_details,
+    five_verst_community_details,
     five_verst_latest_details,
     five_verst_location_details,
     five_verst_reconcile_details,
@@ -17,6 +18,7 @@ from app.services.sync_run_params import (
     five_verst_week_sweep_details,
 )
 from app.sync.five_verst_clubs import ClubsRegistrySyncOptions, sync_club_details_batch, sync_clubs_registry
+from app.sync.five_verst_community import CommunitySyncOptions, sync_community_events
 from app.sync.five_verst_latest import LatestResultsSyncOptions, sync_latest_results
 from app.sync.five_verst_location_rotation import sync_next_location_batch
 from app.sync.five_verst_locations import LocationRegistrySyncOptions, sync_locations_registry
@@ -500,6 +502,41 @@ def sweep_week_protocols_task(
         )
         payload = {**payload, "next_chunk_enqueued": True}
     return payload
+
+
+@celery_app.task(name="five_verst_sync.sync_community_events", queue="five_verst")
+def sync_community_events_task(slug: str | None = None, *, force: bool = False) -> dict[str, object]:
+    """Старты сообществ 5 вёрст (/starti-soobshchestv/).
+
+    Разовые старты, которых нет ни в реестре площадок, ни в таблицах локаций:
+    весь остальной синк их не видит по устройству. Финиши с них 5 вёрст
+    засчитывает в личный счётчик человека — отсюда и жалобы «на сайте на одну
+    пробежку меньше». Раздел крошечный (два старта на 07.09.2026), поэтому
+    хватает одного прогона в сутки.
+    """
+    name = "5v community events"
+    details = five_verst_community_details(slug=slug)
+
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            started_at = datetime.now(timezone.utc)
+            result = sync_community_events(db, CommunitySyncOptions(slug=slug))
+            if result.run_results_upserted > 0:
+                db.commit()
+                _schedule_dashboard_warm(started_at)
+            return asdict(result)
+        finally:
+            db.close()
+
+    return run_reported_sync(
+        name,
+        _run,
+        details=details,
+        hour_slot_key="five_verst:community",
+        force=force,
+        batch_queue_name="five_verst",
+    )
 
 
 @celery_app.task(name="five_verst_sync.enqueue_reconcile_protocols", queue="five_verst")

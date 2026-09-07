@@ -30,7 +30,10 @@ def map_location_filter() -> ColumnElement[bool]:
     нашими локациями 102 помечены Британией. Отсев делает is_russian_historic
     уже по связке.
     """
-    return or_(
+    # Разовые старты сообществ отсекаются и так — им никто не ставит
+    # is_official_map, — но условие тут явное: флаг ставится в четырёх местах
+    # синка, и молчаливая зависимость от него рано или поздно протечёт.
+    return Location.is_community_event.is_(False) & or_(
         Platform.code.in_(MAP_LIVE_PLATFORMS) & Location.is_official_map.is_(True),
         Platform.code == MAP_HISTORIC_PLATFORM,
     )

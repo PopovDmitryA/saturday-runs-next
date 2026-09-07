@@ -30,6 +30,7 @@ from sqlalchemy import func, text, tuple_
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, LocationOpening, Platform, RunResult, User
+from app.services.community_events import exclude_community_events
 from app.services.location_catalog_service import LocationCatalogIndex
 
 # Системы, где открытие видно из протокола: событие №1 и есть первый старт.
@@ -159,6 +160,9 @@ JOIN locations l ON l.id = e.location_id
 LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
 {OPENING_EVENT_JOIN}
 WHERE e.is_test_event = false
+  -- Разовый старт сообщества не «открывает площадку»: открывать там нечего,
+  -- второго старта не будет.
+  AND l.is_community_event = false
   AND ec.secondary_event_id IS NULL
   AND {OPENING_EVENT_CONDITION}
   AND NOT EXISTS (
@@ -223,6 +227,8 @@ def list_openings(
         .outerjoin(LocationOpening, LocationOpening.location_id == Location.id)
         .filter(Platform.code == platform)
     )
+    # Разовые старты сообществ в подборе открытий не участвуют.
+    locations_query = exclude_community_events(locations_query)
     if query:
         pattern = f"%{query.strip().lower()}%"
         locations_query = locations_query.filter(

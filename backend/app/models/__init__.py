@@ -166,6 +166,13 @@ class Location(Base):
     # старты кончились, здесь их ещё не было (см. миграцию 064).
     is_upcoming: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_official_map: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Разовый старт сообщества (5 вёрст, раздел /starti-soobshchestv/), а не
+    # площадка: нет расписания, координат и второго старта. Финиши считаются в
+    # личных итогах — источник их тоже засчитывает, — но из каталога, карты,
+    # туризма и рейтингов по локациям такой «локации» быть не должно
+    # (миграция 082). Единственная точка правды — helpers в
+    # app/services/community_events.py.
+    is_community_event: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     # Смещение локации от Москвы в часах (Якутск +6, Калининград −1): время
     # старта в описаниях — местное, момент фиксации протокола — UTC.
     tz_offset_moscow: Mapped[int | None] = mapped_column(Integer)

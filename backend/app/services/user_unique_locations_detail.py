@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.activity_date import has_real_activity_date
 from app.location_page_url import location_page_url
 from app.models import Event, Location, Platform, PlatformLink, RunResult, VolunteerResult
+from app.services.community_events import exclude_community_events
 from app.services.location_catalog_service import (
     LocationCatalogIndex,
     is_foreign_location,
@@ -92,6 +93,9 @@ def build_user_unique_location_details(
         .join(PlatformLink, PlatformLink.participant_id == RunResult.participant_id)
         .filter(PlatformLink.user_id == user_id)
     )
+    # Разовые старты сообществ («Зелёные 5 км») — не посещённые площадки:
+    # финиш с них в личный счёт идёт, а в список объезженных локаций — нет.
+    runs_query = exclude_community_events(runs_query)
     vol_query = (
         db.query(Event.event_date, Location, Platform.code, VolunteerResult.role)
         .select_from(VolunteerResult)
@@ -104,6 +108,7 @@ def build_user_unique_location_details(
             Event.event_date > date(1970, 1, 1),
         )
     )
+    vol_query = exclude_community_events(vol_query)
     if not include_test_events:
         runs_query = runs_query.filter(Event.is_test_event.is_(False))
         vol_query = vol_query.filter(Event.is_test_event.is_(False))

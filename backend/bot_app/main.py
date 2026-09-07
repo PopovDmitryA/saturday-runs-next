@@ -69,6 +69,7 @@ ADMIN_HELP_TEXT = (
     "/sync rotation — ротация локаций (20 summary)\n"
     "/sync reconcile — сверка 100 старых протоколов\n"
     "/sync week-sweep — перекачать протоколы последней субботы\n"
+    "/sync community — старты сообществ (/starti-soobshchestv/)\n"
     "/sync s95-latest — s95 /activities\n"
     "/sync s95-rotation — s95 ротация локаций\n"
     "/sync s95-reconcile — s95 сверка протоколов\n"

@@ -223,6 +223,16 @@ celery_app.conf.update(
             "kwargs": {"weeks_back": 2},
             "options": {"queue": "five_verst"},
         },
+        # Старты сообществ (/starti-soobshchestv/) — раз в сутки. Раздел
+        # крошечный (два старта на 07.09.2026) и пополняется редко, но его не
+        # видит ни один другой синк: там нет ни реестровой строки, ни таблицы
+        # площадки. Минута :40 свободна: сверка на :10, ротация на :30,
+        # latest на :00, обход недели на :20.
+        "five-verst-community-events": {
+            "task": "five_verst_sync.sync_community_events",
+            "schedule": crontab(hour=3, minute=40),
+            "options": {"queue": "five_verst"},
+        },
         # Clubs list (/clubs/) — twice a week; changed rows are queued for detail re-sync.
         "five-verst-clubs-registry": {
             "task": "five_verst_sync.sync_clubs_registry",

@@ -33,6 +33,15 @@ def five_verst_reconcile_details(
     return "\n".join(lines)
 
 
+def five_verst_community_details(*, slug: str | None = None) -> str:
+    lines = ["Раздел: /starti-soobshchestv/ (разовые старты сообществ)"]
+    if slug:
+        lines.append(f"Только старт: {slug}")
+    else:
+        lines.append("Слаги: из раздела + из реестра /events/")
+    return "\n".join(lines)
+
+
 def five_verst_week_sweep_details(
     *,
     weeks_back: int,
