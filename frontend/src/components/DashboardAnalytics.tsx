@@ -124,6 +124,18 @@ const HOME_DISTANCE_TOOLTIP = (
   </>
 );
 
+const NEAREST_UNVISITED_TOOLTIP = (
+  <>
+    <span>
+      Ближайшая к домашней локации действующая площадка, где вы ещё ни разу не бежали.
+    </span>
+    <span className="stat-hint-tooltip-note">
+      Расстояние — по прямой от дома. Закрытые и приостановленные площадки в подсказку не
+      попадают: туда сейчас не поедешь.
+    </span>
+  </>
+);
+
 const TOTAL_DISTANCE_TOOLTIP = (
   <span>Примерная суммарная дистанция: 5 км на каждую пробежку.</span>
 );
@@ -354,6 +366,25 @@ function buildAnalyticsCards(
       clickable: true,
       modalTarget: "home_distance",
       tooltipContent: HOME_DISTANCE_TOOLTIP,
+    });
+  }
+
+  // «Куда дальше» — компас туриста: сервис сам называет следующую цель, а не
+  // ждёт, пока человек сам полезет искать её в каталоге. Показываем название
+  // площадки, а километры до неё уводим в уточнение: выбирают по месту.
+  const nearestUnvisited = homeDistance?.nearest_unvisited;
+  if (homeDistance?.home && nearestUnvisited && nearestUnvisited.distance_km != null) {
+    cards.push({
+      key: "nearest_unvisited",
+      value: nearestUnvisited.name,
+      label: "ближайшая новая площадка",
+      note: `${formatKm(nearestUnvisited.distance_km)} от дома${
+        nearestUnvisited.city ? ` · ${nearestUnvisited.city}` : ""
+      }`,
+      category: "runs",
+      clickable: true,
+      modalTarget: "home_distance",
+      tooltipContent: NEAREST_UNVISITED_TOOLTIP,
     });
   }
 

@@ -158,7 +158,8 @@ const CATEGORY_HINTS: Record<Challenge["category"], string> = {
   collection: "Закрывай клетки коллекций — секунды, буквы, даты и номера.",
   coincidence: "Редкие совпадения в твоих результатах.",
   scale: "Долгие челленджи на объём: локации, регионы и серии.",
-  community: "Оценки и отзывы: то, что помогает другим выбрать, куда поехать.",
+  community:
+    "Вклад в общее дело: отзывы о стартах и волонтёрские роли, которые вы освоили.",
 };
 
 // Клетка коллекции красится в цвет системы, в которой она была закрыта раньше всего.
@@ -219,11 +220,18 @@ function isFreshlyClosed(date: string | null | undefined, recentDate: string | n
 const FRESH_TOOLTIP_LINE = "🆕 закрыто последней пробежкой";
 
 function cellTooltipLines(cell: ChallengeCell, recentDate: string | null): string[] {
-  if (cell.done && cell.date) {
+  if (cell.done) {
     const platform = cell.platform_code ? ` (${platformCodeLabel(cell.platform_code)})` : "";
-    const lines = [`закрыто ${formatDate(cell.date)} · ${cell.location ?? ""}${platform}`.trim()];
+    // Клетка бывает закрыта источником без дат — сводкой волонтёрств parkrun:
+    // тогда вместо «закрыто <дата>» показываем, откуда она вообще известна.
+    const lines = cell.date
+      ? [`закрыто ${formatDate(cell.date)} · ${cell.location ?? ""}${platform}`.trim()]
+      : [`закрыто${platform}`.trim()];
     if (cell.count != null && cell.count > 0) {
-      lines.push(pluralizeRu(cell.count, ["финиш", "финиша", "финишей"]));
+      lines.push(cell.count_label ?? pluralizeRu(cell.count, ["финиш", "финиша", "финишей"]));
+    }
+    if (!cell.date && cell.hint) {
+      lines.push(cell.hint);
     }
     if (isFreshlyClosed(cell.date, recentDate)) {
       lines.push(FRESH_TOOLTIP_LINE);
@@ -551,10 +559,18 @@ function ChallengeProgressBar({
         )}
       </div>
       {marks.map((mark, index) => {
-        const done = Boolean(mark.date);
+        // Уровень бывает взят, а даты у него нет: так приходят волонтёрства
+        // parkrun — сводкой профиля без дат. Без проверки по счётчику такой
+        // уровень рисовался незакрытым и подписывался «ещё 0».
+        const reached = current >= mark.at;
+        const done = Boolean(mark.date) || reached;
         // Дата — для взятых уровней, «ещё N» — для оставшихся: подпись на баре
         // должна отвечать «сколько надо» и «когда взял» без наведения мыши.
-        const detail = mark.date ? shortDate(mark.date) : `ещё ${Math.max(mark.at - current, 0)}`;
+        const detail = mark.date
+          ? shortDate(mark.date)
+          : reached
+            ? "взято"
+            : `ещё ${Math.max(mark.at - current, 0)}`;
         const pos = labelPositions[index];
         const atStart = pos <= LABEL_EDGE_PCT;
         const atEnd = pos >= 100 - LABEL_EDGE_PCT;
@@ -624,6 +640,7 @@ function TierTabs({
 const CHALLENGE_CTA: Record<string, { href: string; label: string }> = {
   inspector: { href: "/runs", label: "Оценить старты →" },
   reviewer: { href: "/runs", label: "Написать отзыв →" },
+  photo_reporter: { href: "/runs", label: "Добавить фото к отзыву →" },
 };
 
 // Челленджи, где есть что планировать наперёд: таблица «номер старта → у каких

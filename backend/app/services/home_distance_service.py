@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import cast
 
 from sqlalchemy.orm import Session
@@ -125,6 +125,9 @@ class HomeDistanceOverview:
     visited_count: int
     counted_count: int
     unknown_count: int
+    # Ближайшая действующая площадка, где человек ещё не бегал («компас
+    # туриста»): None, если дом без координат или закрыты вообще все.
+    nearest_unvisited: DistanceRow | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -134,6 +137,9 @@ class HomeDistanceOverview:
             "visited_count": self.visited_count,
             "counted_count": self.counted_count,
             "unknown_count": self.unknown_count,
+            "nearest_unvisited": (
+                self.nearest_unvisited.as_dict() if self.nearest_unvisited is not None else None
+            ),
         }
 
 
@@ -281,6 +287,30 @@ def _overview_from_detail(
     return overview, rows, home_coordinates
 
 
+def _overview_with_unvisited(
+    db: Session,
+    user: User,
+    detail: dict[str, object],
+) -> tuple[HomeDistanceOverview, list[DistanceRow], list[DistanceRow]]:
+    """Сводка (уже с ближайшей непосещённой) плюс обе таблицы модалки.
+
+    Список непосещённых читает весь каталог карты, поэтому строим его один раз
+    и отдаём наружу: плитке нужна только первая строка, модалке — весь список.
+    """
+    overview, visited_rows, home_coordinates = _overview_from_detail(detail, user)
+    if overview.home is None:
+        return overview, visited_rows, []
+    visited_keys = {
+        str(item["catalog_identity_key"])
+        for item in cast(list[dict[str, object]], detail["locations"])
+    }
+    unvisited_rows = _unvisited_rows(db, visited_keys, home_coordinates)
+    # Список отсортирован по расстоянию, площадки без координат — в хвосте:
+    # «ближайшая» без километров была бы просто первой по алфавиту.
+    nearest = next((row for row in unvisited_rows if row.distance_km is not None), None)
+    return replace(overview, nearest_unvisited=nearest), visited_rows, unvisited_rows
+
+
 def build_home_distance_overview(
     db: Session,
     user: User,
@@ -289,7 +319,7 @@ def build_home_distance_overview(
     catalog_index: LocationCatalogIndex | None = None,
     detail: dict[str, object] | None = None,
 ) -> HomeDistanceOverview:
-    """Сводка для плитки на главной кабинета.
+    """Сводка для плиток на главной кабинета.
 
     detail передают, когда детализация локаций уже посчитана: она стоит двух
     запросов по всем пробежкам пользователя.
@@ -301,7 +331,7 @@ def build_home_distance_overview(
             include_test_events=include_test_events,
             catalog_index=catalog_index,
         )
-    overview, _rows, _home_coordinates = _overview_from_detail(detail, user)
+    overview, _visited, _unvisited = _overview_with_unvisited(db, user, detail)
     return overview
 
 
@@ -320,16 +350,11 @@ def build_home_distance_detail(
         include_test_events=include_test_events,
         catalog_index=catalog_index,
     )
-    overview, visited_rows, home_coordinates = _overview_from_detail(detail, user)
-    visited_keys = {
-        str(item["catalog_identity_key"]) for item in cast(list[dict[str, object]], detail["locations"])
-    }
+    overview, visited_rows, unvisited_rows = _overview_with_unvisited(db, user, detail)
     return {
         **overview.as_dict(),
         "visited": [row.as_dict() for row in visited_rows],
-        "unvisited": [
-            row.as_dict() for row in _unvisited_rows(db, visited_keys, home_coordinates)
-        ],
+        "unvisited": [row.as_dict() for row in unvisited_rows],
     }
 
 

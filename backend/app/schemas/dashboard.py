@@ -53,6 +53,9 @@ class HomeDistanceResponse(BaseModel):
     visited_count: int = 0
     counted_count: int = 0
     unknown_count: int = 0
+    # Ближайшая площадка, где человек ещё не бегал: плитка «Куда дальше»
+    # в блоке туризма на главной кабинета.
+    nearest_unvisited: HomeDistanceLocationResponse | None = None
 
 
 class HomeDistanceDetailResponse(HomeDistanceResponse):

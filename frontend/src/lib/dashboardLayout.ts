@@ -67,8 +67,14 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
     cards: [
       "unique_run_locations",
       "unique_run_cities",
-      "new_locations_12m",
       "home_distance",
+      // «Куда дальше»: ближайшая площадка, где человек ещё не был. Стоит в
+      // витрине (первые четыре ключа), а не в свёрнутом хвосте: это
+      // единственная плитка группы, которая говорит о будущем, а не считает
+      // прошлое, — за «ещё N» её никто не найдёт. Ценой места в витрине идут
+      // «новые локации за 12 месяцев» — слабейший из счётчиков группы.
+      "nearest_unvisited",
+      "new_locations_12m",
       "unique_run_regions",
     ],
     panels: [],

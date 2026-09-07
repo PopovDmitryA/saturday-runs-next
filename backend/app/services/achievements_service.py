@@ -37,6 +37,7 @@ from app.models import (
     Event,
     Location,
     LocationRating,
+    LocationRatingPhoto,
     Participant,
     Platform,
     PlatformLink,
@@ -49,6 +50,11 @@ from app.services.location_map_service import MAP_HISTORIC_PLATFORM
 from app.services.platform_titles import PLATFORM_TITLES
 from app.services.user_location_stats import _canonical_region, _normalize_geo_value
 from app.time_format import normalize_finish_time_display
+from app.volunteer_role_taxonomy import (
+    CANONICAL_ROLE_LABELS,
+    canonical_volunteer_role,
+    role_occasions,
+)
 from app.volunteering_occasions import count_volunteering_for_platform, is_inventory_day, volunteer_occasion_dates
 
 LEVEL_ORDER = ("bronze", "silver", "gold")
@@ -87,6 +93,24 @@ CHALLENGE_TIERS: dict[str, dict[str, tuple[int, int, int]]] = {
     "best_year": {"easy": (5, 10, 20), "medium": (26, 34, 42), "hard": (45, 50, 55)},
     "inspector": {"easy": (1, 5, 10), "medium": (20, 40, 70), "hard": (100, 150, 200)},
     "reviewer": {"easy": (1, 3, 7), "medium": (15, 25, 50), "hard": (75, 100, 150)},
+    # Фото к отзыву — самая дорогая форма обратной связи: снять, выбрать,
+    # загрузить. На 04.09.2026 фото приложили 17 человек, максимум — два
+    # отзыва, поэтому лёгкий тир начинается с одного и не уходит дальше пяти.
+    "photo_reporter": {"easy": (1, 3, 5), "medium": (10, 20, 35), "hard": (50, 75, 100)},
+    # V-индекс — те же пороги, что у p-индекса (решение Дмитрия 07.09.2026).
+    # Оба индекса Хирша, и шкала у них должна читаться одинаково: V=5 и p=5
+    # это одно и то же число, странно давать за них разные медали. То, что
+    # роли набираются легче локаций (V>=3 у 64% волонтёров против p>=3 у 38%
+    # бегунов), делает V-индекс не «лёгким тиром», а просто более доступным
+    # челленджем — снижать под это пороги значит обесценивать медаль.
+    "v_index": {"easy": (2, 3, 4), "medium": (5, 6, 8), "hard": (10, 12, 15)},
+    # «Мастер на все роли» — счётчик РАЗНЫХ освоенных ролей, любых: цель не в
+    # том, чтобы закрыть конкретный список (у каждой площадки он свой), а в
+    # широте. Потолок лестницы — 20 ролей (решение Дмитрия 07.09.2026), три
+    # тира разложены по всему диапазону. Доли 588 волонтёров прод-базы со
+    # сводкой parkrun: лёгкий — 95 / 83 / 72 %, средний — 60 / 50 / 35 %,
+    # сложный — 23 / 14 / 5.6 %. В справочнике 37 ролей, рекорд базы — 25.
+    "role_master": {"easy": (2, 4, 6), "medium": (8, 10, 13), "hard": (15, 17, 20)},
 }
 
 # Диапазоны номеров для «Нумератора» и «Нумератора ПРО». Одни и те же границы
@@ -124,6 +148,31 @@ class RatingRow:
     rated_on: date
     platform_code: str
     is_review: bool
+    # Приложено ли к оценке хотя бы одно фото — счётчик «Фоторепортёра».
+    has_photo: bool
+
+
+@dataclass(frozen=True)
+class VolunteerRoleRow:
+    """Волонтёрство с приведённой к общему знаменателю ролью.
+
+    role_key/role_label — результат canonical_volunteer_role: «Сканирование»
+    RunPark, «Сканер» С95 и «Barcode Scanning» parkrun — одна и та же роль,
+    иначе V-индекс и чек-лист ролей завышались бы за счёт того, что системы
+    называют одну и ту же работу по-своему.
+
+    event_date = None и occasions > 1 — это parkrun: он отдаёт не протоколы, а
+    сводку профиля («Marshal (12×)» — двенадцать смен маршалом без дат). Такие
+    смены в зачёт идут (иначе ветеран parkrun выглядел бы новичком), но
+    датировать уровни ими нельзя.
+    """
+
+    event_date: date | None
+    platform_code: str
+    role_key: str
+    role_label: str
+    location_name: str
+    occasions: int = 1
 
 
 @dataclass(frozen=True)
@@ -184,20 +233,77 @@ def _collect_run_rows(db: Session, user_id: UUID) -> list[RunRow]:
 
 
 def _collect_rating_rows(db: Session, user_id: UUID) -> list[RatingRow]:
-    """Оценки пользователя: когда оценил, в какой системе, рецензия или звёзды."""
-    query = (
-        db.query(LocationRating.created_at, LocationRating.platform_code, LocationRating.comment)
-        .filter(LocationRating.user_id == user_id)
+    """Оценки пользователя: когда оценил, в какой системе, рецензия или звёзды,
+    и есть ли фото. Фото считаем наличием, а не количеством: пять кадров на
+    один старт — это по-прежнему один рассказ о нём."""
+    photos = (
+        db.query(LocationRatingPhoto.rating_id)
+        .filter(LocationRatingPhoto.rating_id == LocationRating.id)
+        .exists()
     )
+    query = db.query(
+        LocationRating.created_at,
+        LocationRating.platform_code,
+        LocationRating.comment,
+        photos.label("has_photo"),
+    ).filter(LocationRating.user_id == user_id)
     rows = [
         RatingRow(
             rated_on=created_at.date(),
             platform_code=platform_code,
             is_review=len((comment or "").strip()) >= REVIEW_MIN_COMMENT_LEN,
+            has_photo=bool(has_photo),
         )
-        for created_at, platform_code, comment in query.all()
+        for created_at, platform_code, comment, has_photo in query.all()
     ]
     rows.sort(key=lambda row: row.rated_on)
+    return rows
+
+
+def _collect_volunteer_role_rows(db: Session, user_id: UUID) -> list[VolunteerRoleRow]:
+    """Волонтёрства с каноническими ролями — для V-индекса и чек-листа ролей.
+
+    Отдельный сбор от _collect_volunteer_rows: тому нужны только дата и
+    локация (он считает поводы по календарю), а здесь важна роль и не важно
+    схлопывание нескольких ролей одного дня — две разные роли в одну субботу
+    это две освоенные роли.
+    """
+    query = (
+        db.query(Event.event_date, VolunteerResult.role, Platform.code, Location)
+        .select_from(VolunteerResult)
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(PlatformLink, PlatformLink.participant_id == VolunteerResult.participant_id)
+        .filter(
+            PlatformLink.user_id == user_id,
+            PlatformLink.platform_id == Platform.id,
+            Event.is_test_event.is_(False),
+        )
+    )
+    catalog_index = LocationCatalogIndex(db)
+    rows: list[VolunteerRoleRow] = []
+    for event_date, role, platform_code, location in query.all():
+        canonical = canonical_volunteer_role(role)
+        if canonical is None:
+            continue
+        # Сводка parkrun лежит на псевдо-событии 1970-01-01 — обычно такие
+        # строки отсекает _EPOCH_GUARD, но здесь они нужны: без них ветеран
+        # parkrun остался бы с пустым чек-листом ролей.
+        dated = event_date is not None and event_date > _EPOCH_GUARD
+        rows.append(
+            VolunteerRoleRow(
+                event_date=event_date if dated else None,
+                platform_code=platform_code,
+                role_key=canonical.key,
+                role_label=canonical.label,
+                location_name=catalog_index.display_name(location, platform_code),
+                occasions=1 if dated else (role_occasions(role) or 1),
+            )
+        )
+    # Недатированная сводка идёт первой: российские parkrun работали
+    # 2014–2022, то есть в основном ДО появления 5 вёрст и С95.
+    rows.sort(key=lambda row: (row.event_date is not None, row.event_date or date.min, row.role_key))
     return rows
 
 
@@ -284,6 +390,27 @@ def _level_dates(sorted_dates: list[date], levels: dict[str, int]) -> dict[str, 
     for level in LEVEL_ORDER:
         threshold = levels[level]
         result[level] = sorted_dates[threshold - 1].isoformat() if 1 <= threshold <= len(sorted_dates) else None
+    return result
+
+
+def _level_dates_optional(
+    ordered_dates: list[date | None], levels: dict[str, int]
+) -> dict[str, str | None]:
+    """Как _level_dates, но часть шагов счётчика может быть без даты.
+
+    Нужно там, где в зачёт идёт сводка parkrun: смены есть, дат у них нет.
+    Недатированные шаги стоят в начале списка (parkrun-эпоха раньше 5 вёрст),
+    и уровень, взятый на них, честно остаётся без даты — вместо того чтобы
+    приписать ему дату первой российской субботы.
+    """
+    result: dict[str, str | None] = {}
+    for level in LEVEL_ORDER:
+        threshold = levels[level]
+        if 1 <= threshold <= len(ordered_dates):
+            reached = ordered_dates[threshold - 1]
+            result[level] = reached.isoformat() if reached is not None else None
+        else:
+            result[level] = None
     return result
 
 
@@ -1067,6 +1194,192 @@ def _reviewer_challenge(rating_rows: list[RatingRow]) -> dict[str, object]:
     )
 
 
+def _photo_reporter_challenge(rating_rows: list[RatingRow]) -> dict[str, object]:
+    """Третья ступень обратной связи: звёзды → текст → фотографии.
+
+    Считаем ОЦЕНКИ С ФОТО, а не сами файлы: пять кадров с одного старта — это
+    один рассказ о нём, и счётчик не должен поощрять заливку галереи вместо
+    поездки на новую площадку.
+    """
+    sorted_dates = sorted(row.rated_on for row in rating_rows if row.has_photo)
+    return _challenge(
+        code="photo_reporter",
+        title="Фоторепортёр",
+        icon="📸",
+        description=(
+            "Приложи к отзыву фотографии: старт, финишный створ, трасса, указатели. "
+            "Одна фотография объясняет про место больше, чем абзац текста, — по ней видно, "
+            "во что одеваться, где парковаться и на что там вообще смотреть."
+        ),
+        category="community",
+        current=len(sorted_dates),
+        unit="отзывов с фото",
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
+def _v_index(counts: dict[str, int]) -> int:
+    """V такое, что найдётся V ролей, каждая выполнена минимум V раз."""
+    value = 0
+    for index, count in enumerate(sorted(counts.values(), reverse=True), start=1):
+        if count >= index:
+            value = index
+        else:
+            break
+    return value
+
+
+def _v_index_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
+    """V-индекс волонтёра — индекс Хирша, посчитанный по ролям.
+
+    **parkrun в зачёт не идёт (решение Дмитрия 07.09.2026).** Он отдаёт не
+    протоколы, а сводку профиля: у смены нет ни локации, ни даты, только
+    «Marshal (12×)». Считать по ней индекс, который меряет ГЛУБИНУ освоения
+    роли, не на чем — непонятно даже, на скольких разных площадках эти
+    двенадцать смен случились. В «Мастере на все роли» сводка, наоборот,
+    остаётся: там вопрос «выходил ли вообще», и на него она отвечает честно.
+
+    Даты уровней считаются проигрыванием истории: индекс не может вырасти
+    больше чем на 1 за одно волонтёрство, поэтому список «дат, когда индекс
+    поднялся» ровно той же длины, что и сам индекс.
+    """
+    counts: Counter[str] = Counter()
+    labels: dict[str, str] = {}
+    growth_dates: list[date | None] = []
+    current = 0
+    for row in rows:
+        if row.platform_code == MAP_HISTORIC_PLATFORM:
+            continue
+        counts[row.role_key] += row.occasions
+        labels.setdefault(row.role_key, row.role_label)
+        updated = _v_index(counts)
+        while updated > current:
+            growth_dates.append(row.event_date)
+            current += 1
+
+    def _to_next_label(levels: dict[str, int], next_level: str) -> str | None:
+        needed = _volunteerings_needed_for_v(counts, levels[next_level])
+        return f"ещё {needed} {_plural_ru(needed, ('волонтёрство', 'волонтёрства', 'волонтёрств'))}"
+
+    top = [
+        {"value": labels[key], "count": count}
+        for key, count in sorted(counts.items(), key=lambda item: (-item[1], labels[item[0]]))[:20]
+    ]
+    return _challenge(
+        code="v_index",
+        title="V-индекс",
+        icon="🧰",
+        description=(
+            "V разных волонтёрских ролей, каждую минимум по V раз. "
+            "Индекс растёт не от того, что вы двадцатый раз сканируете коды, "
+            "а от того, что умеете подменить любого в субботней команде."
+        ),
+        category="community",
+        current=current,
+        unit="",
+        detail={"items": top},
+        level_dates_fn=lambda levels: _level_dates_optional(growth_dates, levels),
+        to_next_label_fn=_to_next_label,
+    )
+
+
+def _volunteerings_needed_for_v(counts: Counter[str], target: int) -> int:
+    """Сколько волонтёрств не хватает до V-индекса target — дешевейшим путём.
+
+    Добираем target ролей, начиная с самых освоенных: каждая должна набрать
+    target выполнений. Роли, которых человек ещё не пробовал, стоят полные
+    target раз каждая, поэтому недостающие позиции считаем как нули.
+    """
+    have = sorted(counts.values(), reverse=True)[:target]
+    have += [0] * (target - len(have))
+    return sum(max(target - count, 0) for count in have)
+
+
+def _role_master_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
+    """Сколько РАЗНЫХ волонтёрских ролей человек освоил — любых.
+
+    Решение Дмитрия 07.09.2026: не фиксированный список ролей, а счётчик
+    широты. Список бы наказывал за площадку: в 5 вёрстах есть «Проверка
+    трассы», в С95 — «Организация питания», и человек не виноват, что у его
+    старта нет какой-то роли из чужой системы. Пятнадцать любых — цель, до
+    которой можно дойти в любой из систем.
+
+    Роли приведены к общему знаменателю (см. volunteer_role_taxonomy), так что
+    «Секундомер» 5 вёрст, «Хронометраж» С95 и «Timekeeper» parkrun — одна
+    освоенная роль, а не три. Сводка parkrun в зачёт идёт: на вопрос «выходил
+    ли на роль вообще» она отвечает честно, даже без дат.
+    """
+    first_by_role: dict[str, VolunteerRoleRow] = {}
+    counts: Counter[str] = Counter()
+    for row in rows:
+        counts[row.role_key] += row.occasions
+        known = first_by_role.get(row.role_key)
+        # Роль могла прийти и датированной строкой, и сводкой parkrun. В клетке
+        # показываем датированную: «закрыто 12.10.24 в Кузьминках» полезнее,
+        # чем «закрыто по сводке parkrun», даже если parkrun был раньше.
+        if known is None or (known.event_date is None and row.event_date is not None):
+            first_by_role[row.role_key] = row
+
+    def _cell_for(key: str, label: str) -> dict[str, object]:
+        row = first_by_role.get(key)
+        count = counts.get(key) or None
+        return {
+            "label": label,
+            "done": row is not None,
+            "date": row.event_date.isoformat() if row is not None and row.event_date else None,
+            "location": row.location_name if row is not None and row.event_date else None,
+            "hint": (
+                "Роль ещё не пробовали"
+                if row is None
+                else (
+                    "Закрыто по сводке волонтёрств parkrun — дат она не хранит"
+                    if row.event_date is None
+                    else None
+                )
+            ),
+            "platform_code": row.platform_code if row is not None else None,
+            "count": count,
+            "count_label": (
+                f"{count} {_plural_ru(count, ('волонтёрство', 'волонтёрства', 'волонтёрств'))}"
+                if count
+                else None
+            ),
+        }
+
+    # Клетки — весь справочник ролей в порядке субботнего утра: это не
+    # обязательный список, а меню, из которого набираются пятнадцать любых.
+    cells = [_cell_for(key, label) for key, label in CANONICAL_ROLE_LABELS.items()]
+    # Роль, которой в справочнике ещё нет (система завела новую), не теряется:
+    # она идёт под своим названием в хвосте — и в счётчик, и в меню.
+    cells += [
+        _cell_for(key, first_by_role[key].role_label)
+        for key in first_by_role
+        if key not in CANONICAL_ROLE_LABELS
+    ]
+    # Роли, закрытые недатированной сводкой parkrun, идут первыми: см.
+    # порядок строк в _collect_volunteer_role_rows.
+    sorted_dates: list[date | None] = sorted(
+        (row.event_date for row in first_by_role.values()),
+        key=lambda value: (value is not None, value or date.min),
+    )
+    return _challenge(
+        code="role_master",
+        title="Мастер на все роли",
+        icon="🧑\u200d🔧",
+        description=(
+            "Освой как можно больше разных волонтёрских ролей — годятся любые. "
+            "Двадцать освоенных, золото сложного уровня, означают, что вас можно позвать "
+            "на любую позицию и старт состоится. Одна и та же работа в разных системах "
+            "считается одной ролью."
+        ),
+        category="community",
+        current=len(first_by_role),
+        unit="ролей",
+        detail={"cells": cells},
+        level_dates_fn=lambda levels: _level_dates_optional(sorted_dates, levels),
+    )
+
+
 def _regions_challenge(rows: list[RunRow]) -> dict[str, object]:
     first_visit: dict[str, date] = {}
     for row in rows:
@@ -1275,6 +1588,7 @@ def _build_challenge_list(
     vol_rows: dict[str, list[tuple[date, str]]],
     upcoming: dict[tuple[str, int], list[tuple[date, str]]],
     rating_rows: list[RatingRow],
+    vol_role_rows: list[VolunteerRoleRow],
     *,
     alphabet_names: dict[str, set[str]],
     platform_code: str | None,
@@ -1314,6 +1628,9 @@ def _build_challenge_list(
         _best_year_challenge(rows),
         _inspector_challenge(rating_rows),
         _reviewer_challenge(rating_rows),
+        _photo_reporter_challenge(rating_rows),
+        _v_index_challenge(vol_role_rows),
+        _role_master_challenge(vol_role_rows),
     ]
 
 
@@ -1331,22 +1648,25 @@ def _scope_by_platform(
     vol_rows: dict[str, list[tuple[date, str]]],
     upcoming: dict[tuple[str, int], list[tuple[date, str]]],
     rating_rows: list[RatingRow],
+    vol_role_rows: list[VolunteerRoleRow],
     platform_code: str | None,
 ) -> tuple[
     list[RunRow],
     dict[str, list[tuple[date, str]]],
     dict[tuple[str, int], list[tuple[date, str]]],
     list[RatingRow],
+    list[VolunteerRoleRow],
 ]:
-    """Сужает пробежки/волонтёрства/прогноз номеров/оценки до одной системы — для
-    челленджей в разрезе платформы. None — без сужения (сквозной вид)."""
+    """Сужает пробежки/волонтёрства/прогноз номеров/оценки/роли до одной системы —
+    для челленджей в разрезе платформы. None — без сужения (сквозной вид)."""
     if platform_code is None:
-        return rows, vol_rows, upcoming, rating_rows
+        return rows, vol_rows, upcoming, rating_rows, vol_role_rows
     scoped_rows = [row for row in rows if row.platform_code == platform_code]
     scoped_vol_rows = {code: v for code, v in vol_rows.items() if code == platform_code}
     scoped_upcoming = {key: v for key, v in upcoming.items() if key[0] == platform_code}
     scoped_rating_rows = [row for row in rating_rows if row.platform_code == platform_code]
-    return scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows
+    scoped_role_rows = [row for row in vol_role_rows if row.platform_code == platform_code]
+    return scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows, scoped_role_rows
 
 
 class StartNumberPlanError(ValueError):
@@ -1435,10 +1755,15 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
     vol_rows = _collect_volunteer_rows(db, user_id)
     upcoming = _upcoming_event_numbers(db)
     rating_rows = _collect_rating_rows(db, user_id)
+    vol_role_rows = _collect_volunteer_role_rows(db, user_id)
 
-    scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows = _scope_by_platform(
-        rows, vol_rows, upcoming, rating_rows, platform_code
-    )
+    (
+        scoped_rows,
+        scoped_vol_rows,
+        scoped_upcoming,
+        scoped_rating_rows,
+        scoped_role_rows,
+    ) = _scope_by_platform(rows, vol_rows, upcoming, rating_rows, vol_role_rows, platform_code)
 
     # Каталог букв «Алфавита» зависит от того же фильтра систем — читаем его
     # один раз на оба прогона списка челленджей (второй считает recent_delta).
@@ -1449,6 +1774,7 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
         scoped_vol_rows,
         scoped_upcoming,
         scoped_rating_rows,
+        scoped_role_rows,
         alphabet_names=alphabet_names,
         platform_code=platform_code,
     )
@@ -1465,6 +1791,7 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
                 scoped_vol_rows,
                 scoped_upcoming,
                 scoped_rating_rows,
+                scoped_role_rows,
                 alphabet_names=alphabet_names,
                 platform_code=platform_code,
             )

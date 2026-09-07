@@ -198,6 +198,8 @@ export type HomeDistance = {
   visited_count: number;
   counted_count: number;
   unknown_count: number;
+  /** Ближайшая действующая площадка, где участник ещё не бегал. */
+  nearest_unvisited: HomeDistanceLocation | null;
 };
 
 export type HomeDistanceDetail = HomeDistance & {
@@ -1088,11 +1090,15 @@ export type ChallengeLevel = "bronze" | "silver" | "gold";
 export type ChallengeCell = {
   label: string;
   done: boolean;
+  /** null у закрытой клетки — источник без дат (сводка волонтёрств parkrun). */
   date: string | null;
   location: string | null;
+  /** У незакрытой — как закрыть; у закрытой без даты — откуда она известна. */
   hint: string | null;
   platform_code: string | null;
   count?: number | null;
+  /** Готовая подпись к count, когда «финиш» не подходит («8 волонтёрств»). */
+  count_label?: string | null;
 };
 
 export type ChallengeLetter = {

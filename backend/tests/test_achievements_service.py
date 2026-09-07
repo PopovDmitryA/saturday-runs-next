@@ -10,6 +10,7 @@ from app.services.achievements_service import (
     REVIEW_MIN_COMMENT_LEN,
     RatingRow,
     RunRow,
+    VolunteerRoleRow,
     _alphabet_challenge,
     _alphabet_tiers,
     _best_year_challenge,
@@ -27,9 +28,11 @@ from app.services.achievements_service import (
     _p_index_challenge,
     _p_index_level_dates,
     _palindrome_challenge,
+    _photo_reporter_challenge,
     _positions_challenge,
     _resolve_level,
     _reviewer_challenge,
+    _role_master_challenge,
     _rows_before_last_activity,
     _runs_needed_for_p,
     _saturdays_left,
@@ -41,9 +44,12 @@ from app.services.achievements_service import (
     _threshold_dates,
     _time_display,
     _upcoming_hint,
+    _v_index,
+    _v_index_challenge,
     _weekdays_challenge,
     _year_fraction_elapsed,
 )
+from app.volunteer_role_taxonomy import CANONICAL_ROLE_LABELS
 
 
 def _row(
@@ -74,8 +80,42 @@ def _rating_row(
     rated_on: date = date(2026, 1, 4),
     platform_code: str = "five_verst",
     is_review: bool = False,
+    has_photo: bool = False,
 ) -> RatingRow:
-    return RatingRow(rated_on=rated_on, platform_code=platform_code, is_review=is_review)
+    return RatingRow(
+        rated_on=rated_on,
+        platform_code=platform_code,
+        is_review=is_review,
+        has_photo=has_photo,
+    )
+
+
+def _role_row(
+    event_date: date | None = date(2026, 1, 3),
+    role_key: str = "marshal",
+    platform_code: str = "five_verst",
+    location_name: str = "Кузьминки",
+    occasions: int = 1,
+) -> VolunteerRoleRow:
+    return VolunteerRoleRow(
+        event_date=event_date,
+        platform_code=platform_code,
+        role_key=role_key,
+        role_label=CANONICAL_ROLE_LABELS.get(role_key, role_key),
+        location_name=location_name,
+        occasions=occasions,
+    )
+
+
+def _parkrun_row(role_key: str, occasions: int) -> VolunteerRoleRow:
+    """Строка из сводки parkrun: смены есть, дат у них нет."""
+    return _role_row(
+        event_date=None,
+        role_key=role_key,
+        platform_code="parkrun",
+        location_name="Измайловский",
+        occasions=occasions,
+    )
 
 
 def test_resolve_level_progression() -> None:
@@ -189,19 +229,30 @@ def test_scope_by_platform_filters_rows_vol_rows_and_upcoming() -> None:
         _rating_row(platform_code="s95", rated_on=date(2026, 1, 11)),
     ]
 
-    scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows = _scope_by_platform(
-        rows, vol_rows, upcoming, rating_rows, "s95"
-    )
+    role_rows = [
+        _role_row(platform_code="five_verst", event_date=date(2026, 1, 3)),
+        _role_row(platform_code="s95", event_date=date(2026, 1, 10)),
+    ]
+
+    (
+        scoped_rows,
+        scoped_vol_rows,
+        scoped_upcoming,
+        scoped_rating_rows,
+        scoped_role_rows,
+    ) = _scope_by_platform(rows, vol_rows, upcoming, rating_rows, role_rows, "s95")
     assert [row.platform_code for row in scoped_rows] == ["s95"]
     assert set(scoped_vol_rows) == {"s95"}
     assert set(scoped_upcoming) == {("s95", 42)}
     assert [row.platform_code for row in scoped_rating_rows] == ["s95"]
+    assert [row.platform_code for row in scoped_role_rows] == ["s95"]
 
-    assert _scope_by_platform(rows, vol_rows, upcoming, rating_rows, None) == (
+    assert _scope_by_platform(rows, vol_rows, upcoming, rating_rows, role_rows, None) == (
         rows,
         vol_rows,
         upcoming,
         rating_rows,
+        role_rows,
     )
 
 
@@ -683,3 +734,195 @@ def test_goal_progress_finish_under_recent_delta_zero_if_slower() -> None:
     rows = rows_before + [_row(event_date=date(2026, 1, 10), finish_time_sec=1600)]
     result = _goal_progress(goal, rows=rows, vol_rows={}, today=date(2026, 1, 10), rows_before=rows_before)
     assert result["recent_delta"] == 0
+
+
+def test_photo_reporter_counts_only_ratings_with_photo() -> None:
+    rows = [
+        _rating_row(rated_on=date(2026, 1, 4), has_photo=True),
+        _rating_row(rated_on=date(2026, 1, 11)),
+        _rating_row(rated_on=date(2026, 1, 18), has_photo=True),
+        _rating_row(rated_on=date(2026, 1, 25), is_review=True),
+    ]
+    challenge = _photo_reporter_challenge(rows)
+    assert challenge["code"] == "photo_reporter"
+    assert challenge["current"] == 2
+    easy = _tier(challenge, "easy")
+    # Пороги лёгкого тира 1/3/5: две оценки с фото — бронза, до серебра одна.
+    assert easy["level"] == "bronze"
+    assert easy["to_next_level"] == 1
+    assert easy["level_dates"]["bronze"] == "2026-01-04"
+
+
+def test_photo_reporter_empty_has_no_level() -> None:
+    challenge = _photo_reporter_challenge([_rating_row(), _rating_row(is_review=True)])
+    assert challenge["current"] == 0
+    assert challenge["best_level"] is None
+
+
+def test_v_index_needs_v_roles_done_v_times() -> None:
+    # Три роли по три раза — индекс 3; четвёртая роль одним разом его не двигает.
+    counts = {"marshal": 3, "timekeeper": 3, "barcode_scanning": 3, "pacer": 1}
+    assert _v_index(counts) == 3
+    # Одна роль двадцать раз — это всё ещё индекс 1.
+    assert _v_index({"marshal": 20}) == 1
+    assert _v_index({}) == 0
+
+
+def test_v_index_challenge_dates_levels_by_history() -> None:
+    rows = [
+        _role_row(role_key="marshal", event_date=date(2026, 1, 3)),
+        _role_row(role_key="timekeeper", event_date=date(2026, 1, 10)),
+        # Индекс 2 берётся только когда обе роли выполнены дважды.
+        _role_row(role_key="marshal", event_date=date(2026, 1, 17)),
+        _role_row(role_key="timekeeper", event_date=date(2026, 1, 24)),
+    ]
+    challenge = _v_index_challenge(rows)
+    assert challenge["current"] == 2
+    easy = _tier(challenge, "easy")
+    # Пороги лёгкого тира 2/3/4: бронза взята вторым подъёмом индекса.
+    assert easy["level_dates"]["bronze"] == "2026-01-24"
+    assert easy["level_dates"]["silver"] is None
+    # Детали — роли с числом смен, самые освоенные сверху.
+    assert challenge["detail"]["items"][0]["count"] == 2
+
+
+def test_v_index_to_next_label_counts_missing_volunteerings() -> None:
+    # Две роли по два раза: до индекса 3 нужны третьи разы обеих ролей плюс
+    # три раза третьей роли — итого 5.
+    rows = [
+        _role_row(role_key="marshal", event_date=date(2026, 1, 3)),
+        _role_row(role_key="marshal", event_date=date(2026, 1, 10)),
+        _role_row(role_key="timekeeper", event_date=date(2026, 1, 17)),
+        _role_row(role_key="timekeeper", event_date=date(2026, 1, 24)),
+    ]
+    challenge = _v_index_challenge(rows)
+    assert challenge["current"] == 2
+    assert _tier(challenge, "easy")["to_next_label"] == "ещё 5 волонтёрств"
+
+
+def test_role_master_counts_any_distinct_roles() -> None:
+    rows = [
+        _role_row(role_key="marshal", event_date=date(2026, 1, 3)),
+        _role_row(role_key="marshal", event_date=date(2026, 1, 10)),
+        _role_row(role_key="timekeeper", event_date=date(2026, 1, 17)),
+        # Роли фиксированного списка больше нет: фотограф считается наравне.
+        _role_row(role_key="photographer", event_date=date(2026, 1, 24)),
+    ]
+    challenge = _role_master_challenge(rows)
+    assert challenge["current"] == 3
+    cells = challenge["detail"]["cells"]
+    # Клетки — весь справочник ролей: это меню, а не обязательный список.
+    assert len(cells) == len(CANONICAL_ROLE_LABELS)
+    by_label = {cell["label"]: cell for cell in cells}
+    marshal = by_label[CANONICAL_ROLE_LABELS["marshal"]]
+    assert marshal["done"] is True
+    assert marshal["date"] == "2026-01-03"
+    assert marshal["count"] == 2
+    assert marshal["location"] == "Кузьминки"
+    assert by_label[CANONICAL_ROLE_LABELS["photographer"]]["done"] is True
+    assert by_label[CANONICAL_ROLE_LABELS["run_director"]]["done"] is False
+
+
+def test_role_master_gold_is_twenty_any_roles() -> None:
+    keys = list(CANONICAL_ROLE_LABELS)[:20]
+    rows = [
+        _role_row(role_key=key, event_date=date(2026, 1, 3) + timedelta(days=index))
+        for index, key in enumerate(keys)
+    ]
+    challenge = _role_master_challenge(rows)
+    assert challenge["current"] == 20
+    # Три уровня сложности, лестница упирается в 20 ролей на золоте сложного.
+    assert [tier["tier"] for tier in challenge["tiers"]] == ["easy", "medium", "hard"]
+    hard = _tier(challenge, "hard")
+    assert hard["levels"] == {"bronze": 15, "silver": 17, "gold": 20}
+    assert hard["level"] == "gold"
+    assert challenge["best_tier"] == "hard"
+
+
+def test_role_master_keeps_unknown_role_as_its_own_cell() -> None:
+    # Роль, которой ещё нет в справочнике, идёт в зачёт под своим названием —
+    # иначе счётчик занижался бы на свежих данных прода.
+    unknown = VolunteerRoleRow(
+        event_date=date(2026, 1, 3),
+        platform_code="five_verst",
+        role_key="raw:novaya_rol",
+        role_label="Новая роль",
+        location_name="Кузьминки",
+    )
+    challenge = _role_master_challenge([unknown])
+    assert challenge["current"] == 1
+    cells = challenge["detail"]["cells"]
+    assert len(cells) == len(CANONICAL_ROLE_LABELS) + 1
+    assert cells[-1]["label"] == "Новая роль"
+    assert cells[-1]["done"] is True
+
+
+def test_v_index_ignores_parkrun_summary() -> None:
+    # Сводка parkrun в V-индекс не идёт вовсе: у смены нет ни локации, ни даты,
+    # а индекс меряет глубину освоения роли. Три роли по три смены дали бы
+    # индекс 3 — но здесь счётчик остаётся нулевым.
+    rows = [
+        _parkrun_row("marshal", 3),
+        _parkrun_row("timekeeper", 3),
+        _parkrun_row("barcode_scanning", 3),
+    ]
+    challenge = _v_index_challenge(rows)
+    assert challenge["current"] == 0
+    assert challenge["best_level"] is None
+    assert challenge["detail"]["items"] == []
+
+
+def test_v_index_counts_only_dated_shifts_next_to_parkrun() -> None:
+    # Пять parkrun-смен на каждую из двух ролей игнорируются целиком: индекс
+    # набирается только датированными стартами, и датируется по ним же.
+    rows = [
+        _parkrun_row("marshal", 5),
+        _parkrun_row("timekeeper", 5),
+        _role_row(role_key="marshal", event_date=date(2026, 1, 3)),
+        _role_row(role_key="marshal", event_date=date(2026, 1, 10)),
+        _role_row(role_key="timekeeper", event_date=date(2026, 1, 17)),
+        _role_row(role_key="timekeeper", event_date=date(2026, 1, 24)),
+    ]
+    challenge = _v_index_challenge(rows)
+    # Со сводкой было бы 5, без неё — две роли по два раза.
+    assert challenge["current"] == 2
+    easy = _tier(challenge, "easy")
+    assert easy["level"] == "bronze"
+    assert easy["level_dates"]["bronze"] == "2026-01-24"
+    assert [item["count"] for item in challenge["detail"]["items"]] == [2, 2]
+
+
+def test_role_master_counts_parkrun_summary_roles() -> None:
+    # Асимметрия намеренная: V-индекс сводку parkrun игнорирует (см.
+    # test_v_index_ignores_parkrun_summary), а чек-лист — учитывает: на вопрос
+    # «выходил ли на роль вообще» сводка отвечает честно.
+    rows = [
+        _parkrun_row("marshal", 4),
+        _parkrun_row("timekeeper", 1),
+        _role_row(role_key="run_director", event_date=date(2026, 1, 3)),
+    ]
+    challenge = _role_master_challenge(rows)
+    assert challenge["current"] == 3
+    by_label = {cell["label"]: cell for cell in challenge["detail"]["cells"]}
+    assert by_label[CANONICAL_ROLE_LABELS["run_director"]]["done"] is True
+    marshal = by_label[CANONICAL_ROLE_LABELS["marshal"]]
+    assert marshal["done"] is True
+    assert marshal["date"] is None
+    assert marshal["count"] == 4
+    assert marshal["count_label"] == "4 волонтёрства"
+    assert "parkrun" in str(marshal["hint"])
+
+
+def test_role_master_prefers_dated_row_over_parkrun_summary() -> None:
+    # Роль закрыта и сводкой parkrun, и обычным стартом: в клетке показываем
+    # датированный — «закрыто 03.01.26 в Кузьминках» полезнее «без даты».
+    rows = [
+        _parkrun_row("marshal", 4),
+        _role_row(role_key="marshal", event_date=date(2026, 1, 3)),
+    ]
+    challenge = _role_master_challenge(rows)
+    by_label = {cell["label"]: cell for cell in challenge["detail"]["cells"]}
+    marshal = by_label[CANONICAL_ROLE_LABELS["marshal"]]
+    assert marshal["date"] == "2026-01-03"
+    assert marshal["location"] == "Кузьминки"
+    assert marshal["count"] == 5
