@@ -2105,6 +2105,15 @@
   align-items: flex-start;
 }
 
+.portal-about-author-photo {
+  flex: none;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border-soft);
+}
+
 .portal-about-author-badge {
   flex: none;
   width: 52px;

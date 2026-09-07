@@ -167,6 +167,9 @@ const PRINCIPLES = [
   },
 ] as const;
 
+// Фото автора — тот же снимок, что и в его профиле на сайте (frontend/public).
+const AUTHOR_PHOTO_SRC = "/author-popov.jpg";
+
 const TELEGRAM_CONTACTS = [
   {
     title: "Личный Telegram",
@@ -393,9 +396,14 @@ export function PortalAboutPage() {
           </div>
           <div className="portal-about-author">
             <div className="portal-about-author-card">
-              <span className="portal-about-author-badge" aria-hidden="true">
-                DP
-              </span>
+              <img
+                className="portal-about-author-photo"
+                src={AUTHOR_PHOTO_SRC}
+                alt="Дмитрий Попов"
+                width={60}
+                height={60}
+                loading="lazy"
+              />
               <div>
                 <b>Дмитрий Попов</b>
                 <p>
