@@ -32,6 +32,8 @@ const SHARE_SUBJECT_LABELS: Record<string, string> = {
   location_card: "Локация: визитка",
   location_me: "Я на этой локации",
   rating: "Позиция в рейтинге",
+  location_protocol: "Локация: протокол",
+  organizer_post: "Постер из поста организатора",
 };
 
 const SHARE_ENTRY_LABELS: Record<string, string> = {
@@ -43,6 +45,7 @@ const SHARE_ENTRY_LABELS: Record<string, string> = {
   location: "страница локации",
   rating: "рейтинги",
   gallery: "страница /share",
+  organizer: "кабинет организатора",
 };
 
 const SHARE_CHANNEL_LABELS: Record<string, string> = {
@@ -62,6 +65,7 @@ const SHARE_LOOK_LABELS: Record<string, string> = {
 
 const SHARE_FORMAT_LABELS: Record<string, string> = {
   story: "Сториз 9:16",
+  feed: "Лента 4:5",
   square: "Квадрат 1:1",
   wide: "Широкий",
 };

@@ -86,7 +86,7 @@ function fullYearsSince(date: string | null | undefined): number | null {
  * Протоколы приходят с фамилией капсом («Алексей РЕУНКОВ»). На постере это
  * выглядит как крик, поэтому приводим к обычному виду, сохраняя дефисы.
  */
-function humanizeName(name: string | null | undefined): string | null {
+export function humanizeName(name: string | null | undefined): string | null {
   const trimmed = name?.trim();
   if (!trimmed) {
     return null;

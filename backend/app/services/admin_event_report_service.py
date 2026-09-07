@@ -17,7 +17,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Event, LocationCatalogLink
-from app.volunteer_role_taxonomy import canonical_volunteer_role
+from app.volunteer_role_taxonomy import canonical_volunteer_role, platform_role_label, strip_role_counters
 
 # Глобальные клубные уровни (пробежки и волонтёрства в системе платформы).
 CLUB_LEVELS = (10, 25, 50, 100, 250)
@@ -295,7 +295,7 @@ def _volunteer_stat_rows(db: Session, params: dict[str, Any]) -> list[dict[str, 
 
 
 def _new_canonical_roles(
-    roles: list[str] | None, prev_roles: list[str] | None
+    roles: list[str] | None, prev_roles: list[str] | None, platform_code: str = ""
 ) -> list[str]:
     """Ярлыки сегодняшних ролей, которых не было в истории волонтёра.
 
@@ -315,7 +315,8 @@ def _new_canonical_roles(
         if canonical is None or canonical.key in prev_keys or canonical.key in seen:
             continue
         seen.add(canonical.key)
-        new_labels.append(canonical.label)
+        # Название новой роли — тоже словами своей системы.
+        new_labels.append(platform_role_label(platform_code, role, canonical) if platform_code else canonical.label)
     return new_labels
 
 
@@ -1046,6 +1047,7 @@ def build_event_svod(db: Session, event_id: UUID) -> dict[str, Any] | None:
             }
         )
 
+    platform_code = event.platform.code if event.platform else ""
     volunteers: list[dict[str, Any]] = []
     for row in sorted(volunteer_rows, key=lambda r: (r["display_name"] or "")):
         location_vols = int(row["location_vol_count"])
@@ -1055,13 +1057,26 @@ def build_event_svod(db: Session, event_id: UUID) -> dict[str, Any] | None:
         seen_role_keys: set[str] = set()
         for role in row["roles"] or []:
             canonical = canonical_volunteer_role(role)
-            if canonical is None or canonical.key in seen_role_keys:
+            if canonical is None:
+                # Роль вне таксономии: раньше молча выпадала из свода и поста,
+                # теперь идёт под своим родным названием (без счётчика «(12×)»).
+                raw_label = strip_role_counters(role)
+                if not raw_label or raw_label in seen_role_keys:
+                    continue
+                seen_role_keys.add(raw_label)
+                roles_detail.append({"label": raw_label, "count": 1, "milestone": None})
+                continue
+            if canonical.key in seen_role_keys:
                 continue
             seen_role_keys.add(canonical.key)
             role_total = role_counts.get(participant_key, {}).get(canonical.key, 1)
             roles_detail.append(
                 {
-                    "label": canonical.label,
+                    # Название — как в системе этого старта («Организатор» у
+                    # 5 вёрст, «Директор» у С95), а не межсистемное «Директор
+                    # забега» (правка Дмитрия 07.09.2026 по посту волонтёров).
+                    # Канонический ключ остаётся для счётчиков и «новой роли».
+                    "label": platform_role_label(platform_code, role, canonical),
                     "count": role_total,
                     "milestone": _milestone_value(role_total),
                 }
@@ -1072,7 +1087,7 @@ def build_event_svod(db: Session, event_id: UUID) -> dict[str, Any] | None:
                 "name": row["display_name"],
                 "profile_url": row["profile_url"],
                 "roles": roles_detail,
-                "new_roles": _new_canonical_roles(row["roles"], row["prev_roles"])
+                "new_roles": _new_canonical_roles(row["roles"], row["prev_roles"], platform_code)
                 if not row["first_volunteering"]
                 else [],
                 "first_volunteering": bool(row["first_volunteering"]),

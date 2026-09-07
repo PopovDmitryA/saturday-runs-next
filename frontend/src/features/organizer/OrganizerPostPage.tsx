@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FilterSelect } from "../../components/filters/FilterPanel";
 import { RequireAuth } from "../../components/RequireAuth";
 import {
@@ -13,8 +13,10 @@ import { formatDate, formatInt, platformCodeLabel, pluralizeRu } from "../../lib
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { locationHintFor } from "../../lib/locationHint";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
 import { OrganizerBreadcrumbs } from "./OrganizerBreadcrumbs";
 import { OrganizerDenied } from "./OrganizerDenied";
+import { organizerPostSubject } from "./postPoster";
 import "./organizer.css";
 
 // Форматы — по анализу 21 телеграм-канала локаций: у каждой оргкоманды свой
@@ -104,6 +106,12 @@ function OrganizerPostContent({ slug }: { slug: string }) {
   // «Наши в гостях»: от скольких финишей у нас человек считается своим.
   const [travelersMinRuns, setTravelersMinRuns] = useState(5);
   const [postText, setPostText] = useState<string | null>(null);
+  // Правка организатора поверх сгенерированного текста: убрать лишнего
+  // человека, дописать интонацию. null — текст не трогали. Постер строится
+  // по этому тексту, поэтому удалённый из списка человек с постера уходит.
+  const [draft, setDraft] = useState<string | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const sheet = useOptionalShareSheet();
   // «Без жирного»: вырезает **разметку** — Телеграм её рендерит, а ВК нет.
   // Выбор человека переживает перезаходы (localStorage).
   const [plainMode, setPlainMode] = useState(() => {
@@ -160,6 +168,7 @@ function OrganizerPostContent({ slug }: { slug: string }) {
     let cancelled = false;
     setPostLoading(true);
     setPostText(null);
+    setDraft(null);
     setCopied(false);
     // Сброс прошлой ошибки: без него один упавший запрос гасил страницу
     // навсегда — контролы размонтированы, зависимости эффекта меняться нечем.
@@ -199,7 +208,19 @@ function OrganizerPostContent({ slug }: { slug: string }) {
     absenceWeeks,
   ]);
 
-  const displayText = postText === null ? null : plainMode ? postText.replace(/\*\*/g, "") : postText;
+  const generatedText = postText === null ? null : plainMode ? postText.replace(/\*\*/g, "") : postText;
+  const displayText = draft ?? generatedText;
+  const edited = draft !== null && draft !== generatedText;
+
+  // Высота редактора — по тексту (до max-height из CSS), как пузырь раньше.
+  useLayoutEffect(() => {
+    const node = editorRef.current;
+    if (!node) {
+      return;
+    }
+    node.style.height = "auto";
+    node.style.height = `${node.scrollHeight + 2}px`;
+  }, [displayText]);
 
   const togglePlainMode = () => {
     setPlainMode((current) => {
@@ -210,6 +231,28 @@ function OrganizerPostContent({ slug }: { slug: string }) {
         // localStorage недоступен — просто не запоминаем
       }
       return next;
+    });
+    // Правки не теряем: включённый режим вырезает разметку и из черновика,
+    // выключенный вернуть жирный в черновик уже не может.
+    if (!plainMode) {
+      setDraft((current) => (current === null ? null : current.replace(/\*\*/g, "")));
+    }
+  };
+
+  const selectedEvent = dates?.find((item) => item.event_id === selectedEventId) ?? null;
+
+  const openPoster = () => {
+    if (!sheet || !displayText) {
+      return;
+    }
+    sheet.open({
+      subject: organizerPostSubject(displayText, {
+        slug,
+        template,
+        locationName: name,
+        event: needsEvent ? selectedEvent : null,
+      }),
+      entry: "organizer",
     });
   };
 
@@ -245,8 +288,10 @@ function OrganizerPostContent({ slug }: { slug: string }) {
           <h1>{name ?? "Локация"} — пост-отчёт</h1>
         </div>
         <p className="muted">
-          Готовые посты для чата или канала локации: выберите формат, проверьте текст и
-          скопируйте. Форматы собраны по практике оргкоманд двадцати локаций.
+          Готовые посты для чата или канала локации: выберите формат, поправьте текст прямо в
+          предпросмотре — например, уберите лишнего человека — и скопируйте. К посту можно
+          собрать постер: он берёт имена и цифры из исправленного текста. Форматы собраны по
+          практике оргкоманд двадцати локаций.
         </p>
       </header>
 
@@ -388,6 +433,17 @@ function OrganizerPostContent({ slug }: { slug: string }) {
                   >
                     {copied ? "Скопировано ✓" : "Скопировать пост"}
                   </button>
+                  {sheet !== null && (
+                    <button
+                      type="button"
+                      className="btn primary btn-sm"
+                      disabled={!postText}
+                      title="Картинка со статистикой и именами по тексту поста — для канала или сториз"
+                      onClick={openPoster}
+                    >
+                      🖼 Сделать постер
+                    </button>
+                  )}
                 </span>
               </header>
               {postLoading && (
@@ -399,7 +455,31 @@ function OrganizerPostContent({ slug }: { slug: string }) {
                 </div>
               )}
               {!postLoading && displayText !== null && (
-                <div className="org-post-bubble">{displayText}</div>
+                <>
+                  <textarea
+                    ref={editorRef}
+                    className="org-post-editor"
+                    aria-label="Текст поста"
+                    value={displayText}
+                    spellCheck={false}
+                    onChange={(event) => {
+                      setDraft(event.target.value);
+                      setCopied(false);
+                    }}
+                  />
+                  <div className="org-post-editor-foot">
+                    <span className="muted">
+                      {edited
+                        ? "Текст изменён — постер и копия возьмут вашу версию."
+                        : "Текст можно править прямо здесь: удалите строку с человеком, и на постер он не попадёт."}
+                    </span>
+                    {edited && (
+                      <button type="button" className="org-post-reset" onClick={() => setDraft(null)}>
+                        Вернуть исходный текст
+                      </button>
+                    )}
+                  </div>
+                </>
               )}
               {!postLoading && postText === null && needsEvent && dates.length === 0 && (
                 <p className="muted">У локации пока нет событий с протоколами.</p>

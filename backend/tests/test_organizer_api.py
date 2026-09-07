@@ -805,7 +805,10 @@ def test_event_post_templates(
     assert "🦺 Маршал — Волонтёр Сидоров" in text
     lines = text.splitlines()
     first_role_line = next(line for line in lines if line.startswith("1."))
-    assert "Директор забега" in first_role_line
+    # Роль — словами своей системы: у 5 вёрст «Организатор», а не
+    # межсистемный «Директор забега» (правило Дмитрия 07.09.2026).
+    assert "Организатор" in first_role_line
+    assert "Директор забега" not in text
 
     newcomers = _post("newcomers")
     assert newcomers.status_code == 200
@@ -1013,7 +1016,9 @@ def test_vacancies_post_fallback_without_roster(
     text = response.json()["post_text"]
     # Ключевые позиции есть, факультативных (например, «Видеограф») нет.
     assert "Секундомер" in text
-    assert "Директор забега" in text
+    # Локация 5 вёрст — руководитель зовётся «Организатор», как у 5в.
+    assert "Организатор" in text
+    assert "Директор забега" not in text
     assert "Видеограф" not in text
     assert "оставьте только роли" in text
 

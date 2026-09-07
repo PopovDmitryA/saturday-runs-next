@@ -13446,6 +13446,41 @@ a.admin-system-chip:hover {
   padding: 1.3em 1.4em 1.1em;
 }
 
+/* Лента 4:5: вертикаль как у сториз, но без safe-зон под интерфейс —
+   в ленте картинку ничто не перекрывает. Плитки крупнее квадратных. */
+.s2-card--feed .s2-content {
+  padding: 1.5em 1.4em 1.2em;
+}
+
+.s2-card--feed .s2-body {
+  gap: 0.65em;
+}
+
+.s2-card--feed .s2-metrics {
+  gap: 0.55em;
+}
+
+.s2-card--feed .s2-tile {
+  padding: 0.65em 0.75em;
+  border-radius: 0.5em;
+}
+
+.s2-card--feed .s2-tile-value {
+  font-size: 1.25em;
+}
+
+.s2-card--feed .s2-tile-value--long {
+  font-size: 0.9em;
+}
+
+.s2-card--feed .s2-tile-label {
+  font-size: 0.48em;
+}
+
+.s2-card--feed .s2-fact {
+  font-size: 0.54em;
+}
+
 /* ── Шторка ── */
 
 .s2-overlay {
@@ -16233,4 +16268,166 @@ input.participant-name-search-input:focus {
 .loc-stat-value-text {
   font-size: 1.05rem;
   line-height: 1.25;
+}
+
+/* ── Постер: именные списки (постер из поста организатора) ──
+   Каждый человек — отдельная плашка, список печатается ЦЕЛИКОМ, никаких
+   «и ещё N». Кегль плашек задаёт --s2-names-size: ShareCardView подбирает его
+   лесенкой по фактическому переполнению корпуса; когда мелкий кегль не
+   спасает, карточка уходит в именной режим (.s2-card--names): без плиток
+   цифр, герой в строку, всё место — именам. */
+.s2-lists {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45em;
+  align-self: stretch;
+  min-width: 0;
+  font-size: var(--s2-names-size, 0.5em);
+}
+
+/* Заголовок списка стоит в потоке первой «плашкой»: так у ролей волонтёров
+   каждая роль занимает одну строку вместе с именами. */
+.s2-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.28em 0.32em;
+}
+
+/* Заголовок блока — плашка сплошным цветом блока, имена — той же
+   тонированной подложкой (переменные ставит NameLists по индексу списка). */
+.s2-list-title {
+  font-size: 0.78em;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 0.22em 0.7em;
+  border-radius: 999em;
+  background: var(--s2-list-accent, var(--s2-accent, #fbbf24));
+  color: var(--s2-list-ink, var(--s2-accent-text, #451a03));
+  margin-right: 0.25em;
+  white-space: nowrap;
+}
+
+.s2-person {
+  padding: 0.16em 0.6em;
+  border-radius: 999em;
+  background: var(--s2-list-tint, var(--s2-tile-bg, rgba(255, 255, 255, 0.12)));
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.s2-tone-light .s2-person {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+/* Много блоков (роли волонтёров): мягкие полупрозрачные плашки своим
+   оттенком, текст заголовка — цветом текста карточки. */
+.s2-list--soft .s2-list-title {
+  color: inherit;
+  opacity: 0.95;
+}
+
+/* Тёмный текст на своём фото: молочная вуаль вместо тёмной. Легче тёмной
+   (35% против 50%): плотная заливала кадр белым (Дмитрий, 07.09.2026). */
+.s2-photo-overlay--light {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(248, 250, 252, 0.35) 0%,
+      rgba(248, 250, 252, 0) 20%,
+      rgba(248, 250, 252, 0) 78%,
+      rgba(248, 250, 252, 0.4) 100%
+    ),
+    rgba(248, 250, 252, 0.35);
+}
+
+/* Переключатель тона текста в шторке (виден только со своим фото). */
+.s2-photo-tone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  margin: -0.2rem 0 0.4rem;
+}
+
+.s2-photo-tone-label {
+  font-size: 0.8rem;
+  opacity: 0.7;
+  margin-right: 0.2rem;
+}
+
+/* Широкий формат со списками: плитки цифр в один ряд (три ряда грида, а не
+   восемь — пустые ряды несут row-gap и уводили списки под бренд-футер),
+   списки под гридом на всю ширину. */
+.s2-card--wide.s2-card--with-lists .s2-body > .s2-metrics {
+  grid-row: 1 / span 3;
+}
+
+.s2-card--wide .s2-body > .s2-lists {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+  gap: 0.3em;
+}
+
+/* Именной режим: герой в строку рядом с плашкой, корпус — колонкой. */
+.s2-card--names .s2-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.4em;
+}
+
+.s2-card--names .s2-body > * {
+  justify-self: start;
+}
+
+.s2-card--names .s2-lists {
+  gap: 0.35em;
+}
+
+/* Широкий именной постер: списки текут одним потоком, а не колонками.
+   CSS-колонки ломались на большом списке (224 новичка Томска, 07.09.2026):
+   список внутри колонки не разбивается, уезжал за низ карточки, правая
+   колонка стояла пустой. В потоке короткие списки (роли волонтёров) встают
+   рядом друг с другом, длинный занимает всю ширину и переносится. */
+.s2-card--wide.s2-card--names .s2-lists {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.3em 1em;
+}
+
+.s2-card--wide.s2-card--names .s2-list {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+.s2-topline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3em 0.7em;
+}
+
+.s2-topline .s2-plate {
+  align-self: center;
+}
+
+.s2-hero--compact {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+  margin: 0;
+}
+
+.s2-hero--compact .s2-hero-value {
+  font-size: 1.5em;
+}
+
+.s2-hero--compact .s2-hero-caption {
+  margin-top: 0;
+  font-size: 0.6em;
 }

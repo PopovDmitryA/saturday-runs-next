@@ -9,7 +9,7 @@
 // Постеры уходят наружу (мессенджеры, сториз), поэтому их палитра ФИКСИРОВАНА
 // и от темы сайта не зависит — см. looks.ts.
 
-export type ShareFormatId = "story" | "square" | "wide";
+export type ShareFormatId = "story" | "feed" | "square" | "wide";
 
 export type ShareFormat = {
   id: ShareFormatId;
@@ -21,6 +21,10 @@ export type ShareFormat = {
 
 export const SHARE_FORMATS: ShareFormat[] = [
   { id: "story", width: 1080, height: 1920, label: "Сториз", hint: "9:16 · Instagram, статусы" },
+  // Лента 4:5 — самый высокий формат, который Telegram и Instagram показывают
+  // в ленте целиком и крупно. Появился под именные постеры организатора
+  // (просьба Дмитрия 07.09.2026): в широком 1200×630 имена мельчают.
+  { id: "feed", width: 1080, height: 1350, label: "Лента", hint: "4:5 · Telegram-каналы, лента" },
   { id: "square", width: 1080, height: 1080, label: "Квадрат", hint: "1:1 · лента, чаты" },
   { id: "wide", width: 1200, height: 630, label: "Широкий", hint: "16:9 · Telegram-каналы" },
 ];
@@ -39,6 +43,16 @@ export type ShareMetric = {
    * хуже разбирается — такие подписи оставляем как есть.
    */
   keepLabelCase?: boolean;
+};
+
+/**
+ * Именной список на постере: заголовок + имена. Появился с постером из поста
+ * организатора — там главное не средние, а люди поимённо (новички, команда
+ * волонтёров, юбиляры); см. organizer/postPoster.ts.
+ */
+export type ShareNameList = {
+  title: string;
+  items: string[];
 };
 
 /** Эпоха таймлайна систем для «Визитки» локации. */
@@ -81,6 +95,11 @@ export type ShareCardData = {
   timeline?: ShareTimelineEntry[];
   /** Мини-календарь суббот: true = была активность. */
   heat?: boolean[];
+  /**
+   * Именные списки под плитками. Когда они есть, плиток влезает меньше
+   * (metricLimit) — люди важнее цифр.
+   */
+  lists?: ShareNameList[];
 };
 
 /**
@@ -97,7 +116,8 @@ export type ShareSubjectKind =
   | "location_protocol"
   | "location_card"
   | "location_me"
-  | "rating";
+  | "rating"
+  | "organizer_post";
 
 export type ShareSubject = {
   kind: ShareSubjectKind;
@@ -118,4 +138,5 @@ export type ShareEntryPoint =
   | "on_this_day"
   | "location"
   | "rating"
-  | "gallery";
+  | "gallery"
+  | "organizer";

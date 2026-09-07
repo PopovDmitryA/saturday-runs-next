@@ -249,6 +249,12 @@ def _newcomers_post(svod: dict[str, Any]) -> str:
 # тем, что реально запрашивают парки в постах «нужны волонтёры» и что стоит
 # на страницах записи 5 вёрст (решение Дмитрия 17.08.2026: факультативные
 # роли в призыв не попадают).
+# Запасной список вакансий печатается словами 5 вёрст: канонические ярлыки
+# и так списаны с 5в, кроме руководителя — у 5в он «Организатор», а не
+# «Директор забега» (правило Дмитрия 07.09.2026: на старте 5 вёрст роли
+# называются ровно как в 5 вёрстах).
+FIVE_VERST_ROLE_LABELS: dict[str, str] = {"run_director": "Организатор"}
+
 KEY_VACANCY_ROLE_KEYS: tuple[str, ...] = (
     "run_director",
     "timekeeper",
@@ -321,6 +327,8 @@ def build_vacancies_post(db: Session, identity: Any) -> str:
     ]
     for key in KEY_VACANCY_ROLE_KEYS:
         label = CANONICAL_ROLE_LABELS[key]
+        if five_verst_slug:
+            label = FIVE_VERST_ROLE_LABELS.get(key, label)
         lines.append(f"❗️ {ROLE_EMOJI.get(key, '🙌')} {label}")
     lines.append("")
     lines.append("💬 «5 раз побегал — 1 раз помоги!»")

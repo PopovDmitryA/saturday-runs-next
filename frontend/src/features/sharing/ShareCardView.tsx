@@ -5,15 +5,16 @@
 // масштабируется CSS-трансформом снаружи (SharePreview), экспорт снимает
 // узел как есть — превью и PNG совпадают пиксель в пиксель.
 
-import type { CSSProperties } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { fitText, type FitBox } from "./fitText";
 import { shareFontFamily, type ShareFontId } from "./fonts";
 import {
   DEFAULT_PHOTO_TRANSFORM,
   type ShareLook,
   type SharePhoto,
+  type ShareTone,
 } from "./looks";
-import type { ShareCardData, ShareFormat, ShareFormatId, ShareMetric } from "./types";
+import type { ShareCardData, ShareFormat, ShareFormatId, ShareMetric, ShareNameList } from "./types";
 
 /** Базовый кегль в нативном размере: 1em = 40px. */
 const BASE_FONT_PX = 40;
@@ -34,6 +35,8 @@ const BOLD_WEIGHT = 800;
 const HERO_BOXES: Record<ShareFormatId, FitBox> = {
   // 1080 − 2×1.6em паддинга.
   story: { maxWidthPx: 952, maxHeightPx: 470, maxLines: 3, sizesEm: [4.2, 3.4, 2.8, 2.3, 1.9, 1.55, 1.3] },
+  // 1080 − 2×1.4em паддинга; по высоте между квадратом и сториз.
+  feed: { maxWidthPx: 968, maxHeightPx: 400, maxLines: 3, sizesEm: [3.6, 3, 2.5, 2.1, 1.75, 1.45, 1.2] },
   // 1080 − 2×1.4em паддинга.
   square: { maxWidthPx: 968, maxHeightPx: 330, maxLines: 3, sizesEm: [3, 2.5, 2.1, 1.75, 1.45, 1.2] },
   // (1200 − 2×1.4em паддинга − 1.1em зазора) / 2.25 — левая колонка грида.
@@ -47,16 +50,158 @@ const HERO_BOXES: Record<ShareFormatId, FitBox> = {
  */
 export function metricLimit(format: ShareFormat, data: ShareCardData): number {
   const hasHero = Boolean(data.hero);
+  // Именные списки забирают место у плиток: под ними остаётся один-два ряда.
+  const hasLists = (data.lists?.length ?? 0) > 0;
   if (format.id === "story") {
     // Вертикали много: 3 ряда по 2 плитки под героем, 4 ряда без него.
-    return hasHero ? 6 : 8;
+    // Со списками — 6: три списка по четыре строки под тремя рядами плиток
+    // ещё оставляют воздух до бренд-футера (проверено на сводном посте).
+    return hasLists ? 6 : hasHero ? 6 : 8;
+  }
+  if (format.id === "feed") {
+    // 1080×1350: три ряда по две плитки под героем, четыре без него.
+    return hasLists ? 4 : hasHero ? 6 : 8;
   }
   if (format.id === "square") {
-    return hasHero ? 4 : 6;
+    return hasLists ? 2 : hasHero ? 4 : 6;
   }
   // Широкий (1200×630): два ряда по три плитки. Ряд третьим не делаем — он
   // наезжает на бренд-футер, а вот третья колонка по ширине помещается.
-  return 6;
+  // Со списками — один ряд: списки ложатся под грид на всю ширину.
+  return hasLists ? 3 : 6;
+}
+
+/**
+ * Именные списки печатаются ЦЕЛИКОМ — ни одного «и ещё N» (правило Дмитрия
+ * 07.09.2026: постер «спасибо волонтёрам» с недостающим именем — обида, и
+ * такой постер публиковать не станут). Место под людей карточка находит
+ * лесенкой: сначала мельче кегль плашек-имён, затем — «именной режим»: плитки
+ * цифр убираются, герой сжимается в строку, весь корпус отдаётся именам.
+ * Ступень выбирается измерением: пока корпус переполнен — шаг вниз.
+ */
+type NameStage = { tiles: boolean; sizeEm: number };
+
+function stages(withTiles: number[], namesOnly: number[]): NameStage[] {
+  return [
+    ...withTiles.map((sizeEm) => ({ tiles: true, sizeEm })),
+    ...namesOnly.map((sizeEm) => ({ tiles: false, sizeEm })),
+  ];
+}
+
+// Именной режим начинается с кегля КРУПНЕЕ, чем был при плитках: без плиток
+// места вдвое больше, и пятнадцать ролей волонтёров в ленте иначе оставляли
+// пустой низ карточки.
+// Нижние ступени — страховка под сотни имён (Томск: 224 новичка на одном
+// старте): постер обязан вместить всех, пусть и мелко.
+const NAME_STAGES: Record<ShareFormatId, NameStage[]> = {
+  story: stages([0.55, 0.5, 0.45], [0.75, 0.65, 0.55, 0.5, 0.45, 0.4, 0.36, 0.32, 0.29, 0.26, 0.23, 0.2]),
+  feed: stages([0.55, 0.5, 0.45], [0.7, 0.62, 0.55, 0.5, 0.45, 0.4, 0.36, 0.32, 0.29, 0.26, 0.23, 0.2]),
+  square: stages([0.5, 0.45, 0.4], [0.6, 0.55, 0.5, 0.45, 0.4, 0.36, 0.32, 0.29, 0.26, 0.23, 0.2, 0.18]),
+  wide: stages([0.42, 0.38, 0.34], [0.44, 0.4, 0.36, 0.33, 0.3, 0.27, 0.24, 0.22, 0.2, 0.18]),
+};
+
+/**
+ * Ступень лесенки под данные и формат. Подбирается по факту: после каждого
+ * рендера меряем корпус карточки, при переполнении опускаемся на ступень.
+ * Экспортная копия карточки рендерится тем же компонентом и сходится к той
+ * же ступени — превью и PNG совпадают.
+ */
+function useNameStage(
+  bodyRef: { current: HTMLDivElement | null },
+  format: ShareFormat,
+  data: ShareCardData,
+  metricsCount: number,
+): NameStage | null {
+  const ladder = NAME_STAGES[format.id];
+  const hasLists = (data.lists ?? []).some((list) => list.items.length > 0);
+  // Смена данных или формата начинает подбор заново — с самого крупного.
+  const fitKey = hasLists
+    ? `${format.id}|${metricsCount}|${(data.lists ?? []).map((list) => `${list.title}:${list.items.join(",")}`).join(";")}`
+    : "";
+  const [stage, setStage] = useState(0);
+  const lastKey = useRef(fitKey);
+
+  useLayoutEffect(() => {
+    if (!hasLists) {
+      return;
+    }
+    if (lastKey.current !== fitKey) {
+      lastKey.current = fitKey;
+      if (stage !== 0) {
+        setStage(0);
+        return;
+      }
+    }
+    const body = bodyRef.current;
+    if (!body) {
+      return;
+    }
+    if (body.scrollHeight > body.clientHeight + 1 && stage < ladder.length - 1) {
+      setStage(stage + 1);
+    }
+  });
+
+  return hasLists ? ladder[Math.min(stage, ladder.length - 1)] : null;
+}
+
+/**
+ * Цвета блоков: у каждого списка свой оттенок — заголовок-плашка сплошным
+ * цветом, плашки имён его же тонированной подложкой. Без этого «первый
+ * финиш», «первое волонтёрство» и «впервые у нас» сливались в одно поле
+ * фамилий (Дмитрий, Томск 07.09.2026). Оттенки подобраны так, чтобы
+ * читаться и на тёмных луках, и на светлом, и поверх своего фото.
+ */
+/** До скольких блоков плашки заголовков сплошные и яркие. */
+const COLORFUL_LISTS_MAX = 4;
+
+/**
+ * Оттенки блоков. `solid`/`tint`/`ink` — яркий вариант для 2–4 смысловых
+ * блоков (новички, юбилеи). `soft`/`softTint` — мягкий, полупрозрачный, для
+ * длинных списков вроде 14 ролей волонтёров: цвет остаётся ориентиром, но не
+ * бросается в глаза (правки Дмитрия 07.09.2026: сначала «вырвиглазно»,
+ * потом «не хватает цветов»).
+ */
+const LIST_ACCENTS: { solid: string; tint: string; ink: string; soft: string; softTint: string }[] = [
+  { solid: "#fbbf24", tint: "rgba(251, 191, 36, 0.24)", ink: "#451a03", soft: "rgba(251, 191, 36, 0.34)", softTint: "rgba(251, 191, 36, 0.13)" },
+  { solid: "#38bdf8", tint: "rgba(56, 189, 248, 0.24)", ink: "#082f49", soft: "rgba(56, 189, 248, 0.34)", softTint: "rgba(56, 189, 248, 0.13)" },
+  { solid: "#34d399", tint: "rgba(52, 211, 153, 0.24)", ink: "#022c22", soft: "rgba(52, 211, 153, 0.34)", softTint: "rgba(52, 211, 153, 0.13)" },
+  { solid: "#f472b6", tint: "rgba(244, 114, 182, 0.24)", ink: "#500724", soft: "rgba(244, 114, 182, 0.34)", softTint: "rgba(244, 114, 182, 0.13)" },
+  { solid: "#a78bfa", tint: "rgba(167, 139, 250, 0.26)", ink: "#2e1065", soft: "rgba(167, 139, 250, 0.36)", softTint: "rgba(167, 139, 250, 0.14)" },
+  { solid: "#fb923c", tint: "rgba(251, 146, 60, 0.24)", ink: "#431407", soft: "rgba(251, 146, 60, 0.34)", softTint: "rgba(251, 146, 60, 0.13)" },
+  { solid: "#a3e635", tint: "rgba(163, 230, 53, 0.22)", ink: "#1a2e05", soft: "rgba(163, 230, 53, 0.3)", softTint: "rgba(163, 230, 53, 0.12)" },
+  { solid: "#f87171", tint: "rgba(248, 113, 113, 0.24)", ink: "#450a0a", soft: "rgba(248, 113, 113, 0.34)", softTint: "rgba(248, 113, 113, 0.13)" },
+];
+
+function NameLists({ lists }: { lists: ShareNameList[] }) {
+  const visible = lists.filter((list) => list.items.length > 0);
+  if (visible.length === 0) {
+    return null;
+  }
+  return (
+    <div className="s2-lists">
+      {visible.map((list, index) => {
+        // Немного блоков — яркие сплошные плашки; много (роли волонтёров) —
+        // те же оттенки, но мягкие полупрозрачные, чтобы не рябило.
+        const accent = LIST_ACCENTS[index % LIST_ACCENTS.length];
+        const vivid = visible.length <= COLORFUL_LISTS_MAX;
+        const listStyle = {
+          "--s2-list-accent": vivid ? accent.solid : accent.soft,
+          "--s2-list-tint": vivid ? accent.tint : accent.softTint,
+          "--s2-list-ink": vivid ? accent.ink : "inherit",
+        } as CSSProperties;
+        return (
+        <div key={list.title} className={`s2-list${vivid ? "" : " s2-list--soft"}`} style={listStyle}>
+          <span className="s2-list-title">{list.title}</span>
+          {list.items.map((item) => (
+            <span key={item} className="s2-person">
+              {item}
+            </span>
+          ))}
+        </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /**
@@ -83,6 +228,11 @@ export function photoGeometry(
 
 /** Фон карточки под своим фото: видно там, где фото сдвинули с края. */
 export const PHOTO_BACKDROP_COLOR = "#0f172a";
+
+/** Подложка под фото по тону текста: тёмному тексту — светлая. */
+export function photoBackdropColor(tone: ShareTone): string {
+  return tone === "light" ? "#e2e8f0" : PHOTO_BACKDROP_COLOR;
+}
 
 /** Кегль и интерлиньяж героя, подобранные под колонку формата. */
 function heroStyle(value: string, format: ShareFormat, font: ShareFontId): CSSProperties {
@@ -123,12 +273,18 @@ export function ShareCardView({
   font,
   visibleMetricIds,
   photoDrawnByExporter = false,
+  photoTone = "dark",
 }: {
   data: ShareCardData;
   format: ShareFormat;
   look: ShareLook;
   photo: SharePhoto | null;
   font: ShareFontId;
+  /**
+   * Тон поверх своего фото: dark — светлый текст и тёмная вуаль (по
+   * умолчанию), light — тёмный текст и молочная вуаль для тёмных кадров.
+   */
+  photoTone?: ShareTone;
   /** Настроенный пользователем набор метрик; по умолчанию — приоритет данных. */
   visibleMetricIds?: string[];
   /**
@@ -138,7 +294,7 @@ export function ShareCardView({
    */
   photoDrawnByExporter?: boolean;
 }) {
-  const tone = photo ? "dark" : look.tone;
+  const tone: ShareTone = photo ? photoTone : look.tone;
   const metrics = visibleMetricIds
     ? visibleMetricIds
         .map((id) => data.metrics.find((metric) => metric.id === id))
@@ -153,21 +309,40 @@ export function ShareCardView({
     background: photo
       ? photoDrawnByExporter
         ? "transparent"
-        : PHOTO_BACKDROP_COLOR
+        : photoBackdropColor(tone)
       : look.background,
-    "--s2-tile-bg": photo ? "rgba(15, 23, 42, 0.45)" : look.tileBackground,
+    "--s2-tile-bg": photo
+      ? tone === "light"
+        ? "rgba(255, 255, 255, 0.62)"
+        : "rgba(15, 23, 42, 0.45)"
+      : look.tileBackground,
     "--s2-accent": look.accent,
     "--s2-accent-text": look.accentText,
   } as CSSProperties;
 
+  // Именные списки: ступень лесенки (кегль имён, показывать ли плитки).
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const nameStage = useNameStage(bodyRef, format, data, metrics.length);
+  const withLists = nameStage !== null;
+  // Именной режим: плитки убраны, герой в строку, корпус целиком под имена.
+  const namesOnly = withLists && !nameStage.tiles;
+  const modeClass = `${withLists ? " s2-card--with-lists" : ""}${namesOnly ? " s2-card--names" : ""}`;
+  if (withLists) {
+    (rootStyle as Record<string, unknown>)["--s2-names-size"] = `${nameStage.sizeEm}em`;
+  }
+
   return (
-    <div className={`s2-card s2-card--${format.id} s2-tone-${tone}`} style={rootStyle}>
+    <div
+      className={`s2-card s2-card--${format.id} s2-tone-${tone}${modeClass}`}
+      style={rootStyle}
+      data-name-size={withLists ? nameStage.sizeEm : undefined}
+    >
       {photo ? (
         <>
           {photoDrawnByExporter ? null : (
             <img className="s2-photo" src={photo.objectUrl} alt="" style={photoGeometry(photo, format)} />
           )}
-          <div className="s2-photo-overlay" />
+          <div className={`s2-photo-overlay${tone === "light" ? " s2-photo-overlay--light" : ""}`} />
         </>
       ) : null}
       <div className="s2-content">
@@ -175,16 +350,32 @@ export function ShareCardView({
           <div className="s2-name">{data.title}</div>
           {data.subtitle ? <div className="s2-sub">{data.subtitle}</div> : null}
         </div>
-        <div className="s2-body">
-          {data.plate ? <div className="s2-plate">{data.plate}</div> : null}
-          {data.hero ? (
-            <div className="s2-hero">
-              <div className="s2-hero-value" style={heroStyle(data.hero.value, format, font)}>
-                {data.hero.value}
-              </div>
-              {data.hero.caption ? <div className="s2-hero-caption">{data.hero.caption}</div> : null}
+        <div className="s2-body" ref={bodyRef}>
+          {namesOnly ? (
+            // Именной режим: плашка и герой в одну строку — каждый
+            // сэкономленный ряд достаётся именам.
+            <div className="s2-topline">
+              {data.hero ? (
+                <div className="s2-hero s2-hero--compact">
+                  <div className="s2-hero-value">{data.hero.value}</div>
+                  {data.hero.caption ? <div className="s2-hero-caption">{data.hero.caption}</div> : null}
+                </div>
+              ) : null}
+              {data.plate ? <div className="s2-plate">{data.plate}</div> : null}
             </div>
-          ) : null}
+          ) : (
+            <>
+              {data.plate ? <div className="s2-plate">{data.plate}</div> : null}
+              {data.hero ? (
+                <div className="s2-hero">
+                  <div className="s2-hero-value" style={heroStyle(data.hero.value, format, font)}>
+                    {data.hero.value}
+                  </div>
+                  {data.hero.caption ? <div className="s2-hero-caption">{data.hero.caption}</div> : null}
+                </div>
+              ) : null}
+            </>
+          )}
           {data.chip ? <div className="s2-chip">{data.chip}</div> : null}
           {data.progress ? (
             <div className="s2-progress">
@@ -212,7 +403,8 @@ export function ShareCardView({
               ))}
             </div>
           ) : null}
-          <MetricTiles metrics={metrics} limit={metricLimit(format, data)} />
+          {namesOnly ? null : <MetricTiles metrics={metrics} limit={metricLimit(format, data)} />}
+          {data.lists ? <NameLists lists={data.lists} /> : null}
           {data.heat && data.heat.length > 0 ? (
             <div className="s2-heat-wrap">
               <div className="s2-heat">

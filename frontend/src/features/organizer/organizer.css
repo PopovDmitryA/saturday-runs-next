@@ -916,3 +916,62 @@ select.org-select-compact {
   font-size: 0.85rem;
   line-height: 1.2;
 }
+
+/* === Пост-отчёт: редактируемый текст и постер (07.09.2026) === */
+
+/* Пузырь стал textarea: организатор правит текст прямо в предпросмотре —
+   убирает лишних людей — и только потом собирает постер. Высота подгоняется
+   под текст скриптом, скролл появляется от 34rem. */
+.org-post-editor {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font: inherit;
+  color: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  background: var(--surface-muted, rgba(127, 127, 127, 0.08));
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.15));
+  border-radius: 14px 14px 14px 4px;
+  padding: 0.9rem 1.05rem;
+  min-height: 8rem;
+  max-height: 34rem;
+  overflow-y: auto;
+}
+
+.org-post-editor:focus {
+  outline: none;
+  border-color: var(--accent, #0969da);
+  box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.18);
+}
+
+.org-post-editor-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+}
+
+.org-post-edited {
+  color: var(--text-muted, #6e7781);
+}
+
+.org-post-reset {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--link, #0969da);
+  cursor: pointer;
+}
+
+.org-post-reset:hover {
+  text-decoration: underline;
+}

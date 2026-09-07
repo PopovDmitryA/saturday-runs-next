@@ -32,9 +32,10 @@ import {
   type PhotoTransform,
   type ShareLook,
   type SharePhoto,
+  type ShareTone,
 } from "./looks";
 import { canShareFiles, downloadBlob, shareOrDownload } from "./shareOut";
-import { ShareCardView, metricLimit, photoGeometry } from "./ShareCardView";
+import { ShareCardView, metricLimit, photoBackdropColor, photoGeometry } from "./ShareCardView";
 import type { ShareFormatId, ShareSubject } from "./types";
 import { SHARE_FORMATS, shareFormat } from "./types";
 
@@ -98,6 +99,9 @@ export function ShareSheet({
   const [lookId, setLookId] = useState<string>(looks[0].id);
   const [photo, setPhoto] = useState<SharePhoto | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  // Тон текста поверх своего фото: светлый текст с тёмной вуалью (дефолт)
+  // или тёмный текст с молочной — под тёмные кадры (Дмитрий, 07.09.2026).
+  const [photoTone, setPhotoTone] = useState<ShareTone>("dark");
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [metricIds, setMetricIds] = useState<string[] | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -344,10 +348,14 @@ export function ShareSheet({
       throw new Error("Экспортный узел не смонтирован");
     }
     const backdrop = exportPhoto
-      ? { objectUrl: exportPhoto.objectUrl, ...photoGeometry(exportPhoto, format) }
+      ? {
+          objectUrl: exportPhoto.objectUrl,
+          ...photoGeometry(exportPhoto, format),
+          color: photoBackdropColor(photoTone),
+        }
       : undefined;
     return exportCardToPng(node, format.width, format.height, fontCss, backdrop);
-  }, [font, format, exportPhoto]);
+  }, [font, format, exportPhoto, photoTone]);
 
   const systemShare = canShareFiles();
 
@@ -409,6 +417,7 @@ export function ShareSheet({
     photo: photoActive ? photo : null,
     font,
     visibleMetricIds: metricIds,
+    photoTone,
   };
 
   const body = (
@@ -453,6 +462,30 @@ export function ShareSheet({
             ? "Двигайте фото пальцем, зум — щипком или колесом"
             : "Нажмите на постер, чтобы рассмотреть его целиком"}
         </p>
+        {photoActive ? (
+          <div className="s2-photo-tone" role="group" aria-label="Тон текста на фото">
+            <span className="s2-photo-tone-label">Текст</span>
+            {(
+              [
+                ["dark", "светлый"],
+                ["light", "тёмный"],
+              ] as [ShareTone, string][]
+            ).map(([tone, label]) => (
+              <button
+                key={tone}
+                type="button"
+                className={`s2-format-tab ${photoTone === tone ? "s2-format-tab--active" : ""}`}
+                aria-pressed={photoTone === tone}
+                onClick={() => {
+                  setPhotoTone(tone);
+                  trackShareCustomize("photo_tone");
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         <div className="s2-looks" role="tablist" aria-label="Оформление">
           {looks.map((item) => (

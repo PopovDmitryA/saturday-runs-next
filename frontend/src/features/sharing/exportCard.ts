@@ -22,6 +22,8 @@ export type ExportBackdrop = {
   top: number;
   width: number;
   height: number;
+  /** Цвет подложки под фото; по умолчанию тёмный (светлый текст). */
+  color?: string;
 };
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -89,7 +91,7 @@ export async function exportCardToPng(
       throw new Error("Не удалось сформировать постер");
     }
     // Подложка видна там, где фото сдвинули или ужали от края карточки.
-    ctx.fillStyle = PHOTO_BACKDROP_COLOR;
+    ctx.fillStyle = backdrop.color ?? PHOTO_BACKDROP_COLOR;
     ctx.fillRect(0, 0, width, height);
     ctx.drawImage(photo, backdrop.left, backdrop.top, backdrop.width, backdrop.height);
     ctx.drawImage(card, 0, 0, width, height);
