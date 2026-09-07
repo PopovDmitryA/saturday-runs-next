@@ -1997,6 +1997,9 @@ export type EligibleRun = {
   // Опционально: страницы «Пробежки»/«Волонтёрство» собирают EligibleRun из
   // своих строк, где ключа нет, — он нужен только карточке на странице локации.
   location_identity_key?: string | null;
+  // Адрес страницы площадки: /locations/<slug>. Как и ключ выше, приходит не
+  // отовсюду — страницы «Пробежки»/«Волонтёрство» собирают EligibleRun сами.
+  location_slug?: string | null;
   finish_time_display: string | null;
   position: number | null;
   is_pr: boolean;

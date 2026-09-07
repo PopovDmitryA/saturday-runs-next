@@ -55,6 +55,19 @@ class RatingError(Exception):
     """Ошибка бизнес-правил оценки (нельзя оценить / нет права)."""
 
 
+def _page_slug(location: Location) -> str | None:
+    """Slug страницы площадки на сайте: /locations/<slug>.
+
+    Страница принимает external_key любой системы идентичности и сама выбирает
+    канонический адрес (см. resolve_location_identity), поэтому достаточно ключа
+    той локации, откуда взят старт. «unknown» — заглушка каталога, не адрес.
+    """
+    slug = (location.external_key or "").strip().lower()
+    if not slug or slug == "unknown":
+        return None
+    return slug
+
+
 def _entry_id(participation_type: str, source_id: UUID) -> str:
     """Опаковый идентификатор старта для оценки: 'run:<uuid>' / 'vol:<uuid>'."""
     prefix = "vol" if participation_type == PARTICIPATION_VOLUNTEER else "run"
@@ -207,6 +220,7 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
             "platform_code": platform_code,
             "location_name": catalog_index.display_name(location, platform_code),
             "location_city": location.city,
+            "location_slug": _page_slug(location),
             "finish_time_display": normalize_finish_time_display(
                 run.finish_time_sec, run.finish_time_display
             ),
@@ -276,6 +290,7 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
             "platform_code": platform_code,
             "location_name": catalog_index.display_name(location, platform_code),
             "location_city": location.city,
+            "location_slug": _page_slug(location),
             "finish_time_display": None,
             "position": None,
             "is_pr": False,

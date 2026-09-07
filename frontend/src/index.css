@@ -13077,6 +13077,7 @@ a.admin-system-chip:hover {
 
 .s2-plate {
   align-self: flex-start;
+  max-width: 100%;
   font-size: 0.42em;
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -13085,6 +13086,15 @@ a.admin-system-chip:hover {
   border-radius: 999em;
   background: var(--s2-accent, #fbbf24);
   color: var(--s2-accent-text, #451a03);
+}
+
+/* Плашка-подпись старта («Старт №20 · 29.08.2026 · 5 вёрст») втрое длиннее
+   категории — с прежней разрядкой она не влезала в колонку карточки. */
+.s2-plate--long {
+  font-size: 0.36em;
+  letter-spacing: 0.06em;
+  padding: 0.45em 0.9em;
+  white-space: nowrap;
 }
 
 .s2-hero {

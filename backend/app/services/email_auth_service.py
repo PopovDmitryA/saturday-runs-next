@@ -159,7 +159,10 @@ def request_code(
     # остаться вообще без исходящей почты.
     if not check_rate_limit("auth:email:req:global", settings.email_login_codes_per_day, 86400):
         logger.error("email login: daily code quota exhausted (%s)", settings.email_login_codes_per_day)
-        raise AuthError("Вход по почте временно недоступен. Попробуйте войти через VK или Яндекс.", 503)
+        raise AuthError(
+            "Вход по почте временно недоступен. Попробуйте войти через VK, Яндекс или Telegram.",
+            503,
+        )
 
     code = _generate_code(settings.email_login_code_length)
     # Строку журнала заводим до отправки: её id уходит в Redis вместе с кодом,

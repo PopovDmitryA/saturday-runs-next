@@ -1,7 +1,12 @@
 import { DonateBlock } from "../../components/DonateBlock";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { PROJECT_MISSION } from "../../lib/projectMission";
-import { cabinetTabHref, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import {
+  cabinetTabHref,
+  PORTAL_BLOG_HREF,
+  PORTAL_HOME_HREF,
+  PORTAL_LOGIN_HREF,
+} from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { LEGACY_SITE_LABEL } from "../../lib/siteBrand";
 import { PortalFooter } from "./PortalFooter";
@@ -11,7 +16,7 @@ import "./portal.css";
 const STEPS = [
   {
     title: "Войдите на сайт",
-    text: "Через VK или Яндекс — без паролей и анкет.",
+    text: "Через VK, Яндекс, Telegram или код на почту — без паролей и анкет.",
   },
   {
     title: "Привяжите профили",
@@ -41,6 +46,18 @@ const FEATURES = [
     ),
     title: "Волонтёрство",
     text: "История ролей и вклад в организацию стартов.",
+  },
+  {
+    icon: (
+      <svg viewBox="0 0 16 16">
+        <circle cx="8" cy="6" r="3.5" />
+        <path d="M4.5 3.2H2.2c0 2 1.1 3.3 2.8 3.6" />
+        <path d="M11.5 3.2h2.3c0 2-1.1 3.3-2.8 3.6" />
+        <path d="M6 9.5l-.6 4.8L8 12.8l2.6 1.5-.6-4.8" />
+      </svg>
+    ),
+    title: "Достижения и челленджи",
+    text: "Уровни за пробежки, локации и волонтёрство — с подсказкой, сколько осталось до следующей ступени.",
   },
   {
     icon: (
@@ -85,6 +102,53 @@ const FEATURES = [
     ),
     title: "Моя история",
     text: "Лента ваших вех: первый старт, клубы, рекорды, новые регионы — с шер-картинками.",
+  },
+  {
+    icon: (
+      <svg viewBox="0 0 16 16">
+        <circle cx="12" cy="3.5" r="1.8" />
+        <circle cx="4" cy="8" r="1.8" />
+        <circle cx="12" cy="12.5" r="1.8" />
+        <line x1="5.6" y1="7.1" x2="10.4" y2="4.4" />
+        <line x1="5.6" y1="8.9" x2="10.4" y2="11.6" />
+      </svg>
+    ),
+    title: "Картинки для соцсетей",
+    text: "Постер о старте, достижении или цели — в ленту и в сториз, парой нажатий.",
+  },
+] as const;
+
+// Разделы, которые открыты без регистрации: на них ссылается блок «Открыто всем».
+const PUBLIC_SECTIONS = [
+  {
+    href: PORTAL_HOME_HREF,
+    title: "Статистика систем",
+    text: "Сколько людей вышло в эту субботу и как движение растёт по годам.",
+  },
+  {
+    href: "/locations",
+    title: "Каталог локаций",
+    text: "Все площадки четырёх систем: страница каждой, соседи по городу, карта.",
+  },
+  {
+    href: "/protocol",
+    title: "Протокол недели",
+    text: "Вся страна одним забегом — и протокол каждого отдельного старта.",
+  },
+  {
+    href: "/ratings",
+    title: "Рейтинги",
+    text: "Пробежки, волонтёрство, туризм, рекорды площадок, регионы.",
+  },
+  {
+    href: "/results",
+    title: "Последние старты",
+    text: "Последняя суббота каждой площадки: финишёры, волонтёры, лучшее время.",
+  },
+  {
+    href: PORTAL_BLOG_HREF,
+    title: "Блог",
+    text: "Заметки о субботних пробежках, цифрах и о том, что нового на сайте.",
   },
 ] as const;
 
@@ -216,6 +280,29 @@ export function PortalAboutPage() {
           </div>
         </section>
 
+        <section className="portal-panel" aria-label="Открыто без входа">
+          <div className="portal-panel-head">
+            <div>
+              <h2>Открыто всем</h2>
+              <p className="portal-panel-sub">
+                Общая статистика движения не требует ни входа, ни привязки профилей
+              </p>
+            </div>
+          </div>
+          <div className="portal-about-features">
+            {PUBLIC_SECTIONS.map((section) => (
+              <a
+                className="portal-about-feature portal-about-feature-link"
+                key={section.href}
+                href={section.href}
+              >
+                <b>{section.title} →</b>
+                <p>{section.text}</p>
+              </a>
+            ))}
+          </div>
+        </section>
+
         <section id="privacy" className="portal-panel" aria-label="Честность и данные">
           <div className="portal-panel-head">
             <div>
@@ -248,8 +335,13 @@ export function PortalAboutPage() {
               <h4>Какие данные обрабатываются</h4>
               <ul>
                 <li>
-                  данные учётной записи при входе (идентификатор и имя профиля, при наличии —
-                  e-mail);
+                  данные учётной записи того способа входа, который вы выбрали: VK и Яндекс —
+                  идентификатор и имя, Telegram — идентификатор, имя и ник, вход по коду — адрес
+                  почты;
+                </li>
+                <li>
+                  адрес почты для рассылки новостей проекта — только если вы сами отметили это при
+                  входе; отписаться можно в любой момент;
                 </li>
                 <li>
                   данные публичных профилей в беговых системах, которые вы добровольно привязываете

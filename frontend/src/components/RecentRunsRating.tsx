@@ -116,7 +116,18 @@ export function RecentRunsRating() {
             <li key={run.entry_id} className="recent-ratings-item">
               <div className="recent-ratings-info">
                 <div className="recent-ratings-loc">
-                  <span className="recent-ratings-name">{run.location_name}</span>
+                  {/* Название ведёт на страницу площадки: из карточки часто хочется
+                      посмотреть саму локацию, а не только поставить оценку. */}
+                  {run.location_slug ? (
+                    <a
+                      className="recent-ratings-name"
+                      href={`/locations/${encodeURIComponent(run.location_slug)}`}
+                    >
+                      {run.location_name}
+                    </a>
+                  ) : (
+                    <span className="recent-ratings-name">{run.location_name}</span>
+                  )}
                   <PlatformBadge code={run.platform_code} />
                   <ParticipationBadge type={run.participation_type} />
                 </div>

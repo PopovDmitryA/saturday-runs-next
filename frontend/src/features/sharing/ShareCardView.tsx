@@ -244,6 +244,15 @@ function heroStyle(value: string, format: ShareFormat, font: ShareFontId): CSSPr
   return { fontSize: `${fit.sizeEm}em`, lineHeight: fit.lineHeight };
 }
 
+// Плашки бывают двух родов: короткая категория («ПРОТОКОЛ») и целая подпись
+// старта («Старт №20 · 29.08.2026 · 5 вёрст»). Второй разрядка в 0.14em рвёт
+// по ширине карточки — длинной плашке даём собственный, более плотный набор.
+const PLATE_LONG_CHARS = 18;
+
+function plateClass(plate: string): string {
+  return plate.length > PLATE_LONG_CHARS ? "s2-plate s2-plate--long" : "s2-plate";
+}
+
 function MetricTiles({ metrics, limit }: { metrics: ShareMetric[]; limit: number }) {
   const visible = metrics.slice(0, limit);
   if (visible.length === 0) {
@@ -361,11 +370,11 @@ export function ShareCardView({
                   {data.hero.caption ? <div className="s2-hero-caption">{data.hero.caption}</div> : null}
                 </div>
               ) : null}
-              {data.plate ? <div className="s2-plate">{data.plate}</div> : null}
+              {data.plate ? <div className={plateClass(data.plate)}>{data.plate}</div> : null}
             </div>
           ) : (
             <>
-              {data.plate ? <div className="s2-plate">{data.plate}</div> : null}
+              {data.plate ? <div className={plateClass(data.plate)}>{data.plate}</div> : null}
               {data.hero ? (
                 <div className="s2-hero">
                   <div className="s2-hero-value" style={heroStyle(data.hero.value, format, font)}>

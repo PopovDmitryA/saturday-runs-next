@@ -7,8 +7,16 @@ from datetime import date, datetime, timedelta, timezone
 from app.services.rating_service import (
     RATING_EDIT_WINDOW_DAYS,
     _is_editable,
+    _page_slug,
     _select_legacy_entries,
 )
+
+
+class _Loc:
+    """Локация настолько, насколько её видит _page_slug."""
+
+    def __init__(self, external_key: str | None) -> None:
+        self.external_key = external_key
 
 
 def _entry(
@@ -23,6 +31,18 @@ def _entry(
         "platform_code": platform_code,
         "_identity": identity,
     }
+
+
+def test_page_slug_normalizes_external_key() -> None:
+    # Из ключа системы получается адрес /locations/<slug> — как у страницы площадки.
+    assert _page_slug(_Loc("  Sokolniki ")) == "sokolniki"  # type: ignore[arg-type]
+
+
+def test_page_slug_skips_placeholder_keys() -> None:
+    # «unknown» и пустой ключ — заглушки каталога: ссылку из них не делаем.
+    assert _page_slug(_Loc("unknown")) is None  # type: ignore[arg-type]
+    assert _page_slug(_Loc("")) is None  # type: ignore[arg-type]
+    assert _page_slug(_Loc(None)) is None  # type: ignore[arg-type]
 
 
 def test_legacy_picks_latest_start_per_location() -> None:

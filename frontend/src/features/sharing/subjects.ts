@@ -849,16 +849,18 @@ export function locationEventSubject(page: LocationPage): ShareSubject | null {
   const data: ShareCardData = {
     audience: "location",
     title: locationTitle(page),
-    // Номер старта локации называют все каналы без исключения — ему место
-    // в подзаголовке карточки, рядом с датой (плиткой Дмитрий не захотел).
-    subtitle: [
+    // Номер старта локации называют все каналы без исключения — он и уезжает
+    // на жёлтую плашку вместе с датой и системой. Прежнее «ПОСЛЕДНИЙ СТАРТ»
+    // на плашке ничего не сообщало: и так понятно, что постер про свежий старт
+    // (решение Дмитрия 07.09.2026). Подзаголовок под названием не дублируем —
+    // те же слова дважды на одной картинке.
+    plate: [
       last.event_number != null ? `Старт №${formatInt(last.event_number)}` : null,
       formatDate(last.event_date),
       platformCodeLabel(last.platform_code),
     ]
       .filter(Boolean)
       .join(" · "),
-    plate: "ПОСЛЕДНИЙ СТАРТ",
     hero:
       last.finishers != null
         ? { value: formatInt(last.finishers), caption: pluralFormRu(last.finishers, FINISHER_FORMS) }
