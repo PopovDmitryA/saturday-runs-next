@@ -37,6 +37,9 @@ import {
   pluralizeRu,
 } from "../../lib/format";
 import { useOptionalUser } from "../../lib/useOptionalUser";
+import { readCached, writeCached } from "../../lib/dataCache";
+import { useEntryKey } from "../../hooks/useEntryKey";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { NotFoundPage } from "../NotFoundPage";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
@@ -788,12 +791,114 @@ function readStoredRoleKeys(metric: LeaderboardMetric): string[] {
 }
 
 /**
+ * Фильтры рейтинга живут в адресе.
+ *
+ * Во-первых, ссылкой можно поделиться («вот женский зачёт по 5 вёрст»).
+ * Во-вторых, адрес — часть записи истории, поэтому «назад» из профиля
+ * участника возвращает таблицу под теми же фильтрами, а не сброшенную.
+ * Значения, которым в адресе не место (сколько строк догружено, какие строки
+ * раскрыты), лежат в снимке записи — см. useRestorableState.
+ */
+type BoardFilters = {
+  sortKey: SortKey;
+  gender: LeaderboardGender;
+  minVisits: number;
+  platform: PlatformFilter;
+  countBy: CountBy;
+  hideAmbiguousHome: boolean;
+};
+
+const URL_SORT_KEYS: SortKey[] = ["rank", "name", "total", "best_time", "remaining"];
+const URL_PLATFORMS: PlatformFilter[] = ["all", "five_verst", "s95", "runpark", "parkrun"];
+const URL_COUNT_BY: CountBy[] = ["locations", "cities", "regions"];
+
+/**
+ * Фильтры из адреса — сразу применимые к этому рейтингу: чужой параметр
+ * (пол у нерейтинга побед, порог визитов у не-туризма) молча отбрасываем,
+ * иначе в адресе жил бы фильтр, которого на странице нет.
+ */
+function readBoardFilters(metric: LeaderboardMetric): BoardFilters {
+  const params = new URLSearchParams(window.location.search);
+  const gendered = GENDERED_METRICS.includes(metric);
+  const tourist = MIN_VISITS_METRICS.includes(metric);
+  const sort = params.get("sort") as SortKey | null;
+  const platform = params.get("platform") as PlatformFilter | null;
+  const countBy = params.get("by") as CountBy | null;
+  const minVisits = Number(params.get("min"));
+  return {
+    sortKey: sort && URL_SORT_KEYS.includes(sort) ? sort : "rank",
+    gender: gendered && params.get("gender") === "female" ? "female" : "all",
+    minVisits:
+      tourist && (MIN_VISITS_OPTIONS as readonly number[]).includes(minVisits) ? minVisits : 1,
+    platform: platform && URL_PLATFORMS.includes(platform) ? platform : "all",
+    countBy: tourist && countBy && URL_COUNT_BY.includes(countBy) ? countBy : "locations",
+    hideAmbiguousHome: metric === "home_distance" && params.get("home") === "clear",
+  };
+}
+
+/**
+ * Адрес под текущие фильтры. Правим только свои параметры: `view` и `roles`
+ * ведут свои владельцы (переключатель журнала и модалка ролей).
+ */
+function writeBoardFilters(filters: BoardFilters): void {
+  const url = new URL(window.location.href);
+  const set = (name: string, value: string | null) => {
+    if (value) {
+      url.searchParams.set(name, value);
+    } else {
+      url.searchParams.delete(name);
+    }
+  };
+  // Сортировка по столбцу карты туристов (light:…) в адрес не идёт: без самой
+  // карты и её выбранных площадок этот ключ ничего не значит.
+  set("sort", filters.sortKey !== "rank" && !filters.sortKey.startsWith("light:") ? filters.sortKey : null);
+  set("gender", filters.gender !== "all" ? filters.gender : null);
+  set("min", filters.minVisits > 1 ? String(filters.minVisits) : null);
+  set("platform", filters.platform !== "all" ? filters.platform : null);
+  set("by", filters.countBy !== "locations" ? filters.countBy : null);
+  set("home", filters.hideAmbiguousHome ? "clear" : null);
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (next !== current) {
+    window.history.replaceState(window.history.state, "", next);
+  }
+}
+
+/**
+ * Ключ кэша ответа. Кэш нужен ради возврата «назад»: без него страница
+ * монтируется заново, десяток секунд стоит пустой, и возвращать позицию
+ * прокрутки некуда (см. lib/scrollMemory). Своя строка участника попадает в
+ * тот же снимок, поэтому в ключе есть и зритель.
+ */
+function boardCacheKey(
+  metric: LeaderboardMetric,
+  filters: BoardFilters,
+  roleFilterKey: string,
+  viewerId: string | null | undefined,
+): string {
+  return [
+    "leaderboard",
+    metric,
+    filters.gender,
+    filters.minVisits,
+    filters.platform,
+    filters.countBy,
+    filters.hideAmbiguousHome ? "clear-home" : "any-home",
+    roleFilterKey,
+    viewerId ?? "anon",
+  ].join("|");
+}
+
+type CachedBoard = { board: LeaderboardResponse; me: MyLeaderboardRow | null };
+
+/**
  * Ещё не открытый рейтинг ведёт себя как несуществующий адрес: API отдаёт
  * «неизвестный рейтинг» всем, кроме админа, и страница показывает то же самое.
  * Пока сессия проверяется, не мигаем «404» перед админом.
  */
 export function LeaderboardPage({ metric }: LeaderboardPageProps) {
   const viewer = useOptionalUser();
+  const entryKey = useEntryKey();
   if (ADMIN_ONLY_METRICS.includes(metric)) {
     if (viewer === undefined) {
       return null;
@@ -802,25 +907,47 @@ export function LeaderboardPage({ metric }: LeaderboardPageProps) {
       return <NotFoundPage />;
     }
   }
-  return <LeaderboardBoard metric={metric} />;
+  // Ключ записи истории пересобирает доску на каждом переходе. Соседний
+  // рейтинг — тот же компонент, и без ключа React переиспользовал бы
+  // экземпляр: на новую метрику утекали бы фильтры прежней, а «назад» не
+  // подхватывал бы снимок записи, к которой вернулись.
+  return <LeaderboardBoard key={entryKey} metric={metric} />;
 }
 
 function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   const shareSheet = useOptionalShareSheet();
   const currentUser = useOptionalUser();
-  const [data, setData] = useState<LeaderboardResponse | null>(null);
-  const [me, setMe] = useState<MyLeaderboardRow | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Стартовое состояние — из адреса: и переход по ссылке с фильтрами, и
+  // возврат «назад» приходят сюда одинаково (см. readBoardFilters).
+  const [initial] = useState(() => readBoardFilters(metric));
+  const [initialRoleKey] = useState(() => {
+    const preset = readStoredRolePreset(metric);
+    const keys = readStoredRoleKeys(metric);
+    return ROLE_FILTER_METRICS.includes(metric) && preset !== "all"
+      ? [...keys].sort().join(",")
+      : "";
+  });
+  // Ответ пятиминутной давности показываем сразу, не дожидаясь сети: иначе на
+  // «назад» страница секунды стоит пустой — и позицию прокрутки восстанавливать
+  // не к чему (см. lib/dataCache и lib/scrollMemory).
+  const [restored] = useState(() =>
+    readCached<CachedBoard>(boardCacheKey(metric, initial, initialRoleKey, currentUser?.id)),
+  );
+  const [data, setData] = useState<LeaderboardResponse | null>(restored?.board ?? null);
+  const [me, setMe] = useState<MyLeaderboardRow | null>(restored?.me ?? null);
+  const [loading, setLoading] = useState(restored === undefined);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("rank");
-  const [gender, setGender] = useState<LeaderboardGender>("all");
-  const [minVisits, setMinVisits] = useState(1);
-  const [platform, setPlatform] = useState<PlatformFilter>("all");
-  const [countBy, setCountBy] = useState<CountBy>("locations");
+  // Поиск по имени в адрес не идёт: имя участника незачем разносить по ссылкам
+  // и чужим историям — оно живёт в снимке записи и возвращается на «назад».
+  const [query, setQuery] = useRestorableState("lb.query", "");
+  const [sortKey, setSortKey] = useState<SortKey>(initial.sortKey);
+  const [gender, setGender] = useState<LeaderboardGender>(initial.gender);
+  const [minVisits, setMinVisits] = useState(initial.minVisits);
+  const [platform, setPlatform] = useState<PlatformFilter>(initial.platform);
+  const [countBy, setCountBy] = useState<CountBy>(initial.countBy);
   // Фильтр «только очевидный дом» — у рейтинга дальности: прячет участников,
   // у которых нулевая точка выбрана автоматически из почти равных площадок.
-  const [hideAmbiguousHome, setHideAmbiguousHome] = useState(false);
+  const [hideAmbiguousHome, setHideAmbiguousHome] = useState(initial.hideAmbiguousHome);
   // Режим «Журнал» (перенос журналов посещаемости из Grafana): матрица
   // «участник × недели года» вместо таблицы. Стартовое значение — из ссылки,
   // чтобы журналом можно было делиться.
@@ -890,14 +1017,19 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
       setRoleKeys(presetRoleKeys(rolePreset, roleCatalog) ?? []);
     }
   }, [hasRoleFilter, roleCatalog, rolePreset, roleKeys.length]);
-  const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
+  // Догруженные строки, раскрытые блоки и фильтры столбцов карты — в снимке
+  // записи истории: в адресе им не место, но «назад» обязан вернуть таблицу
+  // ровно такой, какой её оставили (см. hooks/useRestorableState).
+  const [visibleCount, setVisibleCount] = useRestorableState("lb.visible", PAGE_STEP);
   // Спойлер «Карта туристов» — только у туристических рейтингов и только по
   // раскрытию: карта тянет каталог локаций и свою матрицу, грузить их всем
   // подряд ради блока, который открывают не всегда, незачем.
   const hasTouristMap = TOURIST_MAP_METRICS.includes(metric);
-  const [mapOpen, setMapOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useRestorableState("lb.map", false);
   // Развёрнутые строки мультиволонтёра (детализация «роль × система»).
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  // В снимке лежат списком: множество не переживает JSON.
+  const [expandedKeys, setExpandedKeys] = useRestorableState<string[]>("lb.expanded", []);
+  const expandedRows = useMemo(() => new Set(expandedKeys), [expandedKeys]);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
@@ -943,10 +1075,16 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   const showLights = lightColumns.length > 0;
   // Фильтр по столбцу светофоров: ключ площадки -> «только был» / «только не был».
   // Отсутствие ключа означает «показывать всех».
-  const [lightFilters, setLightFilters] = useState<Record<string, LightFilter>>({});
+  const [lightFilters, setLightFilters] = useRestorableState<Record<string, LightFilter>>(
+    "lb.lights",
+    {},
+  );
   // Направление сортировки по столбцу карты. Повторный клик по заголовку
   // переворачивает: сначала побывавшие — сначала те, кто не был.
-  const [lightSortMissingFirst, setLightSortMissingFirst] = useState(false);
+  const [lightSortMissingFirst, setLightSortMissingFirst] = useRestorableState(
+    "lb.light-desc",
+    false,
+  );
   const lightColumnsKey = lightColumns.map(({ location }) => location.key).join("|");
 
   // Обновления состояний идут рядом, а не вложенно: updater у setState в
@@ -1027,8 +1165,57 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     };
   }, [hasRoleFilter, roleCatalog.length]);
 
+  // Фильтры в адресе: ссылкой можно поделиться, а «назад» вернёт таблицу под
+  // теми же фильтрами (адрес — часть записи истории).
+  useEffect(() => {
+    writeBoardFilters({
+      sortKey,
+      gender: effectiveGender,
+      minVisits: effectiveMinVisits,
+      platform,
+      countBy: effectiveCountBy,
+      hideAmbiguousHome: isHomeDistance && hideAmbiguousHome,
+    });
+  }, [
+    sortKey,
+    effectiveGender,
+    effectiveMinVisits,
+    platform,
+    effectiveCountBy,
+    isHomeDistance,
+    hideAmbiguousHome,
+  ]);
+
+  // Ключ кэша считается на рендере (в нём есть зритель), а забирает его load —
+  // через ссылку, чтобы смена зрителя не гоняла запрос заново.
+  const cacheKey = boardCacheKey(
+    metric,
+    {
+      sortKey,
+      gender: effectiveGender,
+      minVisits: effectiveMinVisits,
+      platform,
+      countBy: effectiveCountBy,
+      hideAmbiguousHome,
+    },
+    roleFilterKey,
+    currentUser?.id,
+  );
+  const cacheKeyRef = useRef(cacheKey);
+  cacheKeyRef.current = cacheKey;
+
   const load = useCallback(async () => {
-    setLoading(true);
+    const key = cacheKeyRef.current;
+    const cached = readCached<CachedBoard>(key);
+    if (cached) {
+      // Показываем сохранённый ответ и молча идём за свежим: скелет на каждом
+      // «назад» — это и мигание, и потерянная позиция прокрутки.
+      setData(cached.board);
+      setMe(cached.me);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     try {
       const [board, myRow] = await Promise.all([
@@ -1053,6 +1240,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
       ]);
       setData(board);
       setMe(myRow);
+      writeCached(key, { board, me: myRow });
       // Выбранная система могла оказаться неприменимой к этому рейтингу (parkrun
       // не участвует в волонтёрском туризме) — бэкенд тогда считает «все системы».
       // Сверяемся именно с тем, что запрашивали: сравнивать с состоянием на
@@ -1062,7 +1250,11 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
         setPlatform(board.platform);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось загрузить рейтинг");
+      // Сохранённый ответ на экране — сеть подвела молча: ошибка вместо готовой
+      // таблицы была бы шагом назад.
+      if (!cached) {
+        setError(err instanceof Error ? err.message : "Не удалось загрузить рейтинг");
+      }
     } finally {
       setLoading(false);
     }
@@ -1082,22 +1274,15 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     void load();
   }, [load]);
 
-  // Метрика сменилась (напр. переход между рейтингами) — сбрасываем фильтры:
-  // пол в «Абсолют», порог визитов в «от 1», систему в «Объединённо»,
-  // единицу зачёта в «Локации».
-  useEffect(() => {
-    setGender("all");
-    setMinVisits(1);
-    setPlatform("all");
-    setCountBy("locations");
-  }, [metric]);
+  // Сброс фильтров при переходе на соседний рейтинг отдельным эффектом больше
+  // не нужен: доска перемонтируется на каждой записи истории (см. ключ в
+  // LeaderboardPage) и собирает фильтры из адреса — у обычной ссылки их там нет.
 
-  useEffect(() => {
-    setVisibleCount(PAGE_STEP);
-    // Развёрнутые детализации закрываем: под новым фильтром это уже другой
-    // набор строк, держать «раскрытым» уехавшее место незачем.
-    setExpandedRows(new Set());
-  }, [
+  // Сброс пагинации сторожит не «прогон эффекта», а сам набор фильтров: на
+  // монтировании догруженные строки и раскрытые детализации только что приехали
+  // из снимка записи истории, и сбросить их значило бы отбросить вернувшегося
+  // «назад» читателя в начало таблицы.
+  const filterSignature = [
     query,
     sortKey,
     effectiveGender,
@@ -1105,18 +1290,28 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     platform,
     effectiveCountBy,
     roleFilterKey,
-    lightFilters,
-  ]);
+    JSON.stringify(lightFilters),
+  ].join("|");
+  const knownFilters = useRef(filterSignature);
+  useEffect(() => {
+    if (knownFilters.current === filterSignature) {
+      return;
+    }
+    knownFilters.current = filterSignature;
+    setVisibleCount(PAGE_STEP);
+    // Развёрнутые детализации закрываем: под новым фильтром это уже другой
+    // набор строк, держать «раскрытым» уехавшее место незачем.
+    setExpandedKeys([]);
+  }, [filterSignature, setVisibleCount, setExpandedKeys]);
 
-  const toggleRow = useCallback((key: string) => {
-    setExpandedRows((current) => {
-      const next = new Set(current);
-      if (!next.delete(key)) {
-        next.add(key);
-      }
-      return next;
-    });
-  }, []);
+  const toggleRow = useCallback(
+    (key: string) => {
+      setExpandedKeys((current) =>
+        current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
+      );
+    },
+    [setExpandedKeys],
+  );
 
   const columns = data?.platform_columns ?? [];
   const platformOptions = data?.platform_options ?? [];
