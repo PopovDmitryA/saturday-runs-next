@@ -1191,6 +1191,22 @@ def _json_ld_scripts(objects: list[dict[str, Any]]) -> list[str]:
     return scripts
 
 
+# Разметка текста релиза — та же, что понимает страница обновлений
+# (PortalUpdatesPage): «*текст*» жирным и отдельный блок «__SPLIT__» чертой.
+# Без этого робот видел в разметке сами звёздочки и слово __SPLIT__.
+RELEASE_SPLIT_MARKER = re.compile(r"^_{2,}SPLIT_{2,}$")
+_RELEASE_BOLD = re.compile(r"\*([^*\n]+)\*")
+
+
+def _release_inline(text: str) -> str:
+    """Экранированная строка релиза, где «*текст*» стал <strong>.
+
+    Порядок важен: сначала escape (звёздочки он не трогает), потом замена —
+    так внутрь тега попадает уже безопасное содержимое.
+    """
+    return _RELEASE_BOLD.sub(r"<strong>\1</strong>", escape(text))
+
+
 def _releases_body(page: ReleasesPage) -> str:
     """Тело «Обновлений» для робота: релизы страницы плюс ссылки на соседние.
 
@@ -1215,11 +1231,13 @@ def _releases_body(page: ReleasesPage) -> str:
             lines = [line.strip() for line in block.strip().split("\n") if line.strip()]
             if not lines:
                 continue
-            if all(line.startswith("- ") for line in lines):
-                items = "".join(f"<li>{escape(line[2:])}</li>" for line in lines)
+            if len(lines) == 1 and RELEASE_SPLIT_MARKER.match(lines[0]):
+                rows.append("    <hr />")
+            elif all(line.startswith("- ") for line in lines):
+                items = "".join(f"<li>{_release_inline(line[2:])}</li>" for line in lines)
                 rows.append(f"    <ul>{items}</ul>")
             else:
-                rows.append(f"    <p>{escape(' '.join(lines))}</p>")
+                rows.append(f"    <p>{_release_inline(' '.join(lines))}</p>")
 
     nav = []
     if page.page > 1:
