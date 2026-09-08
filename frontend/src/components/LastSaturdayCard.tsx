@@ -26,17 +26,18 @@ import { ShareIcon } from "./ShareIcon";
 import { Snackbar } from "./Snackbar";
 
 /**
- * Герой дашборда «Твоя последняя суббота» — один день целиком.
+ * Герой дашборда «Твоя последняя суббота» — один день, одно событие.
  *
  * Слева — что было: пробежка (локация, время, темп, место, дельта к прошлому
- * визиту сюда) и волонтёрства того же дня; если в этот день только помогали,
- * героем становится роль. Справа, только в своём кабинете, — что с этим днём
- * делать: вехи «Моей истории» за эту дату, оценка стартов и «Поделиться».
+ * визиту сюда) и кнопка «Поделиться» ею. Если в этот день только помогали —
+ * героем становится роль. Пробежка и волонтёрство в один день — показываем
+ * пробежку: одно событие, а не список (Дмитрий, 08.09.2026).
  *
- * Раньше правая часть жила четырьмя плашками подряд (момент для шаринга,
- * «Оцените недавние старты», тизер истории), и три из них рассказывали одну
- * новость — «новая локация» (Дмитрий, 08.09.2026). В чужом профиле карточка
- * остаётся одной колонкой без действий.
+ * Справа, только в своём кабинете, — вехи «Моей истории» за эту дату со
+ * ссылкой на полный список и одна кнопка «Оценить». Раньше это были три
+ * плашки под карточкой (момент для шаринга, «Оцените старты», тизер истории),
+ * и три из них рассказывали одну новость — «новая локация». В чужом профиле
+ * карточка остаётся одной колонкой без действий.
  */
 /** Разница во времени: до минуты — в секундах, дальше — «м:сс», иначе
  *  крупная дельта («926 сек») читается как техническая величина. */
@@ -49,7 +50,6 @@ function formatDeltaValue(seconds: number): string {
 }
 
 const MILESTONE_FORMS = ["веха", "вехи", "вех"] as const;
-const START_FORMS = ["старт", "старта", "стартов"] as const;
 
 type LastSaturdayCardProps = {
   data: LastSaturday;
@@ -69,8 +69,23 @@ type OwnState = {
   volunteering: VolunteeringItem[];
 };
 
-function participationLabel(entry: EligibleRun): string {
-  return entry.participation_type === "volunteer" ? "волонтёрство" : "пробежку";
+/**
+ * Единственный старт дня, который предлагаем оценить: пробежка — если герой
+ * пробежка, иначе волонтёрство. Старты с той же площадки — впереди.
+ */
+function pickDayEntry(data: LastSaturday, eligibility: RatingEligibility | null): EligibleRun | null {
+  if (!eligibility) {
+    return null;
+  }
+  const wanted = data.kind === "volunteer" ? "volunteer" : "run";
+  const candidates = eligibility.runs.filter(
+    (entry) => entry.event_date === data.event_date && !entry.is_legacy && entry.participation_type === wanted,
+  );
+  return (
+    candidates.find((entry) => entry.location_slug && entry.location_slug === data.location_slug) ??
+    candidates[0] ??
+    null
+  );
 }
 
 export function LastSaturdayCard({ data, own = false, user, historyHref }: LastSaturdayCardProps) {
@@ -141,41 +156,46 @@ export function LastSaturdayCard({ data, own = false, user, historyHref }: LastS
     ) : null;
 
   const isVolunteerDay = data.kind === "volunteer";
-  // При kind="volunteer" первая роль уже стоит героем — в списке ниже её не дублируем.
-  const extraVolunteering = isVolunteerDay ? data.volunteering.slice(1) : data.volunteering;
+  // Две роли в один день — через точку: «Маршал · Фотограф».
+  const roleLine = data.volunteering
+    .map((item) => item.role)
+    .filter((role): role is string => Boolean(role))
+    .join(" · ");
 
   // Чем делиться: пробежкой этого дня, а если только волонтёрили — ролью.
   let shareSubject: ShareSubject | null = null;
   if (own && ownState) {
     if (!isVolunteerDay && ownState.lastRun && ownState.lastRun.event_date === data.event_date) {
       shareSubject = runSubject(ownState.lastRun, shareUser);
-    } else if (ownState.volunteering[0]) {
+    } else if (isVolunteerDay && ownState.volunteering[0]) {
       shareSubject = volunteeringSubject(ownState.volunteering[0], shareUser);
     }
   }
 
-  // Оценка: старты этого дня — кнопками, остальные неоценённые — одной строкой.
   const eligibility = ownState?.eligibility ?? null;
-  const dayEntries = eligibility
-    ? eligibility.runs.filter((entry) => entry.event_date === data.event_date && !entry.is_legacy)
-    : [];
-  const otherPending = eligibility
-    ? eligibility.runs.filter(
-        (entry) => entry.event_date !== data.event_date && !entry.is_legacy && entry.my_rating == null,
-      ).length
-    : 0;
-
-  const hasSide =
-    own &&
-    ownState != null &&
-    (ownState.milestonesTotal > 0 || dayEntries.length > 0 || otherPending > 0 || shareSubject != null);
+  const dayEntry = own ? pickDayEntry(data, eligibility) : null;
+  const hasSide = own && ownState != null && (ownState.milestonesTotal > 0 || dayEntry != null);
+  const rateLabel = isVolunteerDay ? "волонтёрство" : "пробежку";
 
   return (
     <div className={`card last-saturday-card${hasSide ? " last-saturday-card-own" : ""}`}>
       <div className="last-saturday-primary">
-        <p className="last-saturday-kicker">
-          {own ? "Твоя последняя суббота" : "Последняя суббота"} · {formatDate(data.event_date)}
-        </p>
+        <div className="last-saturday-head">
+          <p className="last-saturday-kicker">
+            {own ? "Твоя последняя суббота" : "Последняя суббота"} · {formatDate(data.event_date)}
+          </p>
+          {shareSubject && sheet !== null && (
+            <button
+              type="button"
+              className="last-saturday-share"
+              title="Сделать картинку-сториз"
+              onClick={() => sheet.open({ subject: shareSubject, entry: "dashboard" })}
+            >
+              <ShareIcon />
+              Поделиться
+            </button>
+          )}
+        </div>
         <div className="last-saturday-main">
           {data.location_slug ? (
             <a className="last-saturday-location" href={`/locations/${data.location_slug}`}>
@@ -194,7 +214,7 @@ export function LastSaturdayCard({ data, own = false, user, historyHref }: LastS
         {isVolunteerDay ? (
           <div className="last-saturday-stats">
             <span className="last-saturday-stat">
-              <b>{data.volunteering[0]?.role ?? "Волонтёр"}</b>
+              <b>{roleLine || "Волонтёр"}</b>
             </span>
           </div>
         ) : (
@@ -213,22 +233,6 @@ export function LastSaturdayCard({ data, own = false, user, historyHref }: LastS
           </div>
         )}
         {deltaChip}
-        {extraVolunteering.length > 0 && (
-          <ul className="last-saturday-volunteering">
-            {extraVolunteering.map((item, index) => (
-              <li key={`${item.location_slug ?? item.location_name}-${item.role ?? index}`}>
-                <span aria-hidden="true">🤝</span>{" "}
-                {isVolunteerDay ? "Ещё" : "И волонтёрство"}: <b>{item.role ?? "волонтёр"}</b>
-                {" · "}
-                {item.location_slug ? (
-                  <a href={`/locations/${item.location_slug}`}>{item.location_name}</a>
-                ) : (
-                  item.location_name
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
         {data.notables.length > 0 && (
           <ul className="last-saturday-notables">
             {data.notables.map((note) => (
@@ -241,7 +245,7 @@ export function LastSaturdayCard({ data, own = false, user, historyHref }: LastS
       {hasSide && ownState && (
         <div className="last-saturday-side">
           {ownState.milestonesTotal > 0 && (
-            <div className="last-saturday-side-block">
+            <>
               <p className="last-saturday-side-title">
                 {ownState.milestones.length > 0 ? "Вехи этого дня" : "Моя история"}
               </p>
@@ -289,66 +293,36 @@ export function LastSaturdayCard({ data, own = false, user, historyHref }: LastS
                   {pluralFormRu(ownState.milestonesTotal, MILESTONE_FORMS)} →
                 </a>
               )}
-            </div>
+            </>
           )}
 
-          {eligibility && (dayEntries.length > 0 || otherPending > 0) && (
-            <div className="last-saturday-side-block">
-              <p className="last-saturday-side-title">Оценка</p>
-              {!eligibility.can_rate && dayEntries.length > 0 && (
-                <p className="last-saturday-side-hint muted">
-                  Оценивать можно после {formatInt(eligibility.min_runs_required)}{" "}
-                  {pluralFormRu(eligibility.min_runs_required, ["пробежки", "пробежек", "пробежек"])} в
-                  истории.
-                </p>
-              )}
-              {dayEntries.length > 0 && (
-                <div className="last-saturday-rate">
-                  {dayEntries.map((entry) =>
-                    entry.my_rating ? (
-                      <button
-                        key={entry.entry_id}
-                        type="button"
-                        className="last-saturday-rate-btn last-saturday-rate-btn-done"
-                        onClick={() => setActiveEntry(entry)}
-                        title="Изменить оценку"
-                      >
-                        ★ {entry.my_rating.score_overall}/5 · {participationLabel(entry)}
-                      </button>
-                    ) : (
-                      <button
-                        key={entry.entry_id}
-                        type="button"
-                        className="last-saturday-rate-btn"
-                        disabled={!eligibility.can_rate}
-                        onClick={() => setActiveEntry(entry)}
-                      >
-                        ★ Оценить {participationLabel(entry)}
-                        {entry.participation_type === "volunteer" && entry.volunteer_role
-                          ? ` · ${entry.volunteer_role}`
-                          : ""}
-                      </button>
-                    ),
-                  )}
-                </div>
-              )}
-              {otherPending > 0 && (
-                <a className="last-saturday-side-more" href="/runs">
-                  Ещё {formatInt(otherPending)} {pluralFormRu(otherPending, START_FORMS)} ждут оценки →
-                </a>
+          {dayEntry && eligibility && (
+            <div className="last-saturday-rate">
+              {dayEntry.my_rating ? (
+                <button
+                  type="button"
+                  className="last-saturday-rate-btn last-saturday-rate-btn-done"
+                  onClick={() => setActiveEntry(dayEntry)}
+                  title="Изменить оценку"
+                >
+                  ★ {dayEntry.my_rating.score_overall}/5 — ваша оценка
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="last-saturday-rate-btn"
+                  disabled={!eligibility.can_rate}
+                  title={
+                    eligibility.can_rate
+                      ? "Оценить старт"
+                      : `Оценивать можно после ${formatInt(eligibility.min_runs_required)} пробежек в истории`
+                  }
+                  onClick={() => setActiveEntry(dayEntry)}
+                >
+                  ★ Оценить {rateLabel}
+                </button>
               )}
             </div>
-          )}
-
-          {shareSubject && sheet !== null && (
-            <button
-              type="button"
-              className="share-cta last-saturday-share"
-              onClick={() => sheet.open({ subject: shareSubject, entry: "dashboard" })}
-            >
-              <ShareIcon />
-              Поделиться
-            </button>
           )}
         </div>
       )}
