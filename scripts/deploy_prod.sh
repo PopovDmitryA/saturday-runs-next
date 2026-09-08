@@ -30,17 +30,23 @@ SSH_HOST="${TEMP_SSH_HOST:-${PROD_SSH_HOST:-195.58.34.112}}"
 SSH_USER="${TEMP_SSH_USER:-${PROD_SSH_USER:-viewer}}"
 REMOTE="${PROD_REMOTE_DIR:-/opt/saturday-runs-next}"
 
-if [[ -z "${TEMP_SSH_PASSWORD:-}" ]]; then
-  echo "deploy_prod: TEMP_SSH_PASSWORD not set in .env" >&2
-  exit 1
+# Чем ходим на прод. Мак логинится паролем из .env (sshpass); домашний сервер
+# saturday-run — по ключу ~/.ssh/id_ed25519: пароля в его dev-.env нет, а
+# sshpass туда не поставить без sudo. Раньше пароль требовался всегда, и деплой
+# с сервера заводился только через PATH-шим поверх sshpass.
+SSH_OPTS=(-o StrictHostKeyChecking=no -o ConnectTimeout=20)
+if [[ -n "${TEMP_SSH_PASSWORD:-}" ]]; then
+  if ! command -v sshpass >/dev/null 2>&1; then
+    echo "deploy_prod: TEMP_SSH_PASSWORD задан, но sshpass не установлен" >&2
+    exit 1
+  fi
+  export SSHPASS="${TEMP_SSH_PASSWORD}"
+  SSH_CMD=(sshpass -e ssh "${SSH_OPTS[@]}")
+else
+  # BatchMode — чтобы без ключа сразу упасть с внятной ошибкой, а не зависнуть
+  # на интерактивном запросе пароля посреди неинтерактивного прогона.
+  SSH_CMD=(ssh -o BatchMode=yes "${SSH_OPTS[@]}")
 fi
-
-if ! command -v sshpass >/dev/null 2>&1; then
-  echo "deploy_prod: sshpass required" >&2
-  exit 1
-fi
-
-export SSHPASS="${TEMP_SSH_PASSWORD}"
 
 # --- Deploy lock -------------------------------------------------------------
 # Serialize concurrent deploys (две сессии / worktree могут стартовать деплой
@@ -138,7 +144,7 @@ REMOTE_QUOTED=$(printf '%q' "$REMOTE")
 # так сценарий всегда соответствует коду, даже если папка, откуда запущен деплой,
 # отстала от origin/main (18.07.2026 из-за этого не поднялся новый сервис worker).
 echo "=== remote deploy (single ssh connection) ==="
-sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 "${SSH_USER}@${SSH_HOST}" \
+"${SSH_CMD[@]}" "${SSH_USER}@${SSH_HOST}" \
   "REMOTE=${REMOTE_QUOTED} LOCAL_SHA=${LOCAL_SHA} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 cd "$REMOTE"
