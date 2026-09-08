@@ -25,6 +25,37 @@ CLUB_LEVELS = (10, 25, 50, 100, 250)
 # Секундомер secondary-событий кросслинков — исключаем из всех исторических выборок.
 NOT_SECONDARY_SQL = "id NOT IN (SELECT secondary_event_id FROM event_crosslinks)"
 
+
+def volunteer_occasion_sql(
+    date_col: str = "e.event_date",
+    platform_col: str = "pl.code",
+    location_col: str = "e.location_id",
+) -> str:
+    """Ключ «одного волонтёрства» для count(DISTINCT …).
+
+    5 вёрст засчитывают волонтёрство раз в календарный день, и так же считает
+    весь сайт (app.volunteering_occasions): две площадки за одну субботу — это
+    один зачёт, а не два. Исключение — 1 января: инвентаризация даёт зачёт на
+    каждую локацию этого дня.
+
+    Пока считали события, у Владислава КОСТИНА (5verst.ru/userstats/790224653/)
+    выходило 75 при 72 на самом 5 вёрст — и 05.09.2026 он попадал в пост
+    Домодедова «75-е волонтёрство в системе», хотя юбилея не было.
+    """
+    day = f"to_char({date_col}, 'YYYY-MM-DD')"
+    return f"""CASE
+        WHEN {platform_col} = 'five_verst'
+         AND extract(month FROM {date_col}) = 1
+         AND extract(day FROM {date_col}) = 1
+            THEN {day} || '@' || {location_col}::text
+        ELSE {day}
+    END"""
+
+
+def _counted_unit_sql(table: str) -> str:
+    """Что считаем в count(DISTINCT …): пробежки — события, волонтёрства — дни."""
+    return volunteer_occasion_sql() if table == "volunteer_results" else "x.event_id"
+
 # Подпись в конце поста для рассылок — ссылка на канал автора, не на сайт: кто
 # перейдёт в канал по ссылке, увидит там и новости о сайте run5k.run.
 POST_SIGNATURE = "📊 Статистика подготовлена каналом t.me/popov_way"
@@ -257,6 +288,7 @@ def _runner_stat_rows(db: Session, params: dict[str, Any]) -> list[dict[str, Any
 
 def _volunteer_stat_rows(db: Session, params: dict[str, Any]) -> list[dict[str, Any]]:
     """Построчная статистика волонтёров события — общая для отчёта и свода."""
+    occasion = volunteer_occasion_sql()
     return _query(
         db,
         f"""
@@ -278,15 +310,33 @@ def _volunteer_stat_rows(db: Session, params: dict[str, Any]) -> list[dict[str, 
               AND NOT e.is_test_event
               AND e.{NOT_SECONDARY_SQL}
             GROUP BY vr.participant_id
+        ),
+        -- Номер волонтёрства — по дням (volunteer_occasion_sql), и уже
+        -- ВКЛЮЧАЯ сегодняшний старт: прежнее «prev + 1» ломалось ровно там,
+        -- где человек в этот же день успевал ещё на одну площадку.
+        totals AS (
+            SELECT vr.participant_id,
+                   count(DISTINCT {occasion}) AS vol_occasions,
+                   count(DISTINCT CASE WHEN e.location_id IN :loc_ids THEN {occasion} END)
+                       AS loc_vol_occasions
+            FROM volunteer_results vr
+            JOIN events e ON e.id = vr.event_id
+            JOIN platforms pl ON pl.id = e.platform_id
+            WHERE vr.participant_id IN (SELECT participant_id FROM today)
+              AND e.event_date <= :event_date
+              AND NOT e.is_test_event
+              AND e.{NOT_SECONDARY_SQL}
+            GROUP BY vr.participant_id
         )
         SELECT t.participant_id, p.display_name, p.profile_url, t.roles,
                (prev.participant_id IS NULL) AS first_volunteering,
                (coalesce(prev.loc_vol_events, 0) = 0) AS first_volunteering_at_location,
-               coalesce(prev.loc_vol_events, 0) + 1 AS location_vol_count,
-               coalesce(prev.vol_events, 0) + 1 AS platform_vol_count,
+               coalesce(totals.loc_vol_occasions, 1) AS location_vol_count,
+               coalesce(totals.vol_occasions, 1) AS platform_vol_count,
                prev.prev_roles
         FROM today t
         LEFT JOIN prev ON prev.participant_id = t.participant_id
+        LEFT JOIN totals ON totals.participant_id = t.participant_id
         LEFT JOIN participants p ON p.id = t.participant_id
         """,
         params,
@@ -478,16 +528,18 @@ def build_event_report(
 
     # --- Юбилеи в локации и «1 шаг до юбилея» ---
     def _location_counts(table: str) -> list[dict[str, Any]]:
+        counted = _counted_unit_sql(table)
         return _query(
             db,
             f"""
             WITH counts AS (
                 SELECT x.participant_id,
-                       count(DISTINCT x.event_id) AS total,
+                       count(DISTINCT {counted}) AS total,
                        max(e.event_date) AS last_date,
                        bool_or(x.event_id = CAST(:event_id AS uuid)) AS participated_today
                 FROM {table} x
                 JOIN events e ON e.id = x.event_id
+                JOIN platforms pl ON pl.id = e.platform_id
                 WHERE e.location_id IN :loc_ids
                   AND NOT e.is_test_event
                   AND e.event_date <= :event_date
@@ -540,6 +592,7 @@ def build_event_report(
 
     # --- Глобальные клубы и юбилейные пробежки (вся платформа) ---
     def _global_counts(table: str) -> list[dict[str, Any]]:
+        counted = _counted_unit_sql(table)
         return _query(
             db,
             f"""
@@ -548,9 +601,10 @@ def build_event_report(
                 WHERE event_id = :event_id AND participant_id IS NOT NULL
             ),
             counts AS (
-                SELECT x.participant_id, count(DISTINCT x.event_id) AS total
+                SELECT x.participant_id, count(DISTINCT {counted}) AS total
                 FROM {table} x
                 JOIN events e ON e.id = x.event_id
+                JOIN platforms pl ON pl.id = e.platform_id
                 WHERE x.participant_id IN (SELECT participant_id FROM today_participants)
                   AND NOT e.is_test_event
                   AND e.event_date <= :event_date

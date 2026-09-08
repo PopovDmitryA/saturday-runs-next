@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
@@ -38,6 +39,7 @@ from app.services.location_page_service import (
     _read_json_cache,
     _write_json_cache,
 )
+from app.volunteering_occasions import count_volunteering_for_platform
 
 ABSENCE_CACHE_TTL_SECONDS = 3 * 60 * 60
 
@@ -378,7 +380,9 @@ def _next_milestone(total: int) -> int:
 
 
 def milestones_cache_key(identity_key: str, absence_weeks: int) -> str:
-    return f"organizer:milestones:v2:{identity_key}:{absence_weeks}"
+    # v3 — волонтёрства считаются днями, а не событиями
+    # (_volunteer_occasion_counts): числа поменялись, форма payload — нет.
+    return f"organizer:milestones:v3:{identity_key}:{absence_weeks}"
 
 
 def build_location_milestones(
@@ -401,6 +405,42 @@ def build_location_milestones(
     if use_cache:
         _write_json_cache(cache_key, payload, MILESTONES_CACHE_TTL_SECONDS)
     return payload
+
+
+def _volunteer_occasion_counts(db: Session, filters: list[Any]) -> dict[Any, tuple[int, date]]:
+    """Волонтёрства по календарным дням + дата последнего выхода.
+
+    Считаем не события, а occasion'ы (app.volunteering_occasions): 5 вёрст
+    засчитывают одно волонтёрство в день, сколько бы площадок человек ни
+    объехал (кроме 1 января — там зачёт на каждую локацию). По событиям
+    «Юбилеи» звали поздравлять раньше срока: у Владислава КОСТИНА
+    (5verst.ru/userstats/790224653/) выходило 75 при 72 на самом 5 вёрст.
+    """
+    grouped: dict[tuple[Any, str], list[tuple[date, str]]] = {}
+    last_seen: dict[Any, date] = {}
+    for pid, platform_code, event_date, location_key in (
+        db.query(
+            VolunteerResult.participant_id,
+            Platform.code,
+            Event.event_date,
+            Location.external_key,
+        )
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(Location, Event.location_id == Location.id)
+        .filter(*filters)
+        .all()
+    ):
+        grouped.setdefault((pid, str(platform_code)), []).append(
+            (event_date, location_key or "unknown")
+        )
+        if pid not in last_seen or event_date > last_seen[pid]:
+            last_seen[pid] = event_date
+
+    totals: dict[Any, int] = {}
+    for (pid, platform_code), rows in grouped.items():
+        totals[pid] = totals.get(pid, 0) + count_volunteering_for_platform(platform_code, rows)
+    return {pid: (total, last_seen[pid]) for pid, total in totals.items()}
 
 
 def _compute_location_milestones(
@@ -444,10 +484,11 @@ def _compute_location_milestones(
         )
         return {pid: (int(count), last) for pid, count, last in rows}
 
-    from app.models import VolunteerResult
-
     local_runs = _local_counts(RunResult)
-    local_vols = _local_counts(VolunteerResult)
+    local_vols = _volunteer_occasion_counts(
+        db,
+        [VolunteerResult.event_id.in_(event_ids), VolunteerResult.participant_id.isnot(None)],
+    )
 
     active_ids = {
         pid
@@ -476,7 +517,17 @@ def _compute_location_milestones(
         return {pid: int(count) for pid, count in query.group_by(model.participant_id).all()}
 
     platform_runs = _platform_counts(RunResult, timed=True)
-    platform_vols = _platform_counts(VolunteerResult, timed=False)
+    platform_vols = {
+        pid: total
+        for pid, (total, _last) in _volunteer_occasion_counts(
+            db,
+            [
+                VolunteerResult.participant_id.in_(active_ids),
+                Event.is_test_event.is_(False),
+                Event.id.notin_(secondary_events),
+            ],
+        ).items()
+    }
 
     people = {
         row.id: row
@@ -743,7 +794,8 @@ BENCH_MIN_RUNS_DEFAULT = 5
 
 
 def bench_cache_key(identity_key: str, min_runs: int) -> str:
-    return f"organizer:bench:v5:{identity_key}:{min_runs}"
+    # v6 — «Всего волонтёрств» по дням, а не по событиям.
+    return f"organizer:bench:v6:{identity_key}:{min_runs}"
 
 
 def build_location_volunteer_bench(
@@ -854,23 +906,34 @@ def _compute_location_volunteer_bench(
         row.id: row for row in db.query(Participant).filter(Participant.id.in_(pids)).all()
     }
     secondary_events = select(EventCrosslink.secondary_event_id)
-    totals = {
-        pid: int(count)
-        for pid, count in (
-            db.query(
-                VolunteerResult.participant_id,
-                func.count(func.distinct(VolunteerResult.event_id)),
-            )
-            .join(Event, VolunteerResult.event_id == Event.id)
-            .filter(
-                VolunteerResult.participant_id.in_(pids),
-                Event.is_test_event.is_(False),
-                Event.id.notin_(secondary_events),
-            )
-            .group_by(VolunteerResult.participant_id)
-            .all()
+    # «Всего волонтёрств» — по календарным дням (app.volunteering_occasions),
+    # как на 5 вёрст и в остальных счётчиках сайта: две площадки за одну
+    # субботу — один зачёт. По событиям число уезжало вверх (см. разбор
+    # 5verst.ru/userstats/790224653/: 75 против 72).
+    occasion_rows: dict[tuple[UUID, str], list[tuple[date, str]]] = {}
+    for pid, platform_code, event_date, location_key in (
+        db.query(
+            VolunteerResult.participant_id,
+            Platform.code,
+            Event.event_date,
+            Location.external_key,
         )
-    }
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(Location, Event.location_id == Location.id)
+        .filter(
+            VolunteerResult.participant_id.in_(pids),
+            Event.is_test_event.is_(False),
+            Event.id.notin_(secondary_events),
+        )
+        .all()
+    ):
+        occasion_rows.setdefault((pid, str(platform_code)), []).append(
+            (event_date, location_key or "unknown")
+        )
+    totals: dict[UUID, int] = {}
+    for (pid, platform_code), rows in occasion_rows.items():
+        totals[pid] = totals.get(pid, 0) + count_volunteering_for_platform(platform_code, rows)
 
     items: list[dict[str, Any]] = []
     for pid in pids:
