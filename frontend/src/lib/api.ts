@@ -297,7 +297,18 @@ export type DashboardAnalytics = {
 };
 
 /** Свежайший результат участника — герой дашборда «последняя суббота». */
+export type LastSaturdayVolunteering = {
+  platform_code: string;
+  location_name: string;
+  location_slug: string | null;
+  role: string | null;
+};
+
 export type LastSaturday = {
+  /** Чем был этот день: пробежкой или только волонтёрством (беговые поля пустые). */
+  kind: "run" | "volunteer";
+  /** Волонтёрства этого дня — и рядом с пробежкой, и вместо неё. */
+  volunteering: LastSaturdayVolunteering[];
   event_date: string;
   platform_code: string;
   location_name: string;

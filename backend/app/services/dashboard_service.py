@@ -75,7 +75,9 @@ class SyncRefreshRateLimitedError(Exception):
 # 36: notables последней субботы — чем она примечательна, словами.
 # 37: среднее место по полу считается только женщинам — у мужчин женский
 # зачёт совпадает с абсолютом, и плитка дублировала «Среднее место».
-ANALYTICS_VERSION = 38
+# 39: last_saturday — день целиком: kind (пробежка/волонтёрство) и волонтёрства
+#     того же дня; без бампа кэш отдавал старый payload без этих полей.
+ANALYTICS_VERSION = 39
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 
@@ -928,55 +930,107 @@ def _compute_dashboard_analytics(
         else None
     )
 
-    # «Последняя суббота» — герой дашборда: свежайший результат с дельтой
-    # к прошлому визиту на ту же площадку. Считается из уже отфильтрованного
-    # runs_query (без тестовых стартов и кросслинк-дублей).
+    # «Последняя суббота» — герой дашборда: свежайший день участия с дельтой
+    # к прошлому визиту на ту же площадку. Считается из уже отфильтрованных
+    # runs_query/vol_query (без тестовых стартов и кросслинк-дублей).
+    #
+    # День берётся по обоим зачётам: у того, кто в субботу только волонтёрил,
+    # карточка раньше показывала последнюю ПРОБЕЖКУ — хоть месячной давности,
+    # а само волонтёрство не упоминала (Дмитрий, 08.09.2026). Теперь если
+    # волонтёрство свежее пробежки, героем становится оно; а волонтёрства того
+    # же дня, что и пробежка, идут рядом с ней списком.
     last_saturday: dict[str, object] | None = None
     last_row = runs_query.order_by(
         Event.event_date.desc(), RunResult.finish_time_sec.asc().nullslast()
     ).first()
-    if last_row is not None:
-        last_run, last_event, last_location, last_platform = last_row
-        delta_vs_prev_sec: int | None = None
-        prev_date_iso: str | None = None
-        if last_run.finish_time_sec is not None:
-            prev_same_loc = (
-                runs_query.filter(
-                    Event.location_id == last_event.location_id,
-                    Event.event_date < last_event.event_date,
-                    RunResult.finish_time_sec.isnot(None),
+    last_vol_row = vol_query.order_by(Event.event_date.desc()).first()
+    run_date = last_row[1].event_date if last_row is not None else None
+    vol_date = last_vol_row[1].event_date if last_vol_row is not None else None
+    last_date = max(d for d in (run_date, vol_date) if d is not None) if (run_date or vol_date) else None
+
+    if last_date is not None:
+        volunteering: list[dict[str, object]] = []
+        if vol_date == last_date:
+            for vol, _vol_event, vol_location, vol_platform in (
+                vol_query.filter(Event.event_date == last_date)
+                .order_by(Location.name.asc(), VolunteerResult.role.asc())
+                .all()
+            ):
+                volunteering.append(
+                    {
+                        "platform_code": vol_platform.code,
+                        "location_name": catalog_index.display_name(vol_location, vol_platform.code),
+                        "location_slug": vol_location.external_key.strip().lower(),
+                        "role": vol.role,
+                    }
                 )
-                .order_by(Event.event_date.desc())
-                .first()
-            )
-            if prev_same_loc is not None:
-                prev_run, prev_event, _prev_loc, _prev_platform = prev_same_loc
-                delta_vs_prev_sec = int(last_run.finish_time_sec) - int(prev_run.finish_time_sec)
-                prev_date_iso = prev_event.event_date.isoformat()
-        last_saturday = {
-            "event_date": last_event.event_date.isoformat(),
-            "platform_code": last_platform.code,
-            "location_name": catalog_index.display_name(last_location, last_platform.code),
-            "location_slug": last_location.external_key.strip().lower(),
-            "finish_time_sec": last_run.finish_time_sec,
-            "finish_time_display": normalize_finish_time_display(
-                last_run.finish_time_sec, last_run.finish_time_display
-            ),
-            "pace_display": last_run.pace_display,
-            "position": last_run.position,
-            "gender_position": last_run.gender_position,
-            "is_pr": bool(last_run.is_pr),
-            "is_first_run_at_location": bool(last_run.is_first_run_at_location),
-            "delta_vs_prev_sec": delta_vs_prev_sec,
-            "prev_date": prev_date_iso,
-            "notables": _last_saturday_notables(
-                last_run,
-                total_runs=total_runs,
-                unique_run_locations=run_unique_counts.unique_total,
-                avg_finish_sec=_to_int(avg_finish),
-                saturday_streak=_current_saturday_streak(all_activity_dates, today),
-            ),
-        }
+
+        if last_row is not None and run_date == last_date:
+            last_run, last_event, last_location, last_platform = last_row
+            delta_vs_prev_sec: int | None = None
+            prev_date_iso: str | None = None
+            if last_run.finish_time_sec is not None:
+                prev_same_loc = (
+                    runs_query.filter(
+                        Event.location_id == last_event.location_id,
+                        Event.event_date < last_event.event_date,
+                        RunResult.finish_time_sec.isnot(None),
+                    )
+                    .order_by(Event.event_date.desc())
+                    .first()
+                )
+                if prev_same_loc is not None:
+                    prev_run, prev_event, _prev_loc, _prev_platform = prev_same_loc
+                    delta_vs_prev_sec = int(last_run.finish_time_sec) - int(prev_run.finish_time_sec)
+                    prev_date_iso = prev_event.event_date.isoformat()
+            last_saturday = {
+                "kind": "run",
+                "event_date": last_event.event_date.isoformat(),
+                "platform_code": last_platform.code,
+                "location_name": catalog_index.display_name(last_location, last_platform.code),
+                "location_slug": last_location.external_key.strip().lower(),
+                "finish_time_sec": last_run.finish_time_sec,
+                "finish_time_display": normalize_finish_time_display(
+                    last_run.finish_time_sec, last_run.finish_time_display
+                ),
+                "pace_display": last_run.pace_display,
+                "position": last_run.position,
+                "gender_position": last_run.gender_position,
+                "is_pr": bool(last_run.is_pr),
+                "is_first_run_at_location": bool(last_run.is_first_run_at_location),
+                "delta_vs_prev_sec": delta_vs_prev_sec,
+                "prev_date": prev_date_iso,
+                "notables": _last_saturday_notables(
+                    last_run,
+                    total_runs=total_runs,
+                    unique_run_locations=run_unique_counts.unique_total,
+                    avg_finish_sec=_to_int(avg_finish),
+                    saturday_streak=_current_saturday_streak(all_activity_dates, today),
+                ),
+                "volunteering": volunteering,
+            }
+        else:
+            # В этот день только волонтёрили: героем становится первое из
+            # волонтёрств, остальные (вторая роль, вторая площадка) — списком.
+            head = volunteering[0]
+            last_saturday = {
+                "kind": "volunteer",
+                "event_date": last_date.isoformat(),
+                "platform_code": head["platform_code"],
+                "location_name": head["location_name"],
+                "location_slug": head["location_slug"],
+                "finish_time_sec": None,
+                "finish_time_display": None,
+                "pace_display": None,
+                "position": None,
+                "gender_position": None,
+                "is_pr": False,
+                "is_first_run_at_location": False,
+                "delta_vs_prev_sec": None,
+                "prev_date": None,
+                "notables": [],
+                "volunteering": volunteering,
+            }
 
     return {
         "analytics_version": ANALYTICS_VERSION,

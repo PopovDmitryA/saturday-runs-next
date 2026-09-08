@@ -1,17 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readCached, writeCached } from "../../../lib/dataCache";
 import { DashboardAnalytics } from "../../../components/DashboardAnalytics";
-import { MyHistoryTeaser } from "../../../components/MyHistoryTeaser";
 import { LastSaturdayCard } from "../../../components/LastSaturdayCard";
 import { OnThisDayCard } from "../../../components/OnThisDayCard";
 import { PlatformBadge } from "../../../components/PlatformBadge";
 import { ProfileLinkSection } from "../../../components/ProfileLinkSection";
-import { RecentRunsRating } from "../../../components/RecentRunsRating";
 import { RequireAuth } from "../../../components/RequireAuth";
 import { GoalsTeaser } from "../../dashboard/GoalsTeaser";
 import {
   getDashboard,
-  getMyHistory,
   getOnThisDay,
   keepDisplayName,
   type DashboardResponse,
@@ -26,7 +23,6 @@ import {
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../../lib/portalRoutes";
-import { ShareMomentCard } from "../../sharing/ShareMomentCard";
 import { PortalCabinetShell, userLabel } from "./PortalCabinetShell";
 
 // «00:23:12» → «23:12»: в герое часы почти всегда нулевые, укорачиваем.
@@ -349,19 +345,22 @@ function PortalDashboardContent({ user }: { user: User }) {
         <>
           <DashboardHero data={data} userName={userLabel(user)} />
 
+          {/* «Последняя суббота» — одна карточка про этот день целиком: пробежка
+              и волонтёрство, вехи, оценка и «Поделиться». Раньше это были четыре
+              плашки подряд (суббота, момент, оценки, тизер истории), и три из них
+              рассказывали одну новость — «новая локация» (Дмитрий, 08.09.2026). */}
           {stats?.analytics?.last_saturday && (
-            <LastSaturdayCard data={stats.analytics.last_saturday} own />
+            <LastSaturdayCard
+              data={stats.analytics.last_saturday}
+              own
+              user={user}
+              historyHref={PORTAL_CABINET_HISTORY_HREF}
+            />
           )}
-
-          {stats && <ShareMomentCard stats={stats} user={user} />}
 
           <OnThisDayCard load={getOnThisDay} />
 
           <GoalsTeaser />
-
-          <RecentRunsRating />
-
-          <MyHistoryTeaser load={getMyHistory} href={PORTAL_CABINET_HISTORY_HREF} />
 
           <DashboardAnalytics
             showHomeLocationWarning

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -135,9 +136,26 @@ class LocationRecordsBlockResponse(BaseModel):
     entries: list[LocationRecordEntryResponse] = Field(default_factory=list)
 
 
-class LastSaturdayResponse(BaseModel):
-    """Свежайший результат участника — герой дашборда «последняя суббота»."""
+class LastSaturdayVolunteeringResponse(BaseModel):
+    """Волонтёрство в день «последней субботы» — роль на площадке."""
 
+    platform_code: str
+    location_name: str
+    location_slug: str | None = None
+    role: str | None = None
+
+
+class LastSaturdayResponse(BaseModel):
+    """Свежайший день участия — герой дашборда «последняя суббота».
+
+    kind — чем был этот день: пробежкой (тогда заполнены время/место/дельта)
+    или только волонтёрством (тогда герой — первая роль из volunteering,
+    а беговые поля пустые). Волонтёрства того же дня всегда в volunteering,
+    даже при kind="run": пробежал в одном месте и помог в другом.
+    """
+
+    kind: Literal["run", "volunteer"] = "run"
+    volunteering: list[LastSaturdayVolunteeringResponse] = Field(default_factory=list)
     event_date: date
     platform_code: str
     location_name: str

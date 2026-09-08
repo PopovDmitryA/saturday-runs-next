@@ -1308,6 +1308,160 @@ a.last-saturday-location:hover {
   font-size: 0.82rem;
 }
 
+/* Волонтёрства того же дня — строкой под цифрами пробежки. */
+.last-saturday-volunteering {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.9rem;
+  color: var(--text-2);
+}
+
+.last-saturday-volunteering a {
+  color: inherit;
+}
+
+.last-saturday-volunteering li > span[aria-hidden] {
+  margin-right: 0.35rem;
+}
+
+/* Своя карточка — две колонки: слева что было, справа что с этим делать
+   (вехи дня, оценка, «Поделиться»). Раньше правая часть занимала три
+   отдельные плашки под карточкой. */
+.last-saturday-card-own {
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 300px);
+  column-gap: 1.25rem;
+}
+
+.last-saturday-primary {
+  display: grid;
+  gap: 0.5rem;
+  /* Правая колонка обычно выше — строки левой не растягиваем ей вдогонку. */
+  align-content: start;
+  min-width: 0;
+}
+
+.last-saturday-side {
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+  padding-left: 1.1rem;
+  border-left: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+
+.last-saturday-side-block {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.last-saturday-side-title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.last-saturday-side-hint {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.last-saturday-milestones {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.last-saturday-milestone {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.last-saturday-milestone-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  font-size: 0.9rem;
+}
+
+.last-saturday-milestone-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.last-saturday-side-more {
+  font-size: 0.82rem;
+  color: var(--accent-indigo);
+  text-decoration: none;
+}
+
+.last-saturday-side-more:hover {
+  text-decoration: underline;
+}
+
+.last-saturday-rate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.last-saturday-rate-btn {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.last-saturday-rate-btn:hover:not(:disabled) {
+  border-color: var(--border-heavy);
+  background: var(--tint-indigo-bg);
+}
+
+.last-saturday-rate-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.last-saturday-rate-btn-done {
+  border-style: dashed;
+  color: var(--text-muted);
+}
+
+.last-saturday-share {
+  justify-self: start;
+}
+
+@media (max-width: 720px) {
+  .last-saturday-card-own {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .last-saturday-side {
+    padding-left: 0;
+    padding-top: 0.75rem;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+
 
 /* Тематическая группа аналитики: заголовок + витрина карточек + свои панели.
    Первая группа не отбивается — заголовок сам задаёт ритм. */
