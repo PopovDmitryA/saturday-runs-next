@@ -4384,3 +4384,169 @@ export function getAdminSyncRuns(params: {
   return apiFetch<AdminSyncRunsResponse>(`/admin/sync-runs?${query.toString()}`);
 }
 
+
+// ===== Заявки на волонтёрство: страница локации и кабинет организатора =====
+
+export type VolunteerSignupStatus = "pending" | "confirmed" | "declined" | "cancelled";
+/** none — в NRMS не писали, saved — внёс сайт, failed — ошибка, manual — внёс организатор руками. */
+export type VolunteerSignupNrmsStatus = "none" | "saved" | "failed" | "manual";
+
+export type VolunteerSignupRequestItem = {
+  id: string;
+  event_date: string;
+  event_date_display: string;
+  role_name: string;
+  verst_id: string;
+  participant_name: string | null;
+  comment: string | null;
+  status: VolunteerSignupStatus;
+  created_at: string;
+  decided_at: string | null;
+  decision_note: string | null;
+  nrms_status: VolunteerSignupNrmsStatus;
+  nrms_error: string | null;
+  organizer_notified: boolean;
+  /** null — открытая запись 5verst.ru недоступна или дата за её горизонтом. */
+  in_open_roster: boolean | null;
+};
+
+export type VolunteerSignupRoleOption = {
+  name: string;
+  /** Сколько мест (строк) у роли в открытой записи. */
+  slots: number;
+  /** dd.mm.yyyy → кто уже записан по открытой записи 5verst.ru. */
+  filled: Record<string, string>;
+};
+
+export type VolunteerSignupOptions = {
+  location: { slug: string; name: string };
+  supported: boolean;
+  five_verst_slug: string | null;
+  roster_url: string | null;
+  roster_available: boolean;
+  organizer_connected: boolean;
+  linked: boolean;
+  verst_id: string | null;
+  participant_name: string | null;
+  dates: { date: string; date_display: string }[];
+  roles: VolunteerSignupRoleOption[];
+  my_requests: VolunteerSignupRequestItem[];
+  fallback_message: string;
+};
+
+export function getVolunteerSignupOptions(slug: string) {
+  return apiFetch<VolunteerSignupOptions>(`/volunteer-signup/${encodeURIComponent(slug)}`);
+}
+
+export function createVolunteerSignup(
+  slug: string,
+  payload: { event_date: string; role_name: string; comment?: string | null },
+) {
+  return apiFetch<{ item: VolunteerSignupRequestItem }>(
+    `/volunteer-signup/${encodeURIComponent(slug)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event_date: payload.event_date,
+        role_name: payload.role_name,
+        comment: payload.comment || null,
+      }),
+    },
+  );
+}
+
+export function cancelVolunteerSignup(slug: string, requestId: string) {
+  return apiFetch<{ item: VolunteerSignupRequestItem }>(
+    `/volunteer-signup/${encodeURIComponent(slug)}/${encodeURIComponent(requestId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export type OrganizerSignupRequestsResponse = {
+  location: { slug: string; name: string };
+  supported: boolean;
+  five_verst_slug: string | null;
+  roster_url: string | null;
+  roster_available: boolean;
+  pending_count: number;
+  items: VolunteerSignupRequestItem[];
+};
+
+export function getOrganizerSignupRequests(slug: string) {
+  return apiFetch<OrganizerSignupRequestsResponse>(
+    `/organizer/${encodeURIComponent(slug)}/signup-requests`,
+  );
+}
+
+export function decideOrganizerSignupRequest(
+  slug: string,
+  requestId: string,
+  decision: "confirmed" | "declined",
+  note?: string | null,
+) {
+  return apiFetch<{ item: VolunteerSignupRequestItem }>(
+    `/organizer/${encodeURIComponent(slug)}/signup-requests/${encodeURIComponent(requestId)}/decision`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision, note: note || null }),
+    },
+    // Подтверждение ходит в NRMS цепочкой из нескольких вызовов.
+    { timeoutMs: 90_000 },
+  );
+}
+
+export type OrganizerNrmsSession = {
+  connected: boolean;
+  username: string | null;
+  expires_at: string | null;
+  events?: { id: number; name: string; url: string }[];
+};
+
+export function getOrganizerNrmsSession(slug: string) {
+  return apiFetch<OrganizerNrmsSession>(`/organizer/${encodeURIComponent(slug)}/nrms/session`);
+}
+
+export function organizerNrmsLogin(slug: string, username: string, password: string) {
+  return apiFetch<OrganizerNrmsSession>(
+    `/organizer/${encodeURIComponent(slug)}/nrms/login`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    },
+    { timeoutMs: 60_000 },
+  );
+}
+
+export function organizerNrmsLogout(slug: string) {
+  return apiFetch<OrganizerNrmsSession>(`/organizer/${encodeURIComponent(slug)}/nrms/session`, {
+    method: "DELETE",
+  });
+}
+
+export type OrganizerSignupDecision = {
+  request_id: string;
+  decision: "confirmed" | "declined";
+  note?: string | null;
+};
+
+/** Пакет решений одним проходом: подтверждённые одной даты уходят в NRMS одним save. */
+export function decideOrganizerSignupRequests(slug: string, decisions: OrganizerSignupDecision[]) {
+  return apiFetch<{ items: VolunteerSignupRequestItem[] }>(
+    `/organizer/${encodeURIComponent(slug)}/signup-requests/decisions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        decisions: decisions.map((d) => ({
+          request_id: d.request_id,
+          decision: d.decision,
+          note: d.note || null,
+        })),
+      }),
+    },
+    { timeoutMs: 120_000 },
+  );
+}

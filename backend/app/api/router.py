@@ -29,6 +29,7 @@ from app.api.routes import (
     sweep_hq,
     sync,
     unified_protocol,
+    volunteer_signup,
 )
 
 api_router = APIRouter()
@@ -49,6 +50,7 @@ api_router.include_router(locations.router)
 api_router.include_router(unified_protocol.router)
 api_router.include_router(media.router)
 api_router.include_router(organizer.router)
+api_router.include_router(volunteer_signup.router)
 api_router.include_router(newsletter.router)
 api_router.include_router(portal.router)
 api_router.include_router(blog.router)

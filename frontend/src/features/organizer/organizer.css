@@ -916,3 +916,208 @@ select.org-select-compact {
   font-size: 0.85rem;
   line-height: 1.2;
 }
+
+/* ===== Заявки на волонтёрство ===== */
+
+.org-signup-nrms {
+  margin-bottom: 1rem;
+}
+
+.org-signup-nrms-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem 1.5rem;
+}
+
+.org-signup-nrms-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  max-width: 60ch;
+}
+
+.org-signup-nrms-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+  max-width: 420px;
+}
+
+.org-signup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.org-signup-field input {
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-soft, rgba(127, 127, 127, 0.3));
+  background: var(--card-bg, transparent);
+  color: inherit;
+}
+
+.org-signup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.org-signup-section {
+  margin-top: 1.25rem;
+}
+
+.org-signup-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.org-signup-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.org-signup-item-history {
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+}
+
+.org-signup-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.4rem 1rem;
+}
+
+.org-signup-item-who {
+  font-size: 1.02rem;
+}
+
+.org-signup-item-when {
+  margin-top: 0.15rem;
+  font-weight: 600;
+}
+
+.org-signup-item-comment {
+  margin: 0.4rem 0 0;
+  font-style: italic;
+}
+
+.org-signup-item-meta {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+}
+
+.org-signup-decline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-width: 560px;
+}
+
+.org-signup-nrms-line {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.org-signup-tone-ok {
+  color: var(--tint-green-text, #1a7f37);
+}
+
+.org-signup-tone-no {
+  color: var(--tint-red-text, #cf222e);
+}
+
+.org-signup-tone-wait {
+  color: var(--tint-yellow-text, #9a6700);
+}
+
+.org-signup-result {
+  margin-bottom: 1rem;
+}
+
+.org-signup-footnote {
+  margin-top: 1.25rem;
+  font-size: 0.85rem;
+}
+
+/* Карточка хаба с ждущими заявками просит внимания. */
+.org-hub-card-attention {
+  border-color: var(--tint-yellow-border, rgba(212, 167, 44, 0.6));
+  box-shadow: 0 0 0 2px var(--tint-yellow-bg, rgba(212, 167, 44, 0.16));
+}
+
+/* Пакет решений: выбор по карточке + одна кнопка «Сохранить». */
+.org-signup-choices {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.org-signup-choice {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft, rgba(127, 127, 127, 0.3));
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.org-signup-choice-active {
+  font-weight: 600;
+  border-color: var(--accent, #6ea8fe);
+  background: var(--bg-muted, rgba(127, 127, 127, 0.1));
+}
+
+.org-signup-choice-confirmed {
+  background: var(--tint-green-bg, rgba(46, 160, 67, 0.12));
+  border-color: var(--tint-green-border, rgba(46, 160, 67, 0.4));
+}
+
+.org-signup-choice-declined {
+  background: var(--tint-red-bg, rgba(207, 34, 46, 0.1));
+  border-color: var(--tint-red-border, rgba(207, 34, 46, 0.4));
+}
+
+.org-signup-item-confirmed {
+  border-color: var(--tint-green-border, rgba(46, 160, 67, 0.4));
+}
+
+.org-signup-item-declined {
+  border-color: var(--tint-red-border, rgba(207, 34, 46, 0.4));
+}
+
+.org-signup-savebar {
+  position: sticky;
+  bottom: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  margin-top: 0.9rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 12px;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-soft, rgba(127, 127, 127, 0.3));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+.org-signup-result-list {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+}

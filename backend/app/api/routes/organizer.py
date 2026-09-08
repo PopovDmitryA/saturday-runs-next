@@ -34,8 +34,19 @@ from app.schemas.organizer import (
     SvodResponse,
     TeamLoadResponse,
 )
+from app.schemas.volunteer_signup import (
+    NrmsLoginRequest,
+    NrmsLoginResponse,
+    NrmsSessionState,
+    OrganizerSignupListResponse,
+    SignupBulkDecisionRequest,
+    SignupBulkDecisionResponse,
+    SignupDecisionRequest,
+    SignupDecisionResponse,
+)
 from app.services.admin_event_report_service import build_event_svod
 from app.services.location_page_service import LocationIdentity, resolve_location_identity
+from app.services.nrms_client import NrmsAuthError, NrmsError
 from app.services.organizer_access_service import (
     build_organizer_locations,
     has_organizer_access,
@@ -71,13 +82,24 @@ from app.services.organizer_service import (
     build_location_volunteer_bench,
     list_identity_event_dates,
 )
+from app.services.volunteer_signup_service import (
+    Decision,
+    SignupError,
+    decide_signup_request,
+    decide_signup_requests,
+    list_location_requests,
+    nrms_login,
+    nrms_logout,
+    nrms_session_state,
+)
+from app.services.volunteer_signup_service import (
+    serialize_request as serialize_signup_request,
+)
 
 router = APIRouter(prefix="/organizer", tags=["organizer"])
 
 
-def _require_identity_access(
-    db: Session, user: User, settings: Settings, slug: str
-) -> LocationIdentity:
+def _require_identity_access(db: Session, user: User, settings: Settings, slug: str) -> LocationIdentity:
     identity = resolve_location_identity(db, slug)
     if identity is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
@@ -117,9 +139,7 @@ def organizer_absence(
     current_only: Annotated[bool, Query()] = False,
 ) -> AbsenceResponse:
     identity = _require_identity_access(db, user, settings, slug)
-    payload = build_location_absence(
-        db, identity, min_runs=min_runs, min_missed=min_missed, current_only=current_only
-    )
+    payload = build_location_absence(db, identity, min_runs=min_runs, min_missed=min_missed, current_only=current_only)
     return AbsenceResponse.model_validate(payload)
 
 
@@ -196,9 +216,7 @@ def organizer_event_post(
     min_run_milestone: Annotated[int, Query(ge=10, le=1000)] = 10,
     min_vol_milestone: Annotated[int, Query(ge=10, le=1000)] = 10,
     # «Юбилеи завтра»: кого выкидываем из выборки по длине пропуска.
-    absence_weeks: Annotated[
-        int, Query(ge=1, le=MILESTONE_ABSENCE_WEEKS_MAX)
-    ] = MILESTONE_ABSENCE_WEEKS_DEFAULT,
+    absence_weeks: Annotated[int, Query(ge=1, le=MILESTONE_ABSENCE_WEEKS_MAX)] = MILESTONE_ABSENCE_WEEKS_DEFAULT,
     travelers_min_runs: Annotated[int, Query(ge=1, le=100)] = 5,
 ) -> OrganizerPostResponse:
     """Пост для Telegram по выбранному шаблону.
@@ -222,9 +240,7 @@ def organizer_event_post(
         )
     # «Нужны волонтёры» — по живой записи 5 вёрст, событие не нужно.
     if template == "vacancies":
-        return OrganizerPostResponse(
-            post_text=build_vacancies_post(db, identity), template=template
-        )
+        return OrganizerPostResponse(post_text=build_vacancies_post(db, identity), template=template)
     if event_id is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -236,9 +252,7 @@ def organizer_event_post(
         event = db.query(Event).filter(Event.id == event_id).one_or_none()
         location_ids = {location.id for location, _code in identity.locations}
         if event is None or event.location_id not in location_ids:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Событие не найдено"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Событие не найдено")
         return OrganizerPostResponse(
             post_text=build_travelers_post(db, identity, event, min_runs=travelers_min_runs),
             template=template,
@@ -256,14 +270,10 @@ def organizer_milestones(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     settings: Annotated[Settings, Depends(get_settings)],
-    absence_weeks: Annotated[
-        int, Query(ge=1, le=MILESTONE_ABSENCE_WEEKS_MAX)
-    ] = MILESTONE_ABSENCE_WEEKS_DEFAULT,
+    absence_weeks: Annotated[int, Query(ge=1, le=MILESTONE_ABSENCE_WEEKS_MAX)] = MILESTONE_ABSENCE_WEEKS_DEFAULT,
 ) -> MilestonesResponse:
     identity = _require_identity_access(db, user, settings, slug)
-    return MilestonesResponse.model_validate(
-        build_location_milestones(db, identity, absence_weeks=absence_weeks)
-    )
+    return MilestonesResponse.model_validate(build_location_milestones(db, identity, absence_weeks=absence_weeks))
 
 
 @router.get("/{slug}/newcomers", response_model=NewcomersResponse)
@@ -287,9 +297,7 @@ def organizer_volunteer_bench(
     min_runs: Annotated[int, Query(ge=1, le=100)] = BENCH_MIN_RUNS_DEFAULT,
 ) -> BenchResponse:
     identity = _require_identity_access(db, user, settings, slug)
-    return BenchResponse.model_validate(
-        build_location_volunteer_bench(db, identity, min_runs=min_runs)
-    )
+    return BenchResponse.model_validate(build_location_volunteer_bench(db, identity, min_runs=min_runs))
 
 
 @router.get("/{slug}/team", response_model=TeamLoadResponse)
@@ -342,9 +350,7 @@ def organizer_benchmark(
 ) -> BenchmarkResponse:
     """Сравнение с соседями: город, регион или вся система."""
     identity = _require_identity_access(db, user, settings, slug)
-    return BenchmarkResponse.model_validate(
-        build_benchmark(db, identity, months=months, scope=scope)
-    )
+    return BenchmarkResponse.model_validate(build_benchmark(db, identity, months=months, scope=scope))
 
 
 @router.get("/{slug}/protocols", response_model=ProtocolTimelineResponse)
@@ -373,3 +379,98 @@ def organizer_health(
 
     identity = _require_identity_access(db, user, settings, slug)
     return LocationHealthResponse.model_validate(build_location_health(db, identity))
+
+
+# ===== Заявки на волонтёрство (см. volunteer_signup_service) =====
+
+
+@router.get("/{slug}/signup-requests", response_model=OrganizerSignupListResponse)
+def organizer_signup_requests(
+    slug: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> OrganizerSignupListResponse:
+    identity = _require_identity_access(db, user, settings, slug)
+    return OrganizerSignupListResponse.model_validate(list_location_requests(db, identity))
+
+
+@router.post("/{slug}/signup-requests/{request_id}/decision", response_model=SignupDecisionResponse)
+def organizer_signup_decision(
+    slug: str,
+    request_id: UUID,
+    payload: SignupDecisionRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SignupDecisionResponse:
+    identity = _require_identity_access(db, user, settings, slug)
+    try:
+        request = decide_signup_request(db, identity, user, request_id, decision=payload.decision, note=payload.note)
+    except SignupError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return SignupDecisionResponse(item=serialize_signup_request(request, roster=None))
+
+
+@router.post("/{slug}/signup-requests/decisions", response_model=SignupBulkDecisionResponse)
+def organizer_signup_decisions(
+    slug: str,
+    payload: SignupBulkDecisionRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SignupBulkDecisionResponse:
+    """Пакет решений: подтверждённые одной даты уходят в NRMS одним save."""
+    identity = _require_identity_access(db, user, settings, slug)
+    try:
+        rows = decide_signup_requests(
+            db,
+            identity,
+            user,
+            [Decision(request_id=d.request_id, decision=d.decision, note=d.note) for d in payload.decisions],
+        )
+    except SignupError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return SignupBulkDecisionResponse(items=[serialize_signup_request(r, roster=None) for r in rows])
+
+
+@router.get("/{slug}/nrms/session", response_model=NrmsSessionState)
+def organizer_nrms_session(
+    slug: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> NrmsSessionState:
+    _require_identity_access(db, user, settings, slug)
+    return NrmsSessionState.model_validate(nrms_session_state(user))
+
+
+@router.post("/{slug}/nrms/login", response_model=NrmsLoginResponse)
+def organizer_nrms_login(
+    slug: str,
+    payload: NrmsLoginRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> NrmsLoginResponse:
+    """Обмен логина и пароля NRMS на токен. Пароль не сохраняется и не логируется."""
+    _require_identity_access(db, user, settings, slug)
+    try:
+        state = nrms_login(user, payload.username, payload.password)
+    except NrmsAuthError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except NrmsError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return NrmsLoginResponse.model_validate(state)
+
+
+@router.delete("/{slug}/nrms/session", response_model=NrmsSessionState)
+def organizer_nrms_logout(
+    slug: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> NrmsSessionState:
+    _require_identity_access(db, user, settings, slug)
+    nrms_logout(user)
+    return NrmsSessionState(connected=False)

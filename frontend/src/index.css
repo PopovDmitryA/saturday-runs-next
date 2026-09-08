@@ -16145,3 +16145,172 @@ input.participant-name-search-input:focus {
   font-size: 1.05rem;
   line-height: 1.25;
 }
+
+/* ===== Заявки на волонтёрство: модалка на странице локации ===== */
+
+/* Кнопка в ряду быстрых ссылок шапки локации выглядит как остальные ссылки. */
+.loc-quick-link-button {
+  font: inherit;
+  cursor: pointer;
+  appearance: none;
+}
+
+.vs-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.vs-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.vs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.vs-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.vs-select,
+.vs-textarea {
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-soft, rgba(127, 127, 127, 0.3));
+  background: var(--card-bg, transparent);
+  color: inherit;
+  max-width: 100%;
+}
+
+.vs-textarea {
+  resize: vertical;
+}
+
+.vs-hint {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.vs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+}
+
+.vs-link {
+  font-size: 0.85rem;
+}
+
+.vs-done {
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  background: var(--tint-green-bg, rgba(46, 160, 67, 0.12));
+  border: 1px solid var(--tint-green-border, rgba(46, 160, 67, 0.35));
+}
+
+.vs-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.vs-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.vs-fallback-text {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border-left: 3px solid var(--accent, #6ea8fe);
+  background: var(--bg-muted, rgba(127, 127, 127, 0.1));
+  border-radius: 0 10px 10px 0;
+}
+
+.vs-subtitle {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.vs-my-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.vs-my-item {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 10px;
+  background: var(--bg-muted, rgba(127, 127, 127, 0.08));
+}
+
+.vs-my-main {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+}
+
+.vs-my-when {
+  font-weight: 600;
+}
+
+.vs-my-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+}
+
+.vs-note {
+  font-size: 0.82rem;
+}
+
+.vs-status {
+  font-size: 0.8rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.vs-status-wait {
+  background: var(--tint-yellow-bg, rgba(212, 167, 44, 0.16));
+  border-color: var(--tint-yellow-border, rgba(212, 167, 44, 0.45));
+}
+
+.vs-status-ok {
+  background: var(--tint-green-bg, rgba(46, 160, 67, 0.12));
+  border-color: var(--tint-green-border, rgba(46, 160, 67, 0.35));
+}
+
+.vs-status-no {
+  background: var(--tint-red-bg, rgba(207, 34, 46, 0.1));
+  border-color: var(--tint-red-border, rgba(207, 34, 46, 0.35));
+}
+
+.vs-status-muted {
+  background: var(--bg-muted, rgba(127, 127, 127, 0.1));
+  color: var(--muted, #777);
+}
+
+.btn.btn-compact {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.82rem;
+}

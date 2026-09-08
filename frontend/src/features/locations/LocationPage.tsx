@@ -43,6 +43,7 @@ import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
 import { LocationRecordsModal, type RecordType } from "./LocationRecordsModal";
+import { VolunteerSignupModal } from "./VolunteerSignupModal";
 
 function StatTile({
   value,
@@ -1139,6 +1140,12 @@ function LocationPageContent({ slug }: { slug: string }) {
   // Доступ к кабинету организатора (из личной статистики): включает кнопку
   // в навигации шапки — единственное место входа со страницы локации.
   const [organizerAccess, setOrganizerAccess] = useState(false);
+  // «Хочу волонтёрить»: заявка организатору через сайт. Только у локаций с
+  // половиной 5 вёрст — у них есть открытая запись и NRMS (04.09.2026).
+  const [signupOpen, setSignupOpen] = useState(false);
+  const signupAvailable = Boolean(
+    page?.platforms.some((platform) => platform.platform_code === "five_verst"),
+  );
 
   const toggleAgeGroup = useCallback((key: string) => {
     setOpenAgeGroupKey((current) => (current === key ? null : key));
@@ -1281,6 +1288,15 @@ function LocationPageContent({ slug }: { slug: string }) {
           <a className="loc-quick-link" href={`/locations/${page.slug}/events`}>
             <span aria-hidden="true">📖</span> Журнал протоколов
           </a>
+          {signupAvailable && (
+            <button
+              type="button"
+              className="loc-quick-link loc-quick-link-button"
+              onClick={() => setSignupOpen(true)}
+            >
+              <span aria-hidden="true">🙋</span> Хочу волонтёрить
+            </button>
+          )}
           {organizerAccess && (
             <a className="loc-quick-link loc-quick-link-accent" href={`/organizer/${page.slug}`}>
               <span aria-hidden="true">🛠</span> Кабинет организатора
@@ -1288,6 +1304,9 @@ function LocationPageContent({ slug }: { slug: string }) {
           )}
         </nav>
       </header>
+      {signupAvailable && (
+        <VolunteerSignupModal slug={page.slug} open={signupOpen} onClose={() => setSignupOpen(false)} />
+      )}
 
       <LocationRatingPrompt identityKey={page.identity_key} />
 

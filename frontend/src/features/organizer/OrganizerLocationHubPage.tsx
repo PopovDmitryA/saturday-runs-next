@@ -5,6 +5,7 @@ import {
   getOrganizerEventDates,
   getOrganizerHealth,
   getOrganizerNewcomers,
+  getOrganizerSignupRequests,
   type OrganizerEventDateItem,
   type OrganizerHealthResponse,
   type OrganizerNewcomersResponse,
@@ -32,6 +33,8 @@ function OrganizerHubContent({ slug }: { slug: string }) {
   // медиан занимает десятки секунд, хаб его не ждёт.
   const [health, setHealth] = useState<OrganizerHealthResponse | null>(null);
   const [healthFailed, setHealthFailed] = useState(false);
+  // Заявки на волонтёрство: число ждущих решения — прямо на карточке.
+  const [pendingSignups, setPendingSignups] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -54,6 +57,15 @@ function OrganizerHubContent({ slug }: { slug: string }) {
           })
           .catch(() => {
             // Тихо: карточка просто останется без процента.
+          });
+        getOrganizerSignupRequests(slug)
+          .then((payload) => {
+            if (!cancelled) {
+              setPendingSignups(payload.pending_count);
+            }
+          })
+          .catch(() => {
+            // Тихо: карточка останется без счётчика.
           });
         getOrganizerHealth(slug)
           .then((stats) => {
@@ -216,6 +228,27 @@ function OrganizerHubContent({ slug }: { slug: string }) {
               : newcomers.retention_pct === null
                 ? "Дебютов за полгода не было"
                 : `Вернулись сюда: ${newcomers.retention_pct}% новичков за полгода`}
+          </span>
+        </a>
+
+        <a
+          className={`card org-hub-card${pendingSignups ? " org-hub-card-attention" : ""}`}
+          href={`/organizer/${slug}/signup-requests`}
+        >
+          <span className="org-hub-emoji" aria-hidden="true">
+            🙋
+          </span>
+          <h2 className="org-hub-title">Заявки на волонтёрство</h2>
+          <p className="muted org-hub-text">
+            Кто попросился в оргкоманду через сайт: дата, роль и ID участника. Подтвердите — и
+            сайт внесёт человека в запись NRMS под вашей учёткой.
+          </p>
+          <span className="org-hub-meta">
+            {pendingSignups === null
+              ? "Загрузка…"
+              : pendingSignups === 0
+                ? "Новых заявок нет"
+                : `Ждут решения: ${formatInt(pendingSignups)}`}
           </span>
         </a>
 

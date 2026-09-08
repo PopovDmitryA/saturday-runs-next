@@ -403,6 +403,85 @@ class LocationOrganizerAccess(Base):
     user: Mapped["User"] = relationship(foreign_keys=[user_id])
 
 
+
+class VolunteerSignupRequest(Base):
+    """Заявка участника на волонтёрство на конкретную дату и роль.
+
+    Сайт — «приёмная»: заявка уходит организатору в Telegram, решение он
+    принимает в кабинете. Учётной системой остаётся NRMS 5 вёрст: при
+    подтверждении сайт вносит человека туда под учёткой организатора
+    (nrms_status), у самого участника доступа в NRMS нет.
+
+    Локация — канонический identity key каталога (как в
+    location_organizer_access); five_verst_slug дублируется для NRMS и записи
+    на 5verst.ru. verst_id и имя снимаются в момент заявки — организатор ищет
+    человека по ID, а не по имени (у популярных ФИО десятки тёзок).
+    """
+
+    __tablename__ = "volunteer_signup_requests"
+    __table_args__ = (
+        Index(
+            "ix_volunteer_signup_requests_location_status",
+            "location_key",
+            "status",
+            "event_date",
+        ),
+        Index("ix_volunteer_signup_requests_user_id", "user_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    location_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    five_verst_slug: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    role_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    verst_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    participant_name: Mapped[str | None] = mapped_column(String(256))
+    comment: Mapped[str | None] = mapped_column(Text)
+    # pending → confirmed | declined | cancelled (участник отозвал сам).
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="pending")
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    decision_note: Mapped[str | None] = mapped_column(Text)
+    # none — не пробовали, saved — внесён сайтом, failed — ошибка записи,
+    # manual — организатор внёс руками (имя нашлось в открытой записи 5 вёрст).
+    nrms_status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="none")
+    nrms_error: Mapped[str | None] = mapped_column(Text)
+    nrms_saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    organizer_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    decided_by: Mapped["User | None"] = relationship(foreign_keys=[decided_by_user_id])
+
+
+
+class NrmsRosterSnapshot(Base):
+    """Состав волонтёров даты, как его видел NRMS в момент записи с сайта.
+
+    Ложится тем же проходом, что чтение/запись в NRMS (volunteer_signup_service):
+    отдельный обходчик не нужен. Один снимок на (слаг 5 вёрст, дата), новый
+    перезаписывает старый.
+    """
+
+    __tablename__ = "nrms_roster_snapshots"
+    __table_args__ = (
+        UniqueConstraint("five_verst_slug", "event_date", name="uq_nrms_roster_snapshots_slug_date"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    five_verst_slug: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    nrms_event_id: Mapped[int | None] = mapped_column(Integer)
+    status_id: Mapped[int | None] = mapped_column(Integer)
+    upload_status_id: Mapped[int | None] = mapped_column(Integer)
+    entries: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fetched_by_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
 class LocationCatalog(Base):
     """Canonical location identity for cross-platform display (parkrun → 5verst/s95)."""
 
