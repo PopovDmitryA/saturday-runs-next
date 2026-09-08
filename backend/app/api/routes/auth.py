@@ -78,6 +78,8 @@ from app.services.email_login_journal_service import PURPOSE_LINK, PURPOSE_LOGIN
 from app.services.login_journal_service import (
     EVENT_LOGIN,
     EVENT_LOGOUT,
+    PROVIDER_MAGIC_LINK,
+    PROVIDER_MAGIC_LINK_REPEAT,
     record_login_event,
     session_ref_from_signed,
 )
@@ -248,6 +250,26 @@ def _signup_context(request: Request | None, settings: Settings) -> SignupContex
 
 def _oauth_login_error_redirect(settings: Settings, message: str) -> RedirectResponse:
     login_url = f"{settings.app_base_url.rstrip('/')}/login?oauth_error={quote(message)}"
+    return RedirectResponse(url=login_url, status_code=status.HTTP_302_FOUND)
+
+
+# Ссылка из бота ведёт на API-роут, а его ошибки — это JSON. Человек, тапнувший
+# кнопку в чате, видел `{"detail": "Magic link expired or invalid."}` поверх
+# мини-браузера Telegram и решал, что сломался сайт. Отправляем его на страницу
+# входа с человеческим текстом.
+_MAGIC_LINK_ERROR_MESSAGES = {
+    409: "Эта ссылка уже сработала — вы вошли. Откройте сайт; если он всё ещё просит войти, запросите вход заново.",
+    404: "Ссылка для входа устарела — она живёт 5 минут. Нажмите «Войти через Telegram» ещё раз, бот пришлёт свежую.",
+}
+_MAGIC_LINK_ERROR_MESSAGES[410] = _MAGIC_LINK_ERROR_MESSAGES[404]
+
+
+def _magic_link_error_redirect(settings: Settings, exc: AuthError) -> RedirectResponse:
+    message = _MAGIC_LINK_ERROR_MESSAGES.get(
+        exc.status_code,
+        "Войти по ссылке не получилось. Нажмите «Войти через Telegram» ещё раз.",
+    )
+    login_url = f"{settings.app_base_url.rstrip('/')}/login?link_error={quote(message)}"
     return RedirectResponse(url=login_url, status_code=status.HTTP_302_FOUND)
 
 
@@ -863,16 +885,17 @@ def auth_callback(
     token: Annotated[str, Query(min_length=10)],
 ) -> RedirectResponse:
     try:
-        user_id = consume_magic_link(db, settings, token)
-        signed_session = create_user_session(settings, user_id)
+        login = consume_magic_link(db, settings, token)
+        signed_session = create_user_session(settings, login.user_id)
     except AuthError as exc:
-        raise _handle_auth_error(exc) from exc
+        return _magic_link_error_redirect(settings, exc)
 
+    user_id = login.user_id
     _log_login(
         db,
         settings,
         user_id=user_id,
-        provider="magic_link",
+        provider=PROVIDER_MAGIC_LINK if login.first_use else PROVIDER_MAGIC_LINK_REPEAT,
         signed_session=signed_session,
         request=request,
     )

@@ -2329,6 +2329,18 @@
   text-decoration: underline;
 }
 
+/* Ссылка входа устарела — это не сбой, а истёкшие 5 минут. Тон спокойнее
+   красной ошибки OAuth: человеку нужно просто нажать кнопку ещё раз. */
+.portal-login-notice {
+  background: var(--tint-amber-bg);
+  border-color: var(--tint-amber-border);
+  color: var(--tint-amber-text);
+}
+
+.portal-login-notice button {
+  color: var(--tint-amber-text);
+}
+
 .portal-login-consent {
   display: flex;
   gap: 10px;

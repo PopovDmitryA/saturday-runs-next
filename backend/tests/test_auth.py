@@ -129,7 +129,7 @@ def test_bot_confirm_rejects_invalid_secret(client: TestClient) -> None:
     assert response.status_code == 403
 
 
-def test_magic_link_single_use(client: TestClient) -> None:
+def test_magic_link_survives_a_second_tap(client: TestClient) -> None:
     login_response = client.post("/api/auth/login-request")
     request_token = login_response.json()["request_token"]
 
@@ -148,9 +148,26 @@ def test_magic_link_single_use(client: TestClient) -> None:
 
     first = client.get("/api/auth/callback", params={"token": token}, follow_redirects=False)
     assert first.status_code == 302
+    assert "link_error" not in first.headers["location"]
 
+    # Второй тап по той же кнопке в чате — норма, а не атака: человек закрыл
+    # мини-браузер Telegram, не поняв, вошёл ли, и нажал снова. Пока ссылка не
+    # истекла, она обязана снова пустить его внутрь, а не показать JSON.
     second = client.get("/api/auth/callback", params={"token": token}, follow_redirects=False)
-    assert second.status_code == 409
+    assert second.status_code == 302
+    assert "link_error" not in second.headers["location"]
+    assert second.cookies["sr_session"]
+
+
+def test_dead_magic_link_leads_to_login_page(client: TestClient) -> None:
+    """Мёртвая ссылка ведёт на страницу входа с объяснением, а не в JSON с ошибкой."""
+    response = client.get(
+        "/api/auth/callback",
+        params={"token": "no-such-token-at-all"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert "/login?link_error=" in response.headers["location"]
 
 
 def test_logout_clears_session(client: TestClient) -> None:

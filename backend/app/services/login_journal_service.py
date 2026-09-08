@@ -21,6 +21,12 @@ from app.models import LoginEvent
 EVENT_LOGIN = "login"
 EVENT_LOGOUT = "logout"
 
+# Повторный переход по той же ссылке из бота. Сессия настоящая, поэтому в
+# журнале событие есть, но «вынужденным» логином оно быть не может: человек сам
+# нажал кнопку второй раз.
+PROVIDER_MAGIC_LINK = "magic_link"
+PROVIDER_MAGIC_LINK_REPEAT = "magic_link_repeat"
+
 _REF_LEN = 16
 
 
@@ -100,7 +106,8 @@ def summarize_login_events(events: list[LoginEvent]) -> dict[str, object]:
 
     events приходит от новых к старым. Логин считается вынужденным, если
     с того же устройства уже был логин, а разлогина между ними не было:
-    значит прошлая сессия исчезла сама.
+    значит прошлая сессия исчезла сама. Исключение — повторный переход по
+    ссылке из бота: там человек сам нажал кнопку дважды.
     """
     ordered = sorted(events, key=lambda e: e.ts)
     logins = [e for e in ordered if e.event_type == EVENT_LOGIN]
@@ -115,7 +122,12 @@ def summarize_login_events(events: list[LoginEvent]) -> dict[str, object]:
         if event.event_type == EVENT_LOGOUT:
             logged_out_devices.add(device)
             continue
-        if device and device in seen_devices and device not in logged_out_devices:
+        if (
+            device
+            and device in seen_devices
+            and device not in logged_out_devices
+            and event.provider != PROVIDER_MAGIC_LINK_REPEAT
+        ):
             unexpected.append(
                 {
                     "ts": event.ts,

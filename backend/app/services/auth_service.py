@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -36,6 +37,18 @@ LOGIN_REQUEST_CONTEXT_PREFIX = "login_req_ctx:"
 LOGIN_REQUEST_CLAIM_PREFIX = "login_req_claim:"
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+
+
+class MagicLinkLogin(NamedTuple):
+    """Результат перехода по ссылке из бота.
+
+    first_use=False — по той же ссылке уже входили. Сессия честная и новая, но
+    в журнале входов её нужно отличать от самостоятельного логина: иначе второй
+    тап по кнопке в чате читается как «сессия слетела сама».
+    """
+
+    user_id: UUID
+    first_use: bool
 
 
 class AuthError(Exception):
@@ -437,38 +450,57 @@ def bot_confirm_login(
     return f"{settings.app_base_url.rstrip('/')}/api/auth/callback?token={raw_magic_token}"
 
 
-def consume_magic_link(db: Session, settings: Settings, raw_token: str) -> UUID:
+def consume_magic_link(db: Session, settings: Settings, raw_token: str) -> MagicLinkLogin:
+    """Ссылка-страховка из бота: выдаёт сессию столько раз, сколько по ней сходили за её TTL.
+
+    Раньше токен был строго одноразовым (getdel + метка `:used`), и второй заход
+    упирался в 409 «Magic link already used.» — голым JSON поверх мини-браузера
+    Telegram. Но второй заход у нас не атака, а норма жизни: человек тапает
+    кнопку в чате, видит открывшуюся страницу, закрывает её крестиком, не поняв,
+    вошёл ли, и тапает снова; или выбирает «Открыть в Safari», и Telegram
+    переоткрывает исходный URL; или свайпает назад; или тапает ту же кнопку со
+    второго устройства, где чат тот же. Все они получали ошибку, будучи уже
+    залогиненными.
+
+    Повторная выдача окна для атаки не расширяет: токен и так живёт
+    magic_link_ttl_seconds, и укравший ссылку успевал войти с первого захода.
+    По истечении TTL ключ уходит из Redis сам, и ссылка мертва.
+    """
     token_hash = hash_token(raw_token)
     redis_client = get_redis_client()
     redis_key = _magic_token_redis_key(token_hash)
-    used_key = f"{redis_key}:used"
 
-    user_id_raw = redis_client.getdel(redis_key)
-    if user_id_raw is None:
-        if redis_client.exists(used_key):
-            raise AuthError("Magic link already used.", 409)
-        raise AuthError("Magic link expired or invalid.", 404)
-
-    redis_client.setex(used_key, settings.magic_link_ttl_seconds, "1")
+    user_id_raw = redis_client.get(redis_key)
 
     magic_record = (
         db.query(AuthOneTimeToken)
-        .filter(AuthOneTimeToken.token_hash == token_hash, AuthOneTimeToken.used_at.is_(None))
+        .filter(AuthOneTimeToken.token_hash == token_hash)
         .one_or_none()
     )
     if magic_record is None:
         raise AuthError("Magic link expired or invalid.", 404)
 
-    if _ensure_utc(magic_record.expires_at) < datetime.now(timezone.utc):
+    now = datetime.now(timezone.utc)
+    if _ensure_utc(magic_record.expires_at) < now:
         raise AuthError("Magic link expired.", 410)
 
-    now = datetime.now(timezone.utc)
-    magic_record.used_at = now
+    if user_id_raw is None:
+        # Ключ в Redis живёт ровно столько же, сколько expires_at, так что
+        # запись, ещё не протухшая по базе, но потерянная в Redis, — это
+        # перезапуск или вытеснение. Отработавшую ссылку от неизвестной всё
+        # равно отличаем: человеку важно услышать «вы уже вошли».
+        if magic_record.used_at is not None:
+            raise AuthError("Magic link already used.", 409)
+        raise AuthError("Magic link expired or invalid.", 404)
+
+    first_use = magic_record.used_at is None
+    if first_use:
+        magic_record.used_at = now
     user = db.query(User).filter(User.id == magic_record.user_id).one()
     user.last_login_at = now
     db.commit()
 
-    return user.id
+    return MagicLinkLogin(user_id=user.id, first_use=first_use)
 
 
 def purge_old_one_time_tokens(db: Session, *, retention_days: int) -> int:

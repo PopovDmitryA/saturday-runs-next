@@ -1508,7 +1508,7 @@ class LoginEvent(Base):
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     # login | logout
     event_type: Mapped[str] = mapped_column(String(16), nullable=False)
-    # yandex | vk | telegram | magic_link | merge | "" (для logout)
+    # yandex | vk | telegram | magic_link | magic_link_repeat | merge | "" (для logout)
     provider: Mapped[str] = mapped_column(String(32), nullable=False, server_default="")
     session_ref: Mapped[str] = mapped_column(String(32), nullable=False, server_default="")
     ip: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")

@@ -20,6 +20,15 @@ function readOAuthError(): string | null {
   return new URLSearchParams(window.location.search).get("oauth_error");
 }
 
+// Ссылка-страховка из бота ведёт на /api/auth/callback. Когда она не сработала
+// (истекла — она живёт 5 минут), сервер приводит человека сюда с готовым
+// объяснением вместо JSON-а поверх мини-браузера Telegram. Тот, кто по ссылке
+// всё же вошёл, до этого текста не доберётся: проверка сессии выше уводит его
+// на /dashboard.
+function readLinkError(): string | null {
+  return new URLSearchParams(window.location.search).get("link_error");
+}
+
 const RETURNING_KEY = "portalReturningUser";
 // Куку sr_known сервер ставит после каждого успешного входа (см. auth.py).
 // Её наличие означает: человек уже принимал условия обработки данных, и его
@@ -197,6 +206,7 @@ export function PortalLoginPage() {
   const [consentHint, setConsentHint] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [oauthError, setOauthError] = useState<string | null>(() => readOAuthError());
+  const [linkError, setLinkError] = useState<string | null>(() => readLinkError());
   const [redirectingProvider, setRedirectingProvider] = useState<"vk" | "yandex" | null>(null);
   const [returning] = useState<boolean>(() => isReturningUser());
   // Вход по почте: сначала адрес, потом код из письма. Второй шаг показываем
@@ -264,6 +274,13 @@ export function PortalLoginPage() {
     setOauthError(null);
     const url = new URL(window.location.href);
     url.searchParams.delete("oauth_error");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  };
+
+  const dismissLinkError = () => {
+    setLinkError(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("link_error");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   };
 
@@ -380,6 +397,15 @@ export function PortalLoginPage() {
               <div className="portal-login-error" role="alert">
                 <p>Не удалось войти: {oauthError}</p>
                 <button type="button" onClick={dismissOAuthError}>
+                  Закрыть
+                </button>
+              </div>
+            )}
+
+            {linkError && (
+              <div className="portal-login-error portal-login-notice" role="status">
+                <p>{linkError}</p>
+                <button type="button" onClick={dismissLinkError}>
                   Закрыть
                 </button>
               </div>

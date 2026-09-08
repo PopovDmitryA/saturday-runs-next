@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 from app.services.login_journal_service import (
     EVENT_LOGIN,
     EVENT_LOGOUT,
+    PROVIDER_MAGIC_LINK,
+    PROVIDER_MAGIC_LINK_REPEAT,
     summarize_login_events,
 )
 
@@ -51,6 +53,26 @@ def test_repeated_login_without_logout_is_unexpected() -> None:
 
     assert summary["unexpected_relogins"] == 1
     assert len(summary["unexpected_samples"]) == 1
+
+
+def test_second_tap_on_bot_link_is_not_a_lost_session() -> None:
+    """Второй тап по кнопке в чате — не потеря сессии, а человек нажал дважды.
+
+    Ссылка из бота живёт 5 минут и пускает внутрь столько раз, сколько по ней
+    сходили. Устройство то же, разлогина между заходами нет — без отдельного
+    провайдера повтор считался бы «сессия слетела сама» и врал бы в метрике,
+    по которой мы такие жалобы и разбираем.
+    """
+    events = [
+        FakeEvent(minutes=0, event_type=EVENT_LOGIN, device_ref=PHONE, provider=PROVIDER_MAGIC_LINK),
+        FakeEvent(minutes=1, event_type=EVENT_LOGIN, device_ref=PHONE, provider=PROVIDER_MAGIC_LINK_REPEAT),
+    ]
+
+    summary = summarize_login_events(events)
+
+    assert summary["unexpected_relogins"] == 0
+    # Сессия всё равно настоящая: из журнала событие не пропадает.
+    assert summary["logins"] == 2
 
 
 def test_second_device_login_is_not_unexpected() -> None:
