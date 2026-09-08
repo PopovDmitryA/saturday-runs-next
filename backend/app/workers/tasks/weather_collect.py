@@ -35,6 +35,7 @@ def collect_start_weather_task() -> dict[str, object]:
         with httpx.Client(headers={"User-Agent": "run5k.run weather collector"}) as client:
             summary = collect_scope(db, client, wait_hourly_reset=False)
     except Exception as exc:  # noqa: BLE001 — отчёт важнее трейсбека в логе воркера
+        # Сюда попадает только то, что не поймал collect_scope (БД, сеть до первой локации).
         logger.exception("Сбор погоды на стартах упал")
         db.rollback()
         summary.error = f"{type(exc).__name__}: {exc}"[:300]

@@ -26,6 +26,7 @@ API −47…−48°, станция −49.0° — сетке можно вери
 
 from __future__ import annotations
 
+import logging
 import math
 import time as _time
 from collections.abc import Iterable, Sequence
@@ -43,6 +44,8 @@ from sqlalchemy.orm import Session
 
 from app.models import Event, Location, LocationDescription, Platform, StartWeather
 from app.services.location_schedule_service import start_time_for_date
+
+logger = logging.getLogger(__name__)
 
 OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 MODEL = "best_match"
@@ -269,7 +272,17 @@ def fetch_archive(
     hourly_waits = 0
     attempt = 0
     while True:
-        response = client.get(OPEN_METEO_ARCHIVE_URL, params=params, timeout=60)
+        try:
+            response = client.get(OPEN_METEO_ARCHIVE_URL, params=params, timeout=60)
+        except httpx.TransportError as exc:
+            # Случайный обрыв сети (таймаут TLS-рукопожатия 08.09.2026 на проде):
+            # повторяем с нарастающей паузой, как и 5xx.
+            attempt += 1
+            if attempt >= retries:
+                raise RuntimeError(f"Open-Meteo network error after {retries} attempts: {exc}") from exc
+            _time.sleep(delay)
+            delay *= 2
+            continue
         if response.status_code == 200:
             return response.json()
         if response.status_code == 429:
@@ -561,6 +574,13 @@ def collect_scope(
             db.rollback()
             summary.stopped_by_limit = True
             summary.limit_reason = str(exc)
+            break
+        except Exception as exc:  # noqa: BLE001 — сводка с уже собранным важнее трейсбека
+            # Ошибка посреди прогона не должна обнулять отчёт: собранное по
+            # предыдущим локациям уже закоммичено, его и показываем.
+            logger.exception("Сбор погоды: локация %s", location.name)
+            db.rollback()
+            summary.error = f"{location.name}: {type(exc).__name__}: {exc}"[:300]
             break
         summary.rows_written += stats.rows_written
         summary.api_calls += stats.api_calls

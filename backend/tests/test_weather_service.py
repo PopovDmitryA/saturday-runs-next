@@ -136,3 +136,23 @@ def test_format_run_report_states_outcome() -> None:
     assert done.finished
     assert "Сбор всего периметра завершён" in format_run_report(done, when=when)
     assert "Сессия Claude" in format_run_report(done, when=when)
+
+
+def test_fetch_archive_retries_transport_errors(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import httpx
+
+    from app.services import weather_service
+
+    calls = {"n": 0}
+
+    class FakeClient:
+        def get(self, url, params, timeout):  # type: ignore[no-untyped-def]
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise httpx.ConnectTimeout("handshake timed out")
+            return httpx.Response(200, json={"hourly": {"time": []}}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(weather_service._time, "sleep", lambda s: None)
+    payload = weather_service.fetch_archive(FakeClient(), 55.7, 37.6, date(2025, 1, 4), date(2025, 1, 4))  # type: ignore[arg-type]
+    assert payload == {"hourly": {"time": []}}
+    assert calls["n"] == 3
