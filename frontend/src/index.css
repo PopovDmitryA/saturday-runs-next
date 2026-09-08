@@ -8318,6 +8318,29 @@ a.admin-system-chip:hover {
   white-space: nowrap;
 }
 
+/* Крестик «скрыть до следующей субботы» — в ряду, после ссылки на таймлайн. */
+.history-teaser-close {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--neutral-soft);
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.history-teaser-close:hover {
+  color: var(--text);
+  background: var(--border-heavy);
+}
+
 /* ── Админка: виды вех «Моя история» ─────────────────────────────────────── */
 
 .admin-milestones-lead {

@@ -4,6 +4,7 @@ import { milestoneTitle, milestoneVisual } from "../features/history/HistoryPage
 import { useOptionalShareSheet } from "../features/sharing/ShareSheetContext";
 import { milestoneSubject } from "../features/sharing/subjects";
 import { useOptionalUser } from "../lib/useOptionalUser";
+import { dismissUntilNextSaturday, isDismissedThisWeek } from "../lib/weeklyDismissal";
 import type { MyHistory, MyHistoryMilestone } from "../lib/api";
 import { formatDateLong, formatInt, parseIsoDate, pluralFormRu } from "../lib/format";
 
@@ -30,9 +31,14 @@ type MyHistoryTeaserProps = {
   href: string;
 };
 
+// Тизер закрывается до следующей субботы, как остальные плашки обзора: новая
+// суббота принесёт новые вехи, и тизер покажется снова (Дмитрий, 08.09.2026).
+const DISMISS_KEY = "history-teaser";
+
 // Тизер «Моей истории» на дашборде: вехи последнего дня + ссылка на таймлайн.
 export function MyHistoryTeaser({ load, href }: MyHistoryTeaserProps) {
   const [data, setData] = useState<MyHistory | null>(null);
+  const [dismissed, setDismissed] = useState(() => isDismissedThisWeek(DISMISS_KEY));
   // Кнопка открывает шторку «Поделиться» с этой вехой; вне провайдера
   // (превью-режим) её просто нет.
   const shareSheet = useOptionalShareSheet();
@@ -55,7 +61,7 @@ export function MyHistoryTeaser({ load, href }: MyHistoryTeaserProps) {
   }, [load]);
 
   const milestones = data?.milestones ?? [];
-  if (milestones.length === 0) {
+  if (dismissed || milestones.length === 0) {
     return null;
   }
   const last = milestones[0];
@@ -119,6 +125,18 @@ export function MyHistoryTeaser({ load, href }: MyHistoryTeaserProps) {
       <a className="history-teaser-more" href={href}>
         {formatInt(count)} {pluralFormRu(count, MILESTONE_FORMS)} →
       </a>
+      <button
+        type="button"
+        className="history-teaser-close"
+        aria-label="Скрыть до следующей субботы"
+        title="Скрыть до следующей субботы"
+        onClick={() => {
+          dismissUntilNextSaturday(DISMISS_KEY);
+          setDismissed(true);
+        }}
+      >
+        ×
+      </button>
     </section>
   );
 }
