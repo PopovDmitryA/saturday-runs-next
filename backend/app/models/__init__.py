@@ -1074,6 +1074,14 @@ class User(Base):
         nullable=False,
         server_default="[]",
     )
+    # Системы для плитки «Куда дальше» (коды платформ): ближайшая непосещённая
+    # площадка ищется только среди них. Пустой список — все системы.
+    tourism_platforms: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
 
     platform_links: Mapped[list["PlatformLink"]] = relationship(back_populates="user")
     dashboard_cache: Mapped["DashboardCache | None"] = relationship(back_populates="user", uselist=False)

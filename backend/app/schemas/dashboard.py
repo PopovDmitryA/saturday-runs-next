@@ -62,6 +62,9 @@ class HomeDistanceResponse(BaseModel):
 class HomeDistanceDetailResponse(HomeDistanceResponse):
     visited: list[HomeDistanceLocationResponse] = Field(default_factory=list)
     unvisited: list[HomeDistanceLocationResponse] = Field(default_factory=list)
+    # Системы, по которым плитка «Куда дальше» ищет ближайшую площадку
+    # (users.tourism_platforms); пусто — все.
+    tourism_platforms: list[str] = Field(default_factory=list)
 
 
 class TopVolunteerRoleResponse(BaseModel):

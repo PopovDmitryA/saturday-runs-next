@@ -364,6 +364,7 @@ function PortalDashboardContent({ user }: { user: User }) {
 
           <DashboardAnalytics
             showHomeLocationWarning
+            onPreferencesChanged={() => void load({ background: true })}
             analytics={stats?.analytics}
             totalRuns={stats?.total_runs ?? 0}
             totalVolunteering={stats?.total_volunteering ?? 0}

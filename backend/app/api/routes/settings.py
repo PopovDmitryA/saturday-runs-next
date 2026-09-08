@@ -25,6 +25,8 @@ from app.schemas.settings import (
     ProfileSlugCheckResponse,
     ProfileSlugResponse,
     ProfileSlugUpdateRequest,
+    TourismPlatformsResponse,
+    TourismPlatformsUpdateRequest,
 )
 from app.services.auth_identity_service import list_user_identities
 from app.services.dashboard_service import invalidate_dashboard_cache_for_users
@@ -211,6 +213,42 @@ def update_home_location(
     db.commit()
     db.refresh(user)
     return get_home_location(db, user)
+
+
+@router.get("/tourism-platforms", response_model=TourismPlatformsResponse)
+def get_tourism_platforms(
+    user: Annotated[User, Depends(get_current_user)],
+) -> TourismPlatformsResponse:
+    return TourismPlatformsResponse(platforms=list(user.tourism_platforms or []))
+
+
+@router.put("/tourism-platforms", response_model=TourismPlatformsResponse)
+def update_tourism_platforms(
+    body: TourismPlatformsUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> TourismPlatformsResponse:
+    """Системы для плитки «Куда дальше» — из модалки «показывать на плитке только…».
+
+    Пустой список — все системы. Плитка живёт в кэше аналитики дашборда,
+    поэтому кэш сбрасываем: иначе ближайшая площадка ещё сутки была бы старой.
+    """
+    known = {code for (code,) in db.query(Platform.code).all()}
+    platforms: list[str] = []
+    for code in body.platforms:
+        normalized = code.strip().lower()
+        if normalized not in known:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Неизвестная система: {code}",
+            )
+        if normalized not in platforms:
+            platforms.append(normalized)
+    user.tourism_platforms = platforms
+    invalidate_dashboard_cache_for_users(db, {user.id})
+    db.commit()
+    db.refresh(user)
+    return TourismPlatformsResponse(platforms=list(user.tourism_platforms or []))
 
 
 @router.get("/history-milestones", response_model=HistoryMilestoneSettingsResponse)

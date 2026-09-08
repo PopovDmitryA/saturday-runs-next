@@ -59,6 +59,11 @@ type DashboardAnalyticsProps = {
    * равно не может выполнить, — настройки чужого профиля ему недоступны.
    */
   showHomeLocationWarning?: boolean;
+  /**
+   * Настройка изменилась из модалки (системы для плитки «Куда дальше») —
+   * странице пора перечитать сводку, иначе плитка покажет старую площадку.
+   */
+  onPreferencesChanged?: () => void;
 };
 
 type AnalyticsCardCategory = "runs" | "volunteering" | "wins";
@@ -797,6 +802,7 @@ export function DashboardAnalytics({
   totalRuns,
   totalVolunteering,
   showHomeLocationWarning = false,
+  onPreferencesChanged,
 }: DashboardAnalyticsProps) {
   const [uniqueLocationsOpen, setUniqueLocationsOpen] = useState(false);
   const [bestResultsOpen, setBestResultsOpen] = useState(false);
@@ -1194,6 +1200,7 @@ export function DashboardAnalytics({
         open={homeDistanceOpen}
         focus={homeDistanceFocus}
         onClose={() => setHomeDistanceOpen(false)}
+        onPreferencesChanged={onPreferencesChanged}
       />
 
       <LocationRecordsModal

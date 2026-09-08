@@ -205,6 +205,8 @@ export type HomeDistance = {
 export type HomeDistanceDetail = HomeDistance & {
   visited: HomeDistanceLocation[];
   unvisited: HomeDistanceLocation[];
+  /** Системы для плитки «Куда дальше» (настройка участника); пусто — все. */
+  tourism_platforms: string[];
 };
 
 export type DashboardAnalytics = {
@@ -3174,6 +3176,14 @@ export type HomeLocationSettings = {
 
 export function getHomeLocation() {
   return apiFetch<HomeLocationSettings>("/settings/home-location");
+}
+
+/** Системы для плитки «Куда дальше»: пустой список — все. */
+export function setTourismPlatforms(platforms: string[]) {
+  return apiFetch<{ platforms: string[] }>("/settings/tourism-platforms", {
+    method: "PUT",
+    body: JSON.stringify({ platforms }),
+  });
 }
 
 export function getHomeLocationCandidates() {

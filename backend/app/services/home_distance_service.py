@@ -305,10 +305,28 @@ def _overview_with_unvisited(
         for item in cast(list[dict[str, object]], detail["locations"])
     }
     unvisited_rows = _unvisited_rows(db, visited_keys, home_coordinates)
-    # Список отсортирован по расстоянию, площадки без координат — в хвосте:
-    # «ближайшая» без километров была бы просто первой по алфавиту.
-    nearest = next((row for row in unvisited_rows if row.distance_km is not None), None)
+    nearest = nearest_unvisited_for_platforms(unvisited_rows, list(user.tourism_platforms or []))
     return replace(overview, nearest_unvisited=nearest), visited_rows, unvisited_rows
+
+
+def nearest_unvisited_for_platforms(
+    unvisited_rows: list[DistanceRow], platform_codes: list[str]
+) -> DistanceRow | None:
+    """Ближайшая непосещённая площадка для плитки «Куда дальше».
+
+    platform_codes — системы, которые человек выбрал в модалке «показывать на
+    плитке только…» (users.tourism_platforms); пустой список — любая система.
+    Список отсортирован по расстоянию, площадки без координат — в хвосте:
+    «ближайшая» без километров была бы просто первой по алфавиту.
+    """
+    wanted = set(platform_codes)
+    for row in unvisited_rows:
+        if row.distance_km is None:
+            continue
+        if wanted and not wanted.intersection(row.platform_codes):
+            continue
+        return row
+    return None
 
 
 def build_home_distance_overview(
@@ -355,6 +373,8 @@ def build_home_distance_detail(
         **overview.as_dict(),
         "visited": [row.as_dict() for row in visited_rows],
         "unvisited": [row.as_dict() for row in unvisited_rows],
+        # Что выбрано для плитки — модалка стартует с этого фильтра.
+        "tourism_platforms": list(user.tourism_platforms or []),
     }
 
 

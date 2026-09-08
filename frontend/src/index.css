@@ -13121,6 +13121,20 @@ a.admin-system-chip:hover {
   font-weight: 600;
 }
 
+/* Фильтр «Куда дальше» по системе + строка «на плитке: …» / кнопка. */
+.home-distance-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+  margin: 0.25rem 0 0.6rem;
+}
+
+.home-distance-filter-note {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
 .home-distance-table-note {
   margin: 0 0 0.5rem;
   font-size: 0.85rem;

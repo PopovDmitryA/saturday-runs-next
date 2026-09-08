@@ -1,9 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DetailModal } from "./DetailModal";
 import { PlatformBadge } from "./PlatformBadge";
-import { type HomeDistanceDetail, type HomeDistanceLocation } from "../lib/api";
+import { setTourismPlatforms, type HomeDistanceDetail, type HomeDistanceLocation } from "../lib/api";
 import { useAppDataSource } from "../lib/appDataSource";
-import { formatInt, formatKm } from "../lib/format";
+import { formatInt, formatKm, platformCodeLabel } from "../lib/format";
+
+// Порядок чипов фильтра — как у бейджей систем по всему сайту.
+const PLATFORM_ORDER = ["five_verst", "s95", "parkrun", "runpark"];
+
+function orderedPlatformCodes(rows: HomeDistanceLocation[]): string[] {
+  const present = new Set(rows.flatMap((row) => row.platform_codes));
+  const known = PLATFORM_ORDER.filter((code) => present.has(code));
+  const rest = [...present].filter((code) => !PLATFORM_ORDER.includes(code)).sort();
+  return [...known, ...rest];
+}
 
 const HINT =
   "Расстояние по прямой от домашней локации до площадки. Каждая площадка даёт свои " +
@@ -73,10 +83,13 @@ export function HomeDistanceModal({
   open,
   onClose,
   focus = "visited",
+  onPreferencesChanged,
 }: {
   open: boolean;
   onClose: () => void;
   focus?: HomeDistanceFocus;
+  /** Сохранили системы для плитки «Куда дальше» — сводке пора обновиться. */
+  onPreferencesChanged?: () => void;
 }) {
   // В чужом профиле источник подменён на публичный эндпоинт владельца профиля:
   // раньше модалка звала личный и показывала километры смотрящего.
@@ -84,6 +97,12 @@ export function HomeDistanceModal({
   const isPublicProfile = mode === "public-profile";
   const [data, setData] = useState<HomeDistanceDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Фильтр «Куда дальше» по системе: кто-то коллекционирует только 5 вёрст
+  // (Дмитрий, 08.09.2026). "all" — все системы. Стартует с того, что человек
+  // сохранил для плитки, и его же можно сохранить кнопкой ниже.
+  const [platformFilter, setPlatformFilter] = useState<string>("all");
+  const [savingFilter, setSavingFilter] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -96,6 +115,8 @@ export function HomeDistanceModal({
       .then((payload) => {
         if (!cancelled) {
           setData(payload);
+          setPlatformFilter(payload.tourism_platforms?.[0] ?? "all");
+          setSaveError(null);
         }
       })
       .catch((err: unknown) => {
@@ -111,6 +132,32 @@ export function HomeDistanceModal({
       cancelled = true;
     };
   }, [open, getHomeDistanceDetail]);
+
+  const platformCodes = useMemo(() => orderedPlatformCodes(data?.unvisited ?? []), [data]);
+  const unvisitedRows = useMemo(
+    () =>
+      (data?.unvisited ?? []).filter(
+        (row) => platformFilter === "all" || row.platform_codes.includes(platformFilter),
+      ),
+    [data, platformFilter],
+  );
+  // Что сохранено для плитки: пусто — все системы.
+  const savedFilter = data?.tourism_platforms?.[0] ?? "all";
+  const filterIsSaved = savedFilter === platformFilter;
+
+  const applyFilterToTile = async () => {
+    setSavingFilter(true);
+    setSaveError(null);
+    try {
+      const result = await setTourismPlatforms(platformFilter === "all" ? [] : [platformFilter]);
+      setData((prev) => (prev ? { ...prev, tourism_platforms: result.platforms } : prev));
+      onPreferencesChanged?.();
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : "Не удалось сохранить");
+    } finally {
+      setSavingFilter(false);
+    }
+  };
 
   // Таблицы собраны заранее, чтобы ниже только выбрать порядок. data может
   // ещё не приехать — тогда они не рисуются вовсе (см. условие в разметке).
@@ -164,6 +211,54 @@ export function HomeDistanceModal({
         Действующие площадки, до которых вы пока не доехали, — от ближней к
         дальней.
       </p>
+      {platformCodes.length > 1 && (
+        <div className="home-distance-filter">
+          <div className="unique-locations-filters" role="tablist" aria-label="Фильтр по системам">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={platformFilter === "all"}
+              className={platformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
+              onClick={() => setPlatformFilter("all")}
+            >
+              Все
+            </button>
+            {platformCodes.map((code) => (
+              <button
+                key={code}
+                type="button"
+                role="tab"
+                aria-selected={platformFilter === code}
+                className={platformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
+                onClick={() => setPlatformFilter(code)}
+              >
+                {platformCodeLabel(code)}
+              </button>
+            ))}
+          </div>
+          {/* Сохранить срез для плитки — только у себя: в чужом профиле это
+              настройка владельца, гостю она недоступна. */}
+          {!isPublicProfile &&
+            (filterIsSaved ? (
+              <p className="muted home-distance-filter-note">
+                На плитке «Куда дальше»:{" "}
+                {platformFilter === "all" ? "все системы" : platformCodeLabel(platformFilter)}.
+              </p>
+            ) : (
+              <button
+                type="button"
+                className="btn secondary btn-sm"
+                disabled={savingFilter}
+                onClick={() => void applyFilterToTile()}
+              >
+                {platformFilter === "all"
+                  ? "Показывать на плитке все системы"
+                  : `Показывать на плитке только ${platformCodeLabel(platformFilter)}`}
+              </button>
+            ))}
+          {saveError && <p className="error-text">{saveError}</p>}
+        </div>
+      )}
       <div className="unique-locations-table-wrap">
         <table className="data-table unique-locations-table home-distance-table home-distance-table-unvisited">
           <thead>
@@ -173,7 +268,7 @@ export function HomeDistanceModal({
             </tr>
           </thead>
           <tbody>
-            {(data?.unvisited ?? []).map((row) => (
+            {unvisitedRows.map((row) => (
               <tr key={row.catalog_identity_key}>
                 <td>
                   <LocationCell row={row} />
@@ -183,10 +278,12 @@ export function HomeDistanceModal({
                 </td>
               </tr>
             ))}
-            {data?.unvisited.length === 0 && (
+            {data && unvisitedRows.length === 0 && (
               <tr>
                 <td colSpan={2} className="muted">
-                  Вы побывали на всех действующих площадках.
+                  {platformFilter === "all"
+                    ? "Вы побывали на всех действующих площадках."
+                    : `В системе ${platformCodeLabel(platformFilter)} непосещённых площадок не осталось.`}
                 </td>
               </tr>
             )}

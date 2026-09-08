@@ -105,3 +105,12 @@ class HistoryMilestoneSettingsResponse(BaseModel):
 
 class HistoryMilestoneKindUpdateRequest(BaseModel):
     enabled: bool
+
+
+class TourismPlatformsResponse(BaseModel):
+    # Коды систем для плитки «Куда дальше»; пусто — все системы.
+    platforms: list[str] = Field(default_factory=list)
+
+
+class TourismPlatformsUpdateRequest(BaseModel):
+    platforms: list[str] = Field(default_factory=list)
