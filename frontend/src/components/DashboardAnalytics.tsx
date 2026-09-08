@@ -61,7 +61,7 @@ type DashboardAnalyticsProps = {
   showHomeLocationWarning?: boolean;
   /**
    * Настройка изменилась из модалки (системы для плитки «Куда дальше») —
-   * странице пора перечитать сводку, иначе плитка покажет старую площадку.
+   * странице пора перечитать сводку, иначе плитка покажет старую локацию.
    */
   onPreferencesChanged?: () => void;
 };
@@ -121,10 +121,10 @@ const SATURDAY_CONSISTENCY_TOOLTIP = (
 const HOME_DISTANCE_TOOLTIP = (
   <>
     <span>
-      Сумма расстояний по прямой от домашней локации до каждой площадки, где вы бежали.
+      Сумма расстояний по прямой от домашней локации до каждой точки, где вы бежали.
     </span>
     <span className="stat-hint-tooltip-note">
-      Каждая площадка засчитывается один раз, сколько бы раз вы туда ни ездили. Домашняя
+      Каждая точка засчитывается один раз, сколько бы раз вы туда ни ездили. Домашняя
       локация меняется в настройках.
     </span>
   </>
@@ -133,10 +133,10 @@ const HOME_DISTANCE_TOOLTIP = (
 const NEAREST_UNVISITED_TOOLTIP = (
   <>
     <span>
-      Ближайшая к домашней локации действующая площадка, где вы ещё ни разу не бежали.
+      Ближайшая к домашней локации действующая точка, где вы ещё ни разу не бежали.
     </span>
     <span className="stat-hint-tooltip-note">
-      Расстояние — по прямой от дома. Закрытые и приостановленные площадки в подсказку не
+      Расстояние — по прямой от дома. Закрытые и приостановленные локации в подсказку не
       попадают: туда сейчас не поедешь.
     </span>
   </>
@@ -377,13 +377,13 @@ function buildAnalyticsCards(
 
   // «Куда дальше» — компас туриста: сервис сам называет следующую цель, а не
   // ждёт, пока человек сам полезет искать её в каталоге. Показываем название
-  // площадки, а километры до неё уводим в уточнение: выбирают по месту.
+  // локации, а километры до неё уводим в уточнение: выбирают по месту.
   const nearestUnvisited = homeDistance?.nearest_unvisited;
   if (homeDistance?.home && nearestUnvisited && nearestUnvisited.distance_km != null) {
     cards.push({
       key: "nearest_unvisited",
       value: nearestUnvisited.name,
-      label: "ближайшая новая площадка",
+      label: "ближайшая новая локация",
       note: `${formatKm(nearestUnvisited.distance_km)} от дома${
         nearestUnvisited.city ? ` · ${nearestUnvisited.city}` : ""
       }`,
@@ -813,7 +813,7 @@ export function DashboardAnalytics({
   const [ageGroupRecordsOpen, setAgeGroupRecordsOpen] = useState(false);
   const [regionsCitiesOpen, setRegionsCitiesOpen] = useState(false);
   const [homeDistanceOpen, setHomeDistanceOpen] = useState(false);
-  // Плитка «ближайшая новая площадка» открывает ту же модалку, но списком
+  // Плитка «ближайшая новая локация» открывает ту же модалку, но списком
   // «куда дальше» вперёд (см. HomeDistanceModal.focus).
   const [homeDistanceFocus, setHomeDistanceFocus] = useState<HomeDistanceFocus>("visited");
   const [regionsCitiesGroupBy, setRegionsCitiesGroupBy] = useState<GroupBy>("region");
@@ -895,7 +895,7 @@ export function DashboardAnalytics({
   }
 
   // Красным подсвечиваем только шаткий автовыбор (ничья по числу пробежек или
-  // вторая площадка почти вровень) — выбранное руками не трогаем, иначе баннер
+  // вторая локация почти вровень) — выбранное руками не трогаем, иначе баннер
   // висел бы у всех, кто в настройки просто не заходил.
   const homeAmbiguity =
     showHomeLocationWarning && analytics.home_distance?.home?.ambiguity
@@ -1153,7 +1153,7 @@ export function DashboardAnalytics({
           выбралась она автоматически и неуверенно: сейчас это {homeAmbiguity.name}
           {homeAmbiguity.runner_up_name && (
             <>
-              , но почти столько же пробежек у вас на площадке «{homeAmbiguity.runner_up_name}»
+              , но почти столько же пробежек у вас в локации «{homeAmbiguity.runner_up_name}»
             </>
           )}
           . Укажите домашнюю локацию в{" "}

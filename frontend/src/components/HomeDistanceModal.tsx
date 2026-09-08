@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { DetailModal } from "./DetailModal";
+import { FilterGroup, FilterPanel, FilterRow } from "./filters/FilterPanel";
+import { PlatformFilter } from "./filters/PlatformFilter";
 import { PlatformBadge } from "./PlatformBadge";
 import { setTourismPlatforms, type HomeDistanceDetail, type HomeDistanceLocation } from "../lib/api";
 import { useAppDataSource } from "../lib/appDataSource";
 import { formatInt, formatKm, platformCodeLabel } from "../lib/format";
 
-// Порядок чипов фильтра — как у бейджей систем по всему сайту.
+// Порядок систем в фильтре — как у бейджей по всему сайту.
 const PLATFORM_ORDER = ["five_verst", "s95", "parkrun", "runpark"];
 
 function orderedPlatformCodes(rows: HomeDistanceLocation[]): string[] {
@@ -16,14 +18,14 @@ function orderedPlatformCodes(rows: HomeDistanceLocation[]): string[] {
 }
 
 const HINT =
-  "Расстояние по прямой от домашней локации до площадки. Каждая площадка даёт свои " +
+  "Расстояние по прямой от домашней локации до локации. Каждая точка даёт свои " +
   "километры один раз, сколько бы раз вы туда ни ездили. Домашняя локация меняется " +
   "в настройках.";
 
 // В чужом профиле те же цифры, но про другого человека: «вы» и совет заглянуть
 // в настройки там не к месту.
 const PUBLIC_HINT =
-  "Расстояние по прямой от домашней локации участника до площадки. Каждая площадка " +
+  "Расстояние по прямой от домашней локации участника до локации. Каждая точка " +
   "даёт свои километры один раз, сколько бы раз он туда ни ездил.";
 
 /** Город, а регион — только если он не повторяет город (у Москвы и Питера они совпадают). */
@@ -63,7 +65,7 @@ function DistanceCell({ row }: { row: HomeDistanceLocation }) {
     return <span className="home-distance-home-badge">дом</span>;
   }
   if (row.distance_km == null) {
-    // Закрытые зарубежные площадки, которых нет в мировом каталоге parkrun:
+    // Закрытые зарубежные локации, которых нет в мировом каталоге parkrun:
     // координат нет, поэтому и в зачёт километров они не идут.
     return <span className="muted">нет координат</span>;
   }
@@ -72,7 +74,7 @@ function DistanceCell({ row }: { row: HomeDistanceLocation }) {
 
 /**
  * С какой таблицы начинать. Модалку открывают две плитки «Бегового туризма»:
- * «дальность от дома» — про прошлое (где был), «ближайшая новая площадка» —
+ * «дальность от дома» — про прошлое (где был), «ближайшая новая локация» —
  * про будущее (куда дальше). Данные одни, но первым идёт тот блок, ради
  * которого нажали: иначе за списком «куда дальше» приходилось листать в самый
  * низ (замечание Дмитрия 08.09.2026).
@@ -208,56 +210,44 @@ export function HomeDistanceModal({
         {isPublicProfile ? "Где участник ещё не был" : "Где вы ещё не были"}
       </h3>
       <p className="muted home-distance-table-note">
-        Действующие площадки, до которых вы пока не доехали, — от ближней к
+        Действующие локации, до которых вы пока не доехали, — от ближней к
         дальней.
       </p>
       {platformCodes.length > 1 && (
-        <div className="home-distance-filter">
-          <div className="unique-locations-filters" role="tablist" aria-label="Фильтр по системам">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={platformFilter === "all"}
-              className={platformFilter === "all" ? "map-mode-tab active" : "map-mode-tab"}
-              onClick={() => setPlatformFilter("all")}
-            >
-              Все
-            </button>
-            {platformCodes.map((code) => (
-              <button
-                key={code}
-                type="button"
-                role="tab"
-                aria-selected={platformFilter === code}
-                className={platformFilter === code ? "map-mode-tab active" : "map-mode-tab"}
-                onClick={() => setPlatformFilter(code)}
-              >
-                {platformCodeLabel(code)}
-              </button>
-            ))}
-          </div>
-          {/* Сохранить срез для плитки — только у себя: в чужом профиле это
-              настройка владельца, гостю она недоступна. */}
-          {!isPublicProfile &&
-            (filterIsSaved ? (
-              <p className="muted home-distance-filter-note">
-                На плитке «Куда дальше»:{" "}
-                {platformFilter === "all" ? "все системы" : platformCodeLabel(platformFilter)}.
-              </p>
-            ) : (
-              <button
-                type="button"
-                className="btn secondary btn-sm"
-                disabled={savingFilter}
-                onClick={() => void applyFilterToTile()}
-              >
-                {platformFilter === "all"
-                  ? "Показывать на плитке все системы"
-                  : `Показывать на плитке только ${platformCodeLabel(platformFilter)}`}
-              </button>
-            ))}
+        <FilterPanel>
+          <FilterRow>
+            <PlatformFilter
+              mode="single"
+              value={platformFilter}
+              onChange={setPlatformFilter}
+              options={platformCodes.map((code) => ({ code, label: platformCodeLabel(code) }))}
+            />
+            {/* Закрепить срез за плиткой — только у себя: в чужом профиле это
+                настройка владельца, гостю она недоступна. Своей группой в том
+                же ряду, чтобы подпись и кнопка встали на общие горизонтали. */}
+            {!isPublicProfile && (
+              <FilterGroup label="Плитка «Куда дальше»">
+                {filterIsSaved ? (
+                  <span className="home-distance-filter-note muted">
+                    {platformFilter === "all" ? "все системы" : platformCodeLabel(platformFilter)}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn secondary btn-sm"
+                    disabled={savingFilter}
+                    onClick={() => void applyFilterToTile()}
+                  >
+                    {platformFilter === "all"
+                      ? "Показывать все системы"
+                      : `Показывать только ${platformCodeLabel(platformFilter)}`}
+                  </button>
+                )}
+              </FilterGroup>
+            )}
+          </FilterRow>
           {saveError && <p className="error-text">{saveError}</p>}
-        </div>
+        </FilterPanel>
       )}
       <div className="unique-locations-table-wrap">
         <table className="data-table unique-locations-table home-distance-table home-distance-table-unvisited">
@@ -282,8 +272,8 @@ export function HomeDistanceModal({
               <tr>
                 <td colSpan={2} className="muted">
                   {platformFilter === "all"
-                    ? "Вы побывали на всех действующих площадках."
-                    : `В системе ${platformCodeLabel(platformFilter)} непосещённых площадок не осталось.`}
+                    ? "Вы побывали на всех действующих локациях."
+                    : `В системе ${platformCodeLabel(platformFilter)} непосещённых локаций не осталось.`}
                 </td>
               </tr>
             )}
@@ -306,28 +296,11 @@ export function HomeDistanceModal({
           <p className="muted personal-records-hint">
             {isPublicProfile ? PUBLIC_HINT : HINT}
           </p>
-          {data.home && (
-            <p className="home-distance-summary">
-              Дом — <b>{data.home.name}</b>. В зачёте{" "}
-              {formatKm(data.total_distance_km)} по{" "}
-              {formatInt(data.counted_count)} площадкам
-              {data.unknown_count > 0 &&
-                ` (ещё ${formatInt(data.unknown_count)} без координат)`}
-              .
-            </p>
-          )}
-
-          {focus === "unvisited" ? (
-            <>
-              {unvisitedTable}
-              {visitedTable}
-            </>
-          ) : (
-            <>
-              {visitedTable}
-              {unvisitedTable}
-            </>
-          )}
+          {/* «Куда дальше» — только про будущее: таблица «Где вы были» тут
+              дублировала плитку «Локации с пробежками» того же блока
+              (Дмитрий, 08.09.2026). У входа «Дальность от дома» она остаётся —
+              это единственное место, где видно вклад каждой локации в зачёт. */}
+          {focus === "unvisited" ? unvisitedTable : visitedTable}
         </>
       )}
     </DetailModal>

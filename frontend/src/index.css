@@ -13110,10 +13110,6 @@ a.admin-system-chip:hover {
   margin: 0 0 1rem;
 }
 
-.home-distance-summary {
-  margin: 0.35rem 0 1rem;
-  color: var(--text);
-}
 
 .home-distance-table-title {
   margin: 1.35rem 0 0.35rem;
@@ -13121,18 +13117,11 @@ a.admin-system-chip:hover {
   font-weight: 600;
 }
 
-/* Фильтр «Куда дальше» по системе + строка «на плитке: …» / кнопка. */
-.home-distance-filter {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.9rem;
-  margin: 0.25rem 0 0.6rem;
-}
-
+/* Подпись «что закреплено за плиткой» под фильтром систем в «Куда дальше». */
 .home-distance-filter-note {
-  margin: 0;
   font-size: 0.85rem;
+  /* На одной высоте с кнопкой-соседкой по ряду фильтров. */
+  padding: 0.3rem 0;
 }
 
 .home-distance-table-note {
