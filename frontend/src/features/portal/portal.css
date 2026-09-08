@@ -3473,6 +3473,13 @@
   margin-top: 2px;
 }
 
+/* Разделитель «главное / остальное» внутри релиза (маркер __SPLIT__). */
+.portal-release-split {
+  margin: 16px 0 4px;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
 @media (max-width: 560px) {
   .portal-release-head {
     flex-wrap: wrap;

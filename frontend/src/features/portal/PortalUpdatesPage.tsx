@@ -48,12 +48,25 @@ function renderInline(text: string): ReactNode[] {
   return parts;
 }
 
+/**
+ * Разделитель «главное / остальное»: строка `__SPLIT__` отдельным блоком.
+ *
+ * Подчёркиваний принимаем от двух — в тексты они попадают руками, и промахнуться
+ * на одно легко (Дмитрий писал и `___SPLIT___`). Всё, что не подошло под шаблон
+ * целиком, остаётся обычным абзацем: слово SPLIT внутри предложения не должно
+ * внезапно превращаться в черту.
+ */
+const SPLIT_MARKER = /^_{2,}SPLIT_{2,}$/;
+
 function renderReleaseBody(body: string): ReactNode[] {
   return body
     .split(/\n\s*\n/)
     .map((block) => block.trim())
     .filter(Boolean)
     .map((block, index) => {
+      if (SPLIT_MARKER.test(block)) {
+        return <hr key={index} className="portal-release-split" />;
+      }
       const lines = block.split("\n").map((line) => line.trim());
       if (lines.every((line) => line.startsWith("- "))) {
         return (
