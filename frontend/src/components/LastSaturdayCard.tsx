@@ -174,8 +174,51 @@ export function LastSaturdayCard({ data, own = false, user, historyHref }: LastS
 
   const eligibility = ownState?.eligibility ?? null;
   const dayEntry = own ? pickDayEntry(data, eligibility) : null;
-  const hasSide = own && ownState != null && (ownState.milestonesTotal > 0 || dayEntry != null);
+  // Правая колонка — только про вехи: оценка и «Поделиться» относятся к
+  // самой пробежке и стоят слева, в строке с датой.
+  const hasSide = own && ownState != null && ownState.milestonesTotal > 0;
   const rateLabel = isVolunteerDay ? "волонтёрство" : "пробежку";
+
+  const rateButton =
+    dayEntry && eligibility ? (
+      dayEntry.my_rating ? (
+        <button
+          type="button"
+          className="last-saturday-action last-saturday-action-done"
+          onClick={() => setActiveEntry(dayEntry)}
+          title="Изменить оценку"
+        >
+          ★ {dayEntry.my_rating.score_overall}/5 — ваша оценка
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="last-saturday-action"
+          disabled={!eligibility.can_rate}
+          title={
+            eligibility.can_rate
+              ? "Оценить старт"
+              : `Оценивать можно после ${formatInt(eligibility.min_runs_required)} пробежек в истории`
+          }
+          onClick={() => setActiveEntry(dayEntry)}
+        >
+          ★ Оценить {rateLabel}
+        </button>
+      )
+    ) : null;
+
+  const shareButton =
+    shareSubject && sheet !== null ? (
+      <button
+        type="button"
+        className="last-saturday-action"
+        title="Сделать картинку-сториз"
+        onClick={() => sheet.open({ subject: shareSubject, entry: "dashboard" })}
+      >
+        <ShareIcon />
+        Поделиться
+      </button>
+    ) : null;
 
   return (
     <div className={`card last-saturday-card${hasSide ? " last-saturday-card-own" : ""}`}>
@@ -184,16 +227,11 @@ export function LastSaturdayCard({ data, own = false, user, historyHref }: LastS
           <p className="last-saturday-kicker">
             {own ? "Твоя последняя суббота" : "Последняя суббота"} · {formatDate(data.event_date)}
           </p>
-          {shareSubject && sheet !== null && (
-            <button
-              type="button"
-              className="last-saturday-share"
-              title="Сделать картинку-сториз"
-              onClick={() => sheet.open({ subject: shareSubject, entry: "dashboard" })}
-            >
-              <ShareIcon />
-              Поделиться
-            </button>
+          {(rateButton || shareButton) && (
+            <div className="last-saturday-actions">
+              {rateButton}
+              {shareButton}
+            </div>
           )}
         </div>
         <div className="last-saturday-main">
@@ -296,34 +334,6 @@ export function LastSaturdayCard({ data, own = false, user, historyHref }: LastS
             </>
           )}
 
-          {dayEntry && eligibility && (
-            <div className="last-saturday-rate">
-              {dayEntry.my_rating ? (
-                <button
-                  type="button"
-                  className="last-saturday-rate-btn last-saturday-rate-btn-done"
-                  onClick={() => setActiveEntry(dayEntry)}
-                  title="Изменить оценку"
-                >
-                  ★ {dayEntry.my_rating.score_overall}/5 — ваша оценка
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="last-saturday-rate-btn"
-                  disabled={!eligibility.can_rate}
-                  title={
-                    eligibility.can_rate
-                      ? "Оценить старт"
-                      : `Оценивать можно после ${formatInt(eligibility.min_runs_required)} пробежек в истории`
-                  }
-                  onClick={() => setActiveEntry(dayEntry)}
-                >
-                  ★ Оценить {rateLabel}
-                </button>
-              )}
-            </div>
-          )}
         </div>
       )}
 
