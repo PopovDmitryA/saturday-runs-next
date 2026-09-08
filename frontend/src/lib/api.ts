@@ -1401,23 +1401,6 @@ export type HistoryMilestoneKindSetting = {
   enabled: boolean;
 };
 
-export type EventReportLocationItem = {
-  location_id: string;
-  location_name: string;
-  city: string | null;
-  platform_code: string;
-  platform_name: string;
-  events_count: number;
-  last_event_date: string;
-};
-
-export type EventReportDateItem = {
-  event_id: string;
-  event_date: string;
-  event_number: number | null;
-  finishers_count: number;
-};
-
 export type EventReportPerson = {
   participant_id: string | null;
   name: string | null;
@@ -1497,16 +1480,6 @@ export type EventReport = {
   global_run_jubilees: EventReportCountedPerson[];
   post_text: string;
 };
-
-export function getAdminEventReportLocations() {
-  return apiFetch<{ items: EventReportLocationItem[] }>("/admin/event-report/locations");
-}
-
-export function getAdminEventReportDates(locationId: string) {
-  return apiFetch<{ items: EventReportDateItem[] }>(
-    `/admin/event-report/dates?location_id=${encodeURIComponent(locationId)}`,
-  );
-}
 
 export type DigestDateItem = {
   event_date: string;
@@ -1849,12 +1822,132 @@ export function deleteAdminRelease(releaseId: string) {
   return apiFetch<{ message: string }>(`/admin/releases/${releaseId}`, { method: "DELETE" });
 }
 
-export function getAdminEventReport(eventId: string) {
-  return apiFetch<EventReport>(
-    `/admin/event-report?event_id=${encodeURIComponent(eventId)}`,
-    undefined,
-    { timeoutMs: 60_000 },
-  );
+// «Обновить по ссылке»: приоритетная перечитка профиля / протокола / списка
+// стартов у 5 вёрст и S95. Заявка живёт в очереди, страница опрашивает её.
+export type AdminResyncStep = {
+  at: string;
+  code: string;
+  text: string;
+  details: Record<string, unknown> | null;
+};
+
+export type AdminResyncDiffRun = {
+  name: string;
+  position: number | null;
+  time: string | null;
+  time_sec: number | null;
+};
+
+export type AdminResyncDiffChangedRun = {
+  name: string;
+  position_before: number | null;
+  position_after: number | null;
+  time_before: string | null;
+  time_after: string | null;
+};
+
+export type AdminResyncDiff = {
+  changed: boolean;
+  runs: {
+    before: number;
+    after: number;
+    added: AdminResyncDiffRun[];
+    added_total: number;
+    removed: AdminResyncDiffRun[];
+    removed_total: number;
+    changed: AdminResyncDiffChangedRun[];
+    changed_total: number;
+    identified: AdminResyncDiffRun[];
+    identified_total: number;
+  };
+  volunteers: {
+    before: number;
+    after: number;
+    added: { name: string; role: string | null }[];
+    added_total: number;
+    removed: { name: string; role: string | null }[];
+    removed_total: number;
+    changed: { name: string; role_before: string | null; role_after: string | null }[];
+    changed_total: number;
+  };
+};
+
+export type AdminResyncProtocol = {
+  label: string;
+  slug: string;
+  event_date: string;
+  event_number: number | null;
+  reason: string;
+  changed: boolean;
+  diff: AdminResyncDiff | null;
+  error: string | null;
+  event_id: string | null;
+};
+
+export type AdminResyncResult = {
+  label?: string;
+  protocols: AdminResyncProtocol[];
+  protocols_checked: number;
+  protocols_changed: number;
+  protocols_unchanged: number;
+  protocols_failed: number;
+  deferred: string[];
+  deferred_total: number;
+  // профиль
+  participant?: { name: string; external_user_id: string; profile_url: string | null };
+  profile_runs?: number;
+  profile_runs_declared?: number | null;
+  profile_volunteering?: number;
+  db_runs_before?: number;
+  db_runs_after?: number;
+  missing?: { label: string; time: string | null }[];
+  missing_total?: number;
+  mismatched?: { label: string; profile_time: string | null; db_time: string | null }[];
+  mismatched_total?: number;
+  not_fully_loaded?: { label: string }[];
+  not_fully_loaded_total?: number;
+  missing_volunteering?: { label: string; role: string | null }[];
+  missing_volunteering_total?: number;
+  extra_in_db?: { label: string }[];
+  extra_in_db_total?: number;
+  // локация
+  summaries_total?: number;
+  summaries_unchanged?: number;
+  summaries_diverged?: number;
+  reasons?: Record<string, number>;
+};
+
+export type AdminResyncRequest = {
+  id: string;
+  platform_code: string;
+  kind: "profile" | "protocol" | "location";
+  input_url: string;
+  target: Record<string, unknown>;
+  status: "queued" | "running" | "done" | "failed";
+  steps: AdminResyncStep[];
+  result: AdminResyncResult | null;
+  error_message: string | null;
+  summary: string;
+  queue_position: number | null;
+  queue_length: number | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+export function createAdminResync(url: string) {
+  return apiFetch<AdminResyncRequest>("/admin/resync", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}
+
+export function getAdminResync(id: string) {
+  return apiFetch<AdminResyncRequest>(`/admin/resync/${encodeURIComponent(id)}`);
+}
+
+export function listAdminResync(limit = 30) {
+  return apiFetch<{ items: AdminResyncRequest[] }>(`/admin/resync?limit=${limit}`);
 }
 
 // ── Настройки: персональный вкл/выкл видов вех «Моя история» ─────────────────

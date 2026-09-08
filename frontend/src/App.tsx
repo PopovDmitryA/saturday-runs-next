@@ -6,7 +6,7 @@ import { AdminStatsPage } from "./features/admin/AdminStatsPage";
 import { AdminSyncRunsPage } from "./features/admin/AdminSyncRunsPage";
 import { AdminPageAnalyticsPage } from "./features/admin/AdminPageAnalyticsPage";
 import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
-import { AdminEventReportPage } from "./features/admin/AdminEventReportPage";
+import { AdminResyncPage } from "./features/admin/AdminResyncPage";
 import { AdminLocationContactsPage } from "./features/admin/AdminLocationContactsPage";
 import { AdminLocationOpeningsPage } from "./features/admin/AdminLocationOpeningsPage";
 import { AdminRecordsDigestPage } from "./features/admin/AdminRecordsDigestPage";
@@ -283,7 +283,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/stats": () => <AdminStatsPage />,
   "/admin/page-analytics": () => <AdminPageAnalyticsPage />,
   "/admin/ratings": () => <AdminRatingsPage />,
-  "/admin/event-report": () => <AdminEventReportPage />,
+  "/admin/resync": () => <AdminResyncPage />,
   "/admin/records-digest": () => <AdminRecordsDigestPage />,
   "/admin/location-contacts": () => <AdminLocationContactsPage />,
   "/admin/location-openings": () => <AdminLocationOpeningsPage />,

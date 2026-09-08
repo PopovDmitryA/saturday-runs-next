@@ -15,6 +15,13 @@ PIPELINE_LABELS: dict[str, str] = {
     "s95 reconcile protocols": "s95: сверка протоколов",
     "s95 athletes registry": "s95: реестр атлетов",
     "runpark latest": "RunPark: свежие события",
+    # «Обновить по ссылке» в админке (admin_resync_service) — приоритетные заявки.
+    "5v resync profile": "5verst: по ссылке — профиль",
+    "5v resync protocol": "5verst: по ссылке — протокол",
+    "5v resync location": "5verst: по ссылке — список стартов",
+    "s95 resync profile": "s95: по ссылке — профиль",
+    "s95 resync protocol": "s95: по ссылке — протокол",
+    "s95 resync location": "s95: по ссылке — список стартов",
 }
 
 PIPELINE_PREFIX_LABELS: tuple[tuple[str, str], ...] = (
@@ -36,6 +43,8 @@ FIELD_LABELS: dict[str, str] = {
     "cancellations_active": "отмен сейчас",
     "merge_requests_created": "заявок на слияние дублей",
     "merge_notifications_sent": "уведомлений о дублях отправлено",
+    "protocols_checked": "протоколов перекачано",
+    "deferred": "отложено в обычную очередь",
     "summaries_total": "сводок всего",
     "summaries_upserted": "сводок записано",
     "summaries_unchanged": "сводок без изменений",

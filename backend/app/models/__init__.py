@@ -813,6 +813,37 @@ class ProtocolRevision(Base):
     event: Mapped["Event"] = relationship()
 
 
+class AdminResyncRequest(Base):
+    """Заявка админа «обновить по ссылке»: профиль, протокол или список стартов
+    локации у 5 вёрст / S95.
+
+    Идёт через приоритетную очередь платформы (five_verst_user / s95_user), то
+    есть внутри общей очереди, но впереди батчей. Ход работы пишется в `steps`
+    (страница админки опрашивает их и показывает живой прогресс), итог — в
+    `result`: что добавилось, поправилось, удалилось, или «без изменений».
+    """
+
+    __tablename__ = "admin_resync_requests"
+    __table_args__ = (Index("ix_admin_resync_requests_created_at", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    platform_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    # profile | protocol | location
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    input_url: Mapped[str] = mapped_column(Text, nullable=False)
+    target: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
+    # queued | running | done | failed
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="queued")
+    steps: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    celery_task_id: Mapped[str | None] = mapped_column(String(128))
+    created_by_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ProfileFetchPending(Base):
     __tablename__ = "profile_fetch_pending"
 

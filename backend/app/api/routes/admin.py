@@ -30,10 +30,10 @@ from app.schemas.admin import (
     AdminVisitItem,
     AdminVisitPageItem,
 )
-from app.schemas.admin_event_report import (
-    EventReportDatesResponse,
-    EventReportLocationsResponse,
-    EventReportResponse,
+from app.schemas.admin_resync import (
+    AdminResyncCreate,
+    AdminResyncListResponse,
+    AdminResyncRequestOut,
 )
 from app.schemas.admin_stats import (
     AdminEmailLoginResponse,
@@ -85,6 +85,7 @@ from app.schemas.releases import (
     ReleaseCreateRequest,
     ReleaseUpdateRequest,
 )
+from app.services import admin_resync_service as resync
 from app.services.abuse_admin_service import (
     AbuseAdminError,
     clear_ip_score,
@@ -93,11 +94,6 @@ from app.services.abuse_admin_service import (
     delete_telegram_ban,
     get_ip_block_details,
     list_abuse_blocks,
-)
-from app.services.admin_event_report_service import (
-    build_event_report,
-    list_report_event_dates,
-    list_report_locations,
 )
 from app.services.admin_site_stats_service import get_admin_site_stats
 from app.services.admin_users_geo_stats_service import get_admin_users_geography
@@ -637,35 +633,64 @@ def admin_ratings_locations(
     )
 
 
-@router.get("/event-report/locations", response_model=EventReportLocationsResponse)
-def admin_event_report_locations(
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-) -> EventReportLocationsResponse:
-    return EventReportLocationsResponse.model_validate({"items": list_report_locations(db)})
-
-
-@router.get("/event-report/dates", response_model=EventReportDatesResponse)
-def admin_event_report_dates(
-    location_id: Annotated[UUID, Query()],
-    db: Annotated[Session, Depends(get_db)],
-    _admin: Annotated[User, Depends(get_current_admin_user)],
-) -> EventReportDatesResponse:
-    return EventReportDatesResponse.model_validate(
-        {"items": list_report_event_dates(db, location_id)}
+def _resync_out(row) -> AdminResyncRequestOut:
+    position, length = resync.queue_position(row)
+    return AdminResyncRequestOut(
+        id=row.id,
+        platform_code=row.platform_code,
+        kind=row.kind,
+        input_url=row.input_url,
+        target=row.target or {},
+        status=row.status,
+        steps=row.steps or [],
+        result=row.result,
+        error_message=row.error_message,
+        summary=resync.summarize_result(row),
+        queue_position=position,
+        queue_length=length,
+        created_at=row.created_at,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
     )
 
 
-@router.get("/event-report", response_model=EventReportResponse)
-def admin_event_report(
-    event_id: Annotated[UUID, Query()],
+@router.post("/resync", response_model=AdminResyncRequestOut, status_code=201)
+def admin_resync_create(
+    body: AdminResyncCreate,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AdminResyncRequestOut:
+    """«Обновить по ссылке»: профиль / протокол / список стартов у 5 вёрст или S95.
+
+    Заявка уходит в приоритетную ветку общей очереди платформы; ход и итог
+    читаются по GET /admin/resync/{id}.
+    """
+    try:
+        row = resync.create_resync_request(db, body.url, user_id=admin.id)
+    except resync.ResyncInputError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _resync_out(row)
+
+
+@router.get("/resync", response_model=AdminResyncListResponse)
+def admin_resync_list(
     db: Annotated[Session, Depends(get_db)],
     _admin: Annotated[User, Depends(get_current_admin_user)],
-) -> EventReportResponse:
-    payload = build_event_report(db, event_id)
-    if payload is None:
-        raise HTTPException(status_code=404, detail="Событие не найдено")
-    return EventReportResponse.model_validate(payload)
+    limit: Annotated[int, Query(ge=1, le=100)] = 30,
+) -> AdminResyncListResponse:
+    return AdminResyncListResponse(items=[_resync_out(row) for row in resync.list_recent_requests(db, limit=limit)])
+
+
+@router.get("/resync/{request_id}", response_model=AdminResyncRequestOut)
+def admin_resync_get(
+    request_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AdminResyncRequestOut:
+    row = resync.get_request(db, request_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    return _resync_out(row)
 
 
 @router.get("/records-digest/dates", response_model=DigestDatesResponse)

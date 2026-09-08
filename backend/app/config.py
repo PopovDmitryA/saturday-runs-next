@@ -265,6 +265,10 @@ class Settings(BaseSettings):
     # Потолок паузы батча. Если воркер пользовательской очереди не поднят,
     # очередь копится и разбирать её некому — батч не должен вставать навсегда.
     five_verst_user_sync_pause_max_seconds: int = 300
+    # «Обновить по ссылке» в админке: сколько протоколов перекачать в приоритете
+    # за одну заявку. Каждый фетч 5 вёрст — не чаще раза в 20 с, и всё это время
+    # батчи стоят; остаток уходит в обычную очередь батча.
+    admin_resync_protocol_limit: int = 20
     five_verst_ban_cooldown_seconds: int = 600
     five_verst_sync_protocol_limit: int | None = None
     five_verst_sync_latest_update_limit: int | None = None
