@@ -95,7 +95,28 @@ type AnalyticsCard = {
   labelMultiline?: boolean;
   /** Мелкая строка под подписью — уточнение к числу («из них действует 1»). */
   note?: ReactNode;
+  /**
+   * Значение — длинное слово/название, а не число: показываем мельче и
+   * плотнее. Для строковых значений считается само, здесь — для тех карточек,
+   * где значение собрано компонентом (например, самая частая локация).
+   */
+  longValue?: boolean;
 };
+
+/**
+ * Порог «значение длинное»: тот же, что у плиток страницы локации
+ * (LocationPage, правка Дмитрия 01.09.2026). Числа и короткие слова — «дом»,
+ * время, дата — крупным кеглем, а «Черкизовский пруд» им уже не помещается в
+ * плитку и вылезает за край (репорт Дмитрия 09.09.2026, телефон).
+ */
+const LONG_VALUE_CHARS = 14;
+
+function isLongValue(card: AnalyticsCard): boolean {
+  if (card.longValue) {
+    return true;
+  }
+  return typeof card.value === "string" && card.value.length > LONG_VALUE_CHARS;
+}
 
 const VOLUNTEERING_INDEX_TOOLTIP = (
   <>
@@ -581,6 +602,7 @@ function buildAnalyticsCards(
     cards.push({
       key: "top_location",
       value: <TopLocationValue topLocation={analytics.top_location} />,
+      longValue: analytics.top_location.name.length > LONG_VALUE_CHARS,
       label: `Самая частая локация · ${formatNumber(analytics.top_location.count)} ${timesLabel(analytics.top_location.count)}`,
       half: true,
     });
@@ -926,7 +948,11 @@ export function DashboardAnalytics({
 
   const renderCardBody = (card: AnalyticsCard) => (
     <>
-      <span className="stat-value stat-value-secondary">{formatStatValue(card.value)}</span>
+      <span
+        className={`stat-value stat-value-secondary${isLongValue(card) ? " stat-value-text" : ""}`}
+      >
+        {formatStatValue(card.value)}
+      </span>
       <span className={`stat-label${card.labelMultiline ? " stat-label-multiline" : ""}`}>
         {card.label}
       </span>
