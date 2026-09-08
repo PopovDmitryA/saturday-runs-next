@@ -221,6 +221,10 @@ export function LastSaturdayCard({ data, own = false, user, historyHref }: LastS
     ) : null;
 
   return (
+    // Обёртка — контейнер для @container-правил: сама карточка ими управлять
+    // не может (запрос смотрит на предка), а колонки и строка с датой
+    // подстраиваются именно под ширину карточки.
+    <div className="last-saturday-frame">
     <div className={`card last-saturday-card${hasSide ? " last-saturday-card-own" : ""}`}>
       <div className="last-saturday-primary">
         <div className="last-saturday-head">
@@ -355,6 +359,7 @@ export function LastSaturdayCard({ data, own = false, user, historyHref }: LastS
       <Snackbar open={snackbar.open} title={snackbar.title} variant={snackbar.variant} onDismiss={dismissSnackbar}>
         {snackbar.message}
       </Snackbar>
+    </div>
     </div>
   );
 }
