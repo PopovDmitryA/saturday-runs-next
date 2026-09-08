@@ -60,7 +60,24 @@ function DistanceCell({ row }: { row: HomeDistanceLocation }) {
   return <span className="num">{formatKm(row.distance_km)}</span>;
 }
 
-export function HomeDistanceModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+/**
+ * С какой таблицы начинать. Модалку открывают две плитки «Бегового туризма»:
+ * «дальность от дома» — про прошлое (где был), «ближайшая новая площадка» —
+ * про будущее (куда дальше). Данные одни, но первым идёт тот блок, ради
+ * которого нажали: иначе за списком «куда дальше» приходилось листать в самый
+ * низ (замечание Дмитрия 08.09.2026).
+ */
+export type HomeDistanceFocus = "visited" | "unvisited";
+
+export function HomeDistanceModal({
+  open,
+  onClose,
+  focus = "visited",
+}: {
+  open: boolean;
+  onClose: () => void;
+  focus?: HomeDistanceFocus;
+}) {
   // В чужом профиле источник подменён на публичный эндпоинт владельца профиля:
   // раньше модалка звала личный и показывала километры смотрящего.
   const { getHomeDistanceDetail, mode } = useAppDataSource();
@@ -83,7 +100,11 @@ export function HomeDistanceModal({ open, onClose }: { open: boolean; onClose: (
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Не удалось загрузить дальность");
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Не удалось загрузить дальность",
+          );
         }
       });
     return () => {
@@ -91,91 +112,125 @@ export function HomeDistanceModal({ open, onClose }: { open: boolean; onClose: (
     };
   }, [open, getHomeDistanceDetail]);
 
+  // Таблицы собраны заранее, чтобы ниже только выбрать порядок. data может
+  // ещё не приехать — тогда они не рисуются вовсе (см. условие в разметке).
+  const visitedTable = (
+    <>
+      <h3 className="home-distance-table-title">
+        {isPublicProfile ? "Где участник был" : "Где вы были"}
+      </h3>
+      <div className="unique-locations-table-wrap">
+        <table className="data-table unique-locations-table home-distance-table">
+          <thead>
+            <tr>
+              <th>Локация</th>
+              <th className="col-num">В зачёте</th>
+              <th className="col-num">Пробежек</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(data?.visited ?? []).map((row) => (
+              <tr
+                key={row.catalog_identity_key}
+                className={row.is_home ? "home-distance-row-home" : undefined}
+              >
+                <td>
+                  <LocationCell row={row} />
+                </td>
+                <td className="col-num">
+                  <DistanceCell row={row} />
+                </td>
+                <td className="col-num num">{formatInt(row.run_count)}</td>
+              </tr>
+            ))}
+            {data?.visited.length === 0 && (
+              <tr>
+                <td colSpan={3} className="muted">
+                  Пока нет пробежек.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+  const unvisitedTable = (
+    <>
+      <h3 className="home-distance-table-title">
+        {isPublicProfile ? "Где участник ещё не был" : "Где вы ещё не были"}
+      </h3>
+      <p className="muted home-distance-table-note">
+        Действующие площадки, до которых вы пока не доехали, — от ближней к
+        дальней.
+      </p>
+      <div className="unique-locations-table-wrap">
+        <table className="data-table unique-locations-table home-distance-table home-distance-table-unvisited">
+          <thead>
+            <tr>
+              <th>Локация</th>
+              <th className="col-num">От дома</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(data?.unvisited ?? []).map((row) => (
+              <tr key={row.catalog_identity_key}>
+                <td>
+                  <LocationCell row={row} />
+                </td>
+                <td className="col-num">
+                  <DistanceCell row={row} />
+                </td>
+              </tr>
+            ))}
+            {data?.unvisited.length === 0 && (
+              <tr>
+                <td colSpan={2} className="muted">
+                  Вы побывали на всех действующих площадках.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+
   return (
-    <DetailModal open={open} title="Дальность от дома" onClose={onClose}>
+    <DetailModal
+      open={open}
+      title={focus === "unvisited" ? "Куда дальше" : "Дальность от дома"}
+      onClose={onClose}
+    >
       {error && <p className="error-text">{error}</p>}
       {!error && !data && <p className="muted">Загрузка…</p>}
       {!error && data && (
         <>
-          <p className="muted personal-records-hint">{isPublicProfile ? PUBLIC_HINT : HINT}</p>
+          <p className="muted personal-records-hint">
+            {isPublicProfile ? PUBLIC_HINT : HINT}
+          </p>
           {data.home && (
             <p className="home-distance-summary">
-              Дом — <b>{data.home.name}</b>. В зачёте {formatKm(data.total_distance_km)} по{" "}
+              Дом — <b>{data.home.name}</b>. В зачёте{" "}
+              {formatKm(data.total_distance_km)} по{" "}
               {formatInt(data.counted_count)} площадкам
-              {data.unknown_count > 0 && ` (ещё ${formatInt(data.unknown_count)} без координат)`}.
+              {data.unknown_count > 0 &&
+                ` (ещё ${formatInt(data.unknown_count)} без координат)`}
+              .
             </p>
           )}
 
-          <h3 className="home-distance-table-title">
-            {isPublicProfile ? "Где участник был" : "Где вы были"}
-          </h3>
-          <div className="unique-locations-table-wrap">
-            <table className="data-table unique-locations-table home-distance-table">
-              <thead>
-                <tr>
-                  <th>Локация</th>
-                  <th className="col-num">В зачёте</th>
-                  <th className="col-num">Пробежек</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.visited.map((row) => (
-                  <tr key={row.catalog_identity_key} className={row.is_home ? "home-distance-row-home" : undefined}>
-                    <td>
-                      <LocationCell row={row} />
-                    </td>
-                    <td className="col-num">
-                      <DistanceCell row={row} />
-                    </td>
-                    <td className="col-num num">{formatInt(row.run_count)}</td>
-                  </tr>
-                ))}
-                {data.visited.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="muted">
-                      Пока нет пробежек.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <h3 className="home-distance-table-title">
-            {isPublicProfile ? "Где участник ещё не был" : "Где вы ещё не были"}
-          </h3>
-          <p className="muted home-distance-table-note">
-            Действующие площадки, до которых вы пока не доехали, — от ближней к дальней.
-          </p>
-          <div className="unique-locations-table-wrap">
-            <table className="data-table unique-locations-table home-distance-table home-distance-table-unvisited">
-              <thead>
-                <tr>
-                  <th>Локация</th>
-                  <th className="col-num">От дома</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.unvisited.map((row) => (
-                  <tr key={row.catalog_identity_key}>
-                    <td>
-                      <LocationCell row={row} />
-                    </td>
-                    <td className="col-num">
-                      <DistanceCell row={row} />
-                    </td>
-                  </tr>
-                ))}
-                {data.unvisited.length === 0 && (
-                  <tr>
-                    <td colSpan={2} className="muted">
-                      Вы побывали на всех действующих площадках.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          {focus === "unvisited" ? (
+            <>
+              {unvisitedTable}
+              {visitedTable}
+            </>
+          ) : (
+            <>
+              {visitedTable}
+              {unvisitedTable}
+            </>
+          )}
         </>
       )}
     </DetailModal>

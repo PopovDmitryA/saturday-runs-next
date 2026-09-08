@@ -7,11 +7,17 @@ import { useSnackbar } from "../hooks/useSnackbar";
 import { getEligibleRuns, type EligibleRun, type RatingEligibility, type RunRating } from "../lib/api";
 import { COUNT_FORMS, formatDateLong, formatInt, pluralizeRu } from "../lib/format";
 import { loadDismissedRatings, saveDismissedRatings } from "../lib/ratingDismissals";
+import { dismissUntilNextSaturday, isDismissedThisWeek } from "../lib/weeklyDismissal";
+
+// Весь блок закрывается до следующей субботы: когда стартов к оценке много,
+// закрывать их по одному — работа, а не выбор (Дмитрий, 08.09.2026).
+const BLOCK_DISMISS_KEY = "recent-ratings";
 
 export function RecentRunsRating() {
   const [data, setData] = useState<RatingEligibility | null>(null);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissedRatings());
+  const [blockDismissed, setBlockDismissed] = useState(() => isDismissedThisWeek(BLOCK_DISMISS_KEY));
   const { snackbar, showSnackbar, dismissSnackbar } = useSnackbar();
 
   useEffect(() => {
@@ -66,7 +72,7 @@ export function RecentRunsRating() {
     ? data.runs.filter((run) => run.my_rating == null && run.is_legacy).length
     : 0;
 
-  if (!data || (pending.length === 0 && legacyCount === 0)) {
+  if (blockDismissed || !data || (pending.length === 0 && legacyCount === 0)) {
     // Блок мог только что схлопнуться из-за успешной оценки — снекбар должен
     // пережить это скрытие.
     return (
@@ -79,7 +85,29 @@ export function RecentRunsRating() {
   return (
     <section className="recent-ratings" aria-label="Оценка недавних пробежек">
       <div className="recent-ratings-head">
-        <h2 className="recent-ratings-title">Оцените недавние старты</h2>
+        <div className="recent-ratings-head-row">
+          <h2 className="recent-ratings-title">Оцените недавние старты</h2>
+          <button
+            type="button"
+            className="recent-ratings-dismiss-btn recent-ratings-dismiss-all"
+            title="Скрыть блок до следующей субботы"
+            aria-label="Скрыть блок до следующей субботы"
+            onClick={() => {
+              dismissUntilNextSaturday(BLOCK_DISMISS_KEY);
+              setBlockDismissed(true);
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M6 6l12 12M18 6L6 18"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
         {pending.length > 0 && (
           <p className="recent-ratings-lead">
             Старты за последние {data.window_days} дней — оцените, как всё прошло.

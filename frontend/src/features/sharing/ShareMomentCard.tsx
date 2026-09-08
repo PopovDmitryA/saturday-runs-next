@@ -3,6 +3,7 @@
 // Паттерн Duolingo: предлагать шаринг на пике, а не кнопкой в углу.
 
 import { useEffect, useMemo, useState } from "react";
+import { dismissUntilNextSaturday, isDismissedThisWeek } from "../../lib/weeklyDismissal";
 import { ShareIcon } from "../../components/ShareIcon";
 import { listRuns, type DashboardStats, type RunItem, type User } from "../../lib/api";
 import { formatDate, pluralFormRu } from "../../lib/format";
@@ -26,9 +27,14 @@ type Moment = {
 };
 
 
+// Одна плашка на неделю: закрытая серия не должна маячить до следующего
+// старта, а новый старт — это новый момент с новым id (Дмитрий, 08.09.2026).
+const DISMISS_KEY = "share-moment";
+
 export function ShareMomentCard({ stats, user }: { stats: DashboardStats; user: User }) {
   const sheet = useOptionalShareSheet();
   const [lastRun, setLastRun] = useState<RunItem | null | undefined>(undefined);
+  const [dismissed, setDismissed] = useState(() => isDismissedThisWeek(DISMISS_KEY));
 
   useEffect(() => {
     let cancelled = false;
@@ -99,12 +105,24 @@ export function ShareMomentCard({ stats, user }: { stats: DashboardStats; user: 
     }
   }, [moment?.id, moment?.subject.kind]);
 
-  if (!moment || sheet === null) {
+  if (!moment || sheet === null || dismissed) {
     return null;
   }
 
   return (
     <section className="s2-moment-card" aria-label="Поделиться моментом">
+      <button
+        type="button"
+        className="s2-moment-card-close"
+        aria-label="Скрыть до следующей субботы"
+        title="Скрыть до следующей субботы"
+        onClick={() => {
+          dismissUntilNextSaturday(DISMISS_KEY);
+          setDismissed(true);
+        }}
+      >
+        ×
+      </button>
       <span aria-hidden="true" style={{ fontSize: "1.6rem" }}>
         {moment.emoji}
       </span>

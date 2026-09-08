@@ -14,7 +14,7 @@ import { PersonalRecordsModal } from "./PersonalRecordsModal";
 import { StatHintTooltip } from "./StatHintTooltip";
 import { TopLocationValue } from "./TopLocationValue";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
-import { HomeDistanceModal } from "./HomeDistanceModal";
+import { HomeDistanceModal, type HomeDistanceFocus } from "./HomeDistanceModal";
 import { PORTAL_CABINET_SETTINGS_HREF } from "../lib/portalRoutes";
 import { UniqueLocationsModal } from "./UniqueLocationsModal";
 import { WinsModal } from "./WinsModal";
@@ -82,6 +82,7 @@ type AnalyticsCard = {
     | "location_records"
     | "age_group_records"
     | "home_distance"
+    | "nearest_unvisited"
     | "wins";
   modalActivity?: "all" | "runs" | "volunteering";
   firstVisitSince?: string;
@@ -383,7 +384,7 @@ function buildAnalyticsCards(
       }`,
       category: "runs",
       clickable: true,
-      modalTarget: "home_distance",
+      modalTarget: "nearest_unvisited",
       tooltipContent: NEAREST_UNVISITED_TOOLTIP,
     });
   }
@@ -806,6 +807,9 @@ export function DashboardAnalytics({
   const [ageGroupRecordsOpen, setAgeGroupRecordsOpen] = useState(false);
   const [regionsCitiesOpen, setRegionsCitiesOpen] = useState(false);
   const [homeDistanceOpen, setHomeDistanceOpen] = useState(false);
+  // Плитка «ближайшая новая площадка» открывает ту же модалку, но списком
+  // «куда дальше» вперёд (см. HomeDistanceModal.focus).
+  const [homeDistanceFocus, setHomeDistanceFocus] = useState<HomeDistanceFocus>("visited");
   const [regionsCitiesGroupBy, setRegionsCitiesGroupBy] = useState<GroupBy>("region");
   const [modalActivity, setModalActivity] = useState<"all" | "runs" | "volunteering">("all");
   const [uniqueLocationsFirstVisitSince, setUniqueLocationsFirstVisitSince] = useState<
@@ -856,6 +860,12 @@ export function DashboardAnalytics({
       return;
     }
     if (card.modalTarget === "home_distance") {
+      setHomeDistanceFocus("visited");
+      setHomeDistanceOpen(true);
+      return;
+    }
+    if (card.modalTarget === "nearest_unvisited") {
+      setHomeDistanceFocus("unvisited");
       setHomeDistanceOpen(true);
       return;
     }
@@ -1180,7 +1190,11 @@ export function DashboardAnalytics({
 
       <VolunteerRolesModal open={volunteerRolesOpen} onClose={() => setVolunteerRolesOpen(false)} />
 
-      <HomeDistanceModal open={homeDistanceOpen} onClose={() => setHomeDistanceOpen(false)} />
+      <HomeDistanceModal
+        open={homeDistanceOpen}
+        focus={homeDistanceFocus}
+        onClose={() => setHomeDistanceOpen(false)}
+      />
 
       <LocationRecordsModal
         open={locationRecordsOpen}

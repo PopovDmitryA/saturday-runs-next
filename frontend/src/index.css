@@ -7612,6 +7612,18 @@ a.admin-system-chip:hover {
   font-weight: 700;
 }
 
+/* Заголовок и крестик «скрыть блок» в одну строку. */
+.recent-ratings-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.recent-ratings-dismiss-all {
+  flex-shrink: 0;
+}
+
 .recent-ratings-lead {
   margin: 0.2rem 0 0;
   font-size: 0.85rem;
@@ -13809,14 +13821,40 @@ a.admin-system-chip:hover {
 }
 
 .s2-moment-card {
+  position: relative;
   border: 1px solid var(--tint-indigo-bg-strong);
   background: linear-gradient(135deg, var(--tint-indigo-bg) 0%, var(--surface) 70%);
   border-radius: 14px;
-  padding: 0.9rem 1.1rem;
+  padding: 0.9rem 2.2rem 0.9rem 1.1rem;
   display: flex;
   align-items: center;
   gap: 0.9rem;
   flex-wrap: wrap;
+}
+
+/* Крестик «скрыть до следующей субботы» — как у карточки «В этот день». */
+.s2-moment-card-close {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--neutral-soft);
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.s2-moment-card-close:hover {
+  color: var(--text);
+  background: var(--tint-indigo-bg-strong);
 }
 
 .s2-moment-card-text {
