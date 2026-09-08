@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { readCached, writeCached } from "../../lib/dataCache";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { LastSaturdayCard } from "../../components/LastSaturdayCard";
 import { DashboardStatCard } from "../../components/DashboardStatCard";
@@ -207,8 +208,13 @@ function PublicProfileContent({
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
-  const [dashboard, setDashboard] = useState<AdminUserPreviewDashboard | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Сводка профиля — из кэша вкладки, свежая подъезжает следом: «назад» на
+  // чужой профиль не должен начинаться с пустого экрана (см. lib/dataCache).
+  const dashboardCacheKey = `profile:${serialId}:dashboard`;
+  const [dashboard, setDashboard] = useState<AdminUserPreviewDashboard | null>(
+    () => readCached<AdminUserPreviewDashboard>(dashboardCacheKey) ?? null,
+  );
+  const [loading, setLoading] = useState(() => readCached(dashboardCacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -221,20 +227,28 @@ function PublicProfileContent({
   }, []);
 
   const loadDashboard = useCallback(async () => {
-    setLoading(true);
+    const cached = readCached<AdminUserPreviewDashboard>(dashboardCacheKey);
+    if (cached) {
+      setDashboard(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     setForbidden(false);
     setNotFound(false);
     try {
-      setDashboard(await getPublicProfileDashboard(serialId));
+      const payload = await getPublicProfileDashboard(serialId);
+      setDashboard(payload);
+      writeCached(dashboardCacheKey, payload);
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) setForbidden(true);
       else if (err instanceof ApiError && err.status === 404) setNotFound(true);
-      else setError(err instanceof Error ? err.message : "Не удалось загрузить профиль");
+      else if (!cached) setError(err instanceof Error ? err.message : "Не удалось загрузить профиль");
     } finally {
       setLoading(false);
     }
-  }, [serialId]);
+  }, [serialId, dashboardCacheKey]);
 
   useEffect(() => {
     if (tab === "dashboard") void loadDashboard();
@@ -247,12 +261,21 @@ function PublicProfileContent({
 
   const loadAchievements = useCallback(
     async (platform: string | null) => {
+      const key = `profile:${serialId}:achievements:${platform ?? "all"}`;
+      const cached = readCached<AchievementsResponse>(key);
+      if (cached) {
+        setAchievements(cached);
+      }
       setAchievementsError(null);
       setAchievementsSwitching(true);
       try {
-        setAchievements(await getPublicProfileAchievements(serialId, platform ?? undefined));
+        const payload = await getPublicProfileAchievements(serialId, platform ?? undefined);
+        setAchievements(payload);
+        writeCached(key, payload);
       } catch (err) {
-        setAchievementsError(err instanceof Error ? err.message : "Не удалось загрузить достижения");
+        if (!cached) {
+          setAchievementsError(err instanceof Error ? err.message : "Не удалось загрузить достижения");
+        }
       } finally {
         setAchievementsSwitching(false);
       }
@@ -481,6 +504,7 @@ function PublicProfileContent({
       {tab === "history" && (
         <HistoryContent
           load={loadHistory}
+          cacheScope={`profile:${serialId}`}
           title="История участника"
           description="Ключевые вехи беговой истории: первая пробежка, клубы, личные рекорды, новые регионы и волонтёрство."
           emptyText="У этого участника пока нет вех."
@@ -488,7 +512,11 @@ function PublicProfileContent({
       )}
 
       {tab === "meetings" && (
-        <CoRunnersContent load={loadCoRunners} loadMeetings={loadCoRunnerMeetings} />
+        <CoRunnersContent
+          load={loadCoRunners}
+          loadMeetings={loadCoRunnerMeetings}
+          cacheScope={`profile:${serialId}`}
+        />
       )}
     </ProfileShell>
   );

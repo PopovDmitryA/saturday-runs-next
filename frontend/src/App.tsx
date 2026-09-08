@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import { AdminAbusePage } from "./features/admin/AdminAbusePage";
 import { AdminBlockedSlugsPage } from "./features/admin/AdminBlockedSlugsPage";
 import { AdminStatsPage } from "./features/admin/AdminStatsPage";
@@ -77,6 +77,7 @@ import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { TapTooltipLayer } from "./components/TapTooltipLayer";
+import { useEntryKey } from "./hooks/useEntryKey";
 import { useAppPath } from "./hooks/useAppPath";
 import {
   RenderOgDefaultPage,
@@ -470,9 +471,15 @@ export function App() {
   // провайдер вернул человека после входа, поэтому живёт на уровне App.
   const viewer = useOptionalUser();
   // Шторка «Поделиться» доступна из любого раздела — провайдер на всё дерево.
+  // Ключ записи истории пересобирает страницу на каждом переходе: одна и та же
+  // страница на соседнем адресе (локация → другая локация, профиль → профиль)
+  // иначе переиспользовала бы экземпляр, и на новый адрес утекало бы состояние
+  // прежнего, а на «назад» не приезжал бы снимок записи (см. hooks/useEntryKey).
+  // replaceState ключ не меняет — правка адреса под фильтры страницу не трогает.
+  const entryKey = useEntryKey();
   return (
     <ShareSheetProvider>
-      {renderRoute(path)}
+      <Fragment key={entryKey}>{renderRoute(path)}</Fragment>
       <TeaserClaimRunner userId={viewer?.id ?? null} />
       {/* Тап-подсказки на телефоне — один слой на весь сайт (см. TapTooltipLayer). */}
       <TapTooltipLayer />

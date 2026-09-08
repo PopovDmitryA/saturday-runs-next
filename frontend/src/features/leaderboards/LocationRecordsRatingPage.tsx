@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { readCached, writeCached } from "../../lib/dataCache";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { FilterSelect } from "../../components/filters/FilterPanel";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { GenderFilter } from "../../components/filters/GenderFilter";
@@ -143,14 +145,16 @@ function matchesQuery(row: LocationRecordRow, query: string): boolean {
 
 export function LocationRecordsRatingPage() {
   const narrowViewport = useNarrowViewport();
-  const [data, setData] = useState<LocationRecordsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
-  const [query, setQuery] = useState("");
+  // Догруженные строки, поиск и сортировка — в снимке записи истории, срез — в
+  // кэше вкладки: «назад» из профиля возвращает ту же таблицу сразу.
+  const [visibleCount, setVisibleCount] = useRestorableState("records.visible", PAGE_STEP);
+  const [query, setQuery] = useRestorableState("records.query", "");
   // Таблица приходит отсортированной по времени рекорда (оно же место), но её
   // читают и «по свежести»: чей рекорд поставлен недавно, а чей держится годами.
-  const [sort, setSort] = useState<SortState>({ key: "time", direction: "asc" });
+  const [sort, setSort] = useRestorableState<SortState>("records.sort", {
+    key: "time",
+    direction: "asc",
+  });
   // Таблицу листают вбок, поэтому её обёртка — скролл-контейнер, и настоящий
   // sticky-thead прилипает к ней, а не к окну: при прокрутке шапка уезжала
   // вверх и оказывалась ниже уже проехавших строк. Копия шапки — общий приём
@@ -179,6 +183,12 @@ export function LocationRecordsRatingPage() {
   const [gender, setGender] = useState<LocationRecordsGender | null>(initial.gender);
   const [ageGroup, setAgeGroup] = useState<string | null>(initial.ageGroup);
   const [platform, setPlatform] = useState<LocationRecordsPlatform>(initial.platform);
+  const cacheKey = `ratings:records:${scope}:${gender ?? ""}:${ageGroup ?? ""}:${platform}`;
+  const [data, setData] = useState<LocationRecordsResponse | null>(
+    () => readCached<LocationRecordsResponse>(cacheKey) ?? null,
+  );
+  const [loading, setLoading] = useState(() => readCached(cacheKey) === undefined);
+  const [error, setError] = useState<string | null>(null);
 
   // requestId отсекает устаревшие ответы: без него медленный ответ прежнего
   // среза перезаписывал бы свежий — вместе с только что выбранным полом
@@ -187,7 +197,14 @@ export function LocationRecordsRatingPage() {
 
   const load = useCallback(async () => {
     const requestId = ++requestIdRef.current;
-    setLoading(true);
+    const key = `ratings:records:${scope}:${gender ?? ""}:${ageGroup ?? ""}:${platform}`;
+    const cached = readCached<LocationRecordsResponse>(key);
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     try {
       const payload = await getLocationRecords({ scope, gender, ageGroup, platform });
@@ -195,15 +212,20 @@ export function LocationRecordsRatingPage() {
         return;
       }
       setData(payload);
+      writeCached(key, payload);
       // Что бэкенд выбрал за нас (своя ступень зрителя, ступень по умолчанию)
       // — сразу становится текущим выбором, иначе селектор показывал бы пустоту.
       setGender(payload.gender);
       if (payload.scope === "age_group") {
         setAgeGroup(payload.age_group);
       }
-      setVisibleCount(PAGE_STEP);
+      // Догрузку сбрасывает новый срез, а не возврат к тому же: иначе «назад»
+      // терял бы восстановленное число строк.
+      if (!cached) {
+        setVisibleCount(PAGE_STEP);
+      }
     } catch (loadError) {
-      if (requestId === requestIdRef.current) {
+      if (requestId === requestIdRef.current && !cached) {
         setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить рейтинг");
       }
     } finally {

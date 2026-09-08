@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { readCached, writeCached } from "../../lib/dataCache";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import {
   FilterGroup,
   FilterPanel,
@@ -37,12 +39,17 @@ import { volunteeringSubject } from "../sharing/subjects";
 // bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
 // оборачивает контент в собственный каркас с сайдбаром.
 function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
-  const { listVolunteering, mode } = useAppDataSource();
-  const [items, setItems] = useState<VolunteeringItem[]>([]);
+  const { listVolunteering, mode, cacheScope } = useAppDataSource();
+  // Галочки — в снимке записи истории, список — в кэше вкладки: «назад» из
+  // протокола возвращает ту же таблицу без секунды пустоты (см. lib/dataCache).
+  const [includeTest, setIncludeTest] = useRestorableState("vol.test", false);
+  const [includeDuplicates, setIncludeDuplicates] = useRestorableState("vol.dups", false);
+  const cacheKey = `${cacheScope}:volunteering:${includeTest ? "test" : "clean"}`;
+  const [items, setItems] = useState<VolunteeringItem[]>(
+    () => readCached<VolunteeringItem[]>(cacheKey) ?? [],
+  );
   const [hasProfileLink, setHasProfileLink] = useState(false);
-  const [includeTest, setIncludeTest] = useState(false);
-  const [includeDuplicates, setIncludeDuplicates] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => readCached(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   // Оценка стартов — только в своём разделе волонтёрств.
@@ -114,11 +121,18 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
     filters.platformFilterActive ? [...filters.selectedPlatforms][0] ?? "all" : "all";
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const cached = readCached<VolunteeringItem[]>(cacheKey);
+    if (cached) {
+      setItems(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     try {
       const data = await listVolunteering(includeTest);
       setItems(data);
+      writeCached(cacheKey, data);
       if (mode === "public-profile") {
         setHasProfileLink(false);
       } else {
@@ -126,11 +140,13 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
         setHasProfileLink(links.length > 0);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось загрузить волонтёрства");
+      if (!cached) {
+        setError(err instanceof Error ? err.message : "Не удалось загрузить волонтёрства");
+      }
     } finally {
       setLoading(false);
     }
-  }, [includeTest, mode, listVolunteering]);
+  }, [cacheKey, includeTest, mode, listVolunteering]);
 
   useEffect(() => {
     void load();

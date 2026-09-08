@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { readCached, writeCached } from "../../lib/dataCache";
 import type { MouseEvent, ReactNode } from "react";
 import { Pagination } from "../../components/Pagination";
 import { PortalFooter } from "./PortalFooter";
@@ -113,9 +114,13 @@ function scrollToRelease(version: string, attemptsLeft = 10): void {
 /** Публичная страница «Обновления»: история релизов, новые сверху, по страницам. */
 export function PortalUpdatesPage() {
   const [page, setPage] = useState(pageFromLocation);
-  const [data, setData] = useState<SiteReleaseList | null>(null);
+  // Страница — из кэша вкладки, свежая подъезжает следом (см. lib/dataCache).
+  // Заход по якорю на релиз кэш обходит: сервер сам подбирает номер страницы.
+  const [data, setData] = useState<SiteReleaseList | null>(() =>
+    versionFromHash() ? null : (readCached<SiteReleaseList>(`updates:${pageFromLocation()}`) ?? null),
+  );
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(data === null);
   // Якорь вида #v2.5.0 отрабатывает ровно один раз — при заходе по ссылке.
   // Дальше человек листает страницы сам, и возвращать его к якорю нельзя.
   const anchorVersion = useRef<string | null>(versionFromHash());
@@ -141,8 +146,14 @@ export function PortalUpdatesPage() {
       return;
     }
     let cancelled = false;
-    setLoading(true);
     const version = anchorVersion.current;
+    const cached = version ? undefined : readCached<SiteReleaseList>(`updates:${page}`);
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     fetchReleases({ page, version })
       .then((payload) => {
         if (cancelled) {
@@ -154,6 +165,7 @@ export function PortalUpdatesPage() {
         anchorVersion.current = null;
         loadedPage.current = payload.page;
         setData(payload);
+        writeCached(`updates:${payload.page}`, payload);
         setError(null);
         // Сервер мог поправить номер (страница за концом истории или поиск по
         // якорю) — приводим адрес в соответствие с тем, что реально показано.
@@ -166,7 +178,7 @@ export function PortalUpdatesPage() {
         }
       })
       .catch((err: Error) => {
-        if (!cancelled) {
+        if (!cancelled && !cached) {
           setError(err.message);
         }
       })

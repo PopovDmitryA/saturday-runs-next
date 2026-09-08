@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useCachedResource } from "../../hooks/useCachedResource";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
-  ApiError,
   getLocationEvents,
   type LocationEventRow,
-  type LocationEvents,
 } from "../../lib/api";
 import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
 import { flushMetrikaHit } from "../../lib/metrika";
@@ -81,12 +81,30 @@ const EVENTS_COLUMNS: AdaptiveColumn[] = [
 ];
 
 function LocationEventsContent({ slug }: { slug: string }) {
-  const [data, setData] = useState<LocationEvents | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Ответ и фильтры переживают уход и «назад» (см. hooks/useCachedResource,
+  // hooks/useRestorableState): из журнала уходят в протокол и возвращаются.
+  const {
+    data,
+    notFound,
+    error,
+  } = useCachedResource(`locations:events:${slug}`, () => getLocationEvents(slug), [slug], {
+    errorText: "Не удалось загрузить журнал",
+    onLoaded: (payload) => {
+      rememberLocationHint({ slug: payload.slug, name: payload.name });
+      applyPageMeta(locationPageMeta(payload, { eventsLog: true }));
+    },
+    // Просмотр был, пусть и неудачный — досылаем с родовым заголовком.
+    onSettled: flushMetrikaHit,
+  });
   // Мультивыбор систем: пустое множество — «Все» (правка Дмитрия 01.09.2026).
-  const [platforms, setPlatforms] = useState<Set<string>>(new Set());
-  const [sort, setSort] = useState<SortState>({ key: "date", asc: false });
+  // Множество в снимке записи не переживёт JSON — держим массив, а Set строим.
+  const [platformList, setPlatformList] = useRestorableState<string[]>("events.platforms", []);
+  const platforms = useMemo(() => new Set(platformList), [platformList]);
+  const setPlatforms = useCallback(
+    (next: Set<string>) => setPlatformList([...next]),
+    [setPlatformList],
+  );
+  const [sort, setSort] = useRestorableState<SortState>("events.sort", { key: "date", asc: false });
   // Второй вид журнала — посещаемость: те же старты, но не сводкой по
   // событиям, а матрицей «участник × даты» (перенос дашборда Grafana).
   // Стартовое значение из ссылки, чтобы видом можно было делиться.
@@ -111,34 +129,6 @@ function LocationEventsContent({ slug }: { slug: string }) {
   const tableColumns = useTableColumns(EVENTS_COLUMNS);
   const showFull = tableColumns.showFull;
   const show = tableColumns.show;
-
-  useEffect(() => {
-    let cancelled = false;
-    getLocationEvents(slug)
-      .then((payload) => {
-        if (!cancelled) {
-          setData(payload);
-          rememberLocationHint({ slug: payload.slug, name: payload.name });
-          applyPageMeta(locationPageMeta(payload, { eventsLog: true }));
-          flushMetrikaHit();
-        }
-      })
-      .catch((err) => {
-        if (cancelled) {
-          return;
-        }
-        if (err instanceof ApiError && err.status === 404) {
-          setNotFound(true);
-        } else {
-          setError(err instanceof Error ? err.message : "Не удалось загрузить журнал");
-        }
-        // Просмотр был, пусть и неудачный — досылаем с родовым заголовком.
-        flushMetrikaHit();
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
 
   const platformCounts = useMemo(() => {
     const counts = new Map<string, number>();

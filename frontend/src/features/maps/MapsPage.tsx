@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useCachedResource } from "../../hooks/useCachedResource";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { AppShell } from "../../components/AppShell";
 import { RegionChoropleth } from "../../components/RegionChoropleth";
 import { useAppDataSource } from "../../lib/appDataSource";
-import type { CatalogLocationsTableResponse, UniqueLocationsDetailResponse } from "../../lib/api";
 import type { MapViewport, MapViewportRef } from "../../lib/mapViewport";
 import { UserMapPanel } from "./UserMapPanel";
 import { MapFilterBar, togglePlatform } from "./MapFilterBar";
@@ -31,36 +32,25 @@ function RegionsPanel({
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
 }) {
-  const { getUniqueLocationsDetail, getCatalogLocationsTable } = useAppDataSource();
-  const [detail, setDetail] = useState<UniqueLocationsDetailResponse | null>(null);
-  const [catalog, setCatalog] = useState<CatalogLocationsTableResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([getUniqueLocationsDetail(false), getCatalogLocationsTable(false)])
-      .then(([detailData, catalogData]) => {
-        if (!cancelled) {
-          setDetail(detailData);
-          setCatalog(catalogData);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setError("Не удалось загрузить данные регионов");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [getUniqueLocationsDetail, getCatalogLocationsTable]);
+  const { getUniqueLocationsDetail, getCatalogLocationsTable, cacheScope } = useAppDataSource();
+  // Два ответа одной парой в кэше вкладки: на «назад» карта регионов
+  // рисуется сразу, а не после двух запросов (см. hooks/useCachedResource).
+  const regions = useCachedResource(
+    `${cacheScope}:regions`,
+    async () => {
+      const [detail, catalog] = await Promise.all([
+        getUniqueLocationsDetail(false),
+        getCatalogLocationsTable(false),
+      ]);
+      return { detail, catalog };
+    },
+    [getUniqueLocationsDetail, getCatalogLocationsTable],
+    { errorText: "Не удалось загрузить данные регионов" },
+  );
+  const detail = regions.data?.detail ?? null;
+  const catalog = regions.data?.catalog ?? null;
+  const error = regions.error;
+  const loading = regions.loading;
 
   return (
     <>
@@ -87,11 +77,16 @@ function RegionsPanel({
 function MapsContent({ bare = false }: { bare?: boolean } = {}) {
   const { getVisitedLocationsMap, getCatalogLocationsMap, getCatalogLocationsTable } =
     useAppDataSource();
-  const [view, setView] = useState<MapView>("locations");
+  // Вид и фильтры — в снимке записи истории: «назад» с площадки возвращает
+  // карту в том же режиме (см. hooks/useRestorableState).
+  const [view, setView] = useRestorableState<MapView>("map.view", "locations");
   // Общий фильтр для обеих карт: активность + режим + системы.
-  const [activityFilter, setActivityFilter] = useState<ActivityFilter>("runs");
-  const [mapMode, setMapMode] = useState<MapMode>("all");
-  const [platformFilters, setPlatformFilters] = useState<PlatformFilters>(DEFAULT_PLATFORM_FILTERS);
+  const [activityFilter, setActivityFilter] = useRestorableState<ActivityFilter>("map.activity", "runs");
+  const [mapMode, setMapMode] = useRestorableState<MapMode>("map.mode", "all");
+  const [platformFilters, setPlatformFilters] = useRestorableState<PlatformFilters>(
+    "map.platforms",
+    DEFAULT_PLATFORM_FILTERS,
+  );
   // Общий вьюпорт двух карт + держим обе панели смонтированными (скрываем
   // неактивную), чтобы переключение было мгновенным.
   const viewportRef = useRef<MapViewport | null>(null);

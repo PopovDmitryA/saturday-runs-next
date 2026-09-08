@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { readCached, writeCached } from "../../lib/dataCache";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { CheckboxListFilter } from "../../components/activityTable/CheckboxListFilter";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
@@ -72,12 +74,15 @@ const RUNS_COLUMNS: AdaptiveColumn[] = [
 ];
 
 function RunsContent({ bare = false }: { bare?: boolean } = {}) {
-  const { listRuns, mode } = useAppDataSource();
-  const [runs, setRuns] = useState<RunItem[]>([]);
+  const { listRuns, mode, cacheScope } = useAppDataSource();
+  // Галочки — в снимке записи истории, список — в кэше вкладки: «назад» из
+  // протокола возвращает ту же таблицу без секунды пустоты (см. lib/dataCache).
+  const [includeTest, setIncludeTest] = useRestorableState("runs.test", false);
+  const [includeDuplicates, setIncludeDuplicates] = useRestorableState("runs.dups", false);
+  const cacheKey = `${cacheScope}:runs:${includeTest ? "test" : "clean"}`;
+  const [runs, setRuns] = useState<RunItem[]>(() => readCached<RunItem[]>(cacheKey) ?? []);
   const [hasProfileLink, setHasProfileLink] = useState(false);
-  const [includeTest, setIncludeTest] = useState(false);
-  const [includeDuplicates, setIncludeDuplicates] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => readCached(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
   // Оценка стартов — только в своём разделе пробежек.
   const showRating = mode === "auth";
@@ -114,11 +119,18 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   );
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const cached = readCached<RunItem[]>(cacheKey);
+    if (cached) {
+      setRuns(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     try {
       const data = await listRuns(includeTest);
       setRuns(data);
+      writeCached(cacheKey, data);
       if (mode === "public-profile") {
         setHasProfileLink(false);
       } else {
@@ -126,11 +138,13 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
         setHasProfileLink(links.length > 0);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось загрузить пробежки");
+      if (!cached) {
+        setError(err instanceof Error ? err.message : "Не удалось загрузить пробежки");
+      }
     } finally {
       setLoading(false);
     }
-  }, [includeTest, mode, listRuns]);
+  }, [cacheKey, includeTest, mode, listRuns]);
 
   useEffect(() => {
     void load();

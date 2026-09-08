@@ -1,4 +1,6 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCachedResource } from "../../hooks/useCachedResource";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { LocationCancellationNotice } from "../../components/LocationCancellationNotice";
 import { LocationStatusLabel } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
@@ -6,7 +8,6 @@ import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import {
-  ApiError,
   getLocationLeaders,
   getLocationPage,
   getLocationPersonalStats,
@@ -16,7 +17,6 @@ import {
   type LocationDescription,
   type LocationHomeDistance,
   type LocationLastEvent,
-  type LocationLeaders,
   type LocationPage as LocationPageData,
   type LocationPersonalStats,
 } from "../../lib/api";
@@ -498,28 +498,14 @@ function AgeGroupRecordsSection({
 const LEADERS_PREVIEW_LIMIT = 10;
 
 function LocationLeadersSection({ slug }: { slug: string }) {
-  const [leaders, setLeaders] = useState<LocationLeaders | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: leaders, error } = useCachedResource(
+    `locations:leaders:${slug}`,
+    () => getLocationLeaders(slug),
+    [slug],
+    { errorText: "Не удалось загрузить рейтинги" },
+  );
   // На телефоне топы — карточки: имя не тесно соседствует с цифрами.
   const narrowViewport = useNarrowViewport();
-
-  useEffect(() => {
-    let cancelled = false;
-    getLocationLeaders(slug)
-      .then((data) => {
-        if (!cancelled) {
-          setLeaders(data);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Не удалось загрузить рейтинги");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
 
   if (error) {
     return null;
@@ -1129,13 +1115,35 @@ function LocationPersonalSection({
 
 function LocationPageContent({ slug }: { slug: string }) {
   const shareSheet = useOptionalShareSheet();
-  const [page, setPage] = useState<LocationPageData | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Ответ страницы переживает уход и «назад» (см. hooks/useCachedResource):
+  // со страницы площадки уходят в протокол, состав, соседей — и возвращаются.
+  const {
+    data: page,
+    notFound,
+    error,
+  } = useCachedResource(`locations:page:${slug}`, () => getLocationPage(slug), [slug], {
+    errorText: "Не удалось загрузить локацию",
+    onLoaded: (data) => {
+      rememberLocationHint({ slug: data.slug, name: data.name });
+      // Родовой заголовок «Локация — run5k.run» из App.tsx уточняем именем
+      // и цифрами, как только данные приехали.
+      applyPageMeta(locationPageMeta(data));
+      // Канонический URL страницы — slug основной системы локации.
+      if (data.slug && data.slug !== slug) {
+        window.history.replaceState(null, "", `/locations/${data.slug}`);
+      }
+    },
+    // Просмотр был, пусть и неудачный — досылаем с родовым заголовком.
+    onSettled: flushMetrikaHit,
+  });
   const [recordsModalType, setRecordsModalType] = useState<RecordType | null>(null);
   // Раскрытая возрастная группа в «Рекордах». Живёт на уровне страницы, потому
   // что открывать её умеет и плитка «место в группе» из блока «Вы на этой локации».
-  const [openAgeGroupKey, setOpenAgeGroupKey] = useState<string | null>(null);
+  // Переживает «назад»: вернувшись из протокола, человек видит ту же группу.
+  const [openAgeGroupKey, setOpenAgeGroupKey] = useRestorableState<string | null>(
+    "location.ageGroup",
+    null,
+  );
   // Доступ к кабинету организатора (из личной статистики): включает кнопку
   // в навигации шапки — единственное место входа со страницы локации.
   const [organizerAccess, setOrganizerAccess] = useState(false);
@@ -1151,44 +1159,6 @@ function LocationPageContent({ slug }: { slug: string }) {
       document.getElementById(key)?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setPage(null);
-    setNotFound(false);
-    setError(null);
-    getLocationPage(slug)
-      .then((data) => {
-        if (cancelled) {
-          return;
-        }
-        setPage(data);
-        rememberLocationHint({ slug: data.slug, name: data.name });
-        // Родовой заголовок «Локация — run5k.run» из App.tsx уточняем именем
-        // и цифрами, как только данные приехали.
-        applyPageMeta(locationPageMeta(data));
-        flushMetrikaHit();
-        // Канонический URL страницы — slug основной системы локации.
-        if (data.slug && data.slug !== slug) {
-          window.history.replaceState(null, "", `/locations/${data.slug}`);
-        }
-      })
-      .catch((err) => {
-        if (cancelled) {
-          return;
-        }
-        if (err instanceof ApiError && err.status === 404) {
-          setNotFound(true);
-        } else {
-          setError(err instanceof Error ? err.message : "Не удалось загрузить локацию");
-        }
-        // Просмотр был, пусть и неудачный — досылаем с родовым заголовком.
-        flushMetrikaHit();
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
 
   // Имя из подсказки, пока грузятся данные: иначе подпункт сайдбара с
   // названием площадки мигает при переходах внутри локации.

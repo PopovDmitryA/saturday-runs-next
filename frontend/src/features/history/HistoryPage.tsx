@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useCachedResource } from "../../hooks/useCachedResource";
 import { ShareIcon } from "../../components/ShareIcon";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
@@ -367,6 +368,8 @@ function MilestoneCard({
 
 type HistoryContentProps = {
   load: () => Promise<MyHistory>;
+  /** Префикс ключей кэша ответов: свой кабинет и чужой профиль не делят записи. */
+  cacheScope: string;
   // Нет на публичном профиле — там нет своего мастера «Поделиться» для
   // чужих вех.
   shareBase?: string;
@@ -378,40 +381,17 @@ type HistoryContentProps = {
 
 export function HistoryContent({
   load,
+  cacheScope,
   shareBase,
   siteUrl,
   title = "Моя история",
   description = "Ключевые вехи вашей беговой истории: первая пробежка, клубы, личные рекорды, рекорды серий суббот, новые регионы и волонтёрство. У каждой вехи — кнопка «Поделиться» с картинкой для сториз.",
   emptyText = "Пока нет вех — привяжите профиль беговой системы на главной, и история соберётся автоматически.",
 }: HistoryContentProps) {
-  const [data, setData] = useState<MyHistory | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    load()
-      .then((result) => {
-        if (!cancelled) {
-          setData(result);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Не удалось загрузить историю");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [load]);
+  // Лента вех — из кэша вкладки, свежая подъезжает следом (см. hooks/useCachedResource).
+  const { data, loading, error } = useCachedResource(`${cacheScope}:history`, load, [load], {
+    errorText: "Не удалось загрузить историю",
+  });
 
   // Хронология от первой пробежки к сегодняшнему дню, с маркерами годов.
   const byYear = useMemo(() => {

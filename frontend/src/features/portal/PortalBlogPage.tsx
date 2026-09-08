@@ -1,35 +1,22 @@
-import { useEffect, useState } from "react";
 import { PortalBlogCard } from "./PortalBlogCard";
 import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
-import { fetchBlogPosts, type BlogPostList } from "./blogTypes";
+import { fetchBlogPosts } from "./blogTypes";
+import { useCachedResource } from "../../hooks/useCachedResource";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { PORTAL_HOME_HREF } from "../../lib/portalRoutes";
 import "./portal.css";
 
 /** Публичная страница блога: все посты, фильтр по темам. */
 export function PortalBlogPage() {
-  const [data, setData] = useState<BlogPostList | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [topic, setTopic] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchBlogPosts({ topic })
-      .then((payload) => {
-        if (!cancelled) {
-          setData(payload);
-          setError(null);
-        }
-      })
-      .catch((err: Error) => {
-        if (!cancelled) {
-          setError(err.message);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [topic]);
+  // Тема — в снимке записи истории, посты — в кэше вкладки: «назад» из поста
+  // возвращает ленту с тем же фильтром (см. hooks/useCachedResource).
+  const [topic, setTopic] = useRestorableState<string | null>("blog.topic", null);
+  const { data, error } = useCachedResource(
+    `blog:list:${topic ?? "all"}`,
+    () => fetchBlogPosts({ topic }),
+    [topic],
+  );
 
   return (
     <>

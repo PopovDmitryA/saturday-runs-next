@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useCachedResource } from "../../hooks/useCachedResource";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
@@ -11,10 +13,8 @@ import {
   FilterTabs,
 } from "../../components/filters/FilterPanel";
 import {
-  ApiError,
   getLocationParticipants,
   type LocationActiveParticipant,
-  type LocationParticipants,
 } from "../../lib/api";
 import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
 import { flushMetrikaHit } from "../../lib/metrika";
@@ -181,17 +181,37 @@ function countIn(row: LocationActiveParticipant, platform: string): number {
 
 function LocationParticipantsContent({ slug }: { slug: string }) {
   const [initialScope] = useState(scopeFromLocation);
-  const [data, setData] = useState<LocationParticipants | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Ответ и фильтры переживают уход и «назад» (см. hooks/useCachedResource,
+  // hooks/useRestorableState): из состава уходят в профили и возвращаются.
+  const {
+    data,
+    notFound,
+    error,
+  } = useCachedResource(
+    `locations:participants:${slug}`,
+    () => getLocationParticipants(slug),
+    [slug],
+    {
+      errorText: "Не удалось загрузить состав локации",
+      onLoaded: (payload) => {
+        rememberLocationHint({ slug: payload.slug, name: payload.name });
+        applyPageMeta(locationPageMeta(payload, { participants: true }));
+      },
+      // Просмотр был, пусть и неудачный — досылаем с родовым заголовком.
+      onSettled: flushMetrikaHit,
+    },
+  );
   const [scope, setScope] = useState<Scope>(initialScope);
-  const [sort, setSort] = useState<SortState>({ key: "place", asc: true });
-  const [query, setQuery] = useState("");
+  const [sort, setSort] = useRestorableState<SortState>("participants.sort", {
+    key: "place",
+    asc: true,
+  });
+  const [query, setQuery] = useRestorableState("participants.query", "");
   // Система, по которой смотрим состав («all» — все сразу).
-  const [platform, setPlatform] = useState("all");
+  const [platform, setPlatform] = useRestorableState("participants.platform", "all");
   // Порог участий: сколько раз человек должен был здесь отметиться, чтобы
   // попасть в список. Стартуем с нижней ступени — это порог самого списка.
-  const [minCount, setMinCount] = useState(MIN_COUNT_STEPS[0]);
+  const [minCount, setMinCount] = useRestorableState("participants.min", MIN_COUNT_STEPS[0]);
   // Срез волонтёрского зачёта по ролям. Пресет — что выбрано в шторке, keys —
   // конкретные ключи ролей (у пресета они подставляются из справочника).
   const [initialRoles] = useState(rolePresetFromLocation);
@@ -209,40 +229,13 @@ function LocationParticipantsContent({ slug }: { slug: string }) {
   const [rolesLoading, setRolesLoading] = useState(false);
   // Показываем по сотне строк, как в рейтингах: у крупной площадки список
   // уходит за тысячу, и рисовать его целиком незачем.
-  const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
+  // Догруженные строки — тоже в снимке: «назад» возвращает список той же длины.
+  const [visibleCount, setVisibleCount] = useRestorableState("participants.visible", PAGE_STEP);
   // Копия шапки встаёт под липкую полосу «Кратко | Полно», а не под шапку сайта.
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
   const tableColumns = useTableColumns(PEOPLE_COLUMNS);
   const showFull = tableColumns.showFull;
   const show = tableColumns.show;
-
-  useEffect(() => {
-    let cancelled = false;
-    getLocationParticipants(slug)
-      .then((payload) => {
-        if (!cancelled) {
-          setData(payload);
-          rememberLocationHint({ slug: payload.slug, name: payload.name });
-          applyPageMeta(locationPageMeta(payload, { participants: true }));
-          flushMetrikaHit();
-        }
-      })
-      .catch((err) => {
-        if (cancelled) {
-          return;
-        }
-        if (err instanceof ApiError && err.status === 404) {
-          setNotFound(true);
-        } else {
-          setError(err instanceof Error ? err.message : "Не удалось загрузить состав локации");
-        }
-        // Просмотр был, пусть и неудачный — досылаем с родовым заголовком.
-        flushMetrikaHit();
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
 
   // Ключи, которые реально уходят в запрос: у «всех ролей» фильтра нет вовсе.
   const effectiveRoles = rolePreset === "all" ? null : roleKeys;

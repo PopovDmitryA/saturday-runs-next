@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { readCached, writeCached } from "../../lib/dataCache";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { AppShell } from "../../components/AppShell";
 import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
 import { TitleTooltipZone } from "../../components/TitleTooltipZone";
@@ -1205,17 +1207,37 @@ export function AchievementsShowcase({
   );
 }
 
+type CachedAchievements = { achievements: AchievementsResponse; goals: GoalsResponse };
+
+function achievementsCacheKey(platform: string | null): string {
+  return `me:achievements:${platform ?? "all"}`;
+}
+
 // bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
 // оборачивает контент в собственный каркас с сайдбаром.
 function AchievementsContent({ bare = false }: { bare?: boolean } = {}) {
-  const [achievements, setAchievements] = useState<AchievementsResponse | null>(null);
-  const [goals, setGoals] = useState<GoalsResponse | null>(null);
+  // Фильтр системы — в снимке записи истории, ответ — в кэше вкладки: «назад»
+  // из деталей челленджа возвращает ту же витрину сразу (см. lib/dataCache).
+  const [platformFilter, setPlatformFilter] = useRestorableState<string | null>(
+    "achievements.platform",
+    null,
+  );
+  const [restored] = useState(() => readCached<CachedAchievements>(achievementsCacheKey(platformFilter)));
+  const [achievements, setAchievements] = useState<AchievementsResponse | null>(
+    restored?.achievements ?? null,
+  );
+  const [goals, setGoals] = useState<GoalsResponse | null>(restored?.goals ?? null);
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [platformFilter, setPlatformFilter] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
 
   const load = useCallback(async (platform: string | null) => {
+    const key = achievementsCacheKey(platform);
+    const cached = readCached<CachedAchievements>(key);
+    if (cached) {
+      setAchievements(cached.achievements);
+      setGoals(cached.goals);
+    }
     setError(null);
     setSwitching(true);
     try {
@@ -1225,8 +1247,11 @@ function AchievementsContent({ bare = false }: { bare?: boolean } = {}) {
       ]);
       setAchievements(achievementsResponse);
       setGoals(goalsResponse);
+      writeCached(key, { achievements: achievementsResponse, goals: goalsResponse });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось загрузить данные");
+      if (!cached) {
+        setError(err instanceof Error ? err.message : "Не удалось загрузить данные");
+      }
     } finally {
       setSwitching(false);
     }

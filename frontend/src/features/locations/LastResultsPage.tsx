@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { useCachedResource } from "../../hooks/useCachedResource";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
@@ -107,7 +109,10 @@ function LastResultsTable({
   items: LastResultsItem[];
   tableColumns: TableColumns;
 }) {
-  const [sort, setSort] = useState<SortState>({ key: "event_date", asc: false });
+  const [sort, setSort] = useRestorableState<SortState>("results.sort", {
+    key: "event_date",
+    asc: false,
+  });
   const showFull = tableColumns.showFull;
   const show = tableColumns.show;
 
@@ -313,24 +318,26 @@ function LastResultsContent() {
   // в самой таблице: сегмент «Кратко | Полно» стоит в общей панели фильтров
   // над ней (правка Дмитрия 30.08.2026).
   const tableColumns = useTableColumns(LAST_RESULTS_COLUMNS);
-  const [items, setItems] = useState<LastResultsItem[] | null>(null);
-  const [saturdayDate, setSaturdayDate] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+  // Ответ и фильтры переживают уход и «назад» (см. hooks/useCachedResource,
+  // hooks/useRestorableState): отсюда уходят в протокол и возвращаются.
+  const results = useCachedResource("locations:last-results", getLastResults, [], {
+    errorText: "Не удалось загрузить результаты",
+  });
+  const items = results.data?.items ?? null;
+  const saturdayDate = results.data?.saturday_date ?? null;
+  const error = results.error;
+  const [query, setQuery] = useRestorableState("results.query", "");
   // Мультивыбор: систем можно отметить сколько угодно, пустое множество —
   // «Все» (правка Дмитрия 01.09.2026; раньше выбиралась ровно одна).
-  const [platforms, setPlatforms] = useState<Set<string>>(new Set());
-  const [showPaused, setShowPaused] = useState(false);
-  const [onlySaturday, setOnlySaturday] = useState(false);
-
-  useEffect(() => {
-    getLastResults()
-      .then((data) => {
-        setItems(data.items);
-        setSaturdayDate(data.saturday_date);
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : "Не удалось загрузить результаты"));
-  }, []);
+  // Множество в снимке записи не переживёт JSON — держим массив, а Set строим.
+  const [platformList, setPlatformList] = useRestorableState<string[]>("results.platforms", []);
+  const platforms = useMemo(() => new Set(platformList), [platformList]);
+  const setPlatforms = useCallback(
+    (next: Set<string>) => setPlatformList([...next]),
+    [setPlatformList],
+  );
+  const [showPaused, setShowPaused] = useRestorableState("results.paused", false);
+  const [onlySaturday, setOnlySaturday] = useRestorableState("results.saturday", false);
 
   const filtered = useMemo(() => {
     if (!items) {

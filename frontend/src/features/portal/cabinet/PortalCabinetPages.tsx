@@ -70,7 +70,7 @@ const loadMyCoRunnerMeetings = (participantKey: string, platforms: string[]) =>
 export function PortalCabinetMeetingsPage() {
   // Заголовок рисует сам CoRunnersContent (интро-карточка «Встречи на стартах»).
   return cabinetPage("meetings", undefined, undefined, () => (
-    <CoRunnersContent load={loadMyCoRunners} loadMeetings={loadMyCoRunnerMeetings} />
+    <CoRunnersContent load={loadMyCoRunners} loadMeetings={loadMyCoRunnerMeetings} cacheScope="me" />
   ));
 }
 
@@ -85,7 +85,14 @@ export function PortalCabinetMapPage() {
 
 function PortalHistoryBody() {
   const siteUrl = useOwnSiteUrl();
-  return <HistoryContent load={getMyHistory} shareBase={PORTAL_CABINET_SHARE_HREF} siteUrl={siteUrl} />;
+  return (
+    <HistoryContent
+      load={getMyHistory}
+      cacheScope="me"
+      shareBase={PORTAL_CABINET_SHARE_HREF}
+      siteUrl={siteUrl}
+    />
+  );
 }
 
 export function PortalCabinetHistoryPage() {

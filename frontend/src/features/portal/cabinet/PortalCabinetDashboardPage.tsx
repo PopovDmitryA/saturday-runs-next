@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { readCached, writeCached } from "../../../lib/dataCache";
 import { DashboardAnalytics } from "../../../components/DashboardAnalytics";
 import { MyHistoryTeaser } from "../../../components/MyHistoryTeaser";
 import { LastSaturdayCard } from "../../../components/LastSaturdayCard";
@@ -240,9 +241,15 @@ export function DashboardHero({
   );
 }
 
+const DASHBOARD_CACHE_KEY = "me:dashboard";
+
 function PortalDashboardContent({ user }: { user: User }) {
-  const [data, setData] = useState<DashboardResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Сводка — из кэша вкладки, свежая подъезжает следом: «назад» с любой
+  // страницы кабинета не должен показывать пустой обзор (см. lib/dataCache).
+  const [data, setData] = useState<DashboardResponse | null>(
+    () => readCached<DashboardResponse>(DASHBOARD_CACHE_KEY) ?? null,
+  );
+  const [loading, setLoading] = useState(() => readCached(DASHBOARD_CACHE_KEY) === undefined);
   const [error, setError] = useState<string | null>(null);
   const [linksCount, setLinksCount] = useState<number | null>(null);
   // Две разные плашки про имя, обе гасятся одной кнопкой «Понятно»:
@@ -262,9 +269,12 @@ function PortalDashboardContent({ user }: { user: User }) {
     try {
       const response = await getDashboard();
       setData(response);
+      writeCached(DASHBOARD_CACHE_KEY, response);
       hasLoadedRef.current = true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось загрузить данные");
+      if (readCached(DASHBOARD_CACHE_KEY) === undefined) {
+        setError(err instanceof Error ? err.message : "Не удалось загрузить данные");
+      }
     } finally {
       setLoading(false);
     }

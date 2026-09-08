@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { readCached, writeCached } from "../../lib/dataCache";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
@@ -238,10 +240,9 @@ function RegionsTable({
 }
 
 export function RegionsRatingPage() {
-  const [data, setData] = useState<RegionsRatingResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+  // Поиск — в снимке записи истории, срез — в кэше вкладки: «назад» из
+  // региона возвращает ту же таблицу сразу (см. lib/dataCache).
+  const [query, setQuery] = useRestorableState("regions.query", "");
 
   // Стартовый фильтр — из ссылки: рейтинг одной системы кидают в чат, и адрес
   // обязан открывать ровно то, что человек видел.
@@ -250,6 +251,13 @@ export function RegionsRatingPage() {
     return isPlatform(value) ? value : "all";
   }, []);
   const [platform, setPlatform] = useState<RegionsPlatform>(initialPlatform);
+  const [data, setData] = useState<RegionsRatingResponse | null>(
+    () => readCached<RegionsRatingResponse>(`ratings:regions:${initialPlatform}`) ?? null,
+  );
+  const [loading, setLoading] = useState(
+    () => readCached(`ratings:regions:${initialPlatform}`) === undefined,
+  );
+  const [error, setError] = useState<string | null>(null);
 
   // requestId отсекает устаревшие ответы: без него медленный ответ прежней
   // системы перезаписывал бы только что показанную новую (и URL за ним).
@@ -257,15 +265,23 @@ export function RegionsRatingPage() {
 
   const load = useCallback(async () => {
     const requestId = ++requestIdRef.current;
-    setLoading(true);
+    const key = `ratings:regions:${platform}`;
+    const cached = readCached<RegionsRatingResponse>(key);
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     try {
       const payload = await getRegionsRating(platform);
       if (requestId === requestIdRef.current) {
         setData(payload);
+        writeCached(key, payload);
       }
     } catch (loadError) {
-      if (requestId === requestIdRef.current) {
+      if (requestId === requestIdRef.current && !cached) {
         setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить рейтинг");
       }
     } finally {

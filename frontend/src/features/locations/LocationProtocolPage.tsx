@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
+import { useCachedResource } from "../../hooks/useCachedResource";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
-  ApiError,
   getLocationProtocol,
   type LocationHistogramRow,
   type LocationProtocol,
@@ -279,62 +280,50 @@ const PROTOCOL_COLUMNS: AdaptiveColumn[] = [
 ];
 
 function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProtocolParams) {
-  const [data, setData] = useState<LocationProtocol | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
-  const [ageFilter, setAgeFilter] = useState<string | null>(null);
-  const [nameFilter, setNameFilter] = useState("");
-  const [roleFilter, setRoleFilter] = useState<string | null>(null);
+  // Ответ и фильтры переживают уход и «назад» (см. hooks/useCachedResource,
+  // hooks/useRestorableState): из протокола уходят в профили и возвращаются.
+  const {
+    data,
+    notFound,
+    error,
+  } = useCachedResource(
+    `locations:protocol:${slug}:${platformCode}:${eventDate}`,
+    () => getLocationProtocol(slug, platformCode, eventDate),
+    [slug, platformCode, eventDate],
+    {
+      errorText: "Не удалось загрузить протокол",
+      onLoaded: (payload) => {
+        rememberLocationHint({ slug: payload.slug, name: payload.name });
+        applyPageMeta(locationProtocolMeta(payload));
+      },
+      onSettled: flushMetrikaHit,
+    },
+  );
+  const [genderFilter, setGenderFilter] = useRestorableState<GenderFilter>("protocol.gender", "all");
+  const [ageFilter, setAgeFilter] = useRestorableState<string | null>("protocol.age", null);
+  const [nameFilter, setNameFilter] = useRestorableState("protocol.name", "");
+  const [roleFilter, setRoleFilter] = useRestorableState<string | null>("protocol.role", null);
   // Порядок волонтёров: null — как отдал бэкенд (ключевые роли сверху),
   // иначе сортировка по числу волонтёрств человека.
-  const [volunteerSortAsc, setVolunteerSortAsc] = useState<boolean | null>(null);
-  const [clubFilter, setClubFilter] = useState<string | null>(null);
+  const [volunteerSortAsc, setVolunteerSortAsc] = useRestorableState<boolean | null>(
+    "protocol.volSort",
+    null,
+  );
+  const [clubFilter, setClubFilter] = useRestorableState<string | null>("protocol.club", null);
   // Клик по клубу листает страницу к протоколу — иначе отфильтрованная
   // таблица остаётся за экраном и кажется, что ничего не произошло.
   const protocolSectionRef = useRef<HTMLElement | null>(null);
-  const [sort, setSort] = useState<SortState>({ key: "position", asc: true });
+  const [sort, setSort] = useRestorableState<SortState>("protocol.sort", {
+    key: "position",
+    asc: true,
+  });
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
   const sheet = useOptionalShareSheet();
   const tableColumns = useTableColumns(PROTOCOL_COLUMNS);
   const show = tableColumns.show;
   const showFull = tableColumns.showFull;
-
-  useEffect(() => {
-    let cancelled = false;
-    setData(null);
-    setNotFound(false);
-    setError(null);
-    setGenderFilter("all");
-    setAgeFilter(null);
-    setNameFilter("");
-    setRoleFilter(null);
-    setClubFilter(null);
-    setSort({ key: "position", asc: true });
-    getLocationProtocol(slug, platformCode, eventDate)
-      .then((payload) => {
-        if (!cancelled) {
-          setData(payload);
-          rememberLocationHint({ slug: payload.slug, name: payload.name });
-          applyPageMeta(locationProtocolMeta(payload));
-          flushMetrikaHit();
-        }
-      })
-      .catch((err) => {
-        if (cancelled) {
-          return;
-        }
-        if (err instanceof ApiError && err.status === 404) {
-          setNotFound(true);
-        } else {
-          setError(err instanceof Error ? err.message : "Не удалось загрузить протокол");
-        }
-        flushMetrikaHit();
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [slug, platformCode, eventDate]);
+  // Сброса фильтров при смене адреса больше нет: каждый переход — новая запись
+  // истории, и страница собирается заново с чистыми фильтрами (см. App.tsx).
 
   // Возрастные категории для фильтра — ровно те, что стоят в протоколе.
   const ageCategories = useMemo(() => {

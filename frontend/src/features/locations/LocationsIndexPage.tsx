@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useCachedResource } from "../../hooks/useCachedResource";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
@@ -143,7 +145,10 @@ function LocationsTable({
   items: LocationIndexItem[];
   tableColumns: TableColumns;
 }) {
-  const [sort, setSort] = useState<SortState>({ key: "events_count", asc: false });
+  const [sort, setSort] = useRestorableState<SortState>("locations.sort", {
+    key: "events_count",
+    asc: false,
+  });
   const showFull = tableColumns.showFull;
   const show = tableColumns.show;
 
@@ -374,21 +379,21 @@ function LocationsIndexContent() {
   // живёт здесь, а не в самой таблице: сегмент «Кратко | Полно» стоит в общей
   // панели фильтров над ней (правка Дмитрия 30.08.2026).
   const tableColumns = useTableColumns(LOCATIONS_COLUMNS);
-  const [items, setItems] = useState<LocationIndexItem[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+  // Ответ и фильтры переживают уход и «назад» (см. hooks/useCachedResource,
+  // hooks/useRestorableState): каталог — витрина, из него уходят на площадку
+  // и возвращаются к тому же месту списка.
+  const index = useCachedResource("locations:index", getLocationsIndex, [], {
+    errorText: "Не удалось загрузить локации",
+  });
+  const items = index.data?.items ?? null;
+  const error = index.error;
+  const [query, setQuery] = useRestorableState("locations.query", "");
   // Мультивыбор: систем можно отметить сколько угодно, пустое множество —
   // «Все» (правка Дмитрия 01.09.2026; раньше выбиралась ровно одна).
   // Одна система за раз: каталог смотрят «покажи мне 5 вёрст», а не «5 вёрст
   // и S95 вместе» — мультивыбор здесь только путал (Дмитрий 02.09.2026).
-  const [platform, setPlatform] = useState("all");
-  const [showPaused, setShowPaused] = useState(false);
-
-  useEffect(() => {
-    getLocationsIndex()
-      .then((data) => setItems(data.items))
-      .catch((err) => setError(err instanceof Error ? err.message : "Не удалось загрузить локации"));
-  }, []);
+  const [platform, setPlatform] = useRestorableState("locations.platform", "all");
+  const [showPaused, setShowPaused] = useRestorableState("locations.paused", false);
 
   const filtered = useMemo(() => {
     if (!items) {

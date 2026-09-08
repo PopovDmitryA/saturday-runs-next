@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { readCached, writeCached } from "../../lib/dataCache";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
@@ -206,6 +208,8 @@ function MeetingsDetail({ meetings }: { meetings: CoRunnerMeetingItem[] }) {
 type CoRunnersContentProps = {
   load: (platforms: string[]) => Promise<CoRunnerItem[]>;
   loadMeetings: (participantKey: string, platforms: string[]) => Promise<CoRunnerMeetingItem[]>;
+  /** Префикс ключей кэша ответов: свой кабинет и чужой профиль не делят записи. */
+  cacheScope: string;
 };
 
 // Порядок кнопок фильтра «Система» — общий для сайта (см. PLATFORM_ORDER в бэкенде).
@@ -222,12 +226,21 @@ const CO_RUNNERS_COLUMNS: AdaptiveColumn[] = [
   { key: "first_meeting", width: 160 },
 ];
 
-export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) {
-  const [items, setItems] = useState<CoRunnerItem[]>([]);
-  const [loading, setLoading] = useState(true);
+export function CoRunnersContent({ load, loadMeetings, cacheScope }: CoRunnersContentProps) {
+  // Фильтр систем, поиск и раскрытая строка — в снимке записи истории; список
+  // — в кэше вкладки: «назад» из профиля возвращает ту же таблицу сразу.
+  // Множество в снимке не переживёт JSON — держим массив, а Set строим.
+  const [platformList, setPlatformList] = useRestorableState<string[]>("meetings.platforms", []);
+  const platforms = useMemo(() => new Set(platformList), [platformList]);
+  const selectedKeyInitial = PLATFORM_ORDER.filter((code) => platforms.has(code)).join(",");
+  const [items, setItems] = useState<CoRunnerItem[]>(
+    () => readCached<CoRunnerItem[]>(`${cacheScope}:meetings:${selectedKeyInitial}`) ?? [],
+  );
+  const [loading, setLoading] = useState(
+    () => readCached(`${cacheScope}:meetings:${selectedKeyInitial}`) === undefined,
+  );
   const [reloading, setReloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [platforms, setPlatforms] = useState<Set<string>>(() => new Set());
   // Кнопки фильтра — только системы, на которых встречи вообще были: считаем их
   // по первой (нефильтрованной) загрузке, потом ответ уже сужен фильтром.
   const [availableCodes, setAvailableCodes] = useState<string[]>([]);
@@ -238,8 +251,8 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
   const tableColumns = useTableColumns(CO_RUNNERS_COLUMNS);
   const showFull = tableColumns.showFull;
   const show = tableColumns.show;
-  const [query, setQuery] = useState("");
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [query, setQuery] = useRestorableState("meetings.query", "");
+  const [expandedKey, setExpandedKey] = useRestorableState<string | null>("meetings.expanded", null);
   const [meetingsByKey, setMeetingsByKey] = useState<Record<string, CoRunnerMeetingItem[]>>({});
   const [meetingsLoadingKey, setMeetingsLoadingKey] = useState<string | null>(null);
   const [meetingsError, setMeetingsError] = useState<string | null>(null);
@@ -257,6 +270,12 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
   useEffect(() => {
     let cancelled = false;
     const requested = selectedKey ? selectedKey.split(",") : [];
+    const cacheKey = `${cacheScope}:meetings:${selectedKey}`;
+    const cached = readCached<CoRunnerItem[]>(cacheKey);
+    if (cached) {
+      setItems(cached);
+      setLoading(false);
+    }
     setReloading(true);
     load(requested)
       .then((data) => {
@@ -264,6 +283,7 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
           return;
         }
         setItems(data);
+        writeCached(cacheKey, data);
         setError(null);
         if (requested.length === 0) {
           setHasAnyMeetings(data.length > 0);
@@ -273,7 +293,7 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
         }
       })
       .catch(() => {
-        if (!cancelled) {
+        if (!cancelled && !cached) {
           setError("Не удалось загрузить список встреч. Попробуйте обновить страницу.");
         }
       })
@@ -286,16 +306,19 @@ export function CoRunnersContent({ load, loadMeetings }: CoRunnersContentProps) 
     return () => {
       cancelled = true;
     };
-  }, [load, selectedKey]);
+  }, [load, selectedKey, cacheScope]);
 
   // Смена фильтра меняет и набор встреч в развёрнутой строке — кэш деталей
   // сбрасываем, иначе там осталась бы выдача по прошлому отбору.
-  const changePlatforms = useCallback((next: Set<string>) => {
-    setPlatforms(next);
-    setExpandedKey(null);
-    setMeetingsByKey({});
-    setMeetingsError(null);
-  }, []);
+  const changePlatforms = useCallback(
+    (next: Set<string>) => {
+      setPlatformList([...next]);
+      setExpandedKey(null);
+      setMeetingsByKey({});
+      setMeetingsError(null);
+    },
+    [setPlatformList, setExpandedKey],
+  );
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();

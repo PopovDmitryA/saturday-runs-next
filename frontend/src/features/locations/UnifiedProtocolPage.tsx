@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCachedResource } from "../../hooks/useCachedResource";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
@@ -22,7 +24,6 @@ import { useOptionalUser } from "../../lib/useOptionalUser";
 import {
   getUnifiedProtocol,
   getUnifiedProtocolWeeks,
-  type UnifiedProtocol,
   type UnifiedProtocolRow,
   type UnifiedProtocolWeekRef,
 } from "../../lib/api";
@@ -146,19 +147,46 @@ function LocationCell({ row }: { row: UnifiedProtocolRow }) {
   );
 }
 
+const EMPTY_WEEKS: UnifiedProtocolWeekRef[] = [];
+
 function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
   // undefined — сессия ещё проверяется: пока не знаем, баннер не мигаем.
   const viewer = useOptionalUser();
-  const [data, setData] = useState<UnifiedProtocol | null>(null);
-  const [weeks, setWeeks] = useState<UnifiedProtocolWeekRef[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [platform, setPlatform] = useState<string | null>(null);
-  const [gender, setGender] = useState<GenderFilter>("all");
-  const [ageGroup, setAgeGroup] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
+  // Фильтры и страница живут в снимке записи истории (см. hooks/useRestorableState):
+  // «назад» из профиля возвращает тот же срез протокола на той же странице.
+  const [platform, setPlatform] = useRestorableState<string | null>("uniprot.platform", null);
+  const [gender, setGender] = useRestorableState<GenderFilter>("uniprot.gender", "all");
+  const [ageGroup, setAgeGroup] = useRestorableState<string | null>("uniprot.age", null);
+  const [search, setSearch] = useRestorableState("uniprot.search", "");
+  const [query, setQuery] = useRestorableState("uniprot.query", "");
+  const [page, setPage] = useRestorableState("uniprot.page", 1);
+  // Ответ по срезу — из кэша вкладки, свежий подъезжает следом (см. hooks/useCachedResource).
+  const {
+    data,
+    error,
+    loading,
+  } = useCachedResource(
+    `protocol:week:${saturday ?? "latest"}:${platform ?? ""}:${gender}:${ageGroup ?? ""}:${query}:${page}`,
+    () =>
+      getUnifiedProtocol(saturday, {
+        platform,
+        gender: gender === "all" ? null : gender,
+        ageGroup,
+        q: query || null,
+        page,
+        perPage: PER_PAGE,
+      }),
+    [saturday, platform, gender, ageGroup, query, page],
+    { errorText: "Не удалось загрузить протокол", onSettled: flushMetrikaHit },
+  );
+  const { data: weeksData } = useCachedResource("protocol:weeks", getUnifiedProtocolWeeks, []);
+  const weeks = weeksData?.weeks ?? EMPTY_WEEKS;
+  // Эффекты-сбросы ниже не должны срабатывать на монтировании: иначе они
+  // затирали бы только что восстановленный снимок записи.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+  }, []);
   const tableSectionRef = useRef<HTMLElement | null>(null);
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
   const tableColumns = useTableColumns(UNIFIED_COLUMNS);
@@ -172,72 +200,43 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
   }, [search]);
 
   // Смена недели — это новая страница: сбрасываем всё, кроме выбранной системы
-  // (её обычно хотят удержать, листая недели).
+  // (её обычно хотят удержать, листая недели). Неделя — часть адреса, так что
+  // сюда попадаем только с уже смонтированной страницы.
   useEffect(() => {
+    if (!mounted.current) {
+      return;
+    }
     setGender("all");
     setAgeGroup(null);
     setSearch("");
     setQuery("");
     setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saturday]);
 
+  const filtersKey = `${platform ?? ""}|${gender}|${ageGroup ?? ""}|${query}`;
+  const lastFiltersKey = useRef(filtersKey);
   useEffect(() => {
-    setPage(1);
-  }, [platform, gender, ageGroup, query]);
+    // Страницу сбрасывает именно смена фильтров, а не первый прогон эффекта:
+    // в StrictMode он выполняется дважды и затирал бы восстановленный номер.
+    if (lastFiltersKey.current !== filtersKey) {
+      lastFiltersKey.current = filtersKey;
+      setPage(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey]);
 
   // Смена системы обнуляет возрастную группу: ступени у систем разные, а у S95
   // категорий нет вовсе — иначе фильтр оставался бы висеть невидимым и
   // протокол пустовал бы без объяснений.
+  const lastPlatform = useRef(platform);
   useEffect(() => {
-    setAgeGroup(null);
+    if (lastPlatform.current !== platform) {
+      lastPlatform.current = platform;
+      setAgeGroup(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [platform]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getUnifiedProtocolWeeks()
-      .then((payload) => {
-        if (!cancelled) {
-          setWeeks(payload.weeks);
-        }
-      })
-      .catch(() => {
-        /* без списка недель страница живёт: остаются стрелки «пред./след.» */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    getUnifiedProtocol(saturday, {
-      platform,
-      gender: gender === "all" ? null : gender,
-      ageGroup,
-      q: query || null,
-      page,
-      perPage: PER_PAGE,
-    })
-      .then((payload) => {
-        if (!cancelled) {
-          setData(payload);
-          setLoading(false);
-          flushMetrikaHit();
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Не удалось загрузить протокол");
-          setLoading(false);
-          flushMetrikaHit();
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [saturday, platform, gender, ageGroup, query, page]);
 
   const goToPage = useCallback((next: number) => {
     setPage(next);

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { readCached, writeCached } from "../../lib/dataCache";
+import { useRestorableState } from "../../hooks/useRestorableState";
 import { FilterSelect } from "../../components/filters/FilterPanel";
 import { GenderFilter } from "../../components/filters/GenderFilter";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
@@ -154,19 +156,25 @@ function DateCell({ row }: { row: FastestRow }) {
   );
 }
 
+type CachedFastest = { data: FastestRatingResponse; me: MyFastestRow | null };
+
 export function FastestRatingPage() {
   const [filters, setFilters] = useState<FastestFilters>(readFilters);
-  const [data, setData] = useState<FastestRatingResponse | null>(null);
-  const [me, setMe] = useState<MyFastestRow | null>(null);
-  const [loading, setLoading] = useState(true);
+  const currentUser = useOptionalUser();
+  // Срез — из кэша вкладки, свежий подъезжает следом; догруженные строки и
+  // поиск — в снимке записи: «назад» из профиля возвращает ту же таблицу.
+  const cacheKey = `ratings:fastest:${JSON.stringify(filters)}:${currentUser?.id ?? "anon"}`;
+  const [restored] = useState(() => readCached<CachedFastest>(cacheKey));
+  const [data, setData] = useState<FastestRatingResponse | null>(restored?.data ?? null);
+  const [me, setMe] = useState<MyFastestRow | null>(restored?.me ?? null);
+  const [loading, setLoading] = useState(restored === undefined);
   const [error, setError] = useState<string | null>(null);
-  const [visibleCount, setVisibleCount] = useState(PAGE_STEP);
+  const [visibleCount, setVisibleCount] = useRestorableState("fastest.visible", PAGE_STEP);
   // Поиск — единственный фильтр страницы, который НЕ пересчитывает рейтинг:
   // он просеивает уже полученные строки, а места в них остаются глобальными.
   // Так и задуман вопрос «сколько раз наш человек попал в этот топ» и «сколько
   // в нём бегунов с нашей локации» — ответ на него даёт счётчик под полем.
-  const [query, setQuery] = useState("");
-  const currentUser = useOptionalUser();
+  const [query, setQuery] = useRestorableState("fastest.query", "");
 
   const tableRef = useRef<HTMLTableElement | null>(null);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -208,34 +216,44 @@ export function FastestRatingPage() {
    */
   const load = useCallback(
     async (signal?: AbortSignal) => {
-      setLoading(true);
+      const cached = readCached<CachedFastest>(cacheKey);
+      if (cached) {
+        setData(cached.data);
+        setMe(cached.me);
+        setLoading(false);
+      } else {
+        setLoading(true);
+        // Прошлое место рядом со свежей таблицей путает: зачёты финишей и
+        // участников дают человеку РАЗНЫЕ места, и старое число секунду-другую
+        // стояло под новой таблицей как своё. Прячем до ответа.
+        setMe(null);
+      }
       setError(null);
-      // Прошлое место рядом со свежей таблицей путает: зачёты финишей и
-      // участников дают человеку РАЗНЫЕ места, и старое число секунду-другую
-      // стояло под новой таблицей как своё. Прячем до ответа.
-      setMe(null);
       try {
         const payload = await getFastestRating(filters, undefined, signal);
         setData(payload);
         setLoading(false);
+        let myRow: MyFastestRow | null = null;
         if (currentUser) {
-          setMe(await getMyFastestRow(filters, signal));
-        } else {
-          setMe(null);
+          myRow = await getMyFastestRow(filters, signal);
         }
+        setMe(myRow);
+        writeCached(cacheKey, { data: payload, me: myRow });
       } catch (loadError) {
         if (isAbort(loadError)) {
           return;
         }
-        setError(
-          loadError instanceof Error && loadError.message !== "unauthorized"
-            ? loadError.message
-            : "Не удалось загрузить рейтинг",
-        );
+        if (!cached) {
+          setError(
+            loadError instanceof Error && loadError.message !== "unauthorized"
+              ? loadError.message
+              : "Не удалось загрузить рейтинг",
+          );
+        }
         setLoading(false);
       }
     },
-    [currentUser, filters],
+    [cacheKey, currentUser, filters],
   );
 
   useEffect(() => {
@@ -244,9 +262,16 @@ export function FastestRatingPage() {
     return () => controller.abort();
   }, [load]);
 
+  // Сброс догрузки — только на смену фильтров, не на первый прогон эффекта:
+  // в StrictMode он выполняется дважды и затирал бы восстановленное число.
+  const listKey = `${JSON.stringify(filters)}|${query}`;
+  const lastListKey = useRef(listKey);
   useEffect(() => {
-    setVisibleCount(PAGE_STEP);
-  }, [filters, query]);
+    if (lastListKey.current !== listKey) {
+      lastListKey.current = listKey;
+      setVisibleCount(PAGE_STEP);
+    }
+  }, [listKey, setVisibleCount]);
 
   const allRows = data?.rows ?? [];
   const rows = useMemo(() => {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { probeCurrentUser, type User } from "./api";
+import { dropCached } from "./dataCache";
 
 /**
  * Текущий пользователь БЕЗ гейта — для публичных страниц (локации, рейтинги),
@@ -44,6 +45,9 @@ export function clearCachedUser(): void {
   } catch {
     // ignore
   }
+  // Ответы API на «назад» тоже личные: после выхода их нельзя показать тому,
+  // кто войдёт следующим в этой же вкладке.
+  dropCached("");
 }
 
 export function useOptionalUser(options?: { skipCache?: boolean }): User | null | undefined {

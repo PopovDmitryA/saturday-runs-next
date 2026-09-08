@@ -37,6 +37,8 @@ export type AppDataSourceMode = "auth" | "public-profile";
 
 export type AppDataSource = {
   mode: AppDataSourceMode;
+  /** Префикс ключей кэша ответов (см. lib/dataCache): «me» или «profile:<id>». */
+  cacheScope: string;
   listRuns: (includeTest?: boolean, limit?: number) => Promise<RunItem[]>;
   listVolunteering: (includeTest?: boolean, limit?: number) => Promise<VolunteeringItem[]>;
   getBestResults: (includeTest?: boolean) => Promise<BestResultItem[]>;
@@ -54,6 +56,7 @@ export type AppDataSource = {
 
 export const authDataSource: AppDataSource = {
   mode: "auth",
+  cacheScope: "me",
   listRuns: (includeTest) => getAllUserRuns(includeTest),
   listVolunteering: (includeTest) => getAllUserVolunteering(includeTest),
   getBestResults,
@@ -70,6 +73,7 @@ export const authDataSource: AppDataSource = {
 export function createPublicProfileDataSource(serialId: number): AppDataSource {
   return {
     mode: "public-profile",
+    cacheScope: `profile:${serialId}`,
     listRuns: (includeTest) => getAllPublicProfileRuns(serialId, includeTest),
     listVolunteering: (includeTest) => getAllPublicProfileVolunteering(serialId, includeTest),
     getBestResults: (includeTest) => getPublicProfileBestResults(serialId, includeTest),
