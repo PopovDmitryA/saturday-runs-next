@@ -54,6 +54,7 @@ from app.volunteer_role_taxonomy import (
     canonical_volunteer_role,
     preset_role_keys,
 )
+from app.volunteering_occasions import count_volunteering_for_platform
 
 HISTOGRAM_BIN_SEC = 10
 # Индекс локаций — тяжёлая агрегация (~35 тыс. событий + join по протоколам
@@ -95,10 +96,15 @@ def location_leaders_cache_key(slug: str) -> str:
     return f"locations:leaders:v3:{slug.strip().lower()}"
 
 
-LOCATION_PARTICIPANTS_CACHE_PREFIX = "locations:participants:v3"
+LOCATION_PARTICIPANTS_CACHE_PREFIX = "locations:participants:v4"
 
 
 def location_participants_cache_key(slug: str, roles_key: str = "") -> str:
+    # v4 — «Всего» у волонтёров считается по календарным дням, а не по
+    # событиям (см. _volunteer_totals_by_group). Числа поменялись, форма
+    # payload — нет, поэтому без бампа страница до истечения TTL отдавала бы
+    # старые завышенные значения.
+    #
     # v3 — в строках появились platform_first_dates/platform_last_dates. Без
     # бампа страница до истечения TTL отдавала бы старый payload, и в срезе по
     # системе даты остались бы общими.
@@ -1338,10 +1344,20 @@ def _totals_by_group(
     выбранные роли, то и доля «здесь» обязана считаться от них же — иначе у
     маршала, который в других ролях объездил полстраны, доля вышла бы смешной
     и необъяснимой.
+
+    Волонтёрства складываются в occasion'ы (app.volunteering_occasions), как на
+    личной странице, в рейтингах и в кабинете: один зачёт на календарный день,
+    1 января — по зачёту на каждую локацию. Раньше здесь считались СОБЫТИЯ, и
+    у тех, кто в одну субботу успевает на две площадки, «Всего» уезжало вверх:
+    у Владислава КОСТИНА (5verst.ru/userstats/790224653/) три таких дня давали
+    75 против 72 на самом 5verst.ru.
     """
     participant_ids = list(participant_to_group)
     if not participant_ids:
         return {}
+
+    if model is VolunteerResult:
+        return _volunteer_totals_by_group(db, participant_to_group, role_labels=role_labels)
 
     # Тестовые события (проверочные протоколы) исключаем списком id, а не
     # join'ом к events: их считанные сотни, а join развернул бы весь этот
@@ -1350,12 +1366,12 @@ def _totals_by_group(
     if test_event_ids:
         counted_event = case((model.event_id.in_(test_event_ids), None), else_=model.event_id)
 
-    query = db.query(model.participant_id, func.count(func.distinct(counted_event))).filter(
-        model.participant_id.in_(participant_ids)
+    rows = (
+        db.query(model.participant_id, func.count(func.distinct(counted_event)))
+        .filter(model.participant_id.in_(participant_ids))
+        .group_by(model.participant_id)
+        .all()
     )
-    if role_labels is not None:
-        query = query.filter(VolunteerResult.role.in_(role_labels))
-    rows = query.group_by(model.participant_id).all()
 
     totals: dict[UUID, int] = {}
     for participant_id, count in rows:
@@ -1363,6 +1379,57 @@ def _totals_by_group(
         if group is None:
             continue
         totals[group] = totals.get(group, 0) + int(count)
+    return totals
+
+
+def _volunteer_totals_by_group(
+    db: Session,
+    participant_to_group: dict[UUID, UUID],
+    *,
+    role_labels: list[str] | None = None,
+) -> dict[UUID, int]:
+    """«Всего волонтёрств» по occasion-логике своей системы.
+
+    Join'ы к events/locations/platforms здесь себе позволить можно: участники
+    уже отобраны порогом постоянного состава — это сотни строк, а не сотни
+    тысяч, из-за которых пробежечное «всего» держат голым запросом.
+
+    Дата 1970-01-01 — псевдо-локация parkrun-summary (сводка профиля без дат);
+    её выбрасываем так же, как это делает личная страница.
+    """
+    rows = (
+        db.query(
+            VolunteerResult.participant_id,
+            Platform.code,
+            Event.event_date,
+            Location.external_key,
+        )
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .filter(
+            VolunteerResult.participant_id.in_(list(participant_to_group)),
+            Event.is_test_event.is_(False),
+            Event.event_date > date(1970, 1, 1),
+        )
+        .filter(*([] if role_labels is None else [VolunteerResult.role.in_(role_labels)]))
+        .all()
+    )
+
+    by_participant_platform: dict[tuple[UUID, str], list[tuple[date, str]]] = {}
+    for participant_id, platform_code, event_date, location_key in rows:
+        by_participant_platform.setdefault((participant_id, str(platform_code)), []).append(
+            (event_date, location_key or "unknown")
+        )
+
+    totals: dict[UUID, int] = {}
+    for (participant_id, platform_code), occasion_rows in by_participant_platform.items():
+        group = participant_to_group.get(participant_id)
+        if group is None:
+            continue
+        totals[group] = totals.get(group, 0) + count_volunteering_for_platform(
+            platform_code, occasion_rows
+        )
     return totals
 
 
