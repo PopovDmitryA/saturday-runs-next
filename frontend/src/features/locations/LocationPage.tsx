@@ -41,6 +41,7 @@ import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
 import { locationCardSubject, locationEventSubject, locationMeSubject } from "../sharing/subjects";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
+import { LocationRouteButton } from "./LocationRouteButton";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
 import { LocationRecordsModal, type RecordType } from "./LocationRecordsModal";
 
@@ -1249,8 +1250,13 @@ function LocationPageContent({ slug }: { slug: string }) {
             после загрузки личной статистики — только у оргкоманды. */}
         <nav className="loc-quick-nav" aria-label="Разделы локации">
           <a className="loc-quick-link" href={`/locations/${page.slug}/events`}>
-            <span aria-hidden="true">📖</span> Журнал протоколов
+            <span aria-hidden="true">📖</span>
+            <span className="loc-quick-full">Журнал протоколов</span>
+            <span className="loc-quick-short">Протоколы</span>
           </a>
+          {page.latitude !== null && page.longitude !== null && (
+            <LocationRouteButton latitude={page.latitude} longitude={page.longitude} />
+          )}
           {organizerAccess && (
             <a className="loc-quick-link loc-quick-link-accent" href={`/organizer/${page.slug}`}>
               <span aria-hidden="true">🛠</span> Кабинет организатора

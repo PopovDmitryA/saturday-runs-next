@@ -7,9 +7,13 @@ type DetailModalProps = {
   children: ReactNode;
   onClose: () => void;
   footer?: ReactNode;
+  // По умолчанию модалка широкая — почти все её показывают таблицы. "narrow"
+  // для коротких списков вроде выбора навигатора: во всю страницу три строки
+  // выглядят потерянными.
+  width?: "wide" | "narrow";
 };
 
-export function DetailModal({ open, title, children, onClose, footer }: DetailModalProps) {
+export function DetailModal({ open, title, children, onClose, footer, width = "wide" }: DetailModalProps) {
   // Закрывать оверлей только если и mousedown, и click пришлись мимо панели —
   // иначе выделение текста мышью (drag начался внутри, отпустили за пределами)
   // закрывает модалку и сбрасывает несохранённый ввод.
@@ -65,7 +69,7 @@ export function DetailModal({ open, title, children, onClose, footer }: DetailMo
       }}
     >
       <div
-        className="modal-panel modal-panel-wide"
+        className={`modal-panel ${width === "wide" ? "modal-panel-wide" : "modal-panel-narrow"}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="detail-modal-title"

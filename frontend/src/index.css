@@ -15770,6 +15770,32 @@ input.participant-name-search-input:focus {
   text-decoration: none;
 }
 
+/* Подписи кнопок ряда: на телефоне полные названия переносили «Проложить
+   маршрут» на второй этаж, и два одиноких «таблетки» друг под другом ели
+   экран до самого важного. Ниже 30rem остаётся короткое слово — по иконке и
+   контексту страницы понятно, о чём речь (Дмитрий 09.09.2026). */
+.loc-quick-short {
+  display: none;
+}
+
+@media (max-width: 30rem) {
+  .loc-quick-nav {
+    gap: 0.4rem;
+  }
+
+  .loc-quick-link {
+    padding: 0.4rem 0.75rem;
+  }
+
+  .loc-quick-full {
+    display: none;
+  }
+
+  .loc-quick-short {
+    display: inline;
+  }
+}
+
 /* Кабинет организатора — акцентная: её видит только оргкоманда, и она должна
    находиться с первого взгляда. */
 .loc-quick-link-accent {
@@ -16684,4 +16710,74 @@ input.participant-name-search-input:focus {
 .s2-hero--compact .s2-hero-caption {
   margin-top: 0;
   font-size: 0.6em;
+}
+
+/* Кнопка «Проложить маршрут» под мини-картой локации и выбор навигатора.
+   Список короткий, поэтому модалка узкая (см. width="narrow" у DetailModal). */
+/* Кнопка в ряду .loc-quick-nav: рядом с ней ссылки-теги, поэтому она берёт их
+   вид. Своё только то, что <button> не наследует от родителя сам. */
+.loc-route-quick {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.modal-panel-narrow {
+  width: min(100%, 24rem);
+  padding-top: 1rem;
+}
+
+.loc-route-hint {
+  margin: 0 0 0.9rem;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.loc-route-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.loc-route-option {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  /* Не --surface: это фон самой панели модалки, строки на нём читались одной
+     сплошной плитой — держим их на полтона светлее. */
+  background: var(--bg-muted);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.loc-route-option:hover {
+  background: var(--chip-bg);
+  border-color: var(--border-strong);
+}
+
+/* Знак сервиса вместо логотипа: цвет бренда узнаётся, а прав на лого не нужно. */
+.loc-route-option-mark {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.loc-route-option-name {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
+.loc-route-option-go {
+  flex: 0 0 auto;
+  color: var(--text-muted);
 }
