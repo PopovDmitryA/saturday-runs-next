@@ -49,6 +49,7 @@ celery_app.conf.update(
         "app.workers.tasks.email_send",
         "app.workers.tasks.user_names",
         "app.workers.tasks.weather_collect",
+        "app.workers.tasks.sync_runs_maintenance",
     ),
     task_routes={
         # Точные имена идут до шаблона `five_verst_sync.*` — первое совпадение
@@ -137,6 +138,13 @@ celery_app.conf.update(
             "task": "weather.collect_start_weather",
             "schedule": crontab(hour=3, minute=20),
             "options": {"queue": "celery"},
+        },
+        # Зависшие sync_runs: раньше их гасило только открытие админской
+        # страницы, и висяки жили неделями. Задача внутри базы, сети нет.
+        "sync-runs-close-stale": {
+            "task": "sync_runs.close_stale",
+            "schedule": crontab(minute=5),
+            "options": {"queue": "celery", "expires": 55 * 60},
         },
         "locations-activity-status": {
             "task": "locations.refresh_activity_status",
@@ -271,8 +279,11 @@ celery_app.conf.update(
         # Club detail rotation — 3×/day, 20 stalest clubs per run (changed ones jump the queue).
         "five-verst-clubs-details": {
             "task": "five_verst_sync.sync_club_details",
-            "schedule": crontab(hour="9,15,23", minute=30),
-            "options": {"queue": "five_verst"},
+            # Каждые 3 часа вместо 3 раз в сутки: куски стали втрое короче
+            # (8 клубов вместо 20), и суточный объём добирается числом заходов.
+            # Минута :45 свободна: latest на :00, сверка на :10, ротация на :30.
+            "schedule": crontab(hour="*/3", minute=45),
+            "options": {"queue": FIVE_VERST_BATCH_QUEUE, "expires": 3 * 3600},
         },
         # S95 location registry — every 3 days at 20:30 MSK via JSON API (s95.ru/by/rs).
         "s95-registry-3days": {

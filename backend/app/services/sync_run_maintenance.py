@@ -10,7 +10,10 @@ from app.models import SyncRun, SyncRunStatus
 logger = logging.getLogger(__name__)
 
 _STALE_AFTER: dict[str, timedelta] = {
-    "five_verst:latest": timedelta(hours=2),
+    # 4 часа, а не 2: полный догон субботы — законно долгий прогон. 12.09.2026
+    # он шёл 152 минуты (181 протокол через паузы между фетчами), и при пороге
+    # в 2 часа открытая админка пометила бы живой прогон как прерванный.
+    "five_verst:latest": timedelta(hours=4),
     "s95:latest": timedelta(hours=2),
     "five_verst:reconcile_protocols": timedelta(hours=3),
     "s95:reconcile_protocols": timedelta(hours=3),

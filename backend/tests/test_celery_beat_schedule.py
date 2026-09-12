@@ -133,11 +133,13 @@ def test_five_verst_clubs_schedule() -> None:
     assert registry["schedule"].minute == {30}
     assert registry["schedule"].day_of_week == {1, 4}
 
-    # Club detail rotation — 3×/day at 9:30/15:30/23:30 MSK.
+    # Club detail rotation — каждые 3 часа в :45. До 12.09.2026 было 3 захода
+    # по 20 клубов, но заход шёл 12,3 минуты и столько же ждала приоритетная
+    # очередь; теперь 8 заходов по 8 клубов — объём тот же, кусок втрое короче.
     details = schedule["five-verst-clubs-details"]
     assert details["task"] == "five_verst_sync.sync_club_details"
-    assert details["schedule"].hour == {9, 15, 23}
-    assert details["schedule"].minute == {30}
+    assert details["schedule"].hour == {0, 3, 6, 9, 12, 15, 18, 21}
+    assert details["schedule"].minute == {45}
 
 
 def test_s95_api_protocol_schedule() -> None:

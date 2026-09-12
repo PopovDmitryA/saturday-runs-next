@@ -18,6 +18,8 @@ from app.workers.tasks import sync_task_reporting as reporting
 # Секунд на один протокол: пауза five_verst_protocol_min_interval_seconds плюс
 # сам фетч. Замер по проду 12.09.2026: 5203 секунды на 100 протоколов.
 SECONDS_PER_PROTOCOL = 52
+# Секунд на один клуб: 738 секунд на 20 клубов, тот же замер.
+SECONDS_PER_CLUB = 37
 # Потолок ожидания приоритетной очереди. Задачу с concurrency=1 прервать нельзя,
 # поэтому свежесть ждёт ровно один фоновый кусок.
 MAX_PRIORITY_WAIT_MINUTES = 15
@@ -55,13 +57,18 @@ def test_background_five_verst_tasks_acknowledge_late() -> None:
 
 
 def test_background_chunk_is_shorter_than_priority_patience() -> None:
-    """Кусок фона = потолок ожидания свежести."""
+    """Кусок фона = потолок ожидания свежести.
+
+    Клубы считаются по своей скорости: страница клуба легче протокола, замер на
+    проде 12.09.2026 — 738 секунд на 20 клубов.
+    """
     settings = get_settings()
-    for limit in (
-        settings.five_verst_reconcile_batch_limit,
-        settings.five_verst_week_sweep_batch_limit,
+    for limit, seconds_each in (
+        (settings.five_verst_reconcile_batch_limit, SECONDS_PER_PROTOCOL),
+        (settings.five_verst_week_sweep_batch_limit, SECONDS_PER_PROTOCOL),
+        (settings.five_verst_clubs_batch_limit, SECONDS_PER_CLUB),
     ):
-        minutes = limit * SECONDS_PER_PROTOCOL / 60
+        minutes = limit * seconds_each / 60
         assert minutes <= MAX_PRIORITY_WAIT_MINUTES, limit
 
 
@@ -106,3 +113,32 @@ def test_latest_watches_its_own_queue_depth(monkeypatch) -> None:
 
     assert asked == [FIVE_VERST_FRESH_QUEUE]
     assert payload["skipped"] is True
+
+
+def test_clubs_keep_their_daily_volume_after_the_cut() -> None:
+    """Клубы порезаны по длине куска, а не по объёму: круг по 519 клубам
+    остаётся недельным, просто заходов стало больше."""
+    settings = get_settings()
+    entry = celery_app.conf.beat_schedule["five-verst-clubs-details"]
+    runs_per_day = len(entry["schedule"].hour)
+    assert settings.five_verst_clubs_batch_limit * runs_per_day >= 60
+
+
+def test_stale_sync_runs_are_closed_on_schedule() -> None:
+    """Гашение висяков не должно зависеть от того, зашёл ли кто-то в админку.
+
+    До 12.09.2026 `close_stale_sync_runs` звался только из
+    `get_admin_pipeline_status`, и записи в статусе running жили неделями.
+    """
+    entry = celery_app.conf.beat_schedule["sync-runs-close-stale"]
+    assert entry["task"] == "sync_runs.close_stale"
+    assert entry["schedule"].minute == {5}
+    assert entry["options"]["queue"] == celery_app.conf.task_default_queue
+
+
+def test_latest_stale_threshold_covers_a_full_saturday_catch_up() -> None:
+    """Порог висяка у latest обязан быть больше самого долгого честного прогона:
+    догон субботы 12.09.2026 занял 152 минуты."""
+    from app.services.sync_run_maintenance import stale_after
+
+    assert stale_after("five_verst:latest").total_seconds() / 60 > 152

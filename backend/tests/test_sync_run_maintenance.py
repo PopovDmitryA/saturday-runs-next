@@ -22,7 +22,9 @@ def five_verst_platform(db_session: Session) -> Platform:
 
 
 def test_stale_after_defaults() -> None:
-    assert stale_after("five_verst:latest") == timedelta(hours=2)
+    # 4 часа: полный догон субботы 12.09.2026 честно шёл 152 минуты, и порог в
+    # два часа пометил бы живой прогон как прерванный.
+    assert stale_after("five_verst:latest") == timedelta(hours=4)
     assert stale_after("five_verst:location:slug") == timedelta(hours=2)
     assert stale_after("unknown:type") == timedelta(hours=4)
 
