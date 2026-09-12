@@ -258,7 +258,9 @@ function QueueContent() {
         <section className="card queue-pipeline-panel">
           <h2 className="section-title">Пайплайн протоколов</h2>
           <p className="muted queue-pipeline-queues">
-            Очередь протоколов 5&nbsp;вёрст: <strong>{data.pipeline.queue_depths.five_verst ?? 0}</strong>
+            Свежесть 5&nbsp;вёрст:{" "}
+            <strong>{data.pipeline.queue_depths.five_verst_fresh ?? 0}</strong> · фон 5&nbsp;вёрст:{" "}
+            <strong>{data.pipeline.queue_depths.five_verst ?? 0}</strong>
             {data.pipeline.queue_depths.five_verst_user != null && (
               <> · профили 5&nbsp;вёрст: {data.pipeline.queue_depths.five_verst_user}</>
             )}

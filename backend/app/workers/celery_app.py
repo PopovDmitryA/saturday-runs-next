@@ -5,12 +5,24 @@ from celery.schedules import crontab
 
 from app.config import get_settings
 from app.platform_adapters.registry import ensure_adapters_registered
+from app.workers.queues import FIVE_VERST_BATCH_QUEUE, FIVE_VERST_FRESH_QUEUE
 
 settings = get_settings()
 
 celery_app = Celery("saturday_runs", broker=settings.redis_url, backend=settings.redis_url)
 ensure_adapters_registered()
 celery_app.conf.update(
+    # Воркер с несколькими очередями (-Q a,b) по умолчанию обходит их
+    # round-robin: очередь b получает слот, даже когда в a есть работа. Нам
+    # нужен строгий приоритет — five_verst_fresh перед five_verst, s95_user
+    # перед s95, — поэтому просим redis-транспорт уважать порядок из -Q.
+    # visibility_timeout поднят выше самой долгой задачи: у фоновых задач
+    # 5 вёрст acks_late=True (см. app/workers/tasks/five_verst_sync.py), и
+    # при часовом дефолте брокер вернул бы в очередь ещё работающую задачу.
+    broker_transport_options={
+        "queue_order_strategy": "priority",
+        "visibility_timeout": 7200,
+    },
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
@@ -39,8 +51,12 @@ celery_app.conf.update(
         "app.workers.tasks.weather_collect",
     ),
     task_routes={
-        "five_verst_sync.*": {"queue": "five_verst"},
-        "global_sync.*": {"queue": "five_verst"},
+        # Точные имена идут до шаблона `five_verst_sync.*` — первое совпадение
+        # выигрывает. Свежесть (сегодняшние протоколы) живёт в отдельной
+        # приоритетной очереди, всё остальное по 5 вёрст — фон.
+        "five_verst_sync.sync_latest_results": {"queue": FIVE_VERST_FRESH_QUEUE},
+        "five_verst_sync.*": {"queue": FIVE_VERST_BATCH_QUEUE},
+        "global_sync.*": {"queue": FIVE_VERST_BATCH_QUEUE},
         "user_sync.*": {"queue": "five_verst_user"},
         "s95_sync.run_user_sync": {"queue": "s95_user"},
         "s95_sync.run_admin_resync": {"queue": "s95_user"},
@@ -131,27 +147,31 @@ celery_app.conf.update(
             "task": "five_verst_sync.sync_locations_registry",
             # 20:50 — после latest 20:00; до сводки 21:50 успевает (~1.5 мин).
             "schedule": crontab(hour=20, minute=50),
-            "options": {"queue": "five_verst"},
+            "options": {"queue": FIVE_VERST_BATCH_QUEUE, "expires": 6 * 3600},
         },
+        # expires у периодических задач — прививка от долгов очереди: не взяли
+        # вовремя — задача умирает, а не копится. 12.09.2026 в очереди five_verst
+        # лежало 26 просроченных latest и 30 сверок, и субботние протоколы
+        # ждали своей минуты полутора суток.
         "five-verst-latest-weekday": {
             "task": "five_verst_sync.sync_latest_results",
             "schedule": crontab(hour="0,5,10,15,20", minute=0, day_of_week="1-5"),
-            "options": {"queue": "five_verst"},
+            "options": {"queue": FIVE_VERST_FRESH_QUEUE, "expires": 4 * 3600},
         },
         "five-verst-latest-saturday-hourly": {
             "task": "five_verst_sync.sync_latest_results",
             "schedule": crontab(hour="1-23", minute=0, day_of_week=6),
-            "options": {"queue": "five_verst"},
+            "options": {"queue": FIVE_VERST_FRESH_QUEUE, "expires": 55 * 60},
         },
         "five-verst-latest-sunday-hourly": {
             "task": "five_verst_sync.sync_latest_results",
             "schedule": crontab(hour="0-23", minute=0, day_of_week=0),
-            "options": {"queue": "five_verst"},
+            "options": {"queue": FIVE_VERST_FRESH_QUEUE, "expires": 55 * 60},
         },
         "five-verst-location-rotation": {
             "task": "five_verst_sync.sync_location_rotation",
             "schedule": crontab(minute=30, hour="*/4"),
-            "options": {"queue": "five_verst"},
+            "options": {"queue": FIVE_VERST_BATCH_QUEUE, "expires": 4 * 3600},
         },
         # Наблюдатель выгрузки протоколов (наследник легаси-крона из
         # /root/scripts): сб и вс — каждую минуту (01:00–23:59 MSK, чтобы
@@ -190,7 +210,7 @@ celery_app.conf.update(
         "five-verst-reconcile-protocols-weekday": {
             "task": "five_verst_sync.reconcile_stale_protocols",
             "schedule": crontab(minute=10, hour="*/3", day_of_week="1-5"),
-            "options": {"queue": "five_verst"},
+            "options": {"queue": FIVE_VERST_BATCH_QUEUE, "expires": 3 * 3600},
         },
         # Обход протоколов недели — третья страховка легаси-схемы (см.
         # app/sync/five_verst_week_sweep.py). Сводка знает только число

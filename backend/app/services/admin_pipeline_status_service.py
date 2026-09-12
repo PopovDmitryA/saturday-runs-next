@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models import SyncJob, SyncJobStatus, SyncRun, SyncRunStatus
 from app.services.celery_queue_inspector import (
     FIVE_VERST_BATCH_QUEUE,
+    FIVE_VERST_FRESH_QUEUE,
     FIVE_VERST_USER_QUEUE,
     PARKRUN_SYNC_QUEUE,
     S95_BATCH_QUEUE,
@@ -242,6 +243,7 @@ def get_admin_pipeline_status(db: Session) -> dict[str, Any]:
     )
 
     queue_depths = {
+        FIVE_VERST_FRESH_QUEUE: get_queue_length(FIVE_VERST_FRESH_QUEUE),
         FIVE_VERST_BATCH_QUEUE: get_queue_length(FIVE_VERST_BATCH_QUEUE),
         FIVE_VERST_USER_QUEUE: get_queue_length(FIVE_VERST_USER_QUEUE),
         S95_BATCH_QUEUE: get_queue_length(S95_BATCH_QUEUE),

@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from app.workers.celery_app import celery_app
+from app.workers.queues import (
+    FIVE_VERST_BATCH_QUEUE,
+    FIVE_VERST_FRESH_QUEUE,
+    FIVE_VERST_WORKER_QUEUES,
+)
+
+COMPOSE = Path(__file__).resolve().parents[2] / "docker-compose.yml"
 
 
 def beat_queue(entry: dict) -> str:
@@ -22,7 +32,16 @@ def beat_queue(entry: dict) -> str:
 # kombu молча создаст очередь, сообщения будут копиться, и ошибки не будет
 # нигде. Так с 20.08.2026 простаивало правило молчания с queue="default".
 CONSUMED_QUEUES = frozenset(
-    {"celery", "five_verst", "five_verst_user", "s95", "s95_user", "parkrun", "runpark"}
+    {
+        "celery",
+        "five_verst",
+        "five_verst_fresh",
+        "five_verst_user",
+        "s95",
+        "s95_user",
+        "parkrun",
+        "runpark",
+    }
 )
 
 
@@ -180,3 +199,67 @@ def test_daily_sync_summary_schedule() -> None:
     assert digest["schedule"].minute == {50}
     # После вечерних реестров 5 вёрст (20:00) и s95 (20:30) — попадают в сводку дня.
     assert schedule["five-verst-registry-daily"]["schedule"].hour == {20}
+
+
+def _worker_command(service: str) -> str:
+    """Строка command сервиса из docker-compose.yml.
+
+    Читаем файл, а не конфиг Celery: очередь можно объявить в коде сколько
+    угодно раз, но если её нет в -Q, разбирать её никто не будет.
+    """
+    text = COMPOSE.read_text(encoding="utf-8")
+    block = re.search(rf"^  {re.escape(service)}:$(.*?)(?=^  \S|\Z)", text, re.M | re.S)
+    assert block, f"сервис {service} не найден в {COMPOSE}"
+    command = re.search(r"^    command: (.+)$", block.group(1), re.M)
+    assert command, f"у сервиса {service} нет command"
+    return command.group(1)
+
+
+def test_latest_goes_to_the_priority_queue() -> None:
+    """Свежие протоколы — в приоритетной очереди, а не в общей с батчами.
+
+    12.09.2026 на проде latest не отрабатывал 18 часов подряд: он стоял в
+    очереди five_verst за тридцатью задачами сверки, и суббота держалась на
+    13 локациях из 212.
+    """
+    schedule = celery_app.conf.beat_schedule
+    keys = [key for key in schedule if key.startswith("five-verst-latest")]
+    assert len(keys) == 3, keys
+    for key in keys:
+        assert beat_queue(schedule[key]) == FIVE_VERST_FRESH_QUEUE, key
+        # Срок годности: не взяли вовремя — задача умирает, а не копится.
+        assert schedule[key]["options"]["expires"] > 0, key
+
+
+def test_background_five_verst_entries_stay_in_the_batch_queue() -> None:
+    """Фон остаётся фоном: сверка, ротация и реестр не лезут в приоритет."""
+    schedule = celery_app.conf.beat_schedule
+    for key in (
+        "five-verst-reconcile-protocols-weekday",
+        "five-verst-location-rotation",
+        "five-verst-registry-daily",
+    ):
+        assert beat_queue(schedule[key]) == FIVE_VERST_BATCH_QUEUE, key
+        assert schedule[key]["options"]["expires"] > 0, key
+
+
+def test_worker_takes_the_fresh_queue_before_the_batch_one() -> None:
+    """Порядок очередей в -Q и есть приоритет.
+
+    Работает он только вместе с queue_order_strategy=priority: по умолчанию
+    redis-транспорт обходит очереди по кругу, и фон получал бы слот даже с
+    непустой приоритетной очередью.
+    """
+    command = _worker_command("worker-five-verst")
+    assert f"-Q {','.join(FIVE_VERST_WORKER_QUEUES)}" in command, command
+    # Без этого воркер резервирует фоновую задачу «про запас», и приоритетная
+    # ждёт ещё один кусок сверх текущего.
+    assert "--prefetch-multiplier=1" in command, command
+    assert celery_app.conf.broker_transport_options["queue_order_strategy"] == "priority"
+
+
+def test_user_sync_keeps_its_own_worker() -> None:
+    """Пользовательское «обновить» — первый приоритет: своим воркером, чтобы
+    человек у экрана не ждал даже одного фонового куска."""
+    command = _worker_command("worker-five-verst-user")
+    assert "-Q five_verst_user" in command, command

@@ -137,10 +137,21 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Батчи 5 вёрст (сверка истории, ротация локаций, реестр). Идут часами,
-  # поэтому пользовательская очередь вынесена в отдельный воркер ниже: внутри
-  # одного процесса с concurrency=1 задачу не прервать, и «обновить» в личном
-  # кабинете ждало бы конца батча.
+  # Две группы задач 5 вёрст на одном воркере, строго по приоритету:
+  #   five_verst_fresh — свежесть: latest (сегодняшние протоколы) и точечная
+  #                      перечитка локации по команде админа;
+  #   five_verst       — фон: сверка истории, обход недели, ротация, реестр,
+  #                      клубы, доборка протоколов из профилей.
+  # Порядок в -Q и есть приоритет (queue_order_strategy: priority в
+  # celery_app.py): фоновая задача берётся, только когда в five_verst_fresh
+  # пусто. Второй воркер под свежесть не заводим намеренно — к 5verst.ru должен
+  # ходить один запрос за раз.
+  # --prefetch-multiplier=1 вместе с acks_late=True у фоновых задач не даёт
+  # воркеру резервировать фоновую задачу «про запас»: пока он занят, очередь
+  # никто не разбирает, и подоспевший latest берётся сразу после текущего куска.
+  # Потолок ожидания = длина куска (~9 минут, см. five_verst_reconcile_batch_limit).
+  # Пользовательская очередь — в отдельном воркере ниже: там человек ждёт ответа
+  # у экрана, и ждать даже одного куска он не должен.
   worker-five-verst:
     build:
       context: ./backend
@@ -151,7 +162,7 @@ services:
     volumes:
       - ./backend:/app
       - ./.env:/app/.env:ro
-    command: celery -A app.workers.celery_app worker -Q five_verst --concurrency=1 --loglevel=info
+    command: celery -A app.workers.celery_app worker -Q five_verst_fresh,five_verst --concurrency=1 --prefetch-multiplier=1 --loglevel=info
     depends_on:
       postgres:
         condition: service_healthy

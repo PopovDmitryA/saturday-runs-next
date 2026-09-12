@@ -47,6 +47,7 @@ def test_format_pipeline_status_with_items() -> None:
                 }
             ],
             "queue_depths": {
+                "five_verst_fresh": 1,
                 "five_verst": 2,
                 "five_verst_user": 0,
                 "s95": 0,
@@ -56,4 +57,8 @@ def test_format_pipeline_status_with_items() -> None:
         }
     )
     assert "5verst: реестр /events/" in text
-    assert "5verst протоколы: 2" in text
+    # Две группы задач 5 вёрст показываем раздельно: приоритетная очередь
+    # («свежесть») и фоновая. До 12.09.2026 они были одной строкой, и долг
+    # фона было не отличить от затора на свежих протоколах.
+    assert "5verst свежесть: 1" in text
+    assert "5verst фон: 2" in text
