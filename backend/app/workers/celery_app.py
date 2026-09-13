@@ -323,6 +323,17 @@ celery_app.conf.update(
             "schedule": crontab(hour="11,17,23", minute=0, day_of_week="6,0"),
             "options": {"queue": "s95"},
         },
+        # Сверка состава событий со списками площадок — раз в неделю, вторник
+        # 04:10 МСК. Оба синка выше ходят по updated_at и потому слепы к тому,
+        # что S95 удалил событие: про удаление узнать неоткуда, а нумерация от
+        # него едет у всех последующих стартов (Великий Новгород, 165 номеров,
+        # 14.09.2026). Протоколы не качает — только списки, поэтому дёшево.
+        # Вторник: подальше от выходных скана и понедельничного синка.
+        "s95-reconcile-events-weekly": {
+            "task": "s95_sync.reconcile_events",
+            "schedule": crontab(hour=4, minute=10, day_of_week="2"),
+            "options": {"queue": "s95"},
+        },
         # Sync new + updated protocols across all locations via updated_at — Mon/Wed/Fri 03:00 MSK.
         "s95-api-sync-updated": {
             "task": "s95_sync.api_sync_updated",
