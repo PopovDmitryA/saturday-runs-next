@@ -97,6 +97,14 @@ def location_protocol_cache_key(slug: str, platform_code: str, event_date: date)
 
 
 def invalidate_location_protocol_cache(slug: str, platform_code: str, event_date: date) -> None:
+    """Снести снимок протокола руками — для разовых прогревов из админки и с сервера.
+
+    В синках её звать не нужно и она там не зовётся: после перезаписи результатов
+    TTL этого ключа подрезает mark_location_results_changed — ему передают пару
+    «система, дата старта» (см. app/services/location_freshness.py). Отсутствие
+    вызывающих здесь — не дыра: 13.09.2026 я на этом уже споткнулся, решив, что
+    сброса нет вовсе, и полез чинить работающее.
+    """
     try:
         get_redis_client().delete(location_protocol_cache_key(slug, platform_code, event_date))
     except redis.RedisError:
