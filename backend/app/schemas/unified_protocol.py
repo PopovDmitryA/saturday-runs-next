@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.schemas.weather import WeekWeatherResponse
+
 
 class UnifiedProtocolRow(BaseModel):
     """Строка единого протокола недели."""
@@ -140,6 +142,7 @@ class UnifiedProtocolResponse(BaseModel):
     previous_saturday: str | None = None
     next_saturday: str | None = None
     latest_saturday: str | None = None
+    weather: WeekWeatherResponse | None = None
 
 
 class UnifiedProtocolWeeksResponse(BaseModel):

@@ -39,7 +39,7 @@ class ChallengeResponse(BaseModel):
     title: str
     icon: str
     description: str
-    # collection | coincidence | scale | community
+    # collection | coincidence | scale | community | weather
     category: str
     current: int
     unit: str | None = None

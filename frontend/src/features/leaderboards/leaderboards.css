@@ -2378,3 +2378,50 @@ body.has-pinned-me .lb-scroll-top {
   border-top: none;
   padding-top: 0;
 }
+
+
+/* ===== Рейтинг «Погода» ===== */
+.lb-weather-section {
+  margin-top: 1.5rem;
+}
+.lb-weather-section h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+}
+.lb-weather-lead {
+  margin: 0 0 0.75rem;
+}
+.lb-weather-extremes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+.lb-weather-extreme {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.lb-weather-extreme-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.lb-weather-extreme-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+.lb-weather-extreme-sub {
+  font-size: 0.82rem;
+}
+.lb-weather-bucket-bar {
+  display: inline-block;
+  height: 0.5rem;
+  border-radius: 4px;
+  background: var(--series-five-verst, #3b82f6);
+  vertical-align: middle;
+}
+.lb-weather-tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}

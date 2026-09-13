@@ -19,6 +19,7 @@ import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { formatTemp, temperatureTone } from "../../lib/weather";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import {
@@ -371,6 +372,50 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
         <p className="protocol-subtitle">
           Все площадки всех систем за одну неделю, выстроенные по времени финиша.
         </p>
+        {data.weather && data.weather.locations_with_weather > 0 && (
+          <p className="protocol-weather protocol-weather-week">
+            {data.weather.coldest && (
+              <span className="protocol-weather-item" title={data.weather.coldest.weather.summary}>
+                🥶 Холоднее всего:{" "}
+                <a href={`/locations/${data.weather.coldest.location_slug ?? ""}`}>
+                  {data.weather.coldest.location_name}
+                </a>{" "}
+                <b className={`temp-${temperatureTone(data.weather.coldest.weather.temperature_c)}`}>
+                  {formatTemp(data.weather.coldest.weather.temperature_c)}
+                </b>
+              </span>
+            )}
+            {data.weather.warmest && data.weather.warmest.location_slug !== data.weather.coldest?.location_slug && (
+              <span className="protocol-weather-item" title={data.weather.warmest.weather.summary}>
+                🔥 Теплее всего:{" "}
+                <a href={`/locations/${data.weather.warmest.location_slug ?? ""}`}>
+                  {data.weather.warmest.location_name}
+                </a>{" "}
+                <b className={`temp-${temperatureTone(data.weather.warmest.weather.temperature_c)}`}>
+                  {formatTemp(data.weather.warmest.weather.temperature_c)}
+                </b>
+              </span>
+            )}
+            {data.weather.wettest && (
+              <span className="protocol-weather-item" title={data.weather.wettest.weather.summary}>
+                🌧️ Мокрее всего:{" "}
+                <a href={`/locations/${data.weather.wettest.location_slug ?? ""}`}>
+                  {data.weather.wettest.location_name}
+                </a>{" "}
+                <b>{data.weather.wettest.weather.precipitation_run_mm?.toFixed(1)} мм</b>
+                {data.weather.rain_locations > 1 && (
+                  <span className="muted"> · дождь на {data.weather.rain_locations} площадках</span>
+                )}
+              </span>
+            )}
+            {data.weather.temperature_median_c != null && (
+              <span className="protocol-weather-item muted">
+                по стране в среднем {formatTemp(data.weather.temperature_median_c)}
+                {data.weather.is_preliminary && " · предварительно"}
+              </span>
+            )}
+          </p>
+        )}
         {error && (
           <div className="card error">
             <p>{error} — показана предыдущая выборка, попробуйте ещё раз.</p>

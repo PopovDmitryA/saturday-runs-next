@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.weather import UserWeatherStatsResponse, WeatherBriefResponse
+
 
 class TopLocationResponse(BaseModel):
     name: str
@@ -176,6 +178,7 @@ class LastSaturdayResponse(BaseModel):
     prev_date: date | None = None
     # Чем примечательна эта пробежка — готовые фразы, не больше двух.
     notables: list[str] = Field(default_factory=list)
+    weather: WeatherBriefResponse | None = None
 
 
 class DashboardAnalyticsResponse(BaseModel):
@@ -240,6 +243,7 @@ class DashboardAnalyticsResponse(BaseModel):
     age_group_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
     home_distance: HomeDistanceResponse | None = None
     last_saturday: LastSaturdayResponse | None = None
+    weather: UserWeatherStatsResponse | None = None
 
 
 class OnThisDayRunResponse(BaseModel):
@@ -361,6 +365,7 @@ class RunItemResponse(BaseModel):
     status: str | None = None
     is_test_event: bool = False
     event_url: str | None = None
+    weather: WeatherBriefResponse | None = None
 
 
 class BestResultResponse(BaseModel):
@@ -503,9 +508,7 @@ class SyncStatusResponse(BaseModel):
 class SyncRefreshResponse(BaseModel):
     job_id: UUID
     status: str
-    message: str = (
-        "Запрос на обновление отправлен. Ожидайте исполнения в ближайшее время."
-    )
+    message: str = "Запрос на обновление отправлен. Ожидайте исполнения в ближайшее время."
 
 
 class SyncQueueTaskResponse(BaseModel):

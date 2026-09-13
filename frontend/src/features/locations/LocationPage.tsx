@@ -43,6 +43,7 @@ import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
 import { LocationRouteButton } from "./LocationRouteButton";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
+import { LocationWeatherSection } from "./LocationWeatherSection";
 import { LocationRecordsModal, type RecordType } from "./LocationRecordsModal";
 
 function StatTile({
@@ -1403,6 +1404,7 @@ function LocationPageContent({ slug }: { slug: string }) {
         onToggle={toggleAgeGroup}
       />
 
+      <LocationWeatherSection slug={page.slug} />
       <LocationLeadersSection slug={page.slug} />
 
       {/* Карта, адрес, описание и история систем — одним блоком в самом низу:

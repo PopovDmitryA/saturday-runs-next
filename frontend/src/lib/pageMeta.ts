@@ -155,6 +155,13 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
       "женщин и рекорды возрастных групп.",
     indexable: true,
   },
+  "/ratings/weather": {
+    title: "Погода на стартах — run5k.run",
+    description:
+      "Моржи субботних пятёрок, самые морозные и жаркие площадки и как температура " +
+      "влияет на время финиша — по архиву погоды в точке старта.",
+    indexable: true,
+  },
   "/ratings/regions": {
     title: "Локации по регионам — run5k.run",
     description:

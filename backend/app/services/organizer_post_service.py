@@ -118,10 +118,13 @@ def _names(rows: list[dict[str, Any]]) -> str:
 def _event_header(event: dict[str, Any], title: str) -> list[str]:
     number = event.get("event_number")
     number_part = f" — забег №{number}" if number else ""
-    return [
+    lines = [
         f"{title}",
         f"📍 {event['location_name']}{number_part} · {fmt_date_ru(event['event_date'])}",
     ]
+    if event.get("weather_line"):
+        lines.append(str(event["weather_line"]))
+    return lines
 
 
 def _stats_post(svod: dict[str, Any], guest_homes: list[dict[str, Any]] | None = None) -> str:
@@ -138,15 +141,11 @@ def _stats_post(svod: dict[str, Any], guest_homes: list[dict[str, Any]] | None =
     lines.append(f"🤝 Волонтёров: {event['volunteers_count']}")
     if pbs:
         lines.append("")
-        lines.append(
-            f"🚀 Личные рекорды обновили ({len(pbs)}): {_names(pbs)}. "
-            "Гордимся каждым новым максимумом!"
-        )
+        lines.append(f"🚀 Личные рекорды обновили ({len(pbs)}): {_names(pbs)}. Гордимся каждым новым максимумом!")
     if newcomers:
         lines.append("")
         lines.append(
-            f"👑 Первый раз на старте ({len(newcomers)}): {_names(newcomers)}. "
-            "Добро пожаловать в беговую семью!"
+            f"👑 Первый раз на старте ({len(newcomers)}): {_names(newcomers)}. Добро пожаловать в беговую семью!"
         )
     # «Откуда гости» (просьба Дмитрия 24.08.2026): гость — финишёр, чья
     # домашняя локация другая (по общесайтовой логике дома), и гостить он
@@ -161,9 +160,7 @@ def _stats_post(svod: dict[str, Any], guest_homes: list[dict[str, Any]] | None =
             lines.append(f"• {guest['name']} — {home}")
     if jubilees:
         lines.append("")
-        jubilee_parts = [
-            f"{row['name']} — {row['location_milestone']}-й финиш здесь" for row in jubilees
-        ]
+        jubilee_parts = [f"{row['name']} — {row['location_milestone']}-й финиш здесь" for row in jubilees]
         lines.append("🎂 Юбилеи: " + "; ".join(jubilee_parts) + ".")
     lines.append("")
     lines.append(SITE_POST_SIGNATURE)
@@ -290,11 +287,7 @@ def build_vacancies_post(db: Session, identity: Any) -> str:
     if roster and roster.get("dates"):
         target_date = roster["dates"][0]
         needed = [row["role"] for row in roster["roles"] if target_date not in row["filled"]]
-        filled = [
-            (row["role"], row["filled"][target_date])
-            for row in roster["roles"]
-            if target_date in row["filled"]
-        ]
+        filled = [(row["role"], row["filled"][target_date]) for row in roster["roles"] if target_date in row["filled"]]
         lines = [
             f"🙌 Нужны волонтёры на {target_date}!",
             f"📍 {identity.name}",
@@ -332,9 +325,7 @@ def build_vacancies_post(db: Session, identity: Any) -> str:
         lines.append(f"❗️ {ROLE_EMOJI.get(key, '🙌')} {label}")
     lines.append("")
     lines.append("💬 «5 раз побегал — 1 раз помоги!»")
-    lines.append(
-        "Напишите в чат локации или подойдите к оргкоманде на старте — научим любой роли."
-    )
+    lines.append("Напишите в чат локации или подойдите к оргкоманде на старте — научим любой роли.")
     if five_verst_slug:
         lines.append("")
         lines.append(f"✍️ Запись: {roster_url(five_verst_slug)}")
@@ -350,9 +341,7 @@ def _grouped_milestones(rows: list[dict[str, Any]], key: str) -> dict[int, list[
     for row in rows:
         milestone = row.get(key)
         if milestone:
-            grouped.setdefault(int(milestone), []).append(
-                str(row.get("name") or "Неизвестный участник")
-            )
+            grouped.setdefault(int(milestone), []).append(str(row.get("name") or "Неизвестный участник"))
     return dict(sorted(grouped.items()))
 
 
@@ -417,8 +406,7 @@ def build_upcoming_post(
         item
         for item in milestones["items"]
         if item["remaining"] == 1
-        and item["milestone"]
-        >= (min_run_milestone if item["kind"].startswith("runs") else min_vol_milestone)
+        and item["milestone"] >= (min_run_milestone if item["kind"].startswith("runs") else min_vol_milestone)
     ]
 
     lines = [
@@ -514,10 +502,7 @@ def _event_guest_homes(db: Session, svod: dict[str, Any]) -> list[dict[str, Any]
 
     runners = [r for r in svod["runners"] if r.get("participant_id")]
     homes = participant_home_keys(db, {r["participant_id"] for r in runners})
-    index_by_key = {
-        entry.get("identity_key"): entry
-        for entry in build_locations_index(db).get("items", [])
-    }
+    index_by_key = {entry.get("identity_key"): entry for entry in build_locations_index(db).get("items", [])}
 
     guests: list[dict[str, Any]] = []
     for runner in runners:
@@ -538,9 +523,7 @@ def _event_guest_homes(db: Session, svod: dict[str, Any]) -> list[dict[str, Any]
     return guests
 
 
-def build_travelers_post(
-    db: Session, identity: Any, event: Any, *, min_runs: int | None = None
-) -> str:
+def build_travelers_post(db: Session, identity: Any, event: Any, *, min_runs: int | None = None) -> str:
     """«Наши в гостях»: постоянные участники локации на чужих стартах в эту дату.
 
     Рубрика, которой нет ни у одной локации из выборки, — чистый дифференциатор:
@@ -561,39 +544,25 @@ def build_travelers_post(
         "",
     ]
     if not travelers:
-        lines.append(
-            "В эту субботу все свои бежали дома — выездных стартов у постоянных "
-            "участников не случилось."
-        )
+        lines.append("В эту субботу все свои бежали дома — выездных стартов у постоянных участников не случилось.")
     else:
         lines.append("Пока мы бежали дома, наши постоянные участники открывали другие парки:")
         for row in travelers:
             city = f" ({row['away_city']})" if row.get("away_city") else ""
-            time_part = (
-                f" — {format_finish_time_display(row['finish_time_sec'])}"
-                if row.get("finish_time_sec")
-                else ""
-            )
+            time_part = f" — {format_finish_time_display(row['finish_time_sec'])}" if row.get("finish_time_sec") else ""
             # Счётчик своих пробежек рядом с именем: сразу видно, насколько
             # человек «наш» (просьба Дмитрия 18.08.2026).
             runs = row.get("runs_here") or 0
-            runs_part = (
-                f" ({runs} {ru_plural(runs, ('пробежка', 'пробежки', 'пробежек'))} у нас)"
-                if runs
-                else ""
-            )
+            runs_part = f" ({runs} {ru_plural(runs, ('пробежка', 'пробежки', 'пробежек'))} у нас)" if runs else ""
             name = row["name"] or "Неизвестный участник"
             lines.append(f"• {name}{runs_part} — {row['away_location']}{city}{time_part}")
         count = len(travelers)
         lines.append("")
         lines.append(
-            f"{count} {ru_plural(count, ('выезд', 'выезда', 'выездов'))} за субботу. "
-            "Возвращайтесь с новыми историями!"
+            f"{count} {ru_plural(count, ('выезд', 'выезда', 'выездов'))} за субботу. Возвращайтесь с новыми историями!"
         )
     lines.append("")
-    lines.append(
-        f"«Свои» — от {threshold} финишей у нас, и наша локация для них домашняя."
-    )
+    lines.append(f"«Свои» — от {threshold} финишей у нас, и наша локация для них домашняя.")
     lines.append("")
     lines.append(SITE_POST_SIGNATURE)
     return "\n".join(lines)

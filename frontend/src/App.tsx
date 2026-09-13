@@ -72,6 +72,7 @@ import { OrganizerLocationHubPage } from "./features/organizer/OrganizerLocation
 import { OrganizerLocationPage } from "./features/organizer/OrganizerLocationPage";
 import { LocationRecordsRatingPage } from "./features/leaderboards/LocationRecordsRatingPage";
 import { RegionsRatingPage } from "./features/leaderboards/RegionsRatingPage";
+import { WeatherRatingPage } from "./features/leaderboards/WeatherRatingPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
 import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
@@ -265,6 +266,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
   "/ratings/location-records": () => <LocationRecordsRatingPage />,
   "/ratings/regions": () => <RegionsRatingPage />,
+  "/ratings/weather": () => <WeatherRatingPage />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,

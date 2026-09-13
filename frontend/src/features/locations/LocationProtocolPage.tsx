@@ -5,6 +5,7 @@ import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
+import { formatTemp, temperatureTone, weatherTitle } from "../../lib/weather";
 import {
   getLocationProtocol,
   type LocationHistogramRow,
@@ -572,6 +573,21 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
             </StatHintTooltip>
           )}
         </p>
+        {data.weather && (
+          <p className="protocol-weather" title={weatherTitle(data.weather)}>
+            <span className="protocol-weather-icon" aria-hidden>
+              {data.weather.icon}
+            </span>{" "}
+            <span className={`protocol-weather-temp temp-${temperatureTone(data.weather.temperature_c)}`}>
+              {formatTemp(data.weather.temperature_c)}
+            </span>
+            <span className="muted">
+              {" "}
+              · {data.weather.summary.replace(/^[^,]*,\s*/, "")}
+              {data.weather.is_preliminary && " · предварительно"}
+            </span>
+          </p>
+        )}
         <nav className="protocol-nav" aria-label="Соседние старты">
           {data.previous ? (
             <a href={protocolHref(data.slug, data.previous.platform_code, data.previous.event_date)}>

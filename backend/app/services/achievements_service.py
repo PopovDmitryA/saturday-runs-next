@@ -46,6 +46,25 @@ from app.models import (
     VolunteerResult,
 )
 from app.services.location_catalog_service import LocationCatalogIndex, russian_parkrun_location_ids
+from app.services.start_weather_service import (
+    DEEP_FROST_C,
+    DOWNPOUR_MM,
+    FROST_C,
+    HEAT_C,
+    HOT_C,
+    RAIN_MM,
+    SNOW_CODES,
+    SNOW_DEPTH_CM,
+    WINDY_GUST_MS,
+    format_temperature,
+    weather_rows_for_pairs,
+)
+
+
+def _f(value: object) -> float | None:
+    return None if value is None else float(value)  # type: ignore[arg-type]
+
+
 from app.services.location_map_service import MAP_HISTORIC_PLATFORM
 from app.services.platform_titles import PLATFORM_TITLES
 from app.services.user_location_stats import _canonical_region, _normalize_geo_value
@@ -111,6 +130,16 @@ CHALLENGE_TIERS: dict[str, dict[str, tuple[int, int, int]]] = {
     # сводкой parkrun: лёгкий — 95 / 83 / 72 %, средний — 60 / 50 / 35 %,
     # сложный — 23 / 14 / 5.6 %. В справочнике 37 ролей, рекорд базы — 25.
     "role_master": {"easy": (2, 4, 6), "medium": (8, 10, 13), "hard": (15, 17, 20)},
+    # Погодные челленджи (Дмитрий, 14.09.2026). «Морж» — старт при −20° и ниже:
+    # в средней полосе такое случается раз в несколько зим, в Якутске — всю зиму,
+    # поэтому средний и сложный тиры — сибирские. «Саламандра» — от +28° в час
+    # старта, симметричная редкость. «Под дождём» — от 1 мм в окне старта.
+    "walrus": {"easy": (1, 2, 3), "medium": (5, 8, 12), "hard": (20, 35, 50)},
+    "salamander": {"easy": (1, 2, 3), "medium": (5, 8, 12), "hard": (20, 35, 50)},
+    "rain_runner": {"easy": (3, 7, 12), "medium": (20, 30, 45), "hard": (60, 80, 100)},
+    # Коллекции без тиров: всё меню погоды (8 клеток) и все 12 месяцев.
+    "all_weather": {"solo": (3, 5, 8)},
+    "seasons": {"solo": (6, 9, 12)},
 }
 
 # Диапазоны номеров для «Нумератора» и «Нумератора ПРО». Одни и те же границы
@@ -187,6 +216,14 @@ class RunRow:
     region: str | None
     platform_code: str
     is_pr: bool
+    # Погода в час старта (start_weather); None — строки нет (зарубежный parkrun
+    # или площадка без координат). Заполняется одним батчем в _collect_run_rows.
+    temperature_c: float | None = None
+    precipitation_run_mm: float | None = None
+    snow_depth_cm: float | None = None
+    snowfall_cm: float | None = None
+    weather_code: int | None = None
+    wind_gusts_ms: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -214,8 +251,11 @@ def _collect_run_rows(db: Session, user_id: UUID) -> list[RunRow]:
         query = query.filter(RunResult.id.notin_(secondary_ids))
 
     catalog_index = LocationCatalogIndex(db)
+    fetched = query.all()
+    weather_rows = weather_rows_for_pairs(db, [(event.location_id, event.event_date) for _r, event, _l, _p in fetched])
     rows: list[RunRow] = []
-    for run, event, location, platform_code in query.all():
+    for run, event, location, platform_code in fetched:
+        weather = weather_rows.get((event.location_id, event.event_date))
         rows.append(
             RunRow(
                 event_date=event.event_date,
@@ -227,6 +267,12 @@ def _collect_run_rows(db: Session, user_id: UUID) -> list[RunRow]:
                 region=_normalize_geo_value(location.region),
                 platform_code=platform_code,
                 is_pr=bool(run.is_pr),
+                temperature_c=_f(weather.temperature_c) if weather else None,
+                precipitation_run_mm=_f(weather.precipitation_run_mm) if weather else None,
+                snow_depth_cm=_f(weather.snow_depth_cm) if weather else None,
+                snowfall_cm=_f(weather.snowfall_cm) if weather else None,
+                weather_code=int(weather.weather_code) if weather and weather.weather_code is not None else None,
+                wind_gusts_ms=_f(weather.wind_gusts_ms) if weather else None,
             )
         )
     rows.sort(key=lambda row: (row.event_date, row.location_key))
@@ -237,11 +283,7 @@ def _collect_rating_rows(db: Session, user_id: UUID) -> list[RatingRow]:
     """Оценки пользователя: когда оценил, в какой системе, рецензия или звёзды,
     и есть ли фото. Фото считаем наличием, а не количеством: пять кадров на
     один старт — это по-прежнему один рассказ о нём."""
-    photos = (
-        db.query(LocationRatingPhoto.rating_id)
-        .filter(LocationRatingPhoto.rating_id == LocationRating.id)
-        .exists()
-    )
+    photos = db.query(LocationRatingPhoto.rating_id).filter(LocationRatingPhoto.rating_id == LocationRating.id).exists()
     query = db.query(
         LocationRating.created_at,
         LocationRating.platform_code,
@@ -395,9 +437,7 @@ def _level_dates(sorted_dates: list[date], levels: dict[str, int]) -> dict[str, 
     return result
 
 
-def _level_dates_optional(
-    ordered_dates: list[date | None], levels: dict[str, int]
-) -> dict[str, str | None]:
+def _level_dates_optional(ordered_dates: list[date | None], levels: dict[str, int]) -> dict[str, str | None]:
     """Как _level_dates, но часть шагов счётчика может быть без даты.
 
     Нужно там, где в зачёт идёт сводка parkrun: волонтёрства есть, дат у них нет.
@@ -469,9 +509,7 @@ def _challenge(
     # систем (см. _alphabet_tiers).
     thresholds_by_tier = tier_thresholds or CHALLENGE_TIERS[code]
     tiers = [
-        _tier_payload(
-            tier_key, thresholds, current, level_dates_fn=level_dates_fn, to_next_label_fn=to_next_label_fn
-        )
+        _tier_payload(tier_key, thresholds, current, level_dates_fn=level_dates_fn, to_next_label_fn=to_next_label_fn)
         for tier_key, thresholds in thresholds_by_tier.items()
     ]
     # "Лучшее" достижение — самый сложный тир, где взят хоть один уровень.
@@ -561,8 +599,7 @@ def _seconds_challenge(rows: list[RunRow]) -> dict[str, object]:
         first_by_second.setdefault(second, row)
         count_by_second[second] = count_by_second.get(second, 0) + 1
     cells = [
-        _cell(f":{second:02d}", first_by_second.get(second), count=count_by_second.get(second))
-        for second in range(60)
+        _cell(f":{second:02d}", first_by_second.get(second), count=count_by_second.get(second)) for second in range(60)
     ]
     sorted_dates = sorted(row.event_date for row in first_by_second.values())
     return _challenge(
@@ -626,9 +663,7 @@ def _alphabet_available_names(db: Session, platform_code: str | None) -> dict[st
     которые в ней физически не закрыть, значит врать о цели.
     """
     query = (
-        db.query(Location.name)
-        .join(Platform, Location.platform_id == Platform.id)
-        .filter(Location.name.isnot(None))
+        db.query(Location.name).join(Platform, Location.platform_id == Platform.id).filter(Location.name.isnot(None))
     )
     if platform_code is None:
         # Сквозной вид: parkrun не считается (см. _alphabet_challenge), значит
@@ -893,9 +928,7 @@ def _upcoming_event_numbers(
     пары (дата, локация)."""
     upcoming: dict[tuple[str, int], list[tuple[date, str]]] = {}
     for item in _predict_upcoming_starts(db, today=today, weeks=weeks, max_number=max_number):
-        upcoming.setdefault((item.platform_code, item.number), []).append(
-            (item.event_date, item.location_name)
-        )
+        upcoming.setdefault((item.platform_code, item.number), []).append((item.event_date, item.location_name))
     for entries in upcoming.values():
         entries.sort()
     return upcoming
@@ -1129,10 +1162,7 @@ def _p_index_challenge(rows: list[RunRow]) -> dict[str, object]:
         needed = _runs_needed_for_p(counts_values, levels[next_level])
         return f"ещё {needed} {_plural_ru(needed, ('пробежка', 'пробежки', 'пробежек'))}"
 
-    top = [
-        {"location": names[key], "count": count}
-        for key, count in counts.most_common(20)
-    ]
+    top = [{"location": names[key], "count": count} for key, count in counts.most_common(20)]
     return _challenge(
         code="p_index",
         title="p-индекс",
@@ -1345,18 +1375,12 @@ def _role_master_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
             "hint": (
                 "Роль ещё не пробовали"
                 if row is None
-                else (
-                    "Закрыто по сводке волонтёрств parkrun — дат она не хранит"
-                    if row.event_date is None
-                    else None
-                )
+                else ("Закрыто по сводке волонтёрств parkrun — дат она не хранит" if row.event_date is None else None)
             ),
             "platform_code": row.platform_code if row is not None else None,
             "count": count,
             "count_label": (
-                f"{count} {_plural_ru(count, ('волонтёрство', 'волонтёрства', 'волонтёрств'))}"
-                if count
-                else None
+                f"{count} {_plural_ru(count, ('волонтёрство', 'волонтёрства', 'волонтёрств'))}" if count else None
             ),
         }
 
@@ -1366,9 +1390,7 @@ def _role_master_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
     # Роль, которой в справочнике ещё нет (система завела новую), не теряется:
     # она идёт под своим названием в хвосте — и в счётчик, и в меню.
     cells += [
-        _cell_for(key, first_by_role[key].role_label)
-        for key in first_by_role
-        if key not in CANONICAL_ROLE_LABELS
+        _cell_for(key, first_by_role[key].role_label) for key in first_by_role if key not in CANONICAL_ROLE_LABELS
     ]
     # Роли, закрытые недатированной сводкой parkrun, идут первыми: см.
     # порядок строк в _collect_volunteer_role_rows.
@@ -1527,9 +1549,7 @@ def _volunteer_occasion_instances(platform_code: str, rows: list[tuple[date, str
     return instances
 
 
-def _club_entry(
-    code: str, title: str, icon: str, dates: list[date], *, extra_count: int = 0
-) -> dict[str, object]:
+def _club_entry(code: str, title: str, icon: str, dates: list[date], *, extra_count: int = 0) -> dict[str, object]:
     """extra_count — волонтёрства без известной даты (parkrun: только общий
     счётчик), добавляются к current, но не могут дать level_dates для
     порогов за пределами len(dates)."""
@@ -1566,9 +1586,7 @@ def _compute_clubs(
         all_vol_instances.extend(_volunteer_occasion_instances(code, platform_rows))
     overall = [
         _club_entry("runs", "Пробежки", "🏃", [row.event_date for row in rows]),
-        _club_entry(
-            "volunteering", "Волонтёрства", "💚", all_vol_instances, extra_count=parkrun_volunteer_total
-        ),
+        _club_entry("volunteering", "Волонтёрства", "💚", all_vol_instances, extra_count=parkrun_volunteer_total),
     ]
     runs_by_platform: dict[str, list[date]] = {}
     for row in rows:
@@ -1593,6 +1611,189 @@ def _compute_clubs(
             }
         )
     return {"overall": overall, "platforms": platforms}
+
+
+def _weather_counter_challenge(
+    rows: list[RunRow],
+    *,
+    code: str,
+    title: str,
+    icon: str,
+    description: str,
+    unit: str,
+    predicate: Callable[[RunRow], bool],
+) -> dict[str, object]:
+    """Счётчик пробежек, подходящих под погодное условие, с датами уровней."""
+    matched = sorted((row for row in rows if predicate(row)), key=lambda row: row.event_date)
+    sorted_dates = [row.event_date for row in matched]
+    items = [
+        {
+            "date": row.event_date.isoformat(),
+            "location": row.location_name,
+            "value": (
+                format_temperature(row.temperature_c)
+                if code in ("walrus", "salamander")
+                else f"{row.precipitation_run_mm:.1f} мм"
+                if row.precipitation_run_mm is not None
+                else ""
+            ),
+        }
+        for row in reversed(matched)
+    ][:30]
+    return _challenge(
+        code=code,
+        title=title,
+        icon=icon,
+        description=description,
+        category="weather",
+        current=len(matched),
+        unit=unit,
+        detail={"items": items},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
+def _walrus_challenge(rows: list[RunRow]) -> dict[str, object]:
+    return _weather_counter_challenge(
+        rows,
+        code="walrus",
+        title="Морж",
+        icon="🥶",
+        description=(
+            "Финишируй при −20° и ниже в час старта. Температура — по архиву погоды в точке "
+            "старта; ощущаемая с ветром бывает ещё ниже, но считаем воздух."
+        ),
+        unit="морозных стартов",
+        predicate=lambda row: row.temperature_c is not None and row.temperature_c <= DEEP_FROST_C,
+    )
+
+
+def _salamander_challenge(rows: list[RunRow]) -> dict[str, object]:
+    return _weather_counter_challenge(
+        rows,
+        code="salamander",
+        title="Саламандра",
+        icon="🔥",
+        description="Финишируй при +28° и выше в час старта — жара в девять утра редкость даже на юге.",
+        unit="жарких стартов",
+        predicate=lambda row: row.temperature_c is not None and row.temperature_c >= HOT_C,
+    )
+
+
+def _rain_runner_challenge(rows: list[RunRow]) -> dict[str, object]:
+    return _weather_counter_challenge(
+        rows,
+        code="rain_runner",
+        title="Под дождём",
+        icon="🌧️",
+        description=(
+            "Старты, на которых шёл дождь: от 1 мм осадков в окне «час до старта — два часа после». "
+            "Морось в 0.3 мм архив видит, но дождём не считает."
+        ),
+        unit="дождливых стартов",
+        predicate=lambda row: row.precipitation_run_mm is not None and row.precipitation_run_mm >= RAIN_MM,
+    )
+
+
+# Меню погоды «Всепогодного»: ключ → (подпись, условие, подсказка).
+_ALL_WEATHER_CELLS: tuple[tuple[str, str, Callable[[RunRow], bool], str], ...] = (
+    (
+        "rain",
+        "Дождь",
+        lambda r: r.precipitation_run_mm is not None and r.precipitation_run_mm >= RAIN_MM,
+        "от 1 мм осадков за старт",
+    ),
+    (
+        "downpour",
+        "Ливень",
+        lambda r: r.precipitation_run_mm is not None and r.precipitation_run_mm >= DOWNPOUR_MM,
+        "от 3 мм осадков за старт",
+    ),
+    (
+        "snowfall",
+        "Снегопад",
+        lambda r: (r.snowfall_cm or 0) > 0 or (r.weather_code in SNOW_CODES),
+        "снег шёл в час старта",
+    ),
+    (
+        "snow_cover",
+        "По снегу",
+        lambda r: r.snow_depth_cm is not None and r.snow_depth_cm >= SNOW_DEPTH_CM,
+        "снежный покров от 1 см",
+    ),
+    ("frost", "Мороз", lambda r: r.temperature_c is not None and r.temperature_c <= FROST_C, "−10° и ниже"),
+    (
+        "deep_frost",
+        "Лютый мороз",
+        lambda r: r.temperature_c is not None and r.temperature_c <= DEEP_FROST_C,
+        "−20° и ниже",
+    ),
+    ("heat", "Жара", lambda r: r.temperature_c is not None and r.temperature_c >= HEAT_C, "+25° и выше"),
+    ("gale", "Шквал", lambda r: r.wind_gusts_ms is not None and r.wind_gusts_ms >= WINDY_GUST_MS, "порывы от 15 м/с"),
+)
+
+
+def _all_weather_challenge(rows: list[RunRow]) -> dict[str, object]:
+    """Коллекция погод: клетка закрывается первой пробежкой в такую погоду."""
+    first_by_key: dict[str, RunRow] = {}
+    counts: Counter[str] = Counter()
+    for row in sorted(rows, key=lambda r: r.event_date):
+        for key, _label, predicate, _hint in _ALL_WEATHER_CELLS:
+            if predicate(row):
+                counts[key] += 1
+                first_by_key.setdefault(key, row)
+    cells = [
+        _cell(label, first_by_key.get(key), hint=None if key in first_by_key else hint, count=counts.get(key) or None)
+        for key, label, _predicate, hint in _ALL_WEATHER_CELLS
+    ]
+    sorted_dates = sorted(row.event_date for row in first_by_key.values())
+    return _challenge(
+        code="all_weather",
+        title="Всепогодный",
+        icon="🌦️",
+        description=(
+            "Собери все погоды: дождь и ливень, снегопад и трасса под снегом, мороз и лютый мороз, "
+            "жара и шквалистый ветер. Погода берётся из архива по точке старта."
+        ),
+        category="weather",
+        current=len(first_by_key),
+        unit="погод",
+        detail={"cells": cells},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
+_SEASON_MONTHS = ("Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек")
+
+
+def _seasons_challenge(rows: list[RunRow]) -> dict[str, object]:
+    """Финиши во все 12 месяцев года — год не важен."""
+    first_by_month: dict[int, RunRow] = {}
+    counts: Counter[int] = Counter()
+    for row in sorted(rows, key=lambda r: r.event_date):
+        counts[row.event_date.month] += 1
+        first_by_month.setdefault(row.event_date.month, row)
+    cells = [
+        _cell(
+            label,
+            first_by_month.get(month),
+            hint=None if month in first_by_month else "ещё не бегали в этом месяце",
+            count=counts.get(month) or None,
+        )
+        for month, label in enumerate(_SEASON_MONTHS, start=1)
+    ]
+    sorted_dates = sorted(row.event_date for row in first_by_month.values())
+    return _challenge(
+        code="seasons",
+        title="Коллекционер сезонов",
+        icon="🍂",
+        description="Финишируй во все двенадцать месяцев года — январь и июль считаются одинаково, год не важен.",
+        category="weather",
+        current=len(first_by_month),
+        unit="месяцев",
+        detail={"cells": cells},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
 
 
 def _build_challenge_list(
@@ -1643,6 +1844,11 @@ def _build_challenge_list(
         _photo_reporter_challenge(rating_rows),
         _v_index_challenge(vol_role_rows),
         _role_master_challenge(vol_role_rows),
+        _walrus_challenge(rows),
+        _salamander_challenge(rows),
+        _rain_runner_challenge(rows),
+        _all_weather_challenge(rows),
+        _seasons_challenge(rows),
     ]
 
 
@@ -1718,9 +1924,7 @@ def build_start_numbers_plan(
     done_numbers = {row.event_number for row in my_rows if row.event_number is not None}
 
     cells: dict[int, list[list[dict[str, object]]]] = {}
-    for item in _predict_upcoming_starts(
-        db, today=today, weeks=START_NUMBER_PLAN_WEEKS, max_number=high
-    ):
+    for item in _predict_upcoming_starts(db, today=today, weeks=START_NUMBER_PLAN_WEEKS, max_number=high):
         if not low <= item.number <= high:
             continue
         if platform_code and item.platform_code != platform_code:
@@ -1853,6 +2057,7 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
 
 # ---------------------------------------------------------------------------
 # Цели на год
+
 
 @dataclass(frozen=True)
 class GoalPreset:
@@ -2005,8 +2210,7 @@ def _preset_current(
         return len(year_rows), None
     if goal_type == "volunteering_year":
         year_vol = {
-            code: [(d, key) for d, key in platform_rows if d.year == year]
-            for code, platform_rows in vol_rows.items()
+            code: [(d, key) for d, key in platform_rows if d.year == year] for code, platform_rows in vol_rows.items()
         }
         return _count_volunteering(year_vol), None
     if goal_type == "new_locations_year":
@@ -2230,9 +2434,7 @@ def save_goals(
             raise GoalValidationError(f"Цель повторяется: {goal_type}")
         seen.add(goal_type)
         if not (preset.min <= target_value <= preset.max):
-            raise GoalValidationError(
-                f"Значение цели «{preset.title}» должно быть от {preset.min} до {preset.max}"
-            )
+            raise GoalValidationError(f"Значение цели «{preset.title}» должно быть от {preset.min} до {preset.max}")
 
     existing = {
         goal.goal_type: goal

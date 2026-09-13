@@ -68,6 +68,7 @@ from app.services.location_page_service import (
     normalize_age_group,
     resolve_location_identity,
 )
+from app.services.start_weather_service import weather_for_event
 from app.time_format import format_finish_time_display, normalize_finish_time_display
 from app.volunteer_role_taxonomy import (
     canonical_volunteer_role,
@@ -93,7 +94,8 @@ def location_protocol_cache_key(slug: str, platform_code: str, event_date: date)
     # сверху), плюс появился volunteer_roles для фильтра. Без смены версии
     # старый снимок ещё три часа показывал бы «Директор забега» в 5 вёрст и
     # пустой фильтр ролей.
-    return f"locations:protocol:v7:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
+    # v8 — в payload добавилась погода в час старта (weather).
+    return f"locations:protocol:v8:{slug.strip().lower()}:{platform_code}:{event_date.isoformat()}"
 
 
 def invalidate_location_protocol_cache(slug: str, platform_code: str, event_date: date) -> None:
@@ -215,9 +217,7 @@ def _resolve_event(
     return None
 
 
-def _compute_location_protocol(
-    db: Session, slug: str, platform_code: str, event_date: date
-) -> dict[str, Any] | None:
+def _compute_location_protocol(db: Session, slug: str, platform_code: str, event_date: date) -> dict[str, Any] | None:
     identity = resolve_location_identity(db, slug)
     if identity is None:
         return None
@@ -253,19 +253,13 @@ def _compute_location_protocol(
     volunteers = _build_volunteers(db, event, event_platform_code, location_ids)
     volunteer_roles = _volunteer_role_counts(db, event, event_platform_code)
 
-    summary_row = (
-        db.query(EventSummary)
-        .filter(EventSummary.event_id == event.id)
-        .first()
-    )
+    summary_row = db.query(EventSummary).filter(EventSummary.event_id == event.id).first()
     declared_finishers = event.finishers_count or (summary_row.finishers_count if summary_row else None)
     max_position = max((row["position"] for row in results if row["position"] is not None), default=0)
     # Протокол считаем неполным, если в нём меньше строк, чем позиций или чем
     # заявлено финишёров. Так честно помечаются зарубежные parkrun-старты, где в
     # БД лежат только строки наших участников, вытянутые из их профилей.
-    is_partial = bool(results) and (
-        max_position > len(results) or (declared_finishers or 0) > len(results)
-    )
+    is_partial = bool(results) and (max_position > len(results) or (declared_finishers or 0) > len(results))
 
     times = sorted(row["finish_time_sec"] for row in results if row["finish_time_sec"])
     age_groups = _age_group_breakdown(results)
@@ -290,6 +284,7 @@ def _compute_location_protocol(
         "has_protocol": bool(results),
         "is_partial": is_partial,
         "declared_finishers": declared_finishers,
+        "weather": weather_for_event(db, location.id, event.event_date),
         "previous": _neighbour(previous_item),
         "next": _neighbour(next_item),
         "summary": {
@@ -371,9 +366,7 @@ def _median(times: list[int]) -> int | None:
 
 
 def _best_row(results: list[dict[str, Any]], gender: str) -> dict[str, Any] | None:
-    candidates = [
-        row for row in results if row["gender"] == gender and row["finish_time_sec"]
-    ]
+    candidates = [row for row in results if row["gender"] == gender and row["finish_time_sec"]]
     return min(candidates, key=lambda row: row["finish_time_sec"]) if candidates else None
 
 
@@ -500,9 +493,7 @@ def _build_results(
                 "age_group_total": None,
                 "age_grade": _age_grade(raw_category),
                 "finish_time_sec": finish_time_sec,
-                "finish_time_display": normalize_finish_time_display(
-                    finish_time_sec, result.finish_time_display
-                ),
+                "finish_time_display": normalize_finish_time_display(finish_time_sec, result.finish_time_display),
                 "pace_display": result.pace_display,
                 "club_name": club,
                 "status": result.status,
@@ -645,9 +636,7 @@ def _volunteer_history(
     return dict(career), dict(here), dict(prior_roles)
 
 
-def _build_volunteers(
-    db: Session, event: Event, platform_code: str, location_ids: list[UUID]
-) -> list[dict[str, Any]]:
+def _build_volunteers(db: Session, event: Event, platform_code: str, location_ids: list[UUID]) -> list[dict[str, Any]]:
     """Волонтёры старта: один человек — одна строка, роли собраны в список."""
     rows = (
         db.query(
@@ -700,8 +689,7 @@ def _build_volunteers(
                 # Какое это волонтёрство по счёту в карьере человека (в системе).
                 "volunteer_number": career_before + 1 if row.participant_id else None,
                 "is_first_volunteering": row.participant_id is not None and career_before == 0,
-                "is_first_here": row.participant_id is not None
-                and here.get(row.participant_id, 0) == 0,
+                "is_first_here": row.participant_id is not None and here.get(row.participant_id, 0) == 0,
             },
         )
         role = canonical_volunteer_role(row.role)
@@ -715,9 +703,7 @@ def _build_volunteers(
         # ключ остаётся для дедупликации и отметки «впервые в этой роли».
         label = platform_role_label(platform_code, row.role, role)
         person["roles"].append((role_display_order(role.key), label))
-        if row.participant_id is not None and role.key not in prior_roles.get(
-            row.participant_id, set()
-        ):
+        if row.participant_id is not None and role.key not in prior_roles.get(row.participant_id, set()):
             person["new_roles"].append((role_display_order(role.key), label))
 
     for person in people.values():
@@ -736,9 +722,7 @@ def _build_volunteers(
     return ranked
 
 
-def _volunteer_role_counts(
-    db: Session, event: Event, platform_code: str
-) -> list[dict[str, Any]]:
+def _volunteer_role_counts(db: Session, event: Event, platform_code: str) -> list[dict[str, Any]]:
     """Роли этого старта со счётчиком — в порядке показа фильтра.
 
     Считаем по строкам протокола, а не по собранным людям: один человек с двумя
@@ -773,9 +757,7 @@ def _volunteer_role_counts(
     ]
 
 
-def _attach_history_ranks(
-    db: Session, location_ids: list[UUID], results: list[dict[str, Any]]
-) -> None:
+def _attach_history_ranks(db: Session, location_ids: list[UUID], results: list[dict[str, Any]]) -> None:
     """«Какое это место в истории площадки среди своего пола».
 
     Считаем сквозь ВСЕ системы идентичности — ровно как «рекорд трассы» в
@@ -933,11 +915,7 @@ def _attach_age_group_records(
     """
     if platform_code != FIVE_VERST_PLATFORM_CODE:
         return
-    candidates = [
-        row
-        for row in results
-        if row["age_category"] and row["finish_time_sec"] and row["gender"]
-    ]
+    candidates = [row for row in results if row["age_category"] and row["finish_time_sec"] and row["gender"]]
     if not candidates:
         return
 
