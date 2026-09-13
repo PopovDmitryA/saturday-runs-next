@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User, VolunteerResult
 from app.parkrun.volunteer_credits import count_parkrun_volunteering
+from app.runpark.mappings import runpark_profile_url
 from app.services.co_runners_service import _is_unknown_participant_name
 from app.services.location_catalog_service import PARKRUN_PLATFORM_CODE
 
@@ -183,10 +184,11 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
 
             age_category = normalize_parkrun_age_group(age_category)
         profile_url = participant.profile_url
-        if platform.code == "runpark" and not profile_url and participant.external_user_id:
-            # У RunPark в participants нет ссылки — публичная страница кармы
-            # собирается из external_user_id (как в platformProfileUrl на фронте).
-            profile_url = f"https://runpark.ru/Account/Karmas/{participant.external_user_id}"
+        if platform.code == "runpark" and not profile_url:
+            # Страница кармы открывается только по идентификатору аккаунта;
+            # у личности «barcode:A…» аккаунта нет и ссылки быть не должно
+            # (как в platformProfileUrl на фронте).
+            profile_url = runpark_profile_url(participant.external_user_id)
         results.append(
             ParticipantSearchResult(
                 participant_id=participant.id,

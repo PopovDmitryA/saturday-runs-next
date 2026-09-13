@@ -355,10 +355,12 @@ def test_set_platform_no_account_toggles_and_validates(db_session: Session, sear
 
 
 def test_search_builds_runpark_profile_url(db_session: Session, search_user: User) -> None:
+    """Ссылка на карму — только по идентификатору аккаунта RunPark."""
     runpark = db_session.query(Platform).filter(Platform.code == "runpark").one()
+    guid = "A1B2C3D4-1111-4222-8333-444455556666"
     participant = Participant(
         platform_id=runpark.id,
-        external_user_id="RP-EXT-001",
+        external_user_id=guid,
         display_name="Кармический Тест",
         barcode_id="A7933333",
     )
@@ -367,7 +369,30 @@ def test_search_builds_runpark_profile_url(db_session: Session, search_user: Use
 
     page = search_participants(db_session, search_user, "Кармический")
     result = next(item for item in page.results if item.participant_id == participant.id)
-    assert result.profile_url == "https://runpark.ru/Account/Karmas/RP-EXT-001"
+    assert result.profile_url == f"https://runpark.ru/Account/Karmas/{guid}"
+
+
+def test_search_gives_no_profile_url_without_runpark_account(
+    db_session: Session, search_user: User
+) -> None:
+    """У личности «barcode:A…» аккаунта на RunPark нет — и ссылки быть не должно.
+
+    Раньше мы подставляли /Account/Karmas/barcode:A790152825 — такой страницы не
+    существует. На проде подобных привязок было 465 (Дмитрий 14.09.2026).
+    """
+    runpark = db_session.query(Platform).filter(Platform.code == "runpark").one()
+    participant = Participant(
+        platform_id=runpark.id,
+        external_user_id="barcode:A7944444",
+        display_name="Штрихкодный Тест",
+        barcode_id="A7944444",
+    )
+    db_session.add(participant)
+    db_session.commit()
+
+    page = search_participants(db_session, search_user, "Штрихкодный")
+    result = next(item for item in page.results if item.participant_id == participant.id)
+    assert result.profile_url is None
 
 
 def test_post_login_redirect_targets(db_session: Session, search_user: User) -> None:
