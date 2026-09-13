@@ -136,6 +136,7 @@ FIELD_LABELS: dict[str, str] = {
     # --- Общее для нескольких пайплайнов ---
     "processed": "площадок обработано",
     "crosslinks_backfilled": "кросслинков досвязано",
+    "barcode_rows_reassigned": "пробежек перевешено на аккаунт",
     "job_id": "задание",
     "status": "статус",
     "error": "ошибка",

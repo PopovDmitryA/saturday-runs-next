@@ -17,7 +17,9 @@ from app.models import (
     Event,
     EventCrosslink,
     Location,
+    Participant,
     Platform,
+    PlatformLink,
     ProtocolSyncState,
     RunparkLocationMapping,
     RunResult,
@@ -123,6 +125,7 @@ class RunparkSyncResult:
     events_total: int = 0
     events_upserted: int = 0
     events_unchanged: int = 0
+    barcode_rows_reassigned: int = 0
     run_results_upserted: int = 0
     volunteer_results_upserted: int = 0
     errors: list[str] = field(default_factory=list)
@@ -441,6 +444,123 @@ def _to_canonical_volunteer(row: dict, event_id_str: str) -> CanonicalVolunteerR
     )
 
 
+def reconcile_barcode_identity(db: Session, platform: Platform, barcode_id: str) -> int:
+    """Перевесить строки со «штрихкодной» личности на аккаунт, если он появился.
+
+    Человек бежит по штрихкоду 5 вёрст — в выгрузке у строки пустой
+    participant_id, и мы заводим личность «barcode:A…». Позже он регистрируется
+    в RunPark, и там аккаунт дописывают СТАРЫМ результатам задним числом: по
+    штрихкоду Буторова вьюха отдаёт все четыре забега 2023-2026 уже с его GUID.
+
+    Беда в том, что `updated_at` у этих строк остаётся прежним (2023-10-21 и
+    т.п.), а инкрементальный синк ходит именно по нему — сам он их не заберёт
+    никогда. Поэтому спрашиваем источник напрямую про один штрихкод и
+    перевешиваем ровно те строки, которые RunPark отдаёт с аккаунтом. Своей
+    головой ничего не склеиваем: на 14.09.2026 таких строк 199 у 13 человек, и
+    ни у одного штрихкода источник не называет двух разных аккаунтов.
+
+    Возвращает число перевешенных строк.
+    """
+    barcode_key = f"barcode:{barcode_id}"
+    stale = (
+        db.query(Participant)
+        .filter(Participant.platform_id == platform.id, Participant.external_user_id == barcode_key)
+        .one_or_none()
+    )
+    if stale is None:
+        return 0
+    stale_runs = db.query(RunResult).filter(RunResult.participant_id == stale.id).all()
+    if not stale_runs:
+        return 0
+
+    try:
+        rows = runpark_query(
+            "SELECT result_id, participant_id FROM api.vw_run_results WHERE barcode_id = %s",
+            (barcode_id,),
+        )
+    except Exception:
+        logger.warning("RunPark: не удалось сверить штрихкод %s", barcode_id, exc_info=True)
+        return 0
+
+    owner_by_result = {
+        str(row["result_id"]).upper(): str(row["participant_id"]).upper()
+        for row in rows
+        if row.get("participant_id")
+    }
+    if not owner_by_result:
+        return 0
+
+    moved = 0
+    moved_to = None
+    for run in stale_runs:
+        guid = owner_by_result.get((run.external_result_key or "").upper())
+        if guid is None:
+            continue
+        account = upsert.upsert_participant(
+            db,
+            platform,
+            external_user_id=guid,
+            display_name=stale.display_name or f"RunPark {guid}",
+            barcode_id=barcode_id,
+        )
+        if account.id == run.participant_id:
+            continue
+        run.participant_id = account.id
+        moved_to = account.id
+        moved += 1
+
+    if not moved:
+        return 0
+    db.flush()
+
+    # Привязка человека на сайте смотрела на штрихкодную личность — её надо
+    # ПЕРЕВЕСТИ на аккаунт, а не обнулить: иначе профиль останется без пробежек
+    # RunPark вовсе. Ровно случай Буторова: привязка была на «barcode:A790152825»,
+    # а старт 12.09.2026 приехал на аккаунт и в профиль не попадал.
+    links = db.query(PlatformLink).filter(PlatformLink.participant_id == stale.id).all()
+    for link in links:
+        account = db.query(Participant).filter(Participant.id == moved_to).one_or_none()
+        if account is None:
+            continue
+        taken = (
+            db.query(PlatformLink)
+            .filter(
+                PlatformLink.platform_id == platform.id,
+                PlatformLink.external_user_id == account.external_user_id,
+                PlatformLink.id != link.id,
+            )
+            .first()
+        )
+        if taken is not None:
+            # Аккаунт уже привязан к другому профилю сайта — руками, не здесь.
+            logger.warning(
+                "RunPark: аккаунт %s уже привязан, привязку со штрихкода %s не трогаю",
+                account.external_user_id,
+                barcode_id,
+            )
+            continue
+        link.participant_id = account.id
+        link.external_user_id = account.external_user_id
+        link.external_url = account.profile_url or link.external_url
+    db.flush()
+
+    # Личность-пустышку убираем, только если на ней не осталось ничего: у неё
+    # могут висеть волонтёрства, а их источник отдаёт отдельной вьюхой.
+    left_runs = db.query(RunResult).filter(RunResult.participant_id == stale.id).count()
+    left_vols = db.query(VolunteerResult).filter(VolunteerResult.participant_id == stale.id).count()
+    left_links = db.query(PlatformLink).filter(PlatformLink.participant_id == stale.id).count()
+    if not left_runs and not left_vols and not left_links:
+        db.delete(stale)
+        db.flush()
+    logger.info(
+        "RunPark: штрихкод %s — перевесил %d строк на аккаунт, пустышка %s",
+        barcode_id,
+        moved,
+        "убрана" if not left_runs and not left_vols and not left_links else "оставлена",
+    )
+    return moved
+
+
 def sync_runpark_batch(
     db: Session,
     since_date: date,
@@ -515,6 +635,18 @@ def sync_runpark_batch(
                     continue
 
                 _delete_event_results(db, event_row)
+
+                # Строка приехала с аккаунтом И штрихкодом — значит человек
+                # зарегистрировался, и его прежние забеги «по штрихкоду» пора
+                # перевесить на аккаунт. Источник об этом молчит: updated_at у
+                # старых строк не меняется, сам синк их не заберёт (см.
+                # reconcile_barcode_identity).
+                for row in run_rows:
+                    barcode = row.get("barcode_id")
+                    if row.get("participant_id") and barcode and _BARCODE_RE.match(str(barcode)):
+                        result.barcode_rows_reassigned += reconcile_barcode_identity(
+                            db, platform, str(barcode)
+                        )
 
                 canonical_runs = [_to_canonical_run(r) for r in run_rows]
                 run_count = upsert.upsert_run_results(db, event_row, platform, canonical_runs, recalculate_pr=False)

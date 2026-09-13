@@ -42,6 +42,7 @@ def runpark_sync_latest() -> dict[str, object]:
                 "events_total": result.events_total,
                 "events_upserted": result.events_upserted,
                 "events_unchanged": result.events_unchanged,
+                "barcode_rows_reassigned": result.barcode_rows_reassigned,
                 "run_results_upserted": result.run_results_upserted,
                 "volunteer_results_upserted": result.volunteer_results_upserted,
                 "errors": result.errors,
