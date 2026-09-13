@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from app.core.rate_limit import get_redis
 from app.db.session import get_session_factory
 from app.services.admin_telegram_notify import send_admin_report
 from app.services.weather_service import ScopeRunSummary, collect_scope, format_run_report
@@ -25,6 +26,8 @@ from app.workers.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 REPORT_TIMEZONE = ZoneInfo("Europe/Moscow")
+# «Сбор завершён» объявляем один раз; потом те же прогоны — еженедельная докачка.
+BACKFILL_REPORTED_KEY = "weather:backfill_reported"
 
 
 @celery_app.task(name="weather.collect_start_weather", time_limit=3 * 3600, soft_time_limit=3 * 3600 - 60)
@@ -44,7 +47,11 @@ def collect_start_weather_task() -> dict[str, object]:
 
     # Тишина, когда докачивать нечего: после бэкфила это будни между субботами.
     if summary.rows_written or summary.stopped_by_limit or summary.error or summary.api_calls:
-        send_admin_report(format_run_report(summary, when=datetime.now(REPORT_TIMEZONE)))
+        redis = get_redis()
+        already = bool(redis.get(BACKFILL_REPORTED_KEY))
+        send_admin_report(format_run_report(summary, when=datetime.now(REPORT_TIMEZONE), backfill_reported=already))
+        if summary.finished and not already:
+            redis.set(BACKFILL_REPORTED_KEY, "1")
 
     return {
         "rows_written": summary.rows_written,

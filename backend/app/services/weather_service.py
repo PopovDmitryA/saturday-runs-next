@@ -596,8 +596,12 @@ def collect_scope(
     return summary
 
 
-def format_run_report(summary: ScopeRunSummary, *, when: datetime) -> str:
-    """Текст отчёта в Telegram: за прогон, всего, и что дальше."""
+def format_run_report(summary: ScopeRunSummary, *, when: datetime, backfill_reported: bool = False) -> str:
+    """Текст отчёта в Telegram: за прогон, всего, и что дальше.
+
+    backfill_reported — «сбор завершён» уже объявляли: дальше это еженедельная
+    докачка суббот, а не финиш бэкфила.
+    """
 
     lines = [f"🌦 Погода на стартах — сбор {when.strftime('%d.%m.%Y %H:%M')}"]
     lines.append(
@@ -612,7 +616,9 @@ def format_run_report(summary: ScopeRunSummary, *, when: datetime) -> str:
         lines.append(f"⚠️ Прогон прерван ошибкой: {summary.error}")
     elif summary.stopped_by_limit:
         lines.append("Остановлено лимитом Open-Meteo, продолжу завтра")
-    elif summary.finished:
+    elif summary.finished and not backfill_reported:
         lines.append("✅ Сбор всего периметра завершён — можно обрабатывать данные")
         lines.append("Сессия Claude: «Погода на стартах» (ветка historical-weather-starts)")
+    elif summary.finished:
+        lines.append("Еженедельная докачка: все локации периметра закрыты до границы архива")
     return "\n".join(lines)

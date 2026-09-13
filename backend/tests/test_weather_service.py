@@ -136,6 +136,8 @@ def test_format_run_report_states_outcome() -> None:
     assert done.finished
     assert "Сбор всего периметра завершён" in format_run_report(done, when=when)
     assert "Сессия Claude" in format_run_report(done, when=when)
+    weekly = format_run_report(done, when=when, backfill_reported=True)
+    assert "завершён" not in weekly and "Еженедельная докачка" in weekly
 
 
 def test_fetch_archive_retries_transport_errors(monkeypatch) -> None:  # type: ignore[no-untyped-def]
