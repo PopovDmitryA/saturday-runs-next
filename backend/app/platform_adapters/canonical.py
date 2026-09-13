@@ -154,6 +154,10 @@ class CanonicalRunResult:
     location_external_key: str = ""
     location_name: str = ""
     event_number: int | None = None
+    # Тематический старт 5 вёрст (/starti-soobshchestv/): площадки за ним нет,
+    # финиш ложится в локацию-серию «Старты сообществ», а location_name
+    # становится заголовком события. См. app/services/series_locations.py.
+    is_community_event: bool = False
 
 
 @dataclass
@@ -167,6 +171,7 @@ class CanonicalVolunteerResult:
     location_external_key: str = ""
     location_name: str = ""
     event_number: int | None = None
+    is_community_event: bool = False
 
 
 @dataclass

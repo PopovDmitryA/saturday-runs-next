@@ -13,6 +13,7 @@ from app.platform_adapters.canonical import (
     CanonicalVolunteerResult,
     ProfilePreview,
 )
+from app.platform_adapters.five_verst import community_section
 from app.platform_adapters.five_verst.http import NotFoundError, fetch_html
 from app.platform_adapters.five_verst.result_keys import (
     normalize_location_key,
@@ -169,6 +170,21 @@ def _extract_results_link(row: Tag) -> str | None:
     return None
 
 
+def _extract_community_link(row: Tag) -> str | None:
+    """Ссылка на тематический старт: в профиле он подписан «Зелёные 5 км #1».
+
+    У такого старта нет страницы /{слаг}/results/{дата}/ — только страница в
+    разделе «Старты сообществ». Пока парсер о ней не знал, слаг не
+    распознавался и строка уезжала в локацию, собранную из названия
+    («зелёные_5_км»): отдельная от той, что завёл синк раздела, с двумя битыми
+    адресами и вторым экземпляром того же финиша.
+    """
+    for link in row.find_all("a", href=True):
+        if community_section.parse_event_link(link["href"]):
+            return link["href"]
+    return None
+
+
 def _parse_results_link(href: str) -> tuple[str, date] | None:
     match = RESULTS_LINK_RE.search(href)
     if not match:
@@ -221,11 +237,17 @@ def parse_userstats_runs_html(
 
         link = _extract_results_link(row)
         slug = ""
+        is_community = False
         if link:
             parsed_link = _parse_results_link(link)
             if parsed_link:
                 slug, link_date = parsed_link
                 event_date = link_date
+        else:
+            community_slug = community_section.parse_event_link(_extract_community_link(row))
+            if community_slug:
+                slug = community_slug
+                is_community = True
 
         location_key = normalize_location_key(slug, location_name)
         results.append(
@@ -239,7 +261,10 @@ def parse_userstats_runs_html(
                 finish_time_display=finish_time_display,
                 location_external_key=slug or location_key,
                 location_name=location_name,
-                event_number=event_number,
+                # У тематического старта номер в профиле («#1») — номер этого
+                # старта, а не порядковый в серии: наш журнал считает его сам.
+                event_number=None if is_community else event_number,
+                is_community_event=is_community,
             )
         )
     return dedupe_profile_runs(results, external_user_id)
@@ -274,12 +299,20 @@ def parse_userstats_volunteering_html(
         link = _extract_results_link(row)
         slug = ""
         source_url = ""
+        is_community = False
         if link:
             source_url = link
             parsed_link = _parse_results_link(link)
             if parsed_link:
                 slug, link_date = parsed_link
                 event_date = link_date
+        else:
+            community_link = _extract_community_link(row)
+            community_slug = community_section.parse_event_link(community_link)
+            if community_slug:
+                slug = community_slug
+                source_url = community_link or ""
+                is_community = True
 
         results.append(
             CanonicalVolunteerResult(
@@ -293,7 +326,8 @@ def parse_userstats_volunteering_html(
                 source_url=source_url,
                 location_external_key=slug,
                 location_name=location_name,
-                event_number=event_number,
+                event_number=None if is_community else event_number,
+                is_community_event=is_community,
             )
         )
     return dedupe_profile_volunteering(results, external_user_id)

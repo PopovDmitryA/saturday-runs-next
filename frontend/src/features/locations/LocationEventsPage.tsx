@@ -143,6 +143,10 @@ function LocationEventsContent({ slug }: { slug: string }) {
   // историю в одной системе, он просто повторяет цифру слева (просьба
   // Дмитрия 22.08.2026) — там колонка остаётся с одним номером.
   const showOverallNumber = platformCounts.size > 1;
+  // В серии («Старты сообществ») номера старта нет — есть имя: «Зелёные 5 км».
+  // Оно и стоит в первой колонке вместо «№», иначе весь столбец был бы из
+  // прочерков, а отличить старты друг от друга можно было бы только по дате.
+  const isSeries = data?.is_series ?? false;
 
   const rows = useMemo(() => {
     if (!data) {
@@ -316,7 +320,9 @@ function LocationEventsContent({ slug }: { slug: string }) {
             style={{ minWidth: tableColumns.minWidth }}
           >
             <colgroup>
-              <col className="col-number" />
+              {/* У серии в первой колонке имя старта («День физкультурника.
+                  Тула»), а не номер: ширина под номер обрезала бы его. */}
+              <col className={isSeries ? "col-series-start" : "col-number"} />
               <col className="col-date" />
               {show("platform") && <col className="col-platform" />}
               <col className="col-compact" />
@@ -331,11 +337,13 @@ function LocationEventsContent({ slug }: { slug: string }) {
             <thead>
               <tr>
                 <ColumnHeader
-                  label="№"
+                  label={isSeries ? "Старт" : "№"}
                   headerTitle={
-                    showOverallNumber
-                      ? "Номер события в системе; в скобках — сквозной номер старта локации по всем системам"
-                      : "Номер события в системе"
+                    isSeries
+                      ? "Название старта, как его подписывает система"
+                      : showOverallNumber
+                        ? "Номер события в системе; в скобках — сквозной номер старта локации по всем системам"
+                        : "Номер события в системе"
                   }
                   filterable={false}
                 />
@@ -410,10 +418,14 @@ function LocationEventsContent({ slug }: { slug: string }) {
               ) : (
                 rows.map((row) => (
                   <tr key={`${row.platform_code}-${row.event_date}`}>
-                    <td className="td-compact">
+                    <td className={isSeries ? "td-location" : "td-compact"}>
                       <span className="loc-events-number">
-                        {row.event_number ?? "—"}
-                        {showOverallNumber && (
+                        {isSeries
+                          ? // У 5 вёрст старт подписан своим именем, у s95 имени
+                            // нет — там остаётся номер выезда.
+                            (row.title ?? (row.event_number != null ? `#${row.event_number}` : "—"))
+                          : (row.event_number ?? "—")}
+                        {!isSeries && showOverallNumber && (
                           <StatHintTooltip text="Сквозной номер старта — какой это по счёту старт локации за всю историю, по всем системам вместе">
                             <span className="muted">({row.overall_number})</span>
                           </StatHintTooltip>

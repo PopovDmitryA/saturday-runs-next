@@ -50,7 +50,6 @@ from app.models import (
     User,
     VolunteerResult,
 )
-from app.services.community_events import exclude_community_events
 from app.services.gender_position_service import GENDER_FEMALE, GENDER_MALE
 from app.services.location_catalog_service import (
     PARKRUN_PLATFORM_CODE,
@@ -67,6 +66,7 @@ from app.services.location_page_service import (
 )
 from app.services.location_protocol_service import _age_grade, _row_gender
 from app.services.platform_titles import PLATFORM_TITLES
+from app.services.series_locations import exclude_series
 from app.time_format import format_finish_time_display, normalize_finish_time_display
 
 # Тот же TTL, что у протокола локации: субботним вечером протоколы приезжают
@@ -226,7 +226,7 @@ def _location_directory(db: Session) -> tuple[dict[UUID, dict[str, Any]], set[UU
     # Разовый старт сообщества («Зелёные 5 км» пришёлся на субботу) — не часть
     # общестрановой субботы: в единый протокол недели он не входит.
     rows = (
-        exclude_community_events(
+        exclude_series(
             db.query(Location, Platform.code).join(Platform, Location.platform_id == Platform.id)
         )
         .all()

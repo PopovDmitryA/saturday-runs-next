@@ -11259,6 +11259,35 @@ a.admin-system-chip:hover {
   font-size: 0.85rem;
 }
 
+/* Серии стартов — отдельный блок под каталогом: «Старты сообществ», «С95 и
+   друзья». Формат, а не место, поэтому и стоят особняком, а не в алфавите
+   площадок. */
+.loc-series {
+  margin-top: 2rem;
+}
+
+.loc-series-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+}
+
+.loc-series-note {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  max-width: 46rem;
+}
+
+.loc-series-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border, #cbd5e1);
+  font-size: 0.75rem;
+  color: #475569;
+  white-space: nowrap;
+}
+
 .loc-index-table .col-city {
   width: 10rem;
 }
@@ -11514,6 +11543,20 @@ a.admin-system-chip:hover {
 
 .loc-events-table .col-number {
   width: 6.5rem;
+}
+
+/* Имя старта под названием локации в «Моих пробежках» и «Волонтёрстве»:
+   бывает только у серий, где локация одна на все старты. */
+.activity-event-title {
+  display: block;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+/* Журнал серии: в первой колонке имя старта («День физкультурника. Тула»),
+   а не номер — под номер она была бы обрезана. */
+.loc-events-table .col-series-start {
+  width: 15rem;
 }
 
 /* Ширины под полные подписи колонок: «ФИНИШЁРОВ», «ВОЛОНТЁРОВ», «НОВИЧКОВ»

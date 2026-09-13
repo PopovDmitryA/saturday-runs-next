@@ -37,6 +37,7 @@ from app.services.location_catalog_service import (
 )
 from app.services.location_map_service import _location_is_cancelled, _location_is_paused
 from app.services.location_records_service import get_user_location_records
+from app.services.series_locations import start_title as series_start_title
 from app.services.sync_error_format import present_sync_error
 from app.services.user_location_stats import count_unique_geo_from_rows, count_unique_locations_from_rows
 from app.services.user_unique_locations_detail import _platform_sort_key
@@ -1483,6 +1484,10 @@ def list_user_runs(
             "event_date": event.event_date,
             "event_number": event.event_number,
             "location_name": catalog_index.display_name(location, platform.code),
+            # У серии («Старты сообществ») имя локации одно на все старты, и без
+            # заголовка события строка не отвечает, ЧТО именно человек бежал.
+            # У площадки заголовок служебный («Дружба #228») и здесь не нужен.
+            "event_title": series_start_title(location, event.title),
             "location_source_name": location.name,
             "location_city": location.city,
             "location_country": location.country,
@@ -1862,6 +1867,8 @@ def list_user_volunteering(
                 "event_date": event.event_date,
                 "event_number": event.event_number,
                 "location_name": catalog_index.display_name(location, platform.code),
+                # См. list_user_runs: у серии имя локации одно на все старты.
+                "event_title": series_start_title(location, event.title),
                 "location_source_name": location.name,
                 "location_city": location.city,
                 "location_country": location.country,

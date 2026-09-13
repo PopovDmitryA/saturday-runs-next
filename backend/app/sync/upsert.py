@@ -5,6 +5,7 @@ import json
 import logging
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from uuid import UUID
 
@@ -33,6 +34,8 @@ from app.platform_adapters.canonical import (
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
+from app.platform_adapters.five_verst import community_section
+from app.services import series_locations
 from app.services.gender_position_service import resolve_participant_gender
 from app.services.location_catalog_service import backfill_city_from_catalog, backfill_region_from_catalog
 from app.services.location_freshness import mark_location_results_changed
@@ -997,6 +1000,42 @@ def _profile_external_event_key(event_date: date, location_slug: str) -> str:
     return f"{event_date.isoformat()}:{location_slug}"
 
 
+@dataclass(frozen=True)
+class _ProfileEventTarget:
+    """Куда в профильном импорте ложится строка: локация, ключ и адреса.
+
+    Обычная площадка отвечает на все три вопроса своим слагом. Тематический
+    старт 5 вёрст — нет: площадки за ним не стоит, все такие старты живут одной
+    локацией-серией «Старты сообществ», а собственное имя старта («Зелёные
+    5 км») становится заголовком события. Ключи при этом остаются на слаге
+    старта — ровно те же, что кладёт синк раздела, иначе тот же финиш приехал
+    бы вторым экземпляром.
+    """
+
+    location: CanonicalLocation
+    event_key: str
+    event_source_url: str
+    event_title: str
+
+
+def _five_verst_community_target(
+    slug: str,
+    display_name: str,
+    event_date: date,
+) -> _ProfileEventTarget:
+    return _ProfileEventTarget(
+        location=CanonicalLocation(
+            external_key=series_locations.FIVE_VERST_SERIES_KEY,
+            name=series_locations.FIVE_VERST_SERIES_NAME,
+            country="Россия",
+            source_url=community_section.section_url(),
+        ),
+        event_key=f"{slug}:{event_date.isoformat()}",
+        event_source_url=community_section.event_url(slug),
+        event_title=display_name,
+    )
+
+
 def _find_event_by_location_date(
     db: Session,
     platform: Platform,
@@ -1025,9 +1064,14 @@ def _find_existing_event(
     location_slug: str,
     location_name: str,
 ) -> Event | None:
-    row = _find_event_by_location_date(db, platform, location.id, event_date)
-    if row is not None:
-        return row
+    # У серии («Старты сообществ», «С95 и друзья») дата старт не опознаёт: у
+    # каждого своё имя и свой слаг, и в одну субботу их может быть несколько
+    # («День физкультурника» бывает не только в Туле). Ищем строго по ключу,
+    # иначе второй старт той же субботы молча перезаписал бы первый.
+    if not location.is_series:
+        row = _find_event_by_location_date(db, platform, location.id, event_date)
+        if row is not None:
+            return row
 
     row = (
         db.query(Event)
@@ -1039,6 +1083,21 @@ def _find_existing_event(
     )
     if row is not None:
         return row
+
+    if location.is_series:
+        # Уникальный индекс uq_events_platform_location_event_date (миграция
+        # 009) держит «одно событие на площадку в день» — для серии это
+        # неверно, но снимать его ради гипотетического случая дороже, чем
+        # заметить его. Падаем с внятным текстом: прогон отчитается ошибкой по
+        # этому старту, остальные соберутся.
+        clash = _find_event_by_location_date(db, platform, location.id, event_date)
+        if clash is not None:
+            raise ValueError(
+                f"В серии «{location.name}» на {event_date.isoformat()} уже есть старт "
+                f"«{clash.title or clash.external_event_key}»; второй ({external_event_key}) "
+                "не поместится: уникальный индекс держит одно событие на локацию в день."
+            )
+        return None
 
     normalized_name = (location_name or "").strip().lower()
     location_filters = [
@@ -1236,6 +1295,11 @@ def import_profile_run_results(
     for item in results:
         slug = _normalize_location_slug(item.location_external_key, item.location_name)
         display_name = item.location_name or slug
+        community = (
+            _five_verst_community_target(slug, display_name, item.event_date)
+            if item.is_community_event and platform.code == "five_verst"
+            else None
+        )
         if platform.code == "s95":
             location_source_url = f"https://s95.ru/events/{slug}" if slug != "unknown" else None
             country = "Россия"
@@ -1254,13 +1318,17 @@ def import_profile_run_results(
         location, _ = upsert_location(
             db,
             platform,
-            CanonicalLocation(
+            community.location
+            if community is not None
+            else CanonicalLocation(
                 external_key=slug,
                 name=display_name,
                 country=country,
                 source_url=location_source_url,
             ),
         )
+        if community is not None and not location.is_series:
+            location.is_series = True
         if platform.code == "parkrun" and location.city is None:
             backfill_city_from_catalog(db, location)
         if platform.code == "parkrun" and location.region is None:
@@ -1284,6 +1352,11 @@ def import_profile_run_results(
                 if slug != "unknown"
                 else ""
             )
+        if community is not None:
+            # Ключ и адрес — как у синка раздела, чтобы тот же финиш не приехал
+            # вторым экземпляром; заголовком события становится имя старта.
+            external_event_key = community.event_key
+            source_url = community.event_source_url
         event = upsert_event_for_profile(
             db,
             platform,
@@ -1291,7 +1364,7 @@ def import_profile_run_results(
             external_event_key=external_event_key,
             event_date=item.event_date,
             event_number=item.event_number,
-            location_name=display_name,
+            location_name=community.event_title if community is not None else display_name,
             location_slug=slug,
             source_url=source_url,
         )
@@ -1501,6 +1574,11 @@ def import_profile_volunteer_results(
     for item in results:
         slug = _normalize_location_slug(item.location_external_key, item.location_name)
         display_name = item.location_name or slug
+        community = (
+            _five_verst_community_target(slug, display_name, item.event_date)
+            if item.is_community_event and platform.code == "five_verst"
+            else None
+        )
         if platform.code == "parkrun":
             # См. import_profile_run_results: домен parkrun.org.uk не означает
             # Британию, поэтому страну отсюда не выдумываем.
@@ -1515,13 +1593,17 @@ def import_profile_volunteer_results(
         location, _ = upsert_location(
             db,
             platform,
-            CanonicalLocation(
+            community.location
+            if community is not None
+            else CanonicalLocation(
                 external_key=slug,
                 name=display_name,
                 country=country,
                 source_url=default_source,
             ),
         )
+        if community is not None and not location.is_series:
+            location.is_series = True
         if platform.code == "parkrun" and location.city is None:
             backfill_city_from_catalog(db, location)
         if platform.code == "parkrun" and location.region is None:
@@ -1532,6 +1614,9 @@ def import_profile_volunteer_results(
             if platform.code == "five_verst" and slug != "unknown"
             else default_source
         )
+        if community is not None:
+            external_event_key = community.event_key
+            source_url = community.event_source_url
         event = upsert_event_for_profile(
             db,
             platform,
@@ -1546,7 +1631,7 @@ def import_profile_volunteer_results(
             # протоколов шёл вразнобой: 220-219-222-221-224-225-224-227-226-229.
             # Номер приезжает со страницы локации, здесь его трогать нечем.
             event_number=None,
-            location_name=display_name,
+            location_name=community.event_title if community is not None else display_name,
             location_slug=slug,
             source_url=source_url,
         )

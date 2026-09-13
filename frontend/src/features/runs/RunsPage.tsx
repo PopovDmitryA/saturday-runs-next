@@ -503,6 +503,10 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       <td className="td-location">
                         <LocationPrLocationName isLocationPr={run.is_location_pr}>
                           <LocationNameLink name={run.location_name} slug={run.location_slug} />
+{/* У серии («Старты сообществ») локация одна на все старты, поэтому
+    имя самого старта подписываем второй строкой — иначе строка не
+    отвечает, что именно человек бежал. */}
+{run.event_title && <span className="activity-event-title">{run.event_title}</span>}
                         </LocationPrLocationName>
                       </td>
                       {show("position") && <td className="td-compact">{run.position ?? "—"}</td>}

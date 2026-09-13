@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from app.platform_adapters.five_verst import community_section
 from app.platform_adapters.parkrun.url import InvalidProfileUrlError, parse_profile_url
 
 FIVE_VERST_BASE = "https://5verst.ru"
@@ -12,7 +13,16 @@ def _s95_protocol_url(url: str) -> bool:
 
 
 def _five_verst_results_url(url: str) -> bool:
-    return "/results/" in url
+    """Ссылка на конкретный протокол, а не на общую страницу площадки.
+
+    Кроме обычного /{слаг}/results/{дата}/ сюда попадает страница тематического
+    старта (/starti-soobshchestv/{слаг}): для него это и есть протокол —
+    единственная страница с таблицей финишёров. Без этой ветки собранный синком
+    адрес отбрасывался, а вместо него подставлялся /{слаг}/results/{дата}/,
+    которого у тематических стартов нет: прод отдавал 404 и в «Источнике» на
+    странице протокола, и в журнале стартов.
+    """
+    return "/results/" in url or community_section.is_event_url(url)
 
 
 def prefer_event_source_url(
@@ -31,6 +41,11 @@ def prefer_event_source_url(
         if _s95_protocol_url(current) and not _s95_protocol_url(new):
             return current
     if platform_code == "five_verst":
+        # Страница тематического старта сильнее любого /{слаг}/results/{дата}/:
+        # у такого старта своей страницы результатов нет, и синтетический адрес
+        # (его подставлял профильный импорт) ведёт в 404.
+        if community_section.is_event_url(current) and not community_section.is_event_url(new):
+            return current
         if _five_verst_results_url(current) and not _five_verst_results_url(new):
             return current
     return new
@@ -82,7 +97,13 @@ def resolve_activity_url(
         if platform_code not in ("five_verst", "s95"):
             return stored
 
-    if platform_code == "five_verst" and slug:
+    if platform_code == "five_verst" and slug and slug != community_section.SECTION_SLUG:
         return f"{FIVE_VERST_BASE}/{slug}/results/{event_date.strftime('%d.%m.%Y')}/"
+
+    if platform_code == "five_verst" and slug == community_section.SECTION_SLUG:
+        # Локация-серия: у раздела нет протокола на дату, он есть у каждого
+        # тематического старта отдельно. Адрес приходит из события; если его
+        # почему-то нет — честнее не дать ссылки, чем дать 404.
+        return community_section.section_url()
 
     return None

@@ -1198,6 +1198,10 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   const stats = page.stats;
   const records = stats.course_records;
+  // Серия — формат, а не место: «Старты сообществ», «С95 и друзья». Трасса
+  // каждый раз новая, поэтому рекорда трассы у неё нет — есть лучшее время
+  // за всю историю формата, и называть его рекордом было бы неправдой.
+  const seriesBestTimes = page.is_series ? stats.best_times ?? null : null;
 
   return (
     <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
@@ -1208,6 +1212,14 @@ function LocationPageContent({ slug }: { slug: string }) {
         <div className="loc-header-title">
           <h1>{page.name}</h1>
           <LocationStatusLabel isPaused={page.is_paused} isCancelled={page.is_cancelled} />
+          {page.is_series && (
+            <span
+              className="loc-series-chip"
+              title="Серия стартов, а не площадка: проходят нерегулярно и каждый раз в новом месте"
+            >
+              серия стартов
+            </span>
+          )}
           {shareSheet !== null && (
             <button
               type="button"
@@ -1277,7 +1289,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
       <section className="card loc-section">
         <div className="loc-section-head">
-          <h2 className="section-title">Локация в цифрах</h2>
+          <h2 className="section-title">{page.is_series ? "Серия в цифрах" : "Локация в цифрах"}</h2>
           {shareSheet !== null && (
             <button
               type="button"
@@ -1353,6 +1365,20 @@ function LocationPageContent({ slug }: { slug: string }) {
               sub={courseRecordSub(records.female)}
               badge={{ text: "🏆 Ж", title: "Рекорд трассы среди женщин" }}
               onDetails={() => setRecordsModalType("female")}
+            />
+          )}
+          {seriesBestTimes?.male && (
+            <StatTile
+              value={formatTime(seriesBestTimes.male.finish_time_sec)}
+              label="лучшее время · М"
+              sub={courseRecordSub(seriesBestTimes.male)}
+            />
+          )}
+          {seriesBestTimes?.female && (
+            <StatTile
+              value={formatTime(seriesBestTimes.female.finish_time_sec)}
+              label="лучшее время · Ж"
+              sub={courseRecordSub(seriesBestTimes.female)}
             />
           )}
           {stats.median_finish_time_sec !== null && (

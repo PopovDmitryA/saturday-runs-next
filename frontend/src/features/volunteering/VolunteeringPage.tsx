@@ -669,6 +669,10 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                       </td>
                       <td className="td-location">
                         <LocationNameLink name={item.location_name} slug={item.location_slug} />
+{/* У серии («Старты сообществ») локация одна на все старты, поэтому
+    имя самого старта подписываем второй строкой — иначе строка не
+    отвечает, что именно человек бежал. */}
+{item.event_title && <span className="activity-event-title">{item.event_title}</span>}
                       </td>
                       <td className="td-role">{item.role ?? "—"}</td>
                       {showRating &&

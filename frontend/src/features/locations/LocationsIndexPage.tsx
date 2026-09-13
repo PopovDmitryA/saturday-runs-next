@@ -373,6 +373,64 @@ function LocationsTable({
   );
 }
 
+/**
+ * Серии стартов — формат, а не место: «Старты сообществ» 5 вёрст, «С95 и
+ * друзья», «S95 & Friends». Координат у них нет, трасса каждый раз новая, и в
+ * алфавите площадок они стояли однодневками вроде «Зелёные 5 км». Отдельный
+ * блок отвечает на вопрос «что это вообще» одной строкой, а финиши оттуда
+ * по-прежнему считаются людям в личные итоги.
+ */
+function SeriesBlock({ items }: { items: LocationIndexItem[] }) {
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <section className="loc-series">
+      <h2 className="loc-series-title">Серии стартов</h2>
+      <p className="muted loc-series-note">
+        Не площадки, а форматы: старты проходят нерегулярно и каждый раз в новом месте.
+        Финиши с них идут в личный счёт, но в карту, туризм и рейтинги локаций не попадают.
+      </p>
+      <TableWrap>
+        <table className="data-table loc-series-table">
+          <thead>
+            <tr>
+              <ColumnHeader label="Серия" filterable={false} />
+              <ColumnHeader label="Система" filterable={false} />
+              <ColumnHeader label="Стартов" filterable={false} />
+              <ColumnHeader label="Финишей" filterable={false} />
+              <ColumnHeader label="Первый старт" filterable={false} />
+              <ColumnHeader label="Последний" filterable={false} />
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.identity_key}>
+                <td className="td-location">
+                  <a href={`/locations/${item.slug}`}>{item.name}</a>
+                </td>
+                <td>
+                  <span className="loc-index-platforms">
+                    {item.platform_codes.map((code) => (
+                      <PlatformBadge key={code} code={code} />
+                    ))}
+                  </span>
+                </td>
+                <td className="td-compact">{item.events_count ? formatInt(item.events_count) : "—"}</td>
+                <td className="td-compact">
+                  {item.finishers_total ? formatInt(item.finishers_total) : "—"}
+                </td>
+                <td>{item.first_event_date ? formatDate(item.first_event_date) : "—"}</td>
+                <td>{item.last_event_date ? formatDate(item.last_event_date) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableWrap>
+    </section>
+  );
+}
+
 function LocationsIndexContent() {
   // «Полно» — весь набор с горизонтальным скроллом. «Кратко» — столько колонок,
   // сколько влезает в ширину блока (решение Дмитрия 11.08.2026). Состояние
@@ -386,6 +444,7 @@ function LocationsIndexContent() {
     errorText: "Не удалось загрузить локации",
   });
   const items = index.data?.items ?? null;
+  const series = index.data?.series ?? [];
   const error = index.error;
   const [query, setQuery] = useRestorableState("locations.query", "");
   // Мультивыбор: систем можно отметить сколько угодно, пустое множество —
@@ -413,6 +472,21 @@ function LocationsIndexContent() {
       return true;
     });
   }, [items, query, platform, showPaused]);
+
+  // Серии фильтруем тем же поиском и той же системой: «покажи мне s95» не
+  // должно оставлять внизу «Старты сообществ».
+  const filteredSeries = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return series.filter((item) => {
+      if (normalizedQuery && !matchesQuery(item, normalizedQuery)) {
+        return false;
+      }
+      if (platform !== "all" && !item.platform_codes.includes(platform)) {
+        return false;
+      }
+      return true;
+    });
+  }, [series, query, platform]);
 
   return (
     <PortalSectionShell sidebar={{ active: "locations" }}>
@@ -472,6 +546,7 @@ function LocationsIndexContent() {
               {pluralizeRu(filtered.length, ["локация", "локации", "локаций"])}
             </p>
             <LocationsTable items={filtered} tableColumns={tableColumns} />
+            <SeriesBlock items={filteredSeries} />
           </>
         )}
       </section>

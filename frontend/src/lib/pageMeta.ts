@@ -406,6 +406,8 @@ type LocationMetaLastEvent = {
 type LocationMetaSource = {
   name: string;
   city?: string | null;
+  /** Серия стартов, а не площадка: «Старты сообществ», «С95 и друзья». */
+  is_series?: boolean;
   platforms?: LocationMetaPlatform[] | null;
   stats?: {
     events_count?: number;
@@ -711,17 +713,25 @@ export function locationLeadSentences(payload: LocationMetaSource): string[] {
   const stats = payload.stats ?? {};
 
   const where = city ? `«${name}» (${city})` : `«${name}»`;
+  // Серия — не площадка: старты проходят нерегулярно и каждый раз в новом
+  // месте. Зеркало серверного текста, менять оба разом.
+  const isSeries = payload.is_series === true;
   const sentences = [
-    platform
-      ? `${where} — площадка субботних пробежек ${platform}.`
-      : `${where} — площадка субботних пробежек.`,
+    isSeries
+      ? platform
+        ? `${where} — серия стартов ${platform}, а не площадка.`
+        : `${where} — серия стартов, а не площадка.`
+      : platform
+        ? `${where} — площадка субботних пробежек ${platform}.`
+        : `${where} — площадка субботних пробежек.`,
   ];
 
   const events = stats.events_count ?? 0;
   const finishers = stats.finishers_total ?? 0;
   if (events && finishers) {
     sentences.push(
-      `Здесь прошло ${num(events)} ${plural(events, "старт", "старта", "стартов")}, ` +
+      `${isSeries ? "В серии прошло" : "Здесь прошло"} ${num(events)} ` +
+        `${plural(events, "старт", "старта", "стартов")}, ` +
         `финишировали ${num(finishers)} ${plural(finishers, "участник", "участника", "участников")}.`,
     );
   }

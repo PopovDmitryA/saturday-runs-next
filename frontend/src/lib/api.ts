@@ -356,6 +356,8 @@ export type RunItem = {
   event_date: string;
   event_number: number | null;
   location_name: string;
+  /** Имя старта — только у серий («Зелёные 5 км» в «Стартах сообществ»). */
+  event_title?: string | null;
   location_city: string | null;
   location_country: string | null;
   location_slug?: string | null;
@@ -443,6 +445,7 @@ export type VolunteeringItem = {
   event_date: string;
   event_number: number | null;
   location_name: string;
+  event_title?: string | null;
   location_city: string | null;
   location_country: string | null;
   location_slug?: string | null;
@@ -2536,6 +2539,8 @@ export type LocationPageStats = {
   avg_finishers: number | null;
   attendance_record: LocationAttendanceRecord | null;
   course_records: { male: LocationCourseRecord | null; female: LocationCourseRecord | null };
+  /** У серии рекорда трассы нет — те же цифры приезжают как лучшее время формата. */
+  best_times?: { male: LocationCourseRecord | null; female: LocationCourseRecord | null } | null;
   first_event_date: string | null;
   last_event_date: string | null;
   median_finish_time_sec: number | null;
@@ -2616,6 +2621,8 @@ export type LocationPage = {
   country: string | null;
   is_paused: boolean;
   is_cancelled: boolean;
+  /** Серия стартов, а не площадка: трасса каждый раз новая. */
+  is_series: boolean;
   /** Причина отмены ближайшего старта словами организатора (её пишет s95). */
   cancel_reason: string | null;
   latitude: number | null;
@@ -2656,17 +2663,23 @@ export type LocationIndexItem = {
   attendance_record_date: string | null;
   avg_finish_time_sec: number | null;
   avg_finish_time_display: string | null;
+  /** Серия стартов, а не площадка: «Старты сообществ», «С95 и друзья». */
+  is_series: boolean;
 };
 
 export type LocationsIndexResponse = {
   items: LocationIndexItem[];
   total: number;
+  /** Серии — отдельным блоком: в алфавите площадок им не место. */
+  series: LocationIndexItem[];
 };
 
 export type LocationEventRow = {
   event_date: string;
   platform_code: string;
   event_number: number | null;
+  /** Собственное имя старта — есть только у серий: «Зелёные 5 км». */
+  title: string | null;
   overall_number: number;
   finishers: number | null;
   volunteers: number | null;
@@ -2699,6 +2712,8 @@ export type LocationEventRow = {
 export type LocationEvents = {
   slug: string;
   name: string;
+  /** Журнал серии вместо номера старта показывает его имя. */
+  is_series: boolean;
   total: number;
   items: LocationEventRow[];
 };

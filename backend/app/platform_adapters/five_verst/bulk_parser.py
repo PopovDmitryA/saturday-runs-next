@@ -17,6 +17,7 @@ from app.platform_adapters.canonical import (
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
+from app.platform_adapters.five_verst import community_section
 from app.platform_adapters.five_verst.http import BASE_URL, NotFoundError, fetch_html, source_hash  # noqa: F401
 from app.platform_adapters.five_verst.location_description import (
     parse_course_description,
@@ -751,10 +752,12 @@ def fetch_event_protocol(
 # --- Старты сообществ (/starti-soobshchestv/) -------------------------------
 # Разовые старты, которых нет ни в реестре /events/, ни среди площадок: у них
 # нет страницы /{slug}/results/all/, только один протокол. 5 вёрст засчитывает
-# их финиши в личный счётчик человека, поэтому мы их собираем — но площадками
-# не считаем (см. app/services/community_events.py).
-COMMUNITY_SECTION = "starti-soobshchestv"
-COMMUNITY_URL_RE = re.compile(rf"/{COMMUNITY_SECTION}/([a-z0-9-]+)/?", re.I)
+# их финиши в личный счётчик человека, поэтому мы их собираем — но площадкой
+# ни один из них не считаем: все они живут одной локацией-серией «Старты
+# сообществ», а собственное имя старта уходит в заголовок события
+# (см. app/services/series_locations.py).
+COMMUNITY_SECTION = community_section.SECTION_SLUG
+COMMUNITY_URL_RE = community_section.SECTION_URL_RE
 RU_MONTHS = {
     "января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6,
     "июля": 7, "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12,
@@ -776,7 +779,7 @@ class CommunityEventPage:
 
 
 def community_event_url(slug: str) -> str:
-    return f"{BASE_URL}/{COMMUNITY_SECTION}/{slug}"
+    return community_section.event_url(slug)
 
 
 def parse_community_entries_html(html: str) -> dict[str, str]:

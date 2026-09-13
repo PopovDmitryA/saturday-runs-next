@@ -331,6 +331,9 @@ class RunItemResponse(BaseModel):
     event_date: date
     event_number: int | None = None
     location_name: str
+    # Имя самого старта — только у серий («Зелёные 5 км» в «Стартах
+    # сообществ»): у площадки локация и есть ответ на вопрос «где бежал».
+    event_title: str | None = None
     location_source_name: str | None = None
     location_city: str | None = None
     location_country: str | None = None
@@ -453,6 +456,7 @@ class VolunteeringItemResponse(BaseModel):
     event_date: date
     event_number: int | None = None
     location_name: str
+    event_title: str | None = None
     location_source_name: str | None = None
     location_city: str | None = None
     location_country: str | None = None

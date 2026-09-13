@@ -48,6 +48,7 @@ from app.services.location_catalog_service import (
     resolve_location_display_name,
 )
 from app.services.newcomer_counts import debutants_sum, location_guests_sum
+from app.services.series_locations import start_title as series_start_title
 from app.time_format import format_finish_time_display
 from app.volunteer_role_taxonomy import (
     CANONICAL_ROLE_LABELS,
@@ -2398,11 +2399,16 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
 
     first_event_date = min((row[1] for row in events), default=None)
     last_event_date = max((row[1] for row in events), default=None)
+    # Серия — не место: каждый старт бежится по новой трассе, поэтому «рекорд
+    # трассы» тут не рекорд, а просто самое быстрое время за всю историю
+    # формата. Отдаём его отдельным полем, чтобы страница не обещала лишнего.
+    page_is_series = any(location.is_series for location, _code in identity.locations)
 
     return {
         "slug": identity.slug,
         "identity_key": identity.identity_key,
         "name": identity.name,
+        "is_series": page_is_series,
         "city": _first_by_platform_order(identity.locations, lambda loc: loc.city),
         "region": _first_by_platform_order(identity.locations, lambda loc: loc.region),
         "country": _identity_country(identity.locations),
@@ -2427,7 +2433,14 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
             ),
             "avg_finishers": (round(finishers_total / events_with_finishers) if events_with_finishers else None),
             "attendance_record": attendance_record,
-            "course_records": course_records or {"male": None, "female": None},
+            "course_records": (
+                {"male": None, "female": None}
+                if page_is_series
+                else (course_records or {"male": None, "female": None})
+            ),
+            # У серии то же самое, но под честным именем: лучшее время формата,
+            # а не рекорд трассы.
+            "best_times": course_records if page_is_series else None,
             "first_event_date": first_event_date,
             "last_event_date": last_event_date,
             "median_finish_time_sec": median_finish_time_sec,
@@ -2586,6 +2599,8 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
     def fmt(value: int | None) -> str | None:
         return format_finish_time_display(value) if value is not None else None
 
+    journal_is_series = any(location.is_series for location, _code in identity.locations)
+
     items: list[dict[str, object]] = []
     for event, platform_code in events:
         stats = protocol_stats.get(event.id)
@@ -2608,6 +2623,11 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
                 "event_date": event.event_date,
                 "platform_code": platform_code,
                 "event_number": event.event_number,
+                # Своё имя старта — только у серии: «Зелёные 5 км» вместо
+                # номера. У площадки заголовок события служебный («Дружба #228»)
+                # и в журнале был бы шумом; у серии s95 он такой же служебный,
+                # поэтому start_title его отсеивает и колонка остаётся с номером.
+                "title": series_start_title(location_by_id[event.location_id], event.title),
                 "finishers": finishers,
                 "volunteers": volunteers,
                 "best_male_time_sec": best_male,
@@ -2693,11 +2713,22 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
             running_best_female_by_platform[platform_code] = cast(int, best_female)
 
         item["overall_number"] = overall_number
+
+        if journal_is_series:
+            # Трасса у серии каждый раз новая, и «рекорд трассы» тут был бы
+            # обещанием, которого нет: у однодневки им становился её
+            # единственный старт. Рекорд явки остаётся — он про формат, а не
+            # про место.
+            item["is_course_record_male"] = False
+            item["is_course_record_female"] = False
+            item["is_platform_course_record_male"] = False
+            item["is_platform_course_record_female"] = False
     items.sort(key=lambda item: cast(date, item["event_date"]), reverse=True)
 
     return {
         "slug": identity.slug,
         "name": identity.name,
+        "is_series": journal_is_series,
         "total": len(items),
         "items": items,
     }
@@ -3117,11 +3148,18 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
                     if stat and stat.best_female_time_sec is not None
                     else None
                 ),
+                "is_series": any(location.is_series for location, _code in ordered),
             }
         )
 
     items.sort(key=lambda item: str(item["name"]).lower())
-    return {"items": items, "total": len(items)}
+    # Серии («Старты сообществ», «С95 и друзья», «S95 & Friends») — формат, а не
+    # место: своей строки в алфавите площадок у них быть не должно, иначе между
+    # парками стоят однодневки. Отдаём отдельным списком — каталог рисует их
+    # своим блоком под основным, а «Всего локаций» остаётся про площадки.
+    series = [item for item in items if item["is_series"]]
+    venues = [item for item in items if not item["is_series"]]
+    return {"items": venues, "total": len(venues), "series": series}
 
 
 # Посадочная «Результаты последней субботы»: последний старт каждой локации по
