@@ -36,6 +36,7 @@ export const PAGE_TYPE_LABELS: Record<string, string> = {
   ratings_fastest: "Рейтинг: быстрые",
   ratings_location_records: "Рейтинг: рекорды локаций",
   ratings_regions: "Рейтинг: локации по регионам",
+  ratings_weather: "Рейтинг: погода на стартах",
   world: "Мировое табло (/world)",
   share: "Поделиться",
   settings: "Настройки",

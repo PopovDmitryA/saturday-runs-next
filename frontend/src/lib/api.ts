@@ -1,3 +1,5 @@
+import type { WeatherBrief, WeatherRecord, WeatherStartRef } from "./weather";
+
 export const API_BASE = "/api";
 const DEFAULT_FETCH_TIMEOUT_MS = 20_000;
 
@@ -303,6 +305,29 @@ export type DashboardAnalytics = {
   finish_spread_runs?: number;
   metronome_streak?: number;
   last_saturday?: LastSaturday | null;
+  weather?: UserWeatherStats | null;
+};
+
+export type UserWeatherRun = {
+  event_date: string;
+  platform_code: string;
+  location_name: string;
+  location_slug: string | null;
+  weather: WeatherBrief;
+};
+
+/** Личные крайности по погоде — блок «Погода» на обзоре. */
+export type UserWeatherStats = {
+  runs_with_weather: number;
+  coldest: UserWeatherRun | null;
+  hottest: UserWeatherRun | null;
+  wettest: UserWeatherRun | null;
+  windiest: UserWeatherRun | null;
+  snowiest: UserWeatherRun | null;
+  rain_runs: number;
+  frost_runs: number;
+  heat_runs: number;
+  snow_runs: number;
 };
 
 /** Свежайший результат участника — герой дашборда «последняя суббота». */
@@ -334,6 +359,8 @@ export type LastSaturday = {
   prev_date: string | null;
   /** Чем примечательна эта пробежка — готовые фразы, не больше двух. */
   notables: string[];
+  /** Погода в час старта (архив Open-Meteo); null — площадка вне периметра. */
+  weather?: WeatherBrief | null;
 };
 
 export type DashboardStats = {
@@ -390,6 +417,7 @@ export type RunItem = {
   status: string | null;
   is_test_event: boolean;
   event_url?: string | null;
+  weather?: WeatherBrief | null;
 };
 
 export type BestResultItem = {
@@ -1197,7 +1225,7 @@ export type Challenge = {
   title: string;
   icon: string;
   description: string;
-  category: "collection" | "coincidence" | "scale" | "community";
+  category: "collection" | "coincidence" | "scale" | "community" | "weather";
   current: number;
   unit: string | null;
   detail: ChallengeDetail;
@@ -2823,6 +2851,50 @@ export function getLocationTops(slug: string) {
   return apiFetch<LocationTops>(`/locations/page/${encodeURIComponent(slug)}/tops`);
 }
 
+export type LocationWeatherMonth = {
+  month: number;
+  label: string;
+  starts: number;
+  /** starts — по стартам; saturdays — стартов в месяце не было, взяты субботы; none — данных нет. */
+  basis: "starts" | "saturdays" | "none";
+  samples: number;
+  temperature_median_c: number | null;
+  temperature_min_c: number | null;
+  temperature_max_c: number | null;
+  apparent_median_c: number | null;
+  rain_share: number | null;
+  snow_share: number | null;
+};
+
+export type LocationWeatherAttendance = {
+  key: string;
+  label: string;
+  starts: number;
+  avg_finishers: number | null;
+};
+
+export type LocationWeatherYearAgo = {
+  years: number;
+  weather: WeatherBrief;
+  start: WeatherStartRef | null;
+};
+
+export type LocationWeather = {
+  slug: string;
+  name: string;
+  has_data: boolean;
+  months: LocationWeatherMonth[];
+  records: Record<string, WeatherRecord | null>;
+  latest: WeatherRecord | null;
+  years_ago: LocationWeatherYearAgo[];
+  attendance: LocationWeatherAttendance[];
+  starts_with_weather: number;
+};
+
+export function getLocationWeather(slug: string) {
+  return apiFetch<LocationWeather>(`/locations/page/${encodeURIComponent(slug)}/weather`);
+}
+
 /** Строка «постоянного состава» локации — и для бегунов, и для волонтёров. */
 export type LocationActiveParticipant = {
   place: number;
@@ -3006,6 +3078,8 @@ export type LocationProtocol = {
   has_protocol: boolean;
   is_partial: boolean;
   declared_finishers: number | null;
+  /** Погода в час старта; null — площадка вне периметра сбора. */
+  weather?: WeatherBrief | null;
   previous: ProtocolNeighbour | null;
   next: ProtocolNeighbour | null;
   summary: ProtocolSummary;
@@ -3121,6 +3195,24 @@ export type UnifiedProtocolWeekRef = {
   events: number;
 };
 
+export type WeekWeatherLocation = {
+  location_name: string;
+  location_slug: string | null;
+  platform_code: string;
+  weather: WeatherBrief;
+};
+
+export type WeekWeather = {
+  locations_with_weather: number;
+  temperature_median_c: number | null;
+  rain_locations: number;
+  coldest: WeekWeatherLocation | null;
+  warmest: WeekWeatherLocation | null;
+  wettest: WeekWeatherLocation | null;
+  windiest: WeekWeatherLocation | null;
+  is_preliminary: boolean;
+};
+
 export type UnifiedProtocol = {
   week_start: string;
   week_end: string;
@@ -3143,6 +3235,8 @@ export type UnifiedProtocol = {
   previous_saturday: string | null;
   next_saturday: string | null;
   latest_saturday: string | null;
+  /** Крайности субботы по стране: самый холодный/тёплый/мокрый старт. */
+  weather?: WeekWeather | null;
 };
 
 export type UnifiedProtocolWeeks = {

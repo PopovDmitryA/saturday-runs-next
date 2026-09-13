@@ -11,6 +11,7 @@ import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
 import { LocationNameLink } from "../../components/LocationNameLink";
 import { LocationPrLocationName } from "../../components/LocationPrLocationName";
 import { PlatformBadge } from "../../components/PlatformBadge";
+import { weatherShort, weatherTitle } from "../../lib/weather";
 import { RateRunModal } from "../../components/RateRunModal";
 import { RunRatingStar } from "../../components/RunRatingStar";
 import { Snackbar } from "../../components/Snackbar";
@@ -64,6 +65,8 @@ const RUNS_COLUMNS: AdaptiveColumn[] = [
   // место темпу с «Топ %» они не должны (Дмитрий 02.09.2026).
   { key: "rating", width: 68, required: true },
   { key: "position", width: 104 },
+  // Погода в час старта: значок и градусы, подробности — в подсказке.
+  { key: "weather", width: 96 },
   { key: "platform", width: 112 },
   { key: "participants", width: 132 },
   { key: "gender_position", width: 136 },
@@ -329,6 +332,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                 {show("platform") && <col className="col-platform" />}
                 <col className="col-location" />
                 {show("position") && <col className="col-compact" />}
+                {show("weather") && <col className="col-weather" />}
                 {show("participants") && <col className="col-participants" />}
                 {show("top_percent") && <col className="col-top-percent" />}
                 {show("gender_position") && <col className="col-gender" />}
@@ -403,6 +407,13 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       sortActive={positionSortActive}
                       sortAsc={filters.sort === "position_asc"}
                       onSort={() => filters.setSort((current) => togglePositionSort(current))}
+                    />
+                  )}
+                  {show("weather") && (
+                    <ColumnHeader
+                      label="Погода"
+                      filterable={false}
+                      headerTitle="Погода в час старта по архиву Open-Meteo: температура, осадки, ветер"
                     />
                   )}
                   {show("participants") && (
@@ -510,6 +521,11 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                         </LocationPrLocationName>
                       </td>
                       {show("position") && <td className="td-compact">{run.position ?? "—"}</td>}
+                      {show("weather") && (
+                        <td className="td-compact td-weather" title={weatherTitle(run.weather)}>
+                          {weatherShort(run.weather)}
+                        </td>
+                      )}
                       {show("participants") && (
                         <td className="td-compact">
                           {run.participants_total != null ? formatInt(run.participants_total) : "—"}

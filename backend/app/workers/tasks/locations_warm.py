@@ -13,6 +13,7 @@ from app.services.location_page_service import (
     build_location_participants,
     build_locations_index,
 )
+from app.services.start_weather_service import build_location_weather
 from app.services.unified_protocol_service import (
     build_unified_protocol,
     latest_protocol_saturday,
@@ -56,6 +57,7 @@ def warm_locations_cache() -> dict[str, object]:
                 build_location_events(db, str(slug), refresh=True)
                 build_location_leaders(db, str(slug), refresh=True)
                 build_location_participants(db, str(slug), refresh=True)
+                build_location_weather(db, str(slug), refresh=True)
                 warmed += 1
             except Exception:
                 logger.exception("locations warm failed for slug %s", slug)

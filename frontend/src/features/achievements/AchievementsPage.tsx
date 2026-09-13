@@ -154,6 +154,7 @@ const CATEGORY_TITLES: Record<Challenge["category"], string> = {
   coincidence: "Совпадения",
   scale: "Масштаб",
   community: "Вклад",
+  weather: "Погода",
 };
 
 const CATEGORY_HINTS: Record<Challenge["category"], string> = {
@@ -162,6 +163,7 @@ const CATEGORY_HINTS: Record<Challenge["category"], string> = {
   scale: "Долгие челленджи на объём: локации, регионы и серии.",
   community:
     "Вклад в общее дело: отзывы о стартах и волонтёрские роли, в которых вы участвовали.",
+  weather: "Мороз, жара, дождь и снег на ваших стартах — по архиву погоды в точке старта.",
 };
 
 // Клетка коллекции красится в цвет системы, в которой она была закрыта раньше всего.
@@ -1136,6 +1138,7 @@ export function AchievementsShowcase({
       coincidence: [],
       scale: [],
       community: [],
+      weather: [],
     };
     for (const challenge of data.challenges) {
       groups[challenge.category]?.push(challenge);

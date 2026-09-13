@@ -30,6 +30,7 @@ from app.schemas.locations import (
     MapPointContextResponse,
     UniqueLocationsDetailResponse,
 )
+from app.schemas.weather import LocationWeatherResponse
 from app.services.home_distance_service import build_home_distance_detail
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_catalog_map_locations, list_user_visited_map_locations
@@ -49,6 +50,7 @@ from app.services.location_page_service import (
 from app.services.location_protocol_service import build_location_protocol
 from app.services.map_point_context_service import build_map_point_context
 from app.services.organizer_access_service import has_organizer_access
+from app.services.start_weather_service import build_location_weather
 from app.services.user_geo_ping_service import record_geo_ping
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
@@ -77,6 +79,18 @@ def locations_last_results(
     """«Результаты последней субботы»: последний старт каждой локации по всем системам."""
     payload = build_last_results(db)
     return LastResultsResponse.model_validate(payload)
+
+
+@router.get("/page/{slug}/weather", response_model=LocationWeatherResponse)
+def location_weather(
+    slug: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> LocationWeatherResponse:
+    """Блок «Погода на стартах»: климат по месяцам, рекорды, «год назад»."""
+    payload = build_location_weather(db, slug)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
+    return LocationWeatherResponse.model_validate(payload)
 
 
 @router.get("/page/{slug}", response_model=LocationPageResponse)
@@ -123,9 +137,7 @@ def location_attendance(
     year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
     kind: str = "all",
     offset: Annotated[int, Query(ge=0, le=10000)] = 0,
-    limit: Annotated[
-        int, Query(ge=1, le=LOCATION_ATTENDANCE_MAX_LIMIT)
-    ] = LOCATION_ATTENDANCE_PAGE_LIMIT,
+    limit: Annotated[int, Query(ge=1, le=LOCATION_ATTENDANCE_MAX_LIMIT)] = LOCATION_ATTENDANCE_PAGE_LIMIT,
 ) -> LocationAttendanceResponse:
     """Журнал посещаемости локации: участники × даты стартов выбранного года."""
     payload = build_location_attendance(
@@ -301,7 +313,5 @@ def catalog_locations_table(
     include_test: Annotated[bool, Query()] = False,
 ) -> CatalogLocationsTableResponse:
     """Таблица каталога. Аноним видит её без отметок «посещено» (нет user_id)."""
-    payload = build_catalog_locations_table(
-        db, user.id if user is not None else None, include_test_events=include_test
-    )
+    payload = build_catalog_locations_table(db, user.id if user is not None else None, include_test_events=include_test)
     return CatalogLocationsTableResponse.model_validate(payload)

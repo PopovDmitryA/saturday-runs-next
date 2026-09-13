@@ -67,6 +67,7 @@ from app.services.location_page_service import (
 from app.services.location_protocol_service import _age_grade, _row_gender
 from app.services.platform_titles import PLATFORM_TITLES
 from app.services.series_locations import exclude_series
+from app.services.start_weather_service import week_weather_extremes
 from app.time_format import format_finish_time_display, normalize_finish_time_display
 
 # Тот же TTL, что у протокола локации: субботним вечером протоколы приезжают
@@ -128,9 +129,7 @@ def _read_packed_cache(key: str) -> dict[str, Any] | None:
 
 def _write_packed_cache(key: str, payload: dict[str, Any], ttl_seconds: int) -> None:
     try:
-        packed = base64.b64encode(
-            zlib.compress(json.dumps(payload, default=str).encode("utf-8"), 6)
-        ).decode("ascii")
+        packed = base64.b64encode(zlib.compress(json.dumps(payload, default=str).encode("utf-8"), 6)).decode("ascii")
         get_redis_client().setex(key, ttl_seconds, packed)
     except redis.RedisError:
         pass
@@ -225,12 +224,7 @@ def _location_directory(db: Session) -> tuple[dict[UUID, dict[str, Any]], set[UU
     catalog_index = LocationCatalogIndex(db)
     # Разовый старт сообщества («Зелёные 5 км» пришёлся на субботу) — не часть
     # общестрановой субботы: в единый протокол недели он не входит.
-    rows = (
-        exclude_series(
-            db.query(Location, Platform.code).join(Platform, Location.platform_id == Platform.id)
-        )
-        .all()
-    )
+    rows = exclude_series(db.query(Location, Platform.code).join(Platform, Location.platform_id == Platform.id)).all()
     russian_parkrun = russian_parkrun_location_ids(db, catalog_index)
 
     identity_locations: dict[str, list[tuple[Location, str]]] = defaultdict(list)
@@ -379,9 +373,7 @@ def _compute_week_rows(db: Session, saturday: date) -> dict[str, Any]:
                 "age_group": age_group,
                 "age_grade": _age_grade(raw_category),
                 "finish_time_sec": finish_time_sec,
-                "finish_time_display": normalize_finish_time_display(
-                    finish_time_sec, row.finish_time_display
-                ),
+                "finish_time_display": normalize_finish_time_display(finish_time_sec, row.finish_time_display),
                 "pace_display": row.pace_display,
                 "club_name": (row.club_name or row.participant_club or "").strip() or None,
                 "platform_code": platform_code,
@@ -552,9 +544,7 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         genders[row["gender"]] += 1
 
     def _best(gender: str) -> dict[str, Any] | None:
-        candidates = [
-            row for row in rows if row["gender"] == gender and row["finish_time_sec"]
-        ]
+        candidates = [row for row in rows if row["gender"] == gender and row["finish_time_sec"]]
         if not candidates:
             return None
         best = min(candidates, key=lambda row: row["finish_time_sec"])
@@ -632,9 +622,7 @@ def _platform_breakdown(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "finishers": count,
             "locations": len(locations[code]),
         }
-        for code, count in sorted(
-            finishers.items(), key=lambda pair: (order.get(pair[0], len(order)), pair[0])
-        )
+        for code, count in sorted(finishers.items(), key=lambda pair: (order.get(pair[0], len(order)), pair[0]))
     ]
 
 
@@ -654,9 +642,7 @@ def _viewer_keys(db: Session, viewer: User | None) -> set[tuple[str, str]]:
 
 def _matches_query(row: dict[str, Any], needle: str) -> bool:
     haystack = " ".join(
-        str(value)
-        for value in (row["name"], row["location_name"], row["city"], row["club_name"])
-        if value
+        str(value) for value in (row["name"], row["location_name"], row["city"], row["club_name"]) if value
     ).lower()
     return needle in haystack
 
@@ -695,11 +681,7 @@ def build_unified_protocol(
 
     # Строки кэша общие на всех зрителей — копируем перед проставлением мест
     # и «моей» отметки.
-    scope_rows = [
-        dict(row)
-        for row in all_rows
-        if scope_platform is None or row["platform_code"] == scope_platform
-    ]
+    scope_rows = [dict(row) for row in all_rows if scope_platform is None or row["platform_code"] == scope_platform]
     _assign_places(scope_rows)
 
     viewer_keys = _viewer_keys(db, viewer)
@@ -732,15 +714,11 @@ def build_unified_protocol(
     # число не пересчиталось»). Так число у варианта честно обещает, сколько
     # строк останется, если по нему щёлкнуть, а сам фильтр не схлопывается в
     # один вариант и из него всегда можно выйти.
-    platforms = _platform_breakdown(
-        _facet_rows(all_rows, gender=scope_gender, age_group=scope_age_group)
-    )
+    platforms = _platform_breakdown(_facet_rows(all_rows, gender=scope_gender, age_group=scope_age_group))
     # Разбивка по полу — она же цифры плитки «финишёров»: плитка показывает
     # М/Ж, поэтому по полу и НЕ сужается (указание Дмитрия 25.08.2026), а по
     # системе и возрастной группе — да.
-    gender_rows = _facet_rows(
-        all_rows, platform=scope_platform, age_group=scope_age_group
-    )
+    gender_rows = _facet_rows(all_rows, platform=scope_platform, age_group=scope_age_group)
     gender_summary = _summary(gender_rows)
     gender_counts = {
         "male": gender_summary["male"],
@@ -748,9 +726,7 @@ def build_unified_protocol(
         "unknown": gender_summary["unknown_gender"],
         "total": gender_summary["finishers"],
     }
-    age_groups = _age_group_breakdown(
-        _facet_rows(all_rows, platform=scope_platform, gender=scope_gender)
-    )
+    age_groups = _age_group_breakdown(_facet_rows(all_rows, platform=scope_platform, gender=scope_gender))
 
     # Плитки описывают выбранный зачёт целиком — включая лучшее время и
     # медиану внутри среза.
@@ -762,9 +738,7 @@ def build_unified_protocol(
     # срезе. На странице это сказано подсказкой.
     volunteers = week.get("volunteers") or {}
     scoped_volunteers = (
-        [volunteers.get(scope_platform) or {}]
-        if scope_platform is not None
-        else list(volunteers.values())
+        [volunteers.get(scope_platform) or {}] if scope_platform is not None else list(volunteers.values())
     )
     summary["volunteers"] = sum(int(item.get("entries", 0)) for item in scoped_volunteers)
     summary["volunteer_people"] = sum(int(item.get("people", 0)) for item in scoped_volunteers)
@@ -816,4 +790,6 @@ def build_unified_protocol(
         "previous_saturday": previous_saturday,
         "next_saturday": next_saturday,
         "latest_saturday": saturdays[-1] if saturdays else None,
+        # Крайности субботы по стране: самый холодный/тёплый/мокрый старт.
+        "weather": week_weather_extremes(db, saturday),
     }

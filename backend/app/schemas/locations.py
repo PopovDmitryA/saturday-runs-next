@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.weather import WeatherBriefResponse
+
 
 class VolunteerRoleCountResponse(BaseModel):
     role: str
@@ -860,3 +862,5 @@ class LocationProtocolResponse(BaseModel):
     volunteers: list[ProtocolVolunteerResponse] = Field(default_factory=list)
     # Роли старта в порядке показа: сначала ключевые, потом остальные.
     volunteer_roles: list[ProtocolVolunteerRoleResponse] = Field(default_factory=list)
+    # Погода в час старта (Open-Meteo); None — локация вне периметра сбора.
+    weather: WeatherBriefResponse | None = None

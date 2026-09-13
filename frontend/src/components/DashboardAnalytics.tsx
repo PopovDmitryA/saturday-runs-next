@@ -9,6 +9,8 @@ import {
   type DashboardAnalyticsGroup,
 } from "../lib/dashboardLayout";
 import { PlatformBadge } from "./PlatformBadge";
+import { formatTemp } from "../lib/weather";
+import { formatDate as fmtWeatherDate, formatInt } from "../lib/format";
 import { BestResultsModal } from "./BestResultsModal";
 import { PersonalRecordsModal } from "./PersonalRecordsModal";
 import { StatHintTooltip } from "./StatHintTooltip";
@@ -1155,6 +1157,89 @@ export function DashboardAnalytics({
         </>
       ),
     });
+  }
+
+  // Погода: личные крайности и счётчики — только когда есть хоть одна
+  // пробежка с погодой (зарубежный parkrun и площадки без координат её не имеют).
+  const weather = analytics.weather;
+  if (weather && weather.runs_with_weather > 0) {
+    const runNote = (run: NonNullable<typeof weather.coldest>) =>
+      `${run.location_name} · ${fmtWeatherDate(run.event_date)}`;
+    if (weather.coldest) {
+      cards.push({
+        key: "weather_coldest",
+        value: `${weather.coldest.weather.icon} ${formatTemp(weather.coldest.weather.temperature_c)}`,
+        label: "самая холодная пробежка",
+        note: runNote(weather.coldest),
+        category: "runs",
+        tooltipContent: weather.coldest.weather.summary,
+      });
+    }
+    if (weather.hottest && weather.hottest.event_date !== weather.coldest?.event_date) {
+      cards.push({
+        key: "weather_hottest",
+        value: `${weather.hottest.weather.icon} ${formatTemp(weather.hottest.weather.temperature_c)}`,
+        label: "самая жаркая пробежка",
+        note: runNote(weather.hottest),
+        category: "runs",
+        tooltipContent: weather.hottest.weather.summary,
+      });
+    }
+    cards.push({
+      key: "weather_rain_runs",
+      value: formatInt(weather.rain_runs),
+      label: "пробежек под дождём",
+      note: `из ${formatInt(weather.runs_with_weather)} с погодой`,
+      category: "runs",
+      tooltipContent: "Дождём считаем от 1 мм осадков в окне «час до старта — два часа после».",
+    });
+    if (weather.frost_runs > 0) {
+      cards.push({
+        key: "weather_frost_runs",
+        value: formatInt(weather.frost_runs),
+        label: "пробежек в мороз",
+        note: "−10° и ниже в час старта",
+        category: "runs",
+      });
+    }
+    if (weather.wettest) {
+      cards.push({
+        key: "weather_wettest",
+        value: `${(weather.wettest.weather.precipitation_run_mm ?? 0).toFixed(1)} мм`,
+        label: "самый мокрый старт",
+        note: runNote(weather.wettest),
+        category: "runs",
+        tooltipContent: weather.wettest.weather.summary,
+      });
+    }
+    if (weather.windiest && (weather.windiest.weather.wind_gusts_ms ?? 0) >= 10) {
+      cards.push({
+        key: "weather_windiest",
+        value: `${Math.round(weather.windiest.weather.wind_gusts_ms ?? 0)} м/с`,
+        label: "самые сильные порывы",
+        note: runNote(weather.windiest),
+        category: "runs",
+        tooltipContent: weather.windiest.weather.summary,
+      });
+    }
+    if (weather.snow_runs > 0) {
+      cards.push({
+        key: "weather_snow_runs",
+        value: formatInt(weather.snow_runs),
+        label: "пробежек по снегу",
+        note: "снежный покров от 1 см",
+        category: "runs",
+      });
+    }
+    if (weather.heat_runs > 0) {
+      cards.push({
+        key: "weather_heat_runs",
+        value: formatInt(weather.heat_runs),
+        label: "пробежек в жару",
+        note: "+25° и выше в час старта",
+        category: "runs",
+      });
+    }
   }
 
   const cardByKey = new Map(cards.map((card) => [card.key, card]));

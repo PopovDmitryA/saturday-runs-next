@@ -87,6 +87,22 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
     panels: [],
   },
   {
+    key: "weather",
+    title: "Погода",
+    // Крайности первыми: «самая холодная пробежка» — то, чем хвастаются.
+    cards: [
+      "weather_coldest",
+      "weather_hottest",
+      "weather_rain_runs",
+      "weather_frost_runs",
+      "weather_wettest",
+      "weather_windiest",
+      "weather_snow_runs",
+      "weather_heat_runs",
+    ],
+    panels: [],
+  },
+  {
     key: "volunteering",
     title: "Волонтёрство",
     // Порядок витрины задан Дмитрием (28.08.2026): всего — за год —

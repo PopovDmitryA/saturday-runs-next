@@ -39,6 +39,7 @@ from app.services.location_catalog_service import (
 from app.services.location_map_service import _location_is_cancelled, _location_is_paused
 from app.services.location_records_service import get_user_location_records
 from app.services.series_locations import start_title as series_start_title
+from app.services.start_weather_service import user_weather_stats, weather_for_event, weather_for_pairs
 from app.services.sync_error_format import present_sync_error
 from app.services.user_location_stats import count_unique_geo_from_rows, count_unique_locations_from_rows
 from app.services.user_unique_locations_detail import _platform_sort_key
@@ -82,7 +83,8 @@ class SyncRefreshRateLimitedError(Exception):
 # 40: плитки «Луковица лояльности» (доля пробежек дома) и «Стабильность»
 #     (разброс последних финишей + серия метронома) — без бампа кэш отдавал бы
 #     старый payload, и обе плитки не появились бы у тех, кто уже прогрет.
-ANALYTICS_VERSION = 40
+# 41: погода — блок weather (личные крайности) и погода в last_saturday.
+ANALYTICS_VERSION = 41
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 
@@ -107,7 +109,10 @@ def _add_months(value: date, delta: int) -> date:
 
 def _last_n_month_keys(today: date, months: int = 12) -> list[str]:
     current = _month_start(today)
-    return [f"{_add_months(current, offset).year}-{_add_months(current, offset).month:02d}" for offset in range(-(months - 1), 1)]
+    return [
+        f"{_add_months(current, offset).year}-{_add_months(current, offset).month:02d}"
+        for offset in range(-(months - 1), 1)
+    ]
 
 
 def _month_key(value: date) -> str:
@@ -202,11 +207,7 @@ def _last_saturday_notables(
         notables.append("Личный рекорд")
     if run.is_first_run_at_location and unique_run_locations > 1:
         notables.append(f"{unique_run_locations}-я площадка в коллекции")
-    if (
-        run.finish_time_sec is not None
-        and avg_finish_sec is not None
-        and run.finish_time_sec < avg_finish_sec - 30
-    ):
+    if run.finish_time_sec is not None and avg_finish_sec is not None and run.finish_time_sec < avg_finish_sec - 30:
         faster = avg_finish_sec - int(run.finish_time_sec)
         notables.append(f"На {faster} сек быстрее среднего")
     if saturday_streak >= 5:
@@ -386,11 +387,7 @@ def _utcnow() -> datetime:
 
 def get_latest_sync_job(db: Session, user_id: UUID) -> SyncJob | None:
     return (
-        db.query(SyncJob)
-        .filter(SyncJob.user_id == user_id)
-        .order_by(SyncJob.created_at.desc())
-        .limit(1)
-        .one_or_none()
+        db.query(SyncJob).filter(SyncJob.user_id == user_id).order_by(SyncJob.created_at.desc()).limit(1).one_or_none()
     )
 
 
@@ -495,15 +492,10 @@ def compute_dashboard_stats(db: Session, user_id: UUID, *, include_test_events: 
         runs_count = runs_query.scalar() or 0
         if platform.code == "five_verst":
             vol_count = count_volunteering_occasions(
-                [
-                    (event_date, location_key or "unknown")
-                    for event_date, location_key in vol_rows_query.all()
-                ]
+                [(event_date, location_key or "unknown") for event_date, location_key in vol_rows_query.all()]
             )
         elif platform.code == "parkrun" and link.participant_id is not None:
-            participant = (
-                db.query(Participant).filter(Participant.id == link.participant_id).one_or_none()
-            )
+            participant = db.query(Participant).filter(Participant.id == link.participant_id).one_or_none()
             if participant is None:
                 vol_count = 0
             else:
@@ -595,9 +587,7 @@ def _compute_dashboard_analytics(
     # у юзера есть только такой дубль, попадает в счётчик плитки, но
     # отсутствует в детализации (build_user_unique_location_details уже
     # фильтрует их так же), и числа расходятся.
-    secondary_crosslinked_ids = user_secondary_crosslinked_run_ids(
-        db, user_id, include_test_events=include_test_events
-    )
+    secondary_crosslinked_ids = user_secondary_crosslinked_run_ids(db, user_id, include_test_events=include_test_events)
     if secondary_crosslinked_ids:
         runs_query = runs_query.filter(RunResult.id.notin_(secondary_crosslinked_ids))
 
@@ -619,9 +609,7 @@ def _compute_dashboard_analytics(
     paced_runs = runs_query.filter(RunResult.pace_sec_per_km.isnot(None))
     positioned_runs = runs_query.filter(RunResult.position.isnot(None))
 
-    finish_times_sec = sorted(
-        int(row[0]) for row in timed_runs.with_entities(RunResult.finish_time_sec).all()
-    )
+    finish_times_sec = sorted(int(row[0]) for row in timed_runs.with_entities(RunResult.finish_time_sec).all())
     avg_finish = timed_runs.with_entities(func.avg(RunResult.finish_time_sec)).scalar()
     best_finish = timed_runs.with_entities(func.min(RunResult.finish_time_sec)).scalar()
     best_results_platform_count = timed_runs.with_entities(Platform.code).distinct().count()
@@ -662,22 +650,11 @@ def _compute_dashboard_analytics(
     # глобальные, рекорды локации и дебюты), иначе цифры расходятся (Дмитрий,
     # 20.07.2026).
     displayed_pr = run_displayed_personal_record_sql_filter()
-    pr_count = (
-        runs_query.filter(displayed_pr)
-        .with_entities(func.count(RunResult.id))
-        .scalar()
-        or 0
-    )
-    last_pr_date = (
-        runs_query.filter(displayed_pr)
-        .with_entities(func.max(Event.event_date))
-        .scalar()
-    )
+    pr_count = runs_query.filter(displayed_pr).with_entities(func.count(RunResult.id)).scalar() or 0
+    last_pr_date = runs_query.filter(displayed_pr).with_entities(func.max(Event.event_date)).scalar()
 
     last_global_pr_date = (
-        runs_query.filter(RunResult.is_global_pr.is_(True))
-        .with_entities(func.max(Event.event_date))
-        .scalar()
+        runs_query.filter(RunResult.is_global_pr.is_(True)).with_entities(func.max(Event.event_date)).scalar()
     )
     pr_last_12_months = (
         runs_query.filter(displayed_pr, Event.event_date >= twelve_months_ago)
@@ -711,9 +688,7 @@ def _compute_dashboard_analytics(
     first_vol = vol_query.with_entities(func.min(Event.event_date)).scalar()
     last_vol = vol_query.with_entities(func.max(Event.event_date)).scalar()
 
-    activity_dates = [
-        d for d in (first_run, first_vol, last_run, last_vol) if has_real_activity_date(d)
-    ]
+    activity_dates = [d for d in (first_run, first_vol, last_run, last_vol) if has_real_activity_date(d)]
     first_activity = min(activity_dates) if activity_dates else None
     last_activity = max(activity_dates) if activity_dates else None
 
@@ -847,9 +822,7 @@ def _compute_dashboard_analytics(
         if dedup_key in seen_vol_items:
             continue
         seen_vol_items.add(dedup_key)
-        vol_items_by_date[event_date].append(
-            {"platform_code": platform_code, "location": display_name}
-        )
+        vol_items_by_date[event_date].append({"platform_code": platform_code, "location": display_name})
 
     activity_calendar = [
         {
@@ -897,9 +870,7 @@ def _compute_dashboard_analytics(
             {
                 "month": month,
                 "avg_pace_sec_per_km": round(sum(pace_values) / len(pace_values)),
-                "avg_finish_time_sec": round(sum(finish_values) / len(finish_values))
-                if finish_values
-                else None,
+                "avg_finish_time_sec": round(sum(finish_values) / len(finish_values)) if finish_values else None,
             }
         )
     pace_trend_yearly = []
@@ -912,9 +883,7 @@ def _compute_dashboard_analytics(
             {
                 "year": year,
                 "avg_pace_sec_per_km": round(sum(pace_values) / len(pace_values)),
-                "avg_finish_time_sec": round(sum(finish_values) / len(finish_values))
-                if finish_values
-                else None,
+                "avg_finish_time_sec": round(sum(finish_values) / len(finish_values)) if finish_values else None,
             }
         )
 
@@ -929,9 +898,7 @@ def _compute_dashboard_analytics(
 
     visit_rows = list(run_visit_rows) + list(vol_visit_rows)
     first_visits = _first_visits_by_catalog_key(catalog_index, visit_rows)
-    new_locations_last_12_months = sum(
-        1 for first_visit in first_visits.values() if first_visit >= twelve_months_ago
-    )
+    new_locations_last_12_months = sum(1 for first_visit in first_visits.values() if first_visit >= twelve_months_ago)
 
     saturday_consistency_pct, saturday_consistency_active, saturday_consistency_total = _saturday_consistency(
         all_activity_dates,
@@ -1001,9 +968,7 @@ def _compute_dashboard_analytics(
     # волонтёрство свежее пробежки, героем становится оно; а волонтёрства того
     # же дня, что и пробежка, идут рядом с ней списком.
     last_saturday: dict[str, object] | None = None
-    last_row = runs_query.order_by(
-        Event.event_date.desc(), RunResult.finish_time_sec.asc().nullslast()
-    ).first()
+    last_row = runs_query.order_by(Event.event_date.desc(), RunResult.finish_time_sec.asc().nullslast()).first()
     last_vol_row = vol_query.order_by(Event.event_date.desc()).first()
     run_date = last_row[1].event_date if last_row is not None else None
     vol_date = last_vol_row[1].event_date if last_vol_row is not None else None
@@ -1011,12 +976,15 @@ def _compute_dashboard_analytics(
 
     if last_date is not None:
         volunteering: list[dict[str, object]] = []
+        head_vol_location_id: UUID | None = None
         if vol_date == last_date:
             for vol, _vol_event, vol_location, vol_platform in (
                 vol_query.filter(Event.event_date == last_date)
                 .order_by(Location.name.asc(), VolunteerResult.role.asc())
                 .all()
             ):
+                if head_vol_location_id is None:
+                    head_vol_location_id = vol_location.id
                 volunteering.append(
                     {
                         "platform_code": vol_platform.code,
@@ -1069,6 +1037,7 @@ def _compute_dashboard_analytics(
                     saturday_streak=_current_saturday_streak(all_activity_dates, today),
                 ),
                 "volunteering": volunteering,
+                "weather": weather_for_event(db, last_event.location_id, last_event.event_date),
             }
         else:
             # В этот день только волонтёрили: героем становится первое из
@@ -1091,6 +1060,7 @@ def _compute_dashboard_analytics(
                 "prev_date": None,
                 "notables": [],
                 "volunteering": volunteering,
+                "weather": (weather_for_event(db, head_vol_location_id, last_date) if head_vol_location_id else None),
             }
 
     return {
@@ -1159,6 +1129,7 @@ def _compute_dashboard_analytics(
         "finish_spread_runs": finish_spread_runs,
         "metronome_streak": metronome_streak,
         "last_saturday": last_saturday,
+        "weather": user_weather_stats(db, user_id),
     }
 
 
@@ -1303,11 +1274,7 @@ def invalidate_dashboard_cache_for_users(db: Session, user_ids: set[UUID]) -> in
     """
     if not user_ids:
         return 0
-    deleted = (
-        db.query(DashboardCache)
-        .filter(DashboardCache.user_id.in_(user_ids))
-        .delete(synchronize_session=False)
-    )
+    deleted = db.query(DashboardCache).filter(DashboardCache.user_id.in_(user_ids)).delete(synchronize_session=False)
     db.flush()
     return deleted
 
@@ -1356,9 +1323,7 @@ def _event_summary_source_urls(
         return {}
     rows = (
         db.query(EventSummary)
-        .filter(
-            tuple_(EventSummary.platform_id, EventSummary.location_id, EventSummary.event_date).in_(keys)
-        )
+        .filter(tuple_(EventSummary.platform_id, EventSummary.location_id, EventSummary.event_date).in_(keys))
         .all()
     )
     return {(row.platform_id, row.location_id, row.event_date): row.source_url for row in rows}
@@ -1389,9 +1354,7 @@ def _event_participant_totals(
 
     protocol_stats: dict[UUID, tuple[int, int]] = {
         event_id: (int(rows or 0), int(max_position or 0))
-        for event_id, rows, max_position in db.query(
-            RunResult.event_id, func.count(), func.max(RunResult.position)
-        )
+        for event_id, rows, max_position in db.query(RunResult.event_id, func.count(), func.max(RunResult.position))
         .filter(RunResult.event_id.in_(event_ids))
         .group_by(RunResult.event_id)
         .all()
@@ -1408,11 +1371,7 @@ def _event_participant_totals(
             EventSummary.event_date,
             EventSummary.finishers_count,
         )
-        .filter(
-            tuple_(EventSummary.platform_id, EventSummary.location_id, EventSummary.event_date).in_(
-                summary_keys
-            )
-        )
+        .filter(tuple_(EventSummary.platform_id, EventSummary.location_id, EventSummary.event_date).in_(summary_keys))
         .all()
     }
 
@@ -1486,11 +1445,7 @@ def _user_first_timed_run_id(
         query = query.filter(Event.is_test_event.is_(False))
     if excluded_ids:
         query = query.filter(RunResult.id.notin_(excluded_ids))
-    return (
-        query.order_by(Event.event_date, Event.event_number, Event.location_id, RunResult.id)
-        .limit(1)
-        .scalar()
-    )
+    return query.order_by(Event.event_date, Event.event_number, Event.location_id, RunResult.id).limit(1).scalar()
 
 
 def list_user_runs(
@@ -1525,9 +1480,7 @@ def list_user_runs(
     # primary результат (см. user_secondary_crosslinked_run_ids). Событие может быть
     # кросслинкнуто целиком (dual_load локация), но если юзер лично бежал только в
     # одной из систем в этот день — у него нет дубля, забег зачётный.
-    secondary_crosslinked_ids = user_secondary_crosslinked_run_ids(
-        db, user_id, include_test_events=include_test_events
-    )
+    secondary_crosslinked_ids = user_secondary_crosslinked_run_ids(db, user_id, include_test_events=include_test_events)
     first_timed_run_id = _user_first_timed_run_id(
         db,
         user_id,
@@ -1536,6 +1489,7 @@ def list_user_runs(
     )
     catalog_index = LocationCatalogIndex(db)
     run_events = [event for _run, event, _loc, _plat, _link in rows]
+    weather_map = weather_for_pairs(db, [(event.location_id, event.event_date) for event in run_events])
     summary_urls = _event_summary_source_urls(db, run_events)
     participant_totals = _event_participant_totals(
         db,
@@ -1580,14 +1534,13 @@ def list_user_runs(
             "achievement_labels": run.achievement_labels or [],
             "status": run.status,
             "is_test_event": event.is_test_event,
+            "weather": weather_map.get((event.location_id, event.event_date)),
             "event_url": _activity_event_url(
                 platform_code=platform.code,
                 event=event,
                 location=location,
                 profile_url=platform_link.external_url,
-                summary_source_url=summary_urls.get(
-                    (event.platform_id, event.location_id, event.event_date)
-                ),
+                summary_source_url=summary_urls.get((event.platform_id, event.location_id, event.event_date)),
             ),
             **_location_status_fields(catalog_index, location, platform.code),
         }
@@ -1620,9 +1573,7 @@ def list_user_best_results(
 
     # "Не в зачёте" duplicates (secondary crosslink) can't be the best result of a
     # system — the same protocol is counted on the primary platform.
-    excluded_ids = user_secondary_crosslinked_run_ids(
-        db, user_id, include_test_events=include_test_events
-    )
+    excluded_ids = user_secondary_crosslinked_run_ids(db, user_id, include_test_events=include_test_events)
     if excluded_ids:
         query = query.filter(RunResult.id.notin_(excluded_ids))
 
@@ -1657,9 +1608,7 @@ def list_user_best_results(
                 event=event,
                 location=location,
                 profile_url=platform_link.external_url,
-                summary_source_url=summary_urls.get(
-                    (event.platform_id, event.location_id, event.event_date)
-                ),
+                summary_source_url=summary_urls.get((event.platform_id, event.location_id, event.event_date)),
             ),
         }
 
@@ -1706,9 +1655,7 @@ def list_user_personal_records(
         query = query.filter(Event.is_test_event.is_(False))
 
     # "Не в зачёте" duplicates (secondary crosslink) never count as personal records.
-    excluded_ids = user_secondary_crosslinked_run_ids(
-        db, user_id, include_test_events=include_test_events
-    )
+    excluded_ids = user_secondary_crosslinked_run_ids(db, user_id, include_test_events=include_test_events)
     if excluded_ids:
         query = query.filter(RunResult.id.notin_(excluded_ids))
 
@@ -1750,9 +1697,7 @@ def list_user_personal_records(
                 event=event,
                 location=location,
                 profile_url=platform_link.external_url,
-                summary_source_url=summary_urls.get(
-                    (event.platform_id, event.location_id, event.event_date)
-                ),
+                summary_source_url=summary_urls.get((event.platform_id, event.location_id, event.event_date)),
             ),
         }
         for run, event, location, platform, platform_link in rows
@@ -1813,9 +1758,7 @@ def list_user_wins(
 
     # Дубль «не в зачёте» (secondary crosslink) победой не считается — так же,
     # как он не считается личным рекордом.
-    excluded_ids = user_secondary_crosslinked_run_ids(
-        db, user_id, include_test_events=include_test_events
-    )
+    excluded_ids = user_secondary_crosslinked_run_ids(db, user_id, include_test_events=include_test_events)
     if excluded_ids:
         query = query.filter(RunResult.id.notin_(excluded_ids))
 
@@ -1847,9 +1790,7 @@ def list_user_wins(
                 event=event,
                 location=location,
                 profile_url=platform_link.external_url,
-                summary_source_url=summary_urls.get(
-                    (event.platform_id, event.location_id, event.event_date)
-                ),
+                summary_source_url=summary_urls.get((event.platform_id, event.location_id, event.event_date)),
             ),
         }
         for run, event, location, platform, platform_link in rows
@@ -1878,18 +1819,14 @@ def list_user_volunteering(
     if not include_test_events:
         query = query.filter(Event.is_test_event.is_(False))
     # parkrun volunteer summaries are stored at 1970-01-01 by design — include them
-    query = query.filter(
-        (Platform.code == "parkrun") | (Event.event_date > date(1970, 1, 1))
-    )
+    query = query.filter((Platform.code == "parkrun") | (Event.event_date > date(1970, 1, 1)))
     rows = query.order_by(Event.event_date.desc()).offset(offset).limit(limit).all()
 
     event_ids = [event.id for _vol, event, _loc, _plat, _link in rows]
     crosslinked_event_ids: set[UUID] = set()
     if event_ids:
         cl_rows = (
-            db.query(EventCrosslink.secondary_event_id)
-            .filter(EventCrosslink.secondary_event_id.in_(event_ids))
-            .all()
+            db.query(EventCrosslink.secondary_event_id).filter(EventCrosslink.secondary_event_id.in_(event_ids)).all()
         )
         crosslinked_event_ids = {row[0] for row in cl_rows}
 
@@ -1954,9 +1891,7 @@ def list_user_volunteering(
                     event=event,
                     location=location,
                     profile_url=platform_link.external_url,
-                    summary_source_url=summary_urls.get(
-                        (event.platform_id, event.location_id, event.event_date)
-                    ),
+                    summary_source_url=summary_urls.get((event.platform_id, event.location_id, event.event_date)),
                 ),
                 **_location_status_fields(catalog_index, location, platform.code),
             }

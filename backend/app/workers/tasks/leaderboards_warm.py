@@ -19,6 +19,7 @@ from app.services.leaderboard_service import (
     refresh_tourist_map_cache,
 )
 from app.services.location_records_rating_service import refresh_location_records_rating_cache
+from app.services.weather_rating_service import refresh_weather_rating_cache
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -75,9 +76,7 @@ def _acquire_running_lock() -> bool:
     try:
         from app.core.redis_client import get_redis_client
 
-        return bool(
-            get_redis_client().set(_RUNNING_KEY, "1", nx=True, ex=_RUNNING_TTL_SECONDS)
-        )
+        return bool(get_redis_client().set(_RUNNING_KEY, "1", nx=True, ex=_RUNNING_TTL_SECONDS))
     except Exception:
         logger.exception("leaderboards warm: lock failed, running without it")
         return True
@@ -119,9 +118,7 @@ def warm_leaderboards_cache() -> dict[str, object]:
     variants: list[tuple[LeaderboardMetric, str, int, str, str, bool]] = []
     for metric in LEADERBOARD_METRICS:
         genders = ("all", "female") if metric in GENDERED_METRICS else ("all",)
-        visits_options = (
-            range(1, MAX_MIN_VISITS + 1) if metric in MIN_VISITS_METRICS else range(1, 2)
-        )
+        visits_options = range(1, MAX_MIN_VISITS + 1) if metric in MIN_VISITS_METRICS else range(1, 2)
         # Единица зачёта (площадки/города/регионы) — ещё одно измерение сетки у
         # туристических рейтингов; у остальных вариант ровно один.
         units = count_by_values(metric) or ("locations",)
@@ -133,13 +130,9 @@ def warm_leaderboards_cache() -> dict[str, object]:
                         # дальности: без прогрева первый клик по нему ждал бы
                         # полный пересчёт прямо в запросе, как было с «2+ × 5
                         # вёрст» у туризма 31.07.2026.
-                        home_filters = (
-                            (False, True) if metric in AMBIGUOUS_HOME_METRICS else (False,)
-                        )
+                        home_filters = (False, True) if metric in AMBIGUOUS_HOME_METRICS else (False,)
                         for hide_home in home_filters:
-                            variants.append(
-                                (metric, gender, visits, platform, unit, hide_home)
-                            )
+                            variants.append((metric, gender, visits, platform, unit, hide_home))
 
     # Один источник на всю задачу: сырые выборки и справочники читаются из базы
     # один раз на рейтинг, а не на каждое сочетание фильтров (фильтры
@@ -179,20 +172,11 @@ def warm_leaderboards_cache() -> dict[str, object]:
                 # ним — прогреваем её базовый вариант тем же проходом. Своим
                 # try: карта — приятное дополнение к таблице, и её неудача не
                 # повод помечать ошибкой прогрев самого рейтинга.
-                if (
-                    metric in TOURIST_MAP_METRICS
-                    and min_visits == 1
-                    and platform == "all"
-                    and count_by == "locations"
-                ):
+                if metric in TOURIST_MAP_METRICS and min_visits == 1 and platform == "all" and count_by == "locations":
                     try:
-                        results[f"{key}:tmap"] = refresh_tourist_map_cache(
-                            db, metric, snapshot
-                        )
+                        results[f"{key}:tmap"] = refresh_tourist_map_cache(db, metric, snapshot)
                     except Exception:
-                        logger.warning(
-                            "tourist map warm failed for %s", key, exc_info=True
-                        )
+                        logger.warning("tourist map warm failed for %s", key, exc_info=True)
                 # Закрываем транзакцию сразу после варианта. Сетка одного
                 # рейтинга (до нескольких десятков сочетаний фильтров) считается
                 # в Python над уже прочитанными строками — база в это время не
@@ -227,6 +211,16 @@ def warm_leaderboards_cache() -> dict[str, object]:
             logger.info("location records rating warmed: %s локаций", warmed)
         except Exception:
             logger.exception("leaderboards warm failed for location_records")
+            db.rollback()
+
+        # Рейтинг «Погода»: моржи, суровые локации и корзины температуры —
+        # проход по всем финишам с погодой, поэтому только кэшем и прогревом.
+        try:
+            warmed = refresh_weather_rating_cache(db)
+            db.rollback()
+            logger.info("weather rating warmed: %s моржей", warmed)
+        except Exception:
+            logger.exception("leaderboards warm failed for weather")
             db.rollback()
 
         # Рейтинг быстрых — тем же проходом и по той же причине: свой снапшот,
