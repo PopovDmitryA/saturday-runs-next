@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -116,8 +117,16 @@ def record_protocol_revision(db: Session, event_id, before: dict[str, tuple], af
         # сохранялось), молча проглатывалась без записи в журнал.
         all_removed_unknown = all(before[key][2] == "unknown" for key in removed)
         all_added_known = all(after[key][2] != "unknown" for key in added)
-        removed_pairs = sorted((before[key][0], before[key][1]) for key in removed)
-        added_pairs = sorted((after[key][0], after[key][1]) for key in added)
+        # Counter, а не sorted: мультимножеству порядок не нужен, а сортировка
+        # кортежей падала на NULL. Позиция пустая у строк, записанных синком
+        # профиля (ключ «user:date:slug» против протокольного «slug:date:user»),
+        # время — у «НЕИЗВЕСТНЫХ». Стоило такой строке попасть в removed рядом с
+        # обычной, как sorted сравнивал None с int и ронял запись правки — а она
+        # идёт после перезаписи и в той же транзакции, так что откатывался и сам
+        # протокол. Плотинка №225 за 29.08.2026 залипла так навсегда: каждый
+        # обход перекачивал её заново и падал (Дмитрий 13.09.2026).
+        removed_pairs = Counter((before[key][0], before[key][1]) for key in removed)
+        added_pairs = Counter((after[key][0], after[key][1]) for key in added)
         if removed and all_removed_unknown and all_added_known and removed_pairs == added_pairs:
             return
 

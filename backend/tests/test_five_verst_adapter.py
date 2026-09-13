@@ -105,7 +105,7 @@ def test_parse_userstats_runs_html() -> None:
     assert runs[0].location_name == "Первоуральск"
     assert runs[0].event_number == 94
     assert runs[0].finish_time_display == "00:23:42"
-    assert runs[0].external_result_key == "790103773:2026-05-09:pervouralsknaberezhnaya"
+    assert runs[0].external_result_key == "pervouralsknaberezhnaya:2026-05-09:790103773"
 
 
 def test_dedupe_profile_runs_same_day_same_location() -> None:
@@ -135,7 +135,7 @@ def test_dedupe_profile_runs_same_day_same_location() -> None:
     ]
     deduped = dedupe_profile_runs(items, "790103773")
     assert len(deduped) == 1
-    assert deduped[0].external_result_key == "790103773:2026-04-04:meshchersky"
+    assert deduped[0].external_result_key == "meshchersky:2026-04-04:790103773"
     assert deduped[0].finish_time_sec == 1500
 
 
@@ -146,7 +146,7 @@ def test_parse_userstats_volunteering_html() -> None:
     assert len(items) == 1
     assert items[0].role == "Составление отчёта"
     assert items[0].location_external_key == "meshchersky"
-    assert items[0].external_result_key == "790103773:2026-05-23:meshchersky:составление_отчёта"
+    assert items[0].external_result_key == "meshchersky:2026-05-23:vol:790103773:составление_отчёта"
 
 
 def test_dedupe_profile_volunteering_same_day_same_location() -> None:
@@ -157,8 +157,8 @@ def test_dedupe_profile_volunteering_same_day_same_location() -> None:
     deduped = dedupe_profile_volunteering(items, "790103773")
     assert len(deduped) == 2
     assert {item.role for item in deduped} == {"Роль A", "Роль B"}
-    assert deduped[0].external_result_key == "790103773:2026-04-04:meshchersky:роль_a"
-    assert deduped[1].external_result_key == "790103773:2026-04-04:meshchersky:роль_b"
+    assert deduped[0].external_result_key == "meshchersky:2026-04-04:vol:790103773:роль_a"
+    assert deduped[1].external_result_key == "meshchersky:2026-04-04:vol:790103773:роль_b"
 
 
 def test_dedupe_profile_volunteering_same_day_different_locations() -> None:
@@ -198,9 +198,9 @@ def test_dedupe_profile_volunteering_new_years_day_keeps_roles_per_location() ->
     deduped = dedupe_profile_volunteering(items, "790103773")
     assert len(deduped) == 3
     assert {item.external_result_key for item in deduped} == {
-        "790103773:2026-01-01:meshchersky:составление_отчёта",
-        "790103773:2026-01-01:sokolniki:организатор",
-        "790103773:2026-01-01:meshchersky:инструктаж",
+        "meshchersky:2026-01-01:vol:790103773:составление_отчёта",
+        "sokolniki:2026-01-01:vol:790103773:организатор",
+        "meshchersky:2026-01-01:vol:790103773:инструктаж",
     }
 
 
@@ -214,3 +214,81 @@ def _vol(user_id: str, event_date: date, slug: str, role: str) -> CanonicalVolun
         location_external_key=slug,
         location_name=slug,
     )
+
+
+def test_protocol_and_profile_agree_on_result_keys() -> None:
+    """Один финиш — один ключ, каким бы путём он ни пришёл.
+
+    До 13.09.2026 протокол лепил «slug:дата:участник», а профиль
+    «участник:дата:slug», и один финиш жил в базе под двумя именами. Когда в
+    протоколе человек ещё числился «НЕИЗВЕСТНЫМ», запасной поиск по
+    (событие, участник) не срабатывал — рождалась вторая строка, которую
+    протокольный синк потом удалял, роняя на этом запись правки (Плотинка
+    №225 за 29.08.2026).
+    """
+    from app.platform_adapters.five_verst import bulk_parser
+    from app.platform_adapters.five_verst.parser import (
+        parse_userstats_runs_html,
+        parse_userstats_volunteering_html,
+    )
+
+    slug, user, day = "meshchersky", "790103773", date(2026, 5, 23)
+
+    protocol_runs = bulk_parser.parse_run_protocol_html(
+        f"""
+        <table><tr>
+          <td>16</td>
+          <td><a href="https://5verst.ru/userstats/{user}">Дмитрий ПОПОВ</a></td>
+          <td>00:22:31</td><td></td>
+        </tr></table>
+        """,
+        slug=slug,
+        event_date=day,
+        event_number=213,
+    )
+    profile_runs = parse_userstats_runs_html(
+        f"""
+        <table>
+        <tr><th>Дата</th><th>Мероприятие</th><th>Время</th></tr>
+        <tr><td>23.05.2026</td>
+            <td><a href="https://5verst.ru/{slug}/results/23.05.2026">Мещерский #213</a></td>
+            <td>00:22:31</td></tr>
+        </table>
+        """,
+        user,
+        "Дмитрий ПОПОВ",
+    )
+    assert len(protocol_runs) == 1
+    assert len(profile_runs) == 1
+    assert protocol_runs[0].external_result_key == profile_runs[0].external_result_key
+
+    protocol_vols = bulk_parser.parse_volunteers_from_event_html(
+        f"""
+        <h2 class="results-title">Команда организаторов</h2>
+        <table>
+          <tr><th>Волонтёр</th><th>Роль</th></tr>
+          <tr>
+            <td><a href="https://5verst.ru/userstats/{user}">Дмитрий ПОПОВ</a></td>
+            <td>Составление отчёта</td>
+          </tr>
+        </table>
+        """,
+        slug=slug,
+        event_date=day,
+        event_number=213,
+    )
+    profile_vols = parse_userstats_volunteering_html(
+        f"""
+        <table>
+        <tr><th>Дата</th><th>Мероприятие</th><th>Роль</th></tr>
+        <tr><td>23.05.2026</td>
+            <td><a href="https://5verst.ru/{slug}/results/23.05.2026">Мещерский #213</a></td>
+            <td>Составление отчёта</td></tr>
+        </table>
+        """,
+        user,
+        "Дмитрий ПОПОВ",
+    )
+    assert len(protocol_vols) == 1
+    assert len(profile_vols) == 1
+    assert protocol_vols[0].external_result_key == profile_vols[0].external_result_key

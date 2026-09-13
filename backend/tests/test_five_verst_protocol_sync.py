@@ -198,3 +198,67 @@ def test_reconcile_dry_run_returns_candidates(db_session: Session) -> None:
     assert result.candidates_total <= 5
     assert result.protocols_fetched == 0
     assert len(result.planned) == result.candidates_total
+
+
+class _CollectingSession:
+    """record_protocol_revision пользуется только add и flush."""
+
+    def __init__(self) -> None:
+        self.added: list[object] = []
+
+    def add(self, obj: object) -> None:
+        self.added.append(obj)
+
+    def flush(self) -> None:
+        pass
+
+
+def test_revision_survives_row_without_position() -> None:
+    """Строка без позиции рядом с обычной не должна ронять запись правки.
+
+    Плотинка №225 за 29.08.2026: на событии лежали строка протокола
+    («НЕИЗВЕСТНЫЙ» на 16-м месте, без времени) и строка того же финиша,
+    записанная синком профиля (ключ «user:date:slug», без позиции). Обе уходили
+    в removed, sorted сравнивал None с int и падал. Журнал правок вызывается
+    после перезаписи и в той же транзакции, поэтому откатывался и сам протокол:
+    обход перекачивал площадку заново и падал снова (Дмитрий 13.09.2026).
+    """
+    from app.sync.five_verst_protocol import record_protocol_revision
+
+    before = {
+        "plotinka:2026-08-29:unknown:plotinka:2026-08-29:16": (16, None, "unknown"),
+        "790154363:2026-08-29:plotinka": (None, 1351, None),
+    }
+    after = {"plotinka:2026-08-29:790154363": (16, 1351, None)}
+
+    db = _CollectingSession()
+    record_protocol_revision(db, uuid4(), before, after)
+
+    # Пропажа строки — настоящая правка, её надо записать.
+    assert len(db.added) == 1
+
+
+def test_unknown_became_known_is_not_a_revision() -> None:
+    """Та же позиция и время, «неизвестный» стал именем — не правка."""
+    from app.sync.five_verst_protocol import record_protocol_revision
+
+    before = {"u-16": (16, None, "unknown"), "u-23": (23, None, "unknown")}
+    after = {"known-16": (16, None, None), "known-23": (23, None, None)}
+
+    db = _CollectingSession()
+    record_protocol_revision(db, uuid4(), before, after)
+
+    assert db.added == []
+
+
+def test_lost_row_alongside_identified_unknown_is_recorded() -> None:
+    """Пропажа известной строки не прячется за парой «неизвестный → имя»."""
+    from app.sync.five_verst_protocol import record_protocol_revision
+
+    before = {"u-16": (16, None, "unknown"), "real-40": (40, 1500, None)}
+    after = {"known-16": (16, None, None)}
+
+    db = _CollectingSession()
+    record_protocol_revision(db, uuid4(), before, after)
+
+    assert len(db.added) == 1

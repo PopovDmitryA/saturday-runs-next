@@ -22,6 +22,12 @@ from app.platform_adapters.five_verst.location_description import (
     parse_course_description,
     parse_schedule_text,
 )
+from app.platform_adapters.five_verst.result_keys import (
+    normalize_role_key,
+    run_result_key,
+    unregistered_volunteer_result_key,
+    volunteer_result_key,
+)
 
 DATE_IN_URL_RE = re.compile(r"/results/(\d{2}\.\d{2}\.\d{4})/")
 USERSTATS_ID_RE = re.compile(r"/userstats/(\d+)")
@@ -677,7 +683,7 @@ def parse_run_protocol_html(
         # показывался как 193 вместо 195. По всей базе 5 вёрст не хватало 4473
         # строк в 2972 протоколах.
         is_unknown = external_user_id is None
-        if is_unknown:
+        if external_user_id is None:
             external_user_id = f"unknown:{slug}:{event_date.isoformat()}:{position}"
             participant_name = participant_name or "НЕИЗВЕСТНЫЙ"
         elif participant_name is None:
@@ -690,7 +696,7 @@ def parse_run_protocol_html(
 
         results.append(
             CanonicalRunResult(
-                external_result_key=f"{slug}:{event_date.isoformat()}:{external_user_id}",
+                external_result_key=run_result_key(slug, event_date, external_user_id),
                 event_date=event_date,
                 external_user_id=external_user_id,
                 participant_name=participant_name,
@@ -922,10 +928,6 @@ def fetch_run_protocol(
     ), html
 
 
-def _normalize_role_key(role: str) -> str:
-    return re.sub(r"[^\w]+", "_", role.lower(), flags=re.UNICODE).strip("_") or "volunteer"
-
-
 def parse_volunteers_from_event_html(
     html: str,
     *,
@@ -997,9 +999,11 @@ def _parse_volunteer_table(
             participant_name = _unregistered_volunteer_name(unregistered_cell)
 
         role = cells[-1].get_text(" ", strip=True) or "volunteer"
-        role_key = _normalize_role_key(role)
 
-        if unregistered:
+        # «or ... is None» — тождественно `if unregistered`: строки без id и без
+        # пометки отсечены выше. Написано явно, чтобы в ветке else было видно,
+        # что id уже не пустой.
+        if unregistered or external_user_id is None:
             # «НЕИЗВЕСТНЫЙ (Нужна регистрация)» — волонтёр без профиля на
             # 5 вёрст. Раньше такие строки выбрасывались, и роль просто
             # исчезала из протокола: у Видного 15.08.2026 в списке не было
@@ -1011,12 +1015,12 @@ def _parse_volunteer_table(
             unregistered_seen += 1
             # Ключ по имени, когда оно есть: переставили строки местами — запись
             # осталась той же. Безымянных различаем только порядковым номером.
-            who = _normalize_role_key(participant_name) if participant_name else f"n{unregistered_seen}"
-            external_result_key = (
-                f"{slug}:{event_date.isoformat()}:vol:unregistered:{who}:{role_key}"
+            who = normalize_role_key(participant_name) if participant_name else f"n{unregistered_seen}"
+            external_result_key = unregistered_volunteer_result_key(
+                slug, event_date, who, role
             )
         else:
-            external_result_key = f"{slug}:{event_date.isoformat()}:vol:{external_user_id}:{role_key}"
+            external_result_key = volunteer_result_key(slug, event_date, external_user_id, role)
 
         results.append(
             CanonicalVolunteerResult(
