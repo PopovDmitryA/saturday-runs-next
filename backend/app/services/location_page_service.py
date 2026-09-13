@@ -217,6 +217,34 @@ def _identified_name_clause(name_expr: Any) -> Any:
         # «Unknown #67» — так 5 вёрст помечает строку со штрихкодом, но без имени.
         normalized.notlike("unknown #%"),
     )
+
+
+# Статусы безымянного финишёра: 5 вёрст пишут «unknown», s95 — «unknown_runner»,
+# RunPark не пишет статус вовсе и опознаётся только по имени («Неизвестный
+# бегун»). Проверять одно поле мало: счётчик кабинета организатора, смотревший
+# только на status == "unknown", показывал s95 и RunPark ровный ноль неизвестных
+# при живых тысячах строк (Дмитрий 13.09.2026).
+UNKNOWN_RESULT_STATUSES = frozenset({"unknown", "unknown_runner"})
+
+
+def unknown_result_clause(status_expr: Any, participant_id_expr: Any, name_expr: Any) -> Any:
+    """Строка протокола без опознанного человека — как её видят страницы протокола.
+
+    Тот же тройной признак, что в location_protocol_service и
+    unified_protocol_service: нет участника ЛИБО системный статус безымянного
+    ЛИБО имя-заглушка. Имя сравнивается целиком — «Андрей НЕИЗВЕСТНЫХ» живой.
+    """
+    # coalesce обязателен: status у s95 и parkrun почти всегда NULL, а
+    # «NULL IN (...)» — это NULL, и под отрицанием (~clause: «строка про живого
+    # человека») NOT NULL снова NULL — такая строка молча выпадает из выборки.
+    # Без coalesce отсечка безымянных выкашивала все 142 тысячи строк s95.
+    return or_(
+        participant_id_expr.is_(None),
+        func.coalesce(func.lower(func.trim(status_expr)), "").in_(UNKNOWN_RESULT_STATUSES),
+        func.coalesce(func.lower(func.trim(name_expr)), "").in_(UNKNOWN_DISPLAY_NAMES),
+    )
+
+
 # Незачётные статусы протоколов не влияют на finish_time (он у них NULL),
 # поэтому отдельного фильтра по status нет: гистограмма и рекорды строятся
 # только по строкам с известным временем.

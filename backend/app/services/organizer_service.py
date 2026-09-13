@@ -38,6 +38,7 @@ from app.services.location_page_service import (
     _platform_link_join,
     _read_json_cache,
     _write_json_cache,
+    unknown_result_clause,
 )
 from app.volunteering_occasions import count_volunteering_for_platform
 
@@ -589,7 +590,8 @@ NEWCOMERS_DEFAULT_DAYS = 180
 
 
 def newcomers_cache_key(identity_key: str, days: int) -> str:
-    return f"organizer:newcomers:v1:{identity_key}:{days}"
+    # v2 — безымянные строки протокола больше не считаются дебютантами.
+    return f"organizer:newcomers:v2:{identity_key}:{days}"
 
 
 def build_location_newcomers(
@@ -657,11 +659,21 @@ def _compute_location_newcomers(
     # десятков дебютантов. 03.09.2026 такой запрос шёл на проде 30-70 минут,
     # копии копились до 37 штук и выедали пул соединений: сайт отвечал
     # «QueuePool limit of size 5 overflow 10 reached».
+    # Безымянные строки протокола — не дебютанты. У каждой свой синтетический
+    # участник (s95: «unknown:slug:date:position», RunPark: отдельный профиль
+    # «Неизвестный бегун»), поэтому каждая навсегда остаётся новичком с одной
+    # пробежкой: они раздували счётчик дебютов и тянули удержание вниз
+    # (Дмитрий 13.09.2026).
+    known_runner = ~unknown_result_clause(
+        RunResult.status, RunResult.participant_id, Participant.display_name
+    )
     local_participants = (
         select(RunResult.participant_id)
+        .join(Participant, RunResult.participant_id == Participant.id)
         .where(
             RunResult.event_id.in_(event_ids),
             RunResult.participant_id.isnot(None),
+            known_runner,
             timed,
         )
         .scalar_subquery()
@@ -699,6 +711,7 @@ def _compute_location_newcomers(
             Event.event_date == firsts.c.first_date,
             Event.location_id.in_(location_ids),
             RunResult.event_id.in_(event_ids),
+            known_runner,
             timed,
             firsts.c.first_date >= cutoff,
         )

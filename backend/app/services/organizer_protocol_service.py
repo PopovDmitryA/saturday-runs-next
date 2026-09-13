@@ -33,7 +33,13 @@ from app.models import (
     RunResult,
     VolunteerResult,
 )
-from app.services.location_page_service import LocationIdentity, _location_event_ids
+from app.services.location_page_service import (
+    UNKNOWN_DISPLAY_NAMES,
+    UNKNOWN_RESULT_STATUSES,
+    LocationIdentity,
+    _location_event_ids,
+    unknown_result_clause,
+)
 from app.services.location_schedule_service import start_time_for_date
 from app.services.organizer_analytics_service import _read_json_cache, _write_json_cache
 from app.volunteer_role_taxonomy import canonical_volunteer_role
@@ -54,9 +60,9 @@ def protocol_timeline_cache_key(identity_key: str) -> str:
 
 
 def health_cache_key(identity_key: str) -> str:
-    # v7 — добавилась лампочка «Ротация организаторов». Без бампа площадки с
-    # прогретым кэшем показывали бы светофор без неё до истечения TTL.
-    return f"organizer:health:v7:{identity_key}"
+    # v8 — «Полнота протокола» и «Удержание новичков» научились видеть
+    # безымянные строки s95 и RunPark; прогретый кэш держал бы старые нули.
+    return f"organizer:health:v8:{identity_key}"
 
 
 def _five_verst_locations(identity: LocationIdentity) -> list[Location]:
@@ -572,11 +578,18 @@ def _unknown_share(db: Session, identity: LocationIdentity) -> float | None:
     ]
     if not recent_ids:
         return None
+    # Признак безымянной строки — общий с протоколами: одного status мало,
+    # s95 пишет «unknown_runner», RunPark не пишет ничего (см. clause).
     total, unknown = (
         db.query(
             func.count(),
-            func.count().filter(RunResult.status == "unknown"),
+            func.count().filter(
+                unknown_result_clause(
+                    RunResult.status, RunResult.participant_id, Participant.display_name
+                )
+            ),
         )
+        .outerjoin(Participant, RunResult.participant_id == Participant.id)
         .filter(RunResult.event_id.in_(recent_ids))
         .one()
     )
@@ -623,7 +636,9 @@ def _network_retention_median(db: Session) -> float | None:
     возвращаться); локации с < 5 дебютами не учитываются.
     """
 
-    cache_key = "organizer:network-retention:v1"
+    # v2 — из дебютов вычтены безымянные строки протокола. Без этого локация со
+    # своим (уже очищенным) удержанием сравнивалась бы с занижённой медианой.
+    cache_key = "organizer:network-retention:v2"
     cached = _read_json_cache(cache_key)
     if cached is not None:
         return cached.get("median")
@@ -639,7 +654,10 @@ def _network_retention_median(db: Session) -> float | None:
                 select rr.participant_id, min(e.event_date) as first_date
                 from run_results rr
                 join events e on e.id = rr.event_id
+                join participants p on p.id = rr.participant_id
                 where rr.finish_time_sec is not null
+                  and coalesce(lower(btrim(rr.status)), '') <> all(:unknown_statuses)
+                  and coalesce(lower(btrim(p.display_name)), '') <> all(:unknown_names)
                 group by rr.participant_id
                 having min(e.event_date) >= :cutoff and min(e.event_date) <= :recent_cap
             ),
@@ -674,7 +692,12 @@ def _network_retention_median(db: Session) -> float | None:
             having count(*) >= 5
             """
         ),
-        {"cutoff": cutoff, "recent_cap": recent_cap},
+        {
+            "cutoff": cutoff,
+            "recent_cap": recent_cap,
+            "unknown_statuses": sorted(UNKNOWN_RESULT_STATUSES),
+            "unknown_names": sorted(UNKNOWN_DISPLAY_NAMES),
+        },
     ).all()
 
     shares = [100.0 * returned / debuts for _location_id, debuts, returned in rows if debuts]
