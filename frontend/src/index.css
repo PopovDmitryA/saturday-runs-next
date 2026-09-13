@@ -1733,65 +1733,6 @@ a.last-saturday-location:hover {
   min-height: 0;
 }
 
-/* display: none, а не только opacity: 0 — скрытый тултип у крайнего столбца
-   всё равно занимает место и тянет вправо scrollWidth страницы: на телефоне
-   от этого весь ЛК ездил вбок. Тот же приём был точечно применён в календаре
-   суббот, теперь он общий для графиков. */
-.analytics-chart-tooltip {
-  position: absolute;
-  bottom: calc(100% + 0.4rem);
-  left: 50%;
-  transform: translateX(-50%);
-  display: none;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.4rem 0.55rem;
-  border-radius: 6px;
-  background: var(--tooltip-bg);
-  color: #f8fafc;
-  font-size: 0.75rem;
-  line-height: 1.3;
-  white-space: nowrap;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-  z-index: 5;
-}
-
-.analytics-chart-tooltip::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-top-color: var(--tooltip-bg);
-}
-
-.analytics-chart-tooltip-title {
-  font-weight: 600;
-}
-
-.analytics-chart-tooltip-line {
-  color: var(--neutral-soft);
-}
-
-/* Только там, где мышь есть. На телефоне :hover прилипает после тапа, и рядом
-   с портальной подсказкой тач-режима (TapTooltipBubble) открывалась вторая,
-   та же самая — вжатая в свою клетку и обрезанная краем экрана. */
-@media (hover: hover) {
-  .analytics-chart-tooltip-wrap:hover .analytics-chart-tooltip {
-    display: flex;
-    opacity: 1;
-  }
-}
-
-.analytics-chart-tooltip-wrap:focus-within .analytics-chart-tooltip {
-  display: flex;
-  opacity: 1;
-}
-
 .analytics-chart-bar-stack {
   width: 100%;
   max-width: 28px;
@@ -2104,30 +2045,6 @@ a.last-saturday-location:hover {
 
 .activity-cal-cell-wrap .analytics-chart-tooltip-wrap {
   height: 100%;
-}
-
-/* У крайних колонок центрированный тултип выходит за границы скролл-контейнера
-   и обрезается — прижимаем его к ближнему краю ячейки вместе со стрелкой. */
-.activity-cal-cell-wrap:nth-child(-n + 8) .analytics-chart-tooltip {
-  left: 0;
-  transform: none;
-}
-
-.activity-cal-cell-wrap:nth-child(-n + 8) .analytics-chart-tooltip::after {
-  left: 0.9rem;
-  transform: none;
-}
-
-.activity-cal-cell-wrap:nth-child(n + 45) .analytics-chart-tooltip {
-  left: auto;
-  right: 0;
-  transform: none;
-}
-
-.activity-cal-cell-wrap:nth-child(n + 45) .analytics-chart-tooltip::after {
-  left: auto;
-  right: 0.9rem;
-  transform: none;
 }
 
 .activity-cal-cell {
@@ -8821,7 +8738,6 @@ a.admin-system-chip:hover {
 
 /* Приглушённый текст тултипов лежит на тёмной подложке в обеих темах */
 :root[data-theme="dark"] .stat-hint-tooltip-note,
-:root[data-theme="dark"] .analytics-chart-tooltip-line,
 :root[data-theme="dark"] .profile-sync-tooltip-hint {
   color: var(--text-2);
 }
@@ -9946,28 +9862,6 @@ a.admin-system-chip:hover {
   display: inline-flex;
   width: auto;
   flex: none;
-}
-
-.challenge-cells .analytics-chart-tooltip-wrap:first-child .analytics-chart-tooltip {
-  left: 0;
-  transform: none;
-}
-
-.challenge-cells .analytics-chart-tooltip-wrap:first-child .analytics-chart-tooltip::after {
-  left: 0.9rem;
-  transform: none;
-}
-
-.challenge-cells .analytics-chart-tooltip-wrap:last-child .analytics-chart-tooltip {
-  left: auto;
-  right: 0;
-  transform: none;
-}
-
-.challenge-cells .analytics-chart-tooltip-wrap:last-child .analytics-chart-tooltip::after {
-  left: auto;
-  right: 0.9rem;
-  transform: none;
 }
 
 .challenge-cell {

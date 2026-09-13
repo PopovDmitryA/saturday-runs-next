@@ -234,17 +234,11 @@ export function AttendanceMatrix({
               <td className="ajm-col-total">{row.total}</td>
               {columns.map((column, index) => {
                 const cell = row.private ? undefined : row.cells[column.key];
-                // Подсказка центрирована над клеткой — у первых/последних
-                // колонок центр съезжал бы за край скролл-контейнера, поэтому
-                // возле краёв она прижимается к своему краю клетки (см. CSS
-                // ajm-table td[data-edge]).
-                const edge = index < 3 ? "start" : index >= columns.length - 3 ? "end" : undefined;
                 return (
                   <td
                     key={column.key}
                     className={`ajm-col-date${monthStarts.has(index) ? " ajm-month-start" : ""}`}
                     data-col={index}
-                    data-edge={edge}
                   >
                     {cell ? (
                       <ChartColumnTooltip title={cell.tooltipTitle} lines={cell.tooltipLines}>
