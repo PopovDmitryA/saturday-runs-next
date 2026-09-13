@@ -11,6 +11,7 @@ from app.services.weather_service import (
     ScopeRunSummary,
     WeatherLocation,
     build_rows,
+    dates_to_fetch,
     format_run_report,
     observation_dates,
     resolve_start_time,
@@ -99,6 +100,7 @@ def test_build_rows_picks_start_hour_and_skips_missing() -> None:
     row = rows[0]
     assert row["obs_date"] == date(2025, 1, 4)
     assert row["start_time_local"] == time(9, 0)
+    assert row["source"] == "archive"
     assert row["temperature_c"] == Decimal("-48.2")
     assert row["snow_depth_cm"] == Decimal("21.0")
     assert row["precipitation_mm"] == Decimal("0.3")
@@ -158,3 +160,24 @@ def test_fetch_archive_retries_transport_errors(monkeypatch) -> None:  # type: i
     payload = weather_service.fetch_archive(FakeClient(), 55.7, 37.6, date(2025, 1, 4), date(2025, 1, 4))  # type: ignore[arg-type]
     assert payload == {"hourly": {"time": []}}
     assert calls["n"] == 3
+
+
+def test_observation_dates_upper_override_and_dates_to_fetch() -> None:
+    events = [date(2026, 9, 5), date(2026, 9, 12)]
+    # Предварительный прогон в субботу: граница — сегодня, суббота 12.09 входит.
+    assert observation_dates(events, today=date(2026, 9, 12), upper=date(2026, 9, 12))[-1] == date(2026, 9, 12)
+    # Архивный прогон в ту же субботу: 12.09 ещё за границей лага.
+    assert observation_dates(events, today=date(2026, 9, 12))[-1] == date(2026, 9, 5)
+
+    stored = {date(2026, 9, 5): "archive", date(2026, 9, 12): "forecast"}
+    dates = [date(2026, 9, 5), date(2026, 9, 12), date(2026, 9, 19)]
+    # Архив: заменить предварительную строку и добрать отсутствующую.
+    assert dates_to_fetch(dates, stored, preliminary=False) == [date(2026, 9, 12), date(2026, 9, 19)]
+    # Предварительный: только то, чего нет вовсе.
+    assert dates_to_fetch(dates, stored, preliminary=True) == [date(2026, 9, 19)]
+
+
+def test_preliminary_report_wording() -> None:
+    summary = ScopeRunSummary(preliminary=True, rows_written=250, locations_touched=250, api_calls=250)
+    text = format_run_report(summary, when=datetime(2026, 9, 12, 17, 5))
+    assert "предварительно" in text and "архив заменит" in text

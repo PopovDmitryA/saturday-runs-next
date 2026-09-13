@@ -139,6 +139,13 @@ celery_app.conf.update(
             "schedule": crontab(hour=3, minute=20),
             "options": {"queue": "celery"},
         },
+        # Субботним вечером — предварительная погода из прогнозной модели, чтобы
+        # «последняя пробежка» показывала её в тот же день; архив заменит в понедельник.
+        "weather-collect-preliminary-saturday": {
+            "task": "weather.collect_preliminary",
+            "schedule": crontab(hour=17, minute=0, day_of_week="6"),
+            "options": {"queue": "celery"},
+        },
         # Зависшие sync_runs: раньше их гасило только открытие админской
         # страницы, и висяки жили неделями. Задача внутри базы, сети нет.
         "sync-runs-close-stale": {

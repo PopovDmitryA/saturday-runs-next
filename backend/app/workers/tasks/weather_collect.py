@@ -7,6 +7,10 @@ UTC; год одной локации стоит ~26. Задача идёт в 0
 свежие субботы (одна дата на локацию — копейки по весу).
 
 Часовой лимит здесь не пережидаем (воркер общий): считаем его концом прогона.
+
+Вторая задача — предварительная погода субботним вечером (17:00 МСК): архив
+субботу ещё не отдаёт, берём прогнозную модель за сегодня, помечаем строки
+source='forecast'; ночной архивный прогон в понедельник их перезапишет.
 """
 
 from __future__ import annotations
@@ -60,5 +64,30 @@ def collect_start_weather_task() -> dict[str, object]:
         "scope_locations": summary.scope_locations,
         "stopped_by_limit": summary.stopped_by_limit,
         "finished": summary.finished,
+        "error": summary.error,
+    }
+
+
+@celery_app.task(name="weather.collect_preliminary", time_limit=1800, soft_time_limit=1740)
+def collect_preliminary_task() -> dict[str, object]:
+    db = get_session_factory()()
+    summary = ScopeRunSummary(preliminary=True)
+    try:
+        with httpx.Client(headers={"User-Agent": "run5k.run weather collector"}) as client:
+            summary = collect_scope(db, client, wait_hourly_reset=False, preliminary=True)
+    except Exception as exc:  # noqa: BLE001 — отчёт важнее трейсбека в логе воркера
+        logger.exception("Предварительная погода на стартах упала")
+        db.rollback()
+        summary.error = f"{type(exc).__name__}: {exc}"[:300]
+    finally:
+        db.close()
+
+    if summary.rows_written or summary.error:
+        send_admin_report(format_run_report(summary, when=datetime.now(REPORT_TIMEZONE)))
+
+    return {
+        "rows_written": summary.rows_written,
+        "api_calls": summary.api_calls,
+        "locations_touched": summary.locations_touched,
         "error": summary.error,
     }
