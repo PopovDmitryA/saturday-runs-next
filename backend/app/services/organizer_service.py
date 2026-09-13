@@ -32,12 +32,12 @@ from app.models import (
     VolunteerResult,
 )
 from app.services.location_catalog_service import normalize_platform_code
+from app.services.location_freshness import write_organizer_cache
 from app.services.location_page_service import (
     LocationIdentity,
     _location_event_ids,
     _platform_link_join,
     _read_json_cache,
-    _write_json_cache,
     unknown_result_clause,
 )
 from app.volunteering_occasions import count_volunteering_for_platform
@@ -76,7 +76,7 @@ def build_location_absence(
     )
 
     if use_cache:
-        _write_json_cache(cache_key, payload, ABSENCE_CACHE_TTL_SECONDS)
+        write_organizer_cache(identity, cache_key, payload, ABSENCE_CACHE_TTL_SECONDS)
     return payload
 
 
@@ -404,7 +404,7 @@ def build_location_milestones(
     payload = _compute_location_milestones(db, identity, absence_weeks)
 
     if use_cache:
-        _write_json_cache(cache_key, payload, MILESTONES_CACHE_TTL_SECONDS)
+        write_organizer_cache(identity, cache_key, payload, MILESTONES_CACHE_TTL_SECONDS)
     return payload
 
 
@@ -611,7 +611,7 @@ def build_location_newcomers(
     payload = _compute_location_newcomers(db, identity, days=days)
 
     if use_cache:
-        _write_json_cache(cache_key, payload, NEWCOMERS_CACHE_TTL_SECONDS)
+        write_organizer_cache(identity, cache_key, payload, NEWCOMERS_CACHE_TTL_SECONDS)
     return payload
 
 
@@ -828,7 +828,7 @@ def build_location_volunteer_bench(
     payload = _compute_location_volunteer_bench(db, identity, min_runs=min_runs)
 
     if use_cache:
-        _write_json_cache(cache_key, payload, BENCH_CACHE_TTL_SECONDS)
+        write_organizer_cache(identity, cache_key, payload, BENCH_CACHE_TTL_SECONDS)
     return payload
 
 

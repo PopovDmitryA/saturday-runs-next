@@ -33,6 +33,7 @@ from app.models import (
     RunResult,
     VolunteerResult,
 )
+from app.services.location_freshness import write_organizer_cache
 from app.services.location_page_service import (
     UNKNOWN_DISPLAY_NAMES,
     UNKNOWN_RESULT_STATUSES,
@@ -116,7 +117,9 @@ def build_protocol_timeline(db: Session, identity: LocationIdentity, *, limit: i
     if cached is not None:
         return cached
     payload = _compute_protocol_timeline(db, identity, limit=limit)
-    _write_json_cache(protocol_timeline_cache_key(identity.identity_key), payload, CACHE_TTL_SECONDS)
+    write_organizer_cache(
+        identity, protocol_timeline_cache_key(identity.identity_key), payload, CACHE_TTL_SECONDS
+    )
     return payload
 
 
@@ -343,7 +346,9 @@ def build_location_health(db: Session, identity: LocationIdentity) -> dict[str, 
     if cached is not None:
         return cached
     payload = _compute_location_health(db, identity)
-    _write_json_cache(health_cache_key(identity.identity_key), payload, CACHE_TTL_SECONDS)
+    write_organizer_cache(
+        identity, health_cache_key(identity.identity_key), payload, CACHE_TTL_SECONDS
+    )
     return payload
 
 
