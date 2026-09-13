@@ -112,6 +112,7 @@ FIELD_LABELS: dict[str, str] = {
     "rows_written": "строк погоды записано",
     "api_calls": "запросов к погодному сервису",
     "locations_complete": "локаций закрыто целиком",
+    "locations_touched": "локаций с новыми строками",
     "scope_locations": "локаций в обходе",
     "stopped_by_limit": "остановлено по лимиту",
     "finished": "обход завершён",
