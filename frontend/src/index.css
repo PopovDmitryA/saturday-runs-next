@@ -11629,6 +11629,38 @@ a.admin-system-chip:hover {
   width: 5.5rem;
 }
 
+/* Дата и система в топах по времени и победам: колонки узкие, чтобы имя не
+   переносилось — на странице локации таблицы стоят парой в две колонки. */
+.loc-leaders-table .loc-leaders-col-date {
+  width: 5.75rem;
+}
+
+.loc-leaders-table .loc-leaders-col-system {
+  width: 5.25rem;
+}
+
+/* Число побед — две-три цифры, колонке хватает узкой: остаток отдаём имени,
+   иначе «Александр МЕДВЕДЕВ» переносится на две строки. */
+.loc-leaders-table .loc-leaders-col-count {
+  width: 4.25rem;
+}
+
+/* Систем у строки может быть две (профиль сайта со связанными аккаунтами) —
+   бейджи переносятся, а не растягивают колонку. */
+.loc-top-systems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+/* Подпись карточки на телефоне: бейдж системы и дата в одну строку. */
+.loc-top-card-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 .loc-leaders-rank {
   color: #64748b;
   font-variant-numeric: tabular-nums;

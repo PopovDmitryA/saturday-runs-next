@@ -24,6 +24,7 @@ from app.schemas.locations import (
     LocationPersonalStatsResponse,
     LocationProtocolResponse,
     LocationsIndexResponse,
+    LocationTopsResponse,
     MapGeoPingRequest,
     MapLocationsResponse,
     MapPointContextResponse,
@@ -42,6 +43,7 @@ from app.services.location_page_service import (
     build_location_page,
     build_location_participants,
     build_location_personal_stats,
+    build_location_tops,
     build_locations_index,
 )
 from app.services.location_protocol_service import build_location_protocol
@@ -99,6 +101,18 @@ def location_leaders(
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
     return LocationLeadersResponse.model_validate(payload)
+
+
+@router.get("/page/{slug}/tops", response_model=LocationTopsResponse)
+def location_tops(
+    slug: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> LocationTopsResponse:
+    """Полные топы бегунов локации: по лучшему времени и по числу побед."""
+    payload = build_location_tops(db, slug)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
+    return LocationTopsResponse.model_validate(payload)
 
 
 @router.get("/page/{slug}/attendance", response_model=LocationAttendanceResponse)

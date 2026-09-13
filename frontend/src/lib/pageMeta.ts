@@ -231,6 +231,7 @@ const PROFILE_RE = /^\/users\/([^/]+)(?:\/([^/]+))?$/;
 const UNIFIED_PROTOCOL_RE = /^\/protocol\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_EVENTS_RE = /^\/locations\/([^/]+)\/events$/;
 const LOCATION_PARTICIPANTS_RE = /^\/locations\/([^/]+)\/participants$/;
+const LOCATION_TOPS_RE = /^\/locations\/([^/]+)\/tops$/;
 const LOCATION_PROTOCOL_RE = /^\/locations\/([^/]+)\/protocol\/([^/]+)\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_RE = /^\/locations\/([^/]+)$/;
 const SWEEP_HQ_RE = /^\/hq\/.+$/;
@@ -244,7 +245,8 @@ export function isLocationEntityPath(rawPath: string): boolean {
   return (
     LOCATION_RE.test(path) ||
     LOCATION_EVENTS_RE.test(path) ||
-    LOCATION_PARTICIPANTS_RE.test(path)
+    LOCATION_PARTICIPANTS_RE.test(path) ||
+    LOCATION_TOPS_RE.test(path)
   );
 }
 
@@ -335,6 +337,14 @@ export function resolvePageMeta(rawPath: string): PageMeta {
       description:
         "Кто бегает и волонтёрит на площадке от трёх раз: число участий здесь и во " +
         "всех локациях, первый и последний старт.",
+    };
+  }
+  if (LOCATION_TOPS_RE.test(path)) {
+    return {
+      title: "Топы бегунов локации — run5k.run",
+      description:
+        "Кто на площадке бежал быстрее всех и кто чаще всех выигрывал: лучшее время " +
+        "каждого участника и число побед в абсолюте и среди женщин.",
     };
   }
   if (LOCATION_RE.test(path)) {
@@ -503,7 +513,7 @@ function lastEventPhrase(stats: LocationMetaSource["stats"]): string | null {
  */
 export function locationPageMeta(
   payload: LocationMetaSource,
-  options: { eventsLog?: boolean; participants?: boolean } = {},
+  options: { eventsLog?: boolean; participants?: boolean; tops?: boolean } = {},
 ): PageMeta {
   const name = payload.name || "Локация";
   const city = payload.city ?? null;
@@ -528,6 +538,19 @@ export function locationPageMeta(
   const numbers = parts.join(", ");
 
   // Описание держим в 160 символах: длиннее поисковик обрежет многоточием.
+  if (options.tops) {
+    // indexable не выставляем сознательно — как и у постоянного состава:
+    // отдельной выдачи эта витрина не просит, робот идёт на саму локацию.
+    return {
+      title: fitTitle(`${where}: топы бегунов`),
+      description: describe(
+        `Кто быстрее всех бежал локацию «${name}» и кто чаще всех выигрывал`,
+        numbers,
+        ". Лучшее время каждого участника и число побед в абсолюте и среди женщин.",
+        ". Лучшее время каждого и число побед.",
+      ),
+    };
+  }
   if (options.participants) {
     // indexable не выставляем сознательно — см. resolvePageMeta.
     return {

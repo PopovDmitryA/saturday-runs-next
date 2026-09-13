@@ -354,11 +354,60 @@ class LocationLeaderVolunteerResponse(BaseModel):
     count: int
 
 
+class LocationFastestRunnerResponse(BaseModel):
+    """Строка топа по времени: лучший результат человека на этой локации."""
+
+    place: int
+    name: str | None = None
+    handle: str | None = None
+    best_time_sec: int
+    best_time_display: str | None = None
+    event_date: date | None = None
+    # Системы, чьи протоколы участвуют в строке. Обычно одна; у профиля сайта
+    # со связанными аккаунтами лучшее время выбрано из результатов обеих
+    # систем площадки, и в колонке стоят обе.
+    platform_codes: list[str] = Field(default_factory=list)
+    # Финишей человека здесь — контекст к лучшему времени: одно дело рекорд
+    # заезжего туриста с единственного старта, другое — местного завсегдатая.
+    finishes_count: int = 0
+
+
+class LocationTopWinnerResponse(BaseModel):
+    """Строка топа по победам: сколько раз человек финишировал здесь первым."""
+
+    place: int
+    name: str | None = None
+    handle: str | None = None
+    wins_count: int
+    first_win_date: date | None = None
+    last_win_date: date | None = None
+    # Системы, в которых зафиксированы победы. Обычно одна: непривязанный
+    # аккаунт живёт внутри платформы. У профиля сайта со связанными аккаунтами
+    # площадка могла успеть побывать и parkrun, и 5 вёрст — тогда их две.
+    platform_codes: list[str] = Field(default_factory=list)
+
+
 class LocationLeadersResponse(BaseModel):
     slug: str
     name: str
     runners: list[LocationLeaderRunnerResponse] = Field(default_factory=list)
     volunteers: list[LocationLeaderVolunteerResponse] = Field(default_factory=list)
+    fastest_male: list[LocationFastestRunnerResponse] = Field(default_factory=list)
+    fastest_female: list[LocationFastestRunnerResponse] = Field(default_factory=list)
+    winners_overall: list[LocationTopWinnerResponse] = Field(default_factory=list)
+    winners_female: list[LocationTopWinnerResponse] = Field(default_factory=list)
+
+
+class LocationTopsResponse(BaseModel):
+    """Полные зачёты локации для витрины «Топы бегунов» — без лимита."""
+
+    slug: str
+    name: str
+    platform_codes: list[str] = Field(default_factory=list)
+    fastest_male: list[LocationFastestRunnerResponse] = Field(default_factory=list)
+    fastest_female: list[LocationFastestRunnerResponse] = Field(default_factory=list)
+    winners_overall: list[LocationTopWinnerResponse] = Field(default_factory=list)
+    winners_female: list[LocationTopWinnerResponse] = Field(default_factory=list)
 
 
 class LocationAttendanceItemResponse(BaseModel):

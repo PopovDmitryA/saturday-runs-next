@@ -2740,15 +2740,61 @@ export type LocationLeaderVolunteer = {
   count: number;
 };
 
+/** Строка топа по времени: лучший результат человека на этой локации. */
+export type LocationFastestRunner = {
+  place: number;
+  name: string | null;
+  handle?: string | null;
+  best_time_sec: number;
+  best_time_display: string | null;
+  event_date: string | null;
+  /** Системы, чьи протоколы участвуют в строке. Обычно одна. */
+  platform_codes: string[];
+  /** Сколько раз человек финишировал здесь — контекст к лучшему времени. */
+  finishes_count: number;
+};
+
+/** Строка топа по победам: сколько раз человек финишировал здесь первым. */
+export type LocationTopWinner = {
+  place: number;
+  name: string | null;
+  handle?: string | null;
+  wins_count: number;
+  first_win_date: string | null;
+  last_win_date: string | null;
+  /** Системы, в которых зафиксированы победы. Обычно одна. */
+  platform_codes: string[];
+};
+
 export type LocationLeaders = {
   slug: string;
   name: string;
   runners: LocationLeaderRunner[];
   volunteers: LocationLeaderVolunteer[];
+  fastest_male: LocationFastestRunner[];
+  fastest_female: LocationFastestRunner[];
+  winners_overall: LocationTopWinner[];
+  winners_female: LocationTopWinner[];
 };
 
 export function getLocationLeaders(slug: string) {
   return apiFetch<LocationLeaders>(`/locations/page/${encodeURIComponent(slug)}/leaders`);
+}
+
+/** Полные зачёты локации для витрины «Топы бегунов» — без лимита. */
+export type LocationTops = {
+  slug: string;
+  name: string;
+  /** Системы, в которых площадка работала, — для фильтра. */
+  platform_codes: string[];
+  fastest_male: LocationFastestRunner[];
+  fastest_female: LocationFastestRunner[];
+  winners_overall: LocationTopWinner[];
+  winners_female: LocationTopWinner[];
+};
+
+export function getLocationTops(slug: string) {
+  return apiFetch<LocationTops>(`/locations/page/${encodeURIComponent(slug)}/tops`);
 }
 
 /** Строка «постоянного состава» локации — и для бегунов, и для волонтёров. */

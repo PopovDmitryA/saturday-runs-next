@@ -50,6 +50,7 @@ import {
 } from "./features/portal/cabinet/PortalCabinetPages";
 import { LocationEventsPage } from "./features/locations/LocationEventsPage";
 import { LocationParticipantsPage } from "./features/locations/LocationParticipantsPage";
+import { LocationTopsPage } from "./features/locations/LocationTopsPage";
 import { LocationProtocolPage } from "./features/locations/LocationProtocolPage";
 import { LocationPage } from "./features/locations/LocationPage";
 import { LastResultsPage } from "./features/locations/LastResultsPage";
@@ -438,6 +439,12 @@ function renderRoute(path: string): ReactElement {
   const locationParticipantsMatch = path.match(/^\/locations\/([^/]+)\/participants$/);
   if (locationParticipantsMatch) {
     return <LocationParticipantsPage slug={decodeURIComponent(locationParticipantsMatch[1])} />;
+  }
+  // Полные топы бегунов локации: на самой странице локации от каждого видна
+  // только пятёрка.
+  const locationTopsMatch = path.match(/^\/locations\/([^/]+)\/tops$/);
+  if (locationTopsMatch) {
+    return <LocationTopsPage slug={decodeURIComponent(locationTopsMatch[1])} />;
   }
   const locationMatch = path.match(/^\/locations\/([^/]+)$/);
   if (locationMatch) {
