@@ -146,7 +146,7 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
     ),
     "/ratings/volunteer-roles": _meta(
         "Рейтинг по волонтёрским ролям — run5k.run",
-        "Сколько разных волонтёрских ролей освоили участники субботних пробежек.",
+        "В скольких разных волонтёрских ролях побывали участники субботних пробежек.",
         indexable=True,
     ),
     "/ratings/locations": _meta(

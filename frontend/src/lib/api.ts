@@ -295,6 +295,13 @@ export type DashboardAnalytics = {
   location_records?: LocationRecordsBlock;
   age_group_records?: LocationRecordsBlock;
   home_distance?: HomeDistance | null;
+  /** Ч9 «Луковица лояльности»: пробежки на домашней локации и их доля. */
+  home_runs_count?: number;
+  home_runs_share_pct?: number | null;
+  /** Ч25 «Стабильность»: СКО последних финишей, размер окна, серия метронома. */
+  finish_spread_sec?: number | null;
+  finish_spread_runs?: number;
+  metronome_streak?: number;
   last_saturday?: LastSaturday | null;
 };
 
@@ -1115,6 +1122,11 @@ export type ChallengeCell = {
   count?: number | null;
   /** Готовая подпись к count, когда «финиш» не подходит («8 волонтёрств»). */
   count_label?: string | null;
+  /**
+   * Клетка входит в выделенную группу: «Индекс Уилсона» так показывает обе свои
+   * цепочки на одной ленте номеров — classic (от №1) и floating (самая длинная).
+   */
+  accent?: string | null;
 };
 
 export type ChallengeLetter = {
@@ -1150,6 +1162,12 @@ export type ChallengeDetail = {
   days?: ChallengeDay[];
   items?: ChallengeDetailItem[];
   example?: { value: string; location: string; note: string };
+  /**
+   * Строка-пояснение над деталями: «твой размах 24:xx — 38:xx», «дом — Россия»,
+   * «осталось: S95, RunPark». Нужна там, где само число карточки без словесной
+   * расшифровки читается неоднозначно.
+   */
+  note?: string | null;
 };
 
 export type ChallengeLevelDates = {
@@ -1265,8 +1283,16 @@ export type StartNumberPlan = {
   low: number;
   high: number;
   generated_for: string;
-  // Сколько колонок в строке; подписи строит фронт
+  // Сколько колонок в строке
   week_count: number;
+  /** Подписи колонок с бэка: «Ближайший забег (E)» / «E+1» либо «Где и когда». */
+  column_titles?: string[];
+  /** Горизонт прогноза словами: «ближайшие 3 недели» / «ближайшие полгода». */
+  horizon_label?: string;
+  /** Есть ли смысл в отметке «закрыто» — у челленджей-счётчиков её нет. */
+  tracks_done?: boolean;
+  /** Пояснение конкретного челленджа поверх общего текста про прогноз. */
+  intro?: string | null;
   rows: StartNumberPlanRow[];
 };
 

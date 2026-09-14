@@ -161,7 +161,7 @@ const CATEGORY_HINTS: Record<Challenge["category"], string> = {
   coincidence: "Редкие совпадения в твоих результатах.",
   scale: "Долгие челленджи на объём: локации, регионы и серии.",
   community:
-    "Вклад в общее дело: отзывы о стартах и волонтёрские роли, которые вы освоили.",
+    "Вклад в общее дело: отзывы о стартах и волонтёрские роли, в которых вы участвовали.",
 };
 
 // Клетка коллекции красится в цвет системы, в которой она была закрыта раньше всего.
@@ -265,7 +265,9 @@ function ChallengeCells({
           <span
             className={`challenge-cell${cell.done ? ` done ${platformCellClass(cell.platform_code)}` : ""}${
               !cell.done && cell.hint ? " has-hint" : ""
-            }${isFreshlyClosed(cell.date, recentDate) ? " challenge-cell-fresh" : ""}`}
+            }${isFreshlyClosed(cell.date, recentDate) ? " challenge-cell-fresh" : ""}${
+              cell.accent ? ` challenge-cell-accent-${cell.accent}` : ""
+            }`}
           >
             {cell.label}
           </span>
@@ -459,22 +461,55 @@ function ChallengeItems({ challenge }: { challenge: Challenge }) {
 
 function ChallengeDetailBlock({ challenge }: { challenge: Challenge }) {
   const detail = challenge.detail;
+  // Пояснение к числу карточки идёт первой строкой: «размах 24:xx — 38:xx»,
+  // «дом — Россия», «осталось: S95, RunPark» — без него сетка клеток у таких
+  // челленджей читается как коллекция, которую надо закрыть целиком.
+  const note = detail.note ? <p className="muted challenge-detail-note">{detail.note}</p> : null;
+  const accents = detail.cells?.some((cell) => cell.accent) ? <ChallengeAccentLegend /> : null;
+  let body: ReactNode;
   if (detail.letters) {
-    return <ChallengeLetters challenge={challenge} />;
+    body = <ChallengeLetters challenge={challenge} />;
+  } else if (detail.cells) {
+    body = <ChallengeCells cells={detail.cells} recentDate={challenge.recent_date} />;
+  } else if (detail.days) {
+    body = <ChallengeDays challenge={challenge} />;
+  } else {
+    body = <ChallengeItems challenge={challenge} />;
   }
-  if (detail.cells) {
-    return <ChallengeCells cells={detail.cells} recentDate={challenge.recent_date} />;
-  }
-  if (detail.days) {
-    return <ChallengeDays challenge={challenge} />;
-  }
-  return <ChallengeItems challenge={challenge} />;
+  return (
+    <>
+      {note}
+      {accents}
+      {body}
+    </>
+  );
+}
+
+/** Что означают выделенные клетки на ленте — сегодня это две цепочки Уилсона. */
+function ChallengeAccentLegend() {
+  return (
+    <div className="challenge-accent-legend">
+      <span className="challenge-accent-legend-item">
+        <span className="challenge-accent-swatch challenge-cell-accent-classic" />
+        цепочка с начала
+      </span>
+      <span className="challenge-accent-legend-item">
+        <span className="challenge-accent-swatch challenge-cell-accent-floating" />
+        самая длинная цепочка
+      </span>
+    </div>
+  );
 }
 
 function hasDetail(challenge: Challenge): boolean {
   const detail = challenge.detail;
   return Boolean(
-    detail.cells?.length || detail.letters?.length || detail.days || detail.items || detail.example,
+    detail.cells?.length ||
+      detail.letters?.length ||
+      detail.days ||
+      detail.items ||
+      detail.example ||
+      detail.note,
   );
 }
 
@@ -648,7 +683,19 @@ const CHALLENGE_CTA: Record<string, { href: string; label: string }> = {
 // Челленджи, где есть что планировать наперёд: таблица «номер старта → у каких
 // локаций он выпадает на ближайшие три недели». Тултипы ячеек показывают то же
 // самое, но по одной ячейке за раз — для долгого планирования это неудобно.
-const CHALLENGE_PLAN_CODES = new Set(["start_numbers", "start_numbers_pro"]);
+// У кого есть кнопка «Планирование →» с таблицей «где взять номер». Числовые
+// челленджи попали сюда 14.09.2026: подсказки в клетках ленты Дмитрий признал
+// неудобными — планировать надо в той же модалке, что у «Нумератора».
+const CHALLENGE_PLAN_CODES = new Set([
+  "start_numbers",
+  "start_numbers_pro",
+  "fibonacci",
+  "nelson",
+  "primes",
+  "wilson",
+  "jubilee",
+  "number_match",
+]);
 
 function ChallengeCard({
   challenge,
@@ -689,7 +736,11 @@ function ChallengeCard({
     : "Уровень пройден целиком!";
   const bestTierLabel = bestTier?.label ? bestTier.label.toLowerCase() : null;
   return (
-    <div className={`card challenge-card${challenge.best_level ? "" : " challenge-card-locked"}`}>
+    <div
+      className={`card challenge-card${challenge.best_level ? "" : " challenge-card-locked"}${
+        expanded ? " challenge-card-expanded" : ""
+      }`}
+    >
       <div className="challenge-head">
         <TierRing
           tier={challenge.best_level ? challenge.best_tier : null}

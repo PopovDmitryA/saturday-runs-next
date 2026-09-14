@@ -9201,6 +9201,13 @@ a.admin-system-chip:hover {
   font-size: 0.85rem;
 }
 
+/* Пояснение над деталями челленджа: «твой размах 24:xx — 38:xx», «дом — Россия». */
+.challenge-detail-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
 .challenge-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9216,6 +9223,32 @@ a.admin-system-chip:hover {
 .challenge-card {
   gap: 0.6rem;
   min-width: 0;
+  /* Свободную высоту ряда забирает ШАПКА (иконка + название + описание), а не
+     низ карточки: описания у челленджей разной длины, и если слак уходил бы
+     вниз, вкладки сложности и ленты прогресса стояли бы на разной высоте —
+     ровно то, что бросалось в глаза (правка Дмитрия 14.09.2026). Первый ряд
+     1fr, остальные — неявные auto. В колонке авто-высоты (телефон) 1fr
+     считается по содержимому, так что карточка не сжимается. */
+  grid-template-rows: 1fr;
+}
+
+/* Карточки одного ряда — одной высоты. Обёртку-якорь сетка растягивает сама
+   (align-items: stretch по умолчанию), оставалось передать эту высоту
+   карточке внутри неё. */
+.challenge-anchor {
+  display: flex;
+  flex-direction: column;
+}
+
+.challenge-anchor > .challenge-card {
+  flex: 1;
+}
+
+/* Раскрытые «Детали» делают карточку выше в разы: ряд подтянулся бы под неё, и
+   у соседки шапка раздулась бы пустотой на пол-экрана. Пока в группе есть
+   раскрытая карточка, выравнивание выключено — высоты снова по содержимому. */
+.challenge-grid:has(.challenge-card-expanded) > .challenge-anchor > .challenge-card {
+  flex: none;
 }
 
 /* Обёртка-цель ссылок из витрины медалей (#challenge-<code>). Отступ обязан
@@ -9912,6 +9945,41 @@ a.admin-system-chip:hover {
   background: var(--tint-orange-bg);
   border-color: var(--tint-orange-text);
   color: var(--tint-orange-text);
+}
+
+/* Две цепочки «Индекса Уилсона» на одной ленте номеров: заливка клетки уже
+   занята системой, поэтому принадлежность цепочке показываем полосой снизу.
+   Цепочка с начала и самая длинная могут совпадать — тогда клетка получает
+   класс classic, и это правильно: подпись у неё та же. */
+.challenge-cell-accent-classic {
+  box-shadow: inset 0 -3px 0 var(--link-strong);
+}
+
+.challenge-cell-accent-floating {
+  box-shadow: inset 0 -3px 0 var(--tint-orange-text);
+}
+
+.challenge-accent-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.challenge-accent-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.challenge-accent-swatch {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 3px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
 }
 
 /* Клетка, закрытая последней пробежкой (той самой, за которую на карточке стоит

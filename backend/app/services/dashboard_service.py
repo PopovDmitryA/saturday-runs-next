@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import Integer, and_, func, or_
@@ -78,7 +78,10 @@ class SyncRefreshRateLimitedError(Exception):
 # зачёт совпадает с абсолютом, и плитка дублировала «Среднее место».
 # 39: last_saturday — день целиком: kind (пробежка/волонтёрство) и волонтёрства
 #     того же дня; без бампа кэш отдавал старый payload без этих полей.
-ANALYTICS_VERSION = 39
+# 40: плитки «Луковица лояльности» (доля пробежек дома) и «Стабильность»
+#     (разброс последних финишей + серия метронома) — без бампа кэш отдавал бы
+#     старый payload, и обе плитки не появились бы у тех, кто уже прогрет.
+ANALYTICS_VERSION = 40
 
 RUN_MILESTONES = (10, 25, 50, 100, 250, 500, 1000)
 
@@ -233,6 +236,55 @@ def _last_saturday_notables(
         notables.append(f"{saturday_streak} суббот подряд — серия продолжается")
 
     return notables[:2]
+
+
+# Ч25 «Стабильность»: разброс считаем по последним STABILITY_WINDOW_RUNS
+# финишам — форма годичной давности к сегодняшней ровности отношения не имеет.
+STABILITY_WINDOW_RUNS = 10
+STABILITY_MIN_RUNS = 4
+# «Метроном» — сколько финишей подряд уместились в коридор ±30 секунд.
+METRONOME_CORRIDOR_SEC = 30
+
+
+def _finish_stability(finishes: list[int]) -> tuple[int | None, int, int]:
+    """(разброс последних финишей в секундах, сколько их учтено, серия метронома).
+
+    finishes — финишные времена В ПОРЯДКЕ ДАТ, от старых к свежим.
+
+    Разброс — среднеквадратичное отклонение по последнему окну: цифра «±14 с»
+    читается сразу, в отличие от «коридора» лучшее-худшее, который один
+    случайный медленный день раздувает вдвое. Серию метронома, наоборот,
+    считаем по всей истории: это редкое достижение, и обрезать его окном
+    значило бы прятать самое интересное.
+    """
+    if len(finishes) < STABILITY_MIN_RUNS:
+        return None, 0, 0
+    window = finishes[-STABILITY_WINDOW_RUNS:]
+    mean = sum(window) / len(window)
+    spread = round((sum((value - mean) ** 2 for value in window) / len(window)) ** 0.5)
+
+    # Самое длинное окно, укладывающееся в коридор ±30 секунд. Две монотонные
+    # очереди вместо пересчёта max/min по срезу: у настоящего «метронома» окно
+    # разрастается до всей истории, и наивный вариант стал бы квадратичным.
+    best = 0
+    start = 0
+    max_deque: deque[int] = deque()
+    min_deque: deque[int] = deque()
+    for index, value in enumerate(finishes):
+        while max_deque and finishes[max_deque[-1]] <= value:
+            max_deque.pop()
+        max_deque.append(index)
+        while min_deque and finishes[min_deque[-1]] >= value:
+            min_deque.pop()
+        min_deque.append(index)
+        while finishes[max_deque[0]] - finishes[min_deque[0]] > 2 * METRONOME_CORRIDOR_SEC:
+            start += 1
+            if max_deque[0] < start:
+                max_deque.popleft()
+            if min_deque[0] < start:
+                min_deque.popleft()
+        best = max(best, index - start + 1)
+    return spread, len(window), best
 
 
 def _next_run_milestone(total_runs: int) -> tuple[int | None, int | None]:
@@ -931,6 +983,37 @@ def _compute_dashboard_analytics(
         else None
     )
 
+    # Ч9 «Луковица лояльности»: доля пробежек на домашней локации. Считаем не
+    # из total_runs, а из тех же run_visit_rows, по которым живёт вся остальная
+    # аналитика — иначе кросслинк-дубли RunPark сидели бы в знаменателе, но не
+    # в числителе, и доля дома выходила бы заниженной.
+    home_key = (
+        str(cast(dict[str, object], home_distance["home"])["catalog_identity_key"])
+        if home_distance and home_distance.get("home")
+        else None
+    )
+    home_runs_count = 0
+    if home_key is not None:
+        home_runs_count = sum(
+            1
+            for _event_date, location, platform_code in run_visit_rows
+            if catalog_index.canonical_identity_key(location, platform_code) == home_key
+        )
+    counted_runs = len(run_dates)
+    home_runs_share_pct = (
+        round(100 * home_runs_count / counted_runs, 1) if counted_runs and home_runs_count else None
+    )
+
+    # Ч25 «Стабильность»: разброс последних финишей и лучшая серия «метронома».
+    ordered_finishes = [
+        int(finish_sec)
+        for _event_date, finish_sec in sorted(
+            ((row[0], row[2]) for row in run_month_rows if row[2] is not None),
+            key=lambda pair: pair[0],
+        )
+    ]
+    finish_spread_sec, finish_spread_runs, metronome_streak = _finish_stability(ordered_finishes)
+
     # «Последняя суббота» — герой дашборда: свежайший день участия с дельтой
     # к прошлому визиту на ту же площадку. Считается из уже отфильтрованных
     # runs_query/vol_query (без тестовых стартов и кросслинк-дублей).
@@ -1093,6 +1176,11 @@ def _compute_dashboard_analytics(
         "location_records": location_records["course"],
         "age_group_records": location_records["age_group"],
         "home_distance": home_distance,
+        "home_runs_count": home_runs_count,
+        "home_runs_share_pct": home_runs_share_pct,
+        "finish_spread_sec": finish_spread_sec,
+        "finish_spread_runs": finish_spread_runs,
+        "metronome_streak": metronome_streak,
         "last_saturday": last_saturday,
     }
 

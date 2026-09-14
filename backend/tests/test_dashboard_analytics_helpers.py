@@ -9,6 +9,7 @@ from app.services.dashboard_service import (
     _collect_field_comparison_pairs,
     _current_saturday_streak,
     _earned_run_clubs,
+    _finish_stability,
     _max_saturday_streak,
     _next_run_club,
     _next_run_milestone,
@@ -117,3 +118,35 @@ def test_count_unique_geo_merges_moscow_region_variants(db_session: Session) -> 
     )
     assert regions == 1
     assert cities == 2
+
+
+def test_finish_stability_needs_enough_runs() -> None:
+    """Три финиша — ещё не «ровность»: разброс по такой выборке скачет от
+    одного случайного дня, плитку показывать не на чем."""
+    assert _finish_stability([1500, 1510, 1520]) == (None, 0, 0)
+
+
+def test_finish_stability_uses_last_window_only() -> None:
+    """Форма прошлых лет к сегодняшней ровности отношения не имеет: в окно
+    попадают только последние десять финишей."""
+    old_chaos = [600, 3000, 700, 2900]
+    recent = [1500, 1502, 1498, 1500, 1501, 1499, 1500, 1500, 1502, 1498]
+    spread, window, _metronome = _finish_stability(old_chaos + recent)
+    assert window == 10
+    assert spread <= 2
+
+
+def test_finish_stability_metronome_streak_spans_whole_history() -> None:
+    """Серию метронома, наоборот, ищем по всей истории — это редкое
+    достижение, и обрезать его окном значило бы прятать самое интересное."""
+    # Пять финишей подряд в коридоре ±30 с, затем выход из него.
+    finishes = [1500, 1510, 1520, 1530, 1540, 1800, 1801]
+    _spread, _window, metronome = _finish_stability(finishes)
+    assert metronome == 5
+
+
+def test_finish_stability_corridor_is_plus_minus_thirty() -> None:
+    # 1500 и 1561 — 61 секунда, в коридор ±30 (ширина 60) уже не влезают,
+    # поэтому серия рвётся на паре, а не тянется через всю тройку.
+    _spread, _window, metronome = _finish_stability([1500, 1530, 1561, 1600])
+    assert metronome == 2

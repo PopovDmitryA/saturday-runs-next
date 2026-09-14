@@ -104,7 +104,7 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
   },
   "/ratings/volunteer-roles": {
     title: "Рейтинг по волонтёрским ролям — run5k.run",
-    description: "Сколько разных волонтёрских ролей освоили участники субботних пробежек.",
+    description: "В скольких разных волонтёрских ролях побывали участники субботних пробежек.",
     indexable: true,
   },
   "/ratings/locations": {

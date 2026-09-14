@@ -167,6 +167,28 @@ const TOTAL_DISTANCE_TOOLTIP = (
   <span>Примерная суммарная дистанция: 5 км на каждую пробежку.</span>
 );
 
+const HOME_RATIO_TOOLTIP = (
+  <>
+    <span>Какая доля ваших пробежек прошла на домашней локации.</span>
+    <span className="stat-hint-tooltip-note">
+      Это не соревнование: 90% — столп своего парка, 20% — вечный турист. Обе роли
+      сообществу одинаково нужны. Домашняя локация меняется в настройках.
+    </span>
+  </>
+);
+
+const FINISH_SPREAD_TOOLTIP = (
+  <>
+    <span>
+      Насколько ровно вы бежите: среднее отклонение последних финишей от их же среднего.
+    </span>
+    <span className="stat-hint-tooltip-note">
+      Меньше — стабильнее. Считается по последним десяти финишам, поэтому форма
+      прошлых лет на цифру не влияет.
+    </span>
+  </>
+);
+
 function twelveMonthsAgoIso(): string {
   const date = new Date();
   date.setDate(date.getDate() - 365);
@@ -412,6 +434,45 @@ function buildAnalyticsCards(
       clickable: true,
       modalTarget: "nearest_unvisited",
       tooltipContent: NEAREST_UNVISITED_TOOLTIP,
+    });
+  }
+
+  // «Луковица лояльности» (Ч9): доля пробежек на домашней локации. Плитка
+  // намеренно нейтральна — ни высокая, ни низкая доля не «лучше»: подпись
+  // просто называет вторую половину («в разъездах»), чтобы турист не читал
+  // свои 20% как двойку за лояльность.
+  const homeSharePct = analytics.home_runs_share_pct;
+  if (homeDistance?.home && homeSharePct != null && (analytics.home_runs_count ?? 0) > 0) {
+    const awayPct = Math.max(0, Math.round((100 - homeSharePct) * 10) / 10);
+    cards.push({
+      key: "home_ratio",
+      value: `${Math.round(homeSharePct)}%`,
+      label: "пробежек дома",
+      note: `${homeDistance.home.name} · ${Math.round(awayPct)}% в разъездах`,
+      category: "runs",
+      tooltipContent: HOME_RATIO_TOOLTIP,
+    });
+  }
+
+  // «Стабильность» (Ч25): не все гонятся за рекордом — многим интереснее
+  // метрономная ровность. Серию «финишей подряд в коридоре ±30 секунд»
+  // показываем уточнением и только когда она уже что-то значит (от трёх).
+  const finishSpread = analytics.finish_spread_sec;
+  if (finishSpread != null && (analytics.finish_spread_runs ?? 0) > 0) {
+    const metronome = analytics.metronome_streak ?? 0;
+    cards.push({
+      key: "finish_spread",
+      value: `±${formatNumber(finishSpread)} с`,
+      label: `разброс последних ${analytics.finish_spread_runs ?? 0} ${runsFormLabel(
+        analytics.finish_spread_runs ?? 0,
+      )}`,
+      note:
+        metronome >= 3
+          ? `метроном: ${metronome} ${runsFormLabel(metronome)} подряд в коридоре ±30 с`
+          : undefined,
+      category: "runs",
+      tooltipContent: FINISH_SPREAD_TOOLTIP,
+      labelMultiline: true,
     });
   }
 

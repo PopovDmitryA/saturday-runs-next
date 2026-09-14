@@ -239,6 +239,14 @@ class DashboardAnalyticsResponse(BaseModel):
     location_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
     age_group_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
     home_distance: HomeDistanceResponse | None = None
+    # Ч9 «Луковица лояльности»: пробежки на домашней локации и их доля.
+    home_runs_count: int = 0
+    home_runs_share_pct: float | None = None
+    # Ч25 «Стабильность»: разброс последних финишей (СКО в секундах), сколько
+    # финишей в окне и лучшая серия подряд в коридоре ±30 секунд.
+    finish_spread_sec: int | None = None
+    finish_spread_runs: int = 0
+    metronome_streak: int = 0
     last_saturday: LastSaturdayResponse | None = None
 
 
