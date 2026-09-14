@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,6 +54,16 @@ app.include_router(api_router, prefix="/api")
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.exception("Unhandled error on %s", request.url.path)
-    detail = str(exc) if settings.app_debug else f"{type(exc).__name__}: {exc}"
-    return JSONResponse(status_code=500, content={"detail": detail})
+    # Короткий код ошибки — он и в логе, и в ответе: по жалобе «вылетела
+    # ошибка …» трейсбек находится одним grep'ом.
+    error_id = uuid4().hex[:8]
+    logger.exception("Unhandled error %s on %s", error_id, request.url.path)
+    # Текст исключения наружу — только в debug. У SQLAlchemy/psycopg в нём SQL
+    # с параметрами (id пользователей, почта в WHERE), у OSError — пути на
+    # диске, у httpx — адреса внешних систем. До 13.09.2026 условие стояло
+    # наоборот: прод отдавал «TypeName: текст» любому, кто вызвал 500.
+    if settings.app_debug:
+        detail = f"{type(exc).__name__}: {exc}"
+    else:
+        detail = f"Внутренняя ошибка сервера (код {error_id})"
+    return JSONResponse(status_code=500, content={"detail": detail, "error_id": error_id})
