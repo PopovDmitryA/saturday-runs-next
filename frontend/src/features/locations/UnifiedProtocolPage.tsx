@@ -20,6 +20,7 @@ import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { formatTemp, temperatureTone } from "../../lib/weather";
+import { WeatherChip } from "../../components/WeatherChip";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import {
@@ -372,50 +373,6 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
         <p className="protocol-subtitle">
           Все площадки всех систем за одну неделю, выстроенные по времени финиша.
         </p>
-        {data.weather && data.weather.locations_with_weather > 0 && (
-          <p className="protocol-weather protocol-weather-week">
-            {data.weather.coldest && (
-              <span className="protocol-weather-item" title={data.weather.coldest.weather.summary}>
-                🥶 Холоднее всего:{" "}
-                <a href={`/locations/${data.weather.coldest.location_slug ?? ""}`}>
-                  {data.weather.coldest.location_name}
-                </a>{" "}
-                <b className={`temp-${temperatureTone(data.weather.coldest.weather.temperature_c)}`}>
-                  {formatTemp(data.weather.coldest.weather.temperature_c)}
-                </b>
-              </span>
-            )}
-            {data.weather.warmest && data.weather.warmest.location_slug !== data.weather.coldest?.location_slug && (
-              <span className="protocol-weather-item" title={data.weather.warmest.weather.summary}>
-                🔥 Теплее всего:{" "}
-                <a href={`/locations/${data.weather.warmest.location_slug ?? ""}`}>
-                  {data.weather.warmest.location_name}
-                </a>{" "}
-                <b className={`temp-${temperatureTone(data.weather.warmest.weather.temperature_c)}`}>
-                  {formatTemp(data.weather.warmest.weather.temperature_c)}
-                </b>
-              </span>
-            )}
-            {data.weather.wettest && (
-              <span className="protocol-weather-item" title={data.weather.wettest.weather.summary}>
-                🌧️ Мокрее всего:{" "}
-                <a href={`/locations/${data.weather.wettest.location_slug ?? ""}`}>
-                  {data.weather.wettest.location_name}
-                </a>{" "}
-                <b>{data.weather.wettest.weather.precipitation_run_mm?.toFixed(1)} мм</b>
-                {data.weather.rain_locations > 1 && (
-                  <span className="muted"> · дождь на {data.weather.rain_locations} площадках</span>
-                )}
-              </span>
-            )}
-            {data.weather.temperature_median_c != null && (
-              <span className="protocol-weather-item muted">
-                по стране в среднем {formatTemp(data.weather.temperature_median_c)}
-                {data.weather.is_preliminary && " · предварительно"}
-              </span>
-            )}
-          </p>
-        )}
         {error && (
           <div className="card error">
             <p>{error} — показана предыдущая выборка, попробуйте ещё раз.</p>
@@ -544,6 +501,65 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
           hint="Результат лучше всех прежних в своей системе"
         />
       </div>
+
+      {data.weather && data.weather.locations_with_weather > 0 && (
+        <section className="card loc-section uniprot-weather">
+          <h2 className="section-title">
+            Погода недели
+            <StatHintTooltip text="Архив Open-Meteo в час старта по каждой локации недели. Крайности — среди локаций, где в эту субботу был старт; «по стране» — медиана температуры на старте.">
+              <span className="loc-section-title-info" aria-label="Как считается">
+                ⓘ
+              </span>
+            </StatHintTooltip>
+          </h2>
+          <div className="loc-stats-grid uniprot-weather-grid">
+            {data.weather.temperature_median_c != null && (
+              <div className="stat-card loc-stat-card">
+                <span className={`stat-value loc-stat-value temp-${temperatureTone(data.weather.temperature_median_c)}`}>
+                  {formatTemp(data.weather.temperature_median_c)}
+                </span>
+                <span className="stat-label">по стране на старте</span>
+                <span className="loc-stat-sub muted">
+                  {formatInt(data.weather.locations_with_weather)} локаций с погодой
+                  {data.weather.rain_locations > 0 && ` · дождь на ${data.weather.rain_locations}`}
+                </span>
+              </div>
+            )}
+            {(
+              [
+                ["coldest", "🥶 холоднее всего", data.weather.coldest],
+                ["warmest", "🔥 теплее всего", data.weather.warmest],
+                ["wettest", "🌧️ мокрее всего", data.weather.wettest],
+                ["windiest", "💨 ветренее всего", data.weather.windiest],
+              ] as const
+            ).map(([key, label, item]) =>
+              item ? (
+                <div className="stat-card loc-stat-card uniprot-weather-card" key={key}>
+                  <span
+                    className={`stat-value loc-stat-value temp-${
+                      key === "coldest" || key === "warmest" ? temperatureTone(item.weather.temperature_c) : "none"
+                    }`}
+                  >
+                    {key === "wettest"
+                      ? `${(item.weather.precipitation_run_mm ?? 0).toFixed(1)} мм`
+                      : key === "windiest"
+                        ? `${Math.round(item.weather.wind_gusts_ms ?? 0)} м/с`
+                        : formatTemp(item.weather.temperature_c)}
+                  </span>
+                  <span className="stat-label">{label}</span>
+                  <span className="loc-stat-sub">
+                    <a href={`/locations/${item.location_slug ?? ""}`}>{item.location_name}</a>
+                  </span>
+                  <span className="loc-stat-sub">
+                    <WeatherChip weather={item.weather} locationSlug={item.location_slug} locationName={item.location_name} />
+                  </span>
+                </div>
+              ) : null,
+            )}
+          </div>
+        </section>
+      )}
+
 
       {/* Анониму — на месте «Вашего результата» призыв войти: страница открыта
           всем, но найти в ней СЕБЯ можно только с привязанным профилем (тот же

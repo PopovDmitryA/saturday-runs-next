@@ -4,6 +4,7 @@ import { useRestorableState } from "../../hooks/useRestorableState";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
+import { WeatherChip } from "../../components/WeatherChip";
 import { PlatformFilter } from "../../components/filters/PlatformFilter";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import {
@@ -29,6 +30,7 @@ import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
 
 type SortKey =
+  | "weather"
   | "event_number"
   | "name"
   | "city"
@@ -70,6 +72,8 @@ function sortValue(item: LastResultsItem, key: SortKey): number | string | null 
       return (item.city ?? "").toLowerCase();
     case "event_date":
       return item.event_date;
+    case "weather":
+      return item.weather?.temperature_c ?? null;
     case "finishers":
       return item.finishers;
     case "volunteers":
@@ -95,6 +99,7 @@ const LAST_RESULTS_COLUMNS: AdaptiveColumn[] = [
   { key: "finishers", width: 148, required: true },
   { key: "city", width: 160 },
   { key: "platform", width: 104 },
+  { key: "weather", width: 96 },
   { key: "volunteers", width: 148 },
   { key: "debutants", width: 148 },
   { key: "best_male", width: 184 },
@@ -175,6 +180,7 @@ function LastResultsTable({
             {show("city") && <col className="col-city" />}
             {show("platform") && <col className="col-platform" />}
             <col className="col-date" />
+            {show("weather") && <col className="col-weather" />}
             <col className="col-metric" />
             {show("volunteers") && <col className="col-metric" />}
             {show("debutants") && <col className="col-metric" />}
@@ -197,6 +203,13 @@ function LastResultsTable({
                 hint="Дата последнего старта локации (клик по дате — протокол)"
                 {...sortProps("event_date")}
               />
+              {show("weather") && (
+                <ColumnHeader
+                  label="Погода"
+                  headerTitle="Погода в час старта по архиву Open-Meteo. Клик по значению — подробности"
+                  {...sortProps("weather")}
+                />
+              )}
               <ColumnHeader
                 label="Финишёров"
                 hint="Финишёров на последнем старте"
@@ -289,6 +302,11 @@ function LastResultsTable({
                       formatDate(item.event_date)
                     )}
                   </td>
+                  {show("weather") && (
+                    <td className="td-compact td-weather">
+                      <WeatherChip weather={item.weather} locationSlug={item.slug} locationName={item.name} />
+                    </td>
+                  )}
                   <td className="td-compact">{item.finishers != null ? formatInt(item.finishers) : "—"}</td>
                   {show("volunteers") && <td className="td-compact">{item.volunteers != null ? formatInt(item.volunteers) : "—"}</td>}
                   {show("debutants") && <td className="td-compact">{item.debutants != null ? formatInt(item.debutants) : "—"}</td>}

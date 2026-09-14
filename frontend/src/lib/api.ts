@@ -485,6 +485,7 @@ export type VolunteeringItem = {
   is_crosslinked: boolean;
   is_test_event: boolean;
   parkrun_total_credits?: number | null;
+  weather?: WeatherBrief | null;
   event_url?: string | null;
 };
 
@@ -2706,6 +2707,7 @@ export type LocationEventRow = {
   event_date: string;
   platform_code: string;
   event_number: number | null;
+  weather?: WeatherBrief | null;
   /** Собственное имя старта — есть только у серий: «Зелёные 5 км». */
   title: string | null;
   overall_number: number;
@@ -3268,6 +3270,7 @@ export function getLocationsIndex() {
 export type LastResultsItem = {
   slug: string;
   identity_key: string;
+  weather?: WeatherBrief | null;
   name: string;
   city: string | null;
   region: string | null;

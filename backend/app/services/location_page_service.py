@@ -49,6 +49,7 @@ from app.services.location_catalog_service import (
 )
 from app.services.newcomer_counts import debutants_sum, location_guests_sum
 from app.services.series_locations import start_title as series_start_title
+from app.services.start_weather_service import weather_for_pairs
 from app.time_format import format_finish_time_display
 from app.volunteer_role_taxonomy import (
     CANONICAL_ROLE_LABELS,
@@ -90,7 +91,8 @@ def location_page_cache_key(slug: str) -> str:
 
 
 def location_events_cache_key(slug: str) -> str:
-    return f"locations:events:v3:{slug.strip().lower()}"
+    # v4 — в строках появилась погода в час старта (weather).
+    return f"locations:events:v4:{slug.strip().lower()}"
 
 
 def location_leaders_cache_key(slug: str) -> str:
@@ -2574,6 +2576,7 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
 
     journal_is_series = any(location.is_series for location, _code in identity.locations)
 
+    events_weather = weather_for_pairs(db, [(event.location_id, event.event_date) for event, _code in events])
     items: list[dict[str, object]] = []
     for event, platform_code in events:
         stats = protocol_stats.get(event.id)
@@ -2596,6 +2599,7 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
                 "event_date": event.event_date,
                 "platform_code": platform_code,
                 "event_number": event.event_number,
+                "weather": events_weather.get((event.location_id, event.event_date)),
                 # Своё имя старта — только у серии: «Зелёные 5 км» вместо
                 # номера. У площадки заголовок события служебный («Дружба #228»)
                 # и в журнале был бы шумом; у серии s95 он такой же служебный,
@@ -3137,7 +3141,8 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
 # раз в неделю после субботнего синка, точечная инвалидация не окупается.
 # v2 — в строку добавлена система первичного протокола (event_platform_code):
 # без бампа кэшированный payload отдавал бы поле как None до истечения TTL.
-LAST_RESULTS_CACHE_KEY = "locations:last-results:v2"
+# v3 — в строках появилась погода в час старта (weather).
+LAST_RESULTS_CACHE_KEY = "locations:last-results:v3"
 
 
 def invalidate_last_results_cache() -> None:
@@ -3216,6 +3221,9 @@ def _compute_last_results(db: Session) -> dict[str, object]:
 
     chosen_event_ids = [event.id for pairs in chosen.values() for event, _code in pairs]
     chosen_location_ids = {event.location_id for pairs in chosen.values() for event, _code in pairs}
+    last_results_weather = weather_for_pairs(
+        db, [(event.location_id, event.event_date) for pairs in chosen.values() for event, _code in pairs]
+    )
     location_by_id: dict[UUID, Location] = {
         location.id: location for location in db.query(Location).filter(Location.id.in_(chosen_location_ids)).all()
     }
@@ -3335,6 +3343,7 @@ def _compute_last_results(db: Session) -> dict[str, object]:
                 # нашей страницы протокола (/locations/{slug}/protocol/...).
                 "event_platform_code": primary_event_code,
                 "is_last_saturday": saturday_date is not None and primary_event.event_date == saturday_date,
+                "weather": last_results_weather.get((primary_event.location_id, primary_event.event_date)),
                 "finishers": finishers,
                 "volunteers": volunteers,
                 "debutants": debutants,

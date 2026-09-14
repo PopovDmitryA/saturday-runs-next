@@ -42,6 +42,7 @@ from app.services.page_analytics_service import (
         ("/locations/kuzminki", ("location", "kuzminki")),
         ("/locations/kuzminki/events", ("location_events", "kuzminki")),
         ("/locations/kuzminki/participants", ("location_participants", "kuzminki")),
+        ("/locations/kuzminki/weather", ("location_weather", "kuzminki")),
         ("/ratings", ("ratings_hub", "")),
         ("/ratings/runs", ("ratings_runs", "")),
         ("/ratings/wins", ("ratings_wins", "")),
@@ -183,9 +184,7 @@ def test_user_facing_pages_have_distinct_page_types() -> None:
 def _hub_rating_links() -> list[str]:
     """Адреса карточек из хаба рейтингов (/ratings)."""
     src = _frontend_src()
-    hub = (src / "features" / "leaderboards" / "LeaderboardsHubPage.tsx").read_text(
-        encoding="utf-8"
-    )
+    hub = (src / "features" / "leaderboards" / "LeaderboardsHubPage.tsx").read_text(encoding="utf-8")
     links = sorted(set(re.findall(r'href:\s*"(/ratings/[^"]+)"', hub)))
     assert len(links) > 4, "Разбор карточек хаба сломался — ссылок подозрительно мало"
     return links
@@ -202,8 +201,7 @@ def test_every_hub_link_has_route(href: str) -> None:
     а переход выдавал «Страница не найдена» — и ни один тест этого не заметил.
     """
     assert href in APP_ROUTES, (
-        f"Карточка хаба ведёт на {href}, но такого роута нет в App.tsx — "
-        "переход даст «Страница не найдена»"
+        f"Карточка хаба ведёт на {href}, но такого роута нет в App.tsx — переход даст «Страница не найдена»"
     )
 
 
@@ -243,9 +241,7 @@ def test_resolve_period_open_ended_and_swapped_bounds() -> None:
     assert (start, end) == (EARLIEST_STATS_DATE, date(2026, 7, 5))
 
     # Границы перепутаны местами — молча меняем, а не отдаём пустоту.
-    start, end = resolve_period(
-        period_days=None, date_from=date(2026, 7, 20), date_to=date(2026, 7, 10)
-    )
+    start, end = resolve_period(period_days=None, date_from=date(2026, 7, 20), date_to=date(2026, 7, 10))
     assert (start, end) == (date(2026, 7, 10), date(2026, 7, 20))
 
 
@@ -279,9 +275,7 @@ def test_blog_post_click_recorded(db_session: Session) -> None:
     from app.services.page_analytics_service import record_blog_post_click
 
     user = _make_user(db_session)
-    before = db_session.query(PageViewEvent).filter(
-        PageViewEvent.page_type == "blog_post_click"
-    ).count()
+    before = db_session.query(PageViewEvent).filter(PageViewEvent.page_type == "blog_post_click").count()
 
     record_blog_post_click(
         db_session,
@@ -366,9 +360,7 @@ def test_record_duplicate_view_id_is_ignored(db_session: Session) -> None:
 
 def test_page_leave_keeps_max_duration(db_session: Session) -> None:
     view_id = uuid4()
-    record_page_view(
-        db_session, view_id=view_id, path="/runs", visitor_key="a:abc12345", viewer_user_id=None
-    )
+    record_page_view(db_session, view_id=view_id, path="/runs", visitor_key="a:abc12345", viewer_user_id=None)
     record_page_leave(db_session, view_id=view_id, duration_sec=30)
     record_page_leave(db_session, view_id=view_id, duration_sec=10)
     event = db_session.query(PageViewEvent).filter(PageViewEvent.view_id == view_id).one()
@@ -494,9 +486,7 @@ def test_build_home_link_clicks_groups_and_labels(db_session: Session) -> None:
     # Границы отчёта — календарные даты, ts события в UTC: под полночь по Москве
     # «сегодня» разъезжается на день, поэтому берём окно ±сутки.
     today = local_today()
-    rows = build_home_link_clicks(
-        db_session, start=today - timedelta(days=1), end=today + timedelta(days=1)
-    )
+    rows = build_home_link_clicks(db_session, start=today - timedelta(days=1), end=today + timedelta(days=1))
     by_key = {row["entity_key"]: row for row in rows}
 
     # Локации нет в БД — метка остаётся слагом, но ссылка всё равно рабочая.

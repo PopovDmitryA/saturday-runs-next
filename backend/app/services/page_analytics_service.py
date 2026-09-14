@@ -45,6 +45,7 @@ _PROFILE_TAB_RE = re.compile(r"^/users/([^/]+)/[^/]+$")
 _SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
 _LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
 _LOCATION_PARTICIPANTS_RE = re.compile(r"^/locations/([^/]+)/participants$")
+_LOCATION_WEATHER_RE = re.compile(r"^/locations/([^/]+)/weather$")
 # Единый протокол недели: /protocol/{дата-субботы}. В entity_key едет дата —
 # по ней видно, какие недели открывают (свежая суббота или архив).
 _UNIFIED_PROTOCOL_RE = re.compile(r"^/protocol/(\d{4}-\d{2}-\d{2})$")
@@ -185,6 +186,10 @@ def classify_page(path: str) -> tuple[str, str]:
     if location_participants:
         return "location_participants", location_participants.group(1)[:128]
 
+    location_weather = _LOCATION_WEATHER_RE.match(normalized)
+    if location_weather:
+        return "location_weather", location_weather.group(1)[:128]
+
     location = _LOCATION_RE.match(normalized)
     if location:
         return "location", location.group(1)[:128]
@@ -314,11 +319,7 @@ def record_page_leave(db: Session, *, view_id: UUID, duration_sec: int) -> None:
     """Дозаполняет длительность просмотра (беконы могут приходить несколько раз)."""
     clamped = max(0, min(int(duration_sec), MAX_DURATION_SEC))
     db.query(PageViewEvent).filter(PageViewEvent.view_id == view_id).update(
-        {
-            PageViewEvent.duration_sec: func.greatest(
-                func.coalesce(PageViewEvent.duration_sec, 0), clamped
-            )
-        },
+        {PageViewEvent.duration_sec: func.greatest(func.coalesce(PageViewEvent.duration_sec, 0), clamped)},
         synchronize_session=False,
     )
     db.commit()
@@ -383,11 +384,7 @@ def rollup_recent_days(db: Session, *, days: int = 2) -> int:
 
 def cleanup_old_events(db: Session, *, retention_days: int) -> int:
     cutoff = datetime.now(STATS_TIMEZONE) - timedelta(days=retention_days)
-    deleted = (
-        db.query(PageViewEvent)
-        .filter(PageViewEvent.ts < cutoff)
-        .delete(synchronize_session=False)
-    )
+    deleted = db.query(PageViewEvent).filter(PageViewEvent.ts < cutoff).delete(synchronize_session=False)
     db.commit()
     return int(deleted)
 
@@ -494,7 +491,9 @@ def build_page_analytics(
         "top_locations": [
             {
                 "entity_key": row.entity_key,
-                **location_labels.get(row.entity_key, {"label": row.entity_key, "href": f"/locations/{row.entity_key}"}),
+                **location_labels.get(
+                    row.entity_key, {"label": row.entity_key, "href": f"/locations/{row.entity_key}"}
+                ),
                 **row_stats(row),
             }
             for row in location_rows
@@ -541,10 +540,7 @@ def _location_labels(db: Session, entity_keys: list[str]) -> dict[str, dict[str,
         rank = priority.get(platform_code, 9)
         if key not in best or rank < best[key][0]:
             best[key] = (rank, name)
-    return {
-        key: {"label": name, "href": f"/locations/{key}"}
-        for key, (_rank, name) in best.items()
-    }
+    return {key: {"label": name, "href": f"/locations/{key}"} for key, (_rank, name) in best.items()}
 
 
 def _handle_labels(db: Session, handles: list[str]) -> dict[str, dict[str, object]]:
@@ -573,9 +569,7 @@ def _handle_labels(db: Session, handles: list[str]) -> dict[str, dict[str, objec
     return labels
 
 
-def build_home_link_clicks(
-    db: Session, *, start: date, end: date, limit: int = 20
-) -> list[dict[str, object]]:
+def build_home_link_clicks(db: Session, *, start: date, end: date, limit: int = 20) -> list[dict[str, object]]:
     """Переходы по ссылкам с главной: куда именно уводит главная страница.
 
     Ссылки на локации и профили участников появились на главной 01.08.2026 —
@@ -713,9 +707,7 @@ def build_funnel_stats(db: Session, *, start: date, end: date) -> list[dict[str,
                 # Доля от первой ступени — «сквозная» конверсия воронки.
                 "pct_of_start": round(100.0 * visitors / base, 1) if base else None,
                 # Доля от предыдущей ступени — где именно рвётся.
-                "pct_of_prev": (
-                    round(100.0 * visitors / previous, 1) if previous else None
-                ),
+                "pct_of_prev": (round(100.0 * visitors / previous, 1) if previous else None),
             }
         )
         previous = visitors
@@ -831,21 +823,15 @@ def build_share_stats(db: Session, *, start: date, end: date) -> dict[str, objec
             {"channel": channel, "successes": count}
             for channel, count in sorted(channels.items(), key=lambda kv: -kv[1])
         ],
-        "looks": [
-            {"value": value, "count": count}
-            for value, count in sorted(looks.items(), key=lambda kv: -kv[1])
-        ],
+        "looks": [{"value": value, "count": count} for value, count in sorted(looks.items(), key=lambda kv: -kv[1])],
         "formats": [
-            {"value": value, "count": count}
-            for value, count in sorted(formats.items(), key=lambda kv: -kv[1])
+            {"value": value, "count": count} for value, count in sorted(formats.items(), key=lambda kv: -kv[1])
         ],
         "photo_added": photo_added,
     }
 
 
-def build_og_fetch_stats(
-    db: Session, *, start: date, end: date, limit: int = 20
-) -> list[dict[str, object]]:
+def build_og_fetch_stats(db: Session, *, start: date, end: date, limit: int = 20) -> list[dict[str, object]]:
     """«Разворачивания ссылок»: сколько раз боты мессенджеров и поисковиков
     запрашивали превью страниц (событие og_preview_fetch пишет сам бэкенд в
     /__prerender). Прокси-метрика «ссылку кинули в чат», которой раньше не
@@ -889,9 +875,7 @@ def build_og_fetch_stats(
     for page_type, entity_key, row in parsed:
         label: dict[str, object] = {"label": entity_key or page_type, "href": None}
         if entity_key and page_type in ("location", "location_events"):
-            label = location_labels.get(
-                entity_key, {"label": entity_key, "href": f"/locations/{entity_key}"}
-            )
+            label = location_labels.get(entity_key, {"label": entity_key, "href": f"/locations/{entity_key}"})
         result.append(
             {
                 "page_type": page_type,
@@ -934,7 +918,4 @@ def build_home_ab_stats(db: Session, *, start: date, end: date) -> list[dict[str
         {"experiment": HOME_EXPERIMENT, "start": start, "end_exclusive": end + timedelta(days=1)},
     ).all()
 
-    return [
-        {"variant": row.variant, "views": int(row.views or 0), "viewers": int(row.viewers or 0)}
-        for row in rows
-    ]
+    return [{"variant": row.variant, "views": int(row.views or 0), "viewers": int(row.viewers or 0)} for row in rows]
