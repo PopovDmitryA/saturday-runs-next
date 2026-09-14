@@ -1860,6 +1860,7 @@ def list_user_volunteering(
             canonical_by_group[key] = vid
 
     result: list[dict[str, object]] = []
+    vol_weather = weather_for_pairs(db, [(event.location_id, event.event_date) for _v, event, _l, _p, _link in rows])
     for volunteer, event, location, platform, platform_link in rows:
         identity = catalog_index.canonical_identity_key(location, platform.code)
         canonical_vol_id = canonical_by_group[(event.event_date, identity)]
@@ -1868,6 +1869,7 @@ def list_user_volunteering(
                 "platform_code": platform.code,
                 "event_date": event.event_date,
                 "event_number": event.event_number,
+                "weather": vol_weather.get((event.location_id, event.event_date)),
                 "location_name": catalog_index.display_name(location, platform.code),
                 # См. list_user_runs: у серии имя локации одно на все старты.
                 "event_title": series_start_title(location, event.title),

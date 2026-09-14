@@ -90,6 +90,7 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
     key: "weather",
     title: "Погода",
     // Крайности первыми: «самая холодная пробежка» — то, чем хвастаются.
+    // Плитки кликабельны: открывают окно с погодой того старта.
     cards: [
       "weather_coldest",
       "weather_hottest",

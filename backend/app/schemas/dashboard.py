@@ -486,6 +486,7 @@ class VolunteeringItemResponse(BaseModel):
     # смена дала несколько ролей. Заполнено только для platform_code == "parkrun".
     parkrun_total_credits: int | None = None
     event_url: str | None = None
+    weather: WeatherBriefResponse | None = None
 
 
 class PlatformLinkSyncStatusResponse(BaseModel):

@@ -168,6 +168,11 @@ def weather_brief(row: StartWeather) -> dict[str, Any]:
         parts.append(f"{run_mm:.1f} мм осадков")
     if is_snow_cover(depth):
         parts.append(f"снег {int(round(depth))} см")
+    # Тула 06.08.2022: на старте 24°, к полудню 29° — «невероятная жара» в
+    # памяти бегуна складывается из всего утра, а не из одного замера в 9:00.
+    day_max = _f(row.day_temperature_max_c)
+    if temp is not None and day_max is not None and day_max - temp >= 4 and day_max >= 20:
+        parts.append(f"днём до {format_temperature(day_max)}")
     summary = ", ".join(parts)
     if temp is not None and apparent is not None and abs(apparent - temp) >= 4:
         summary += f" (ощущается {format_temperature(apparent)})"

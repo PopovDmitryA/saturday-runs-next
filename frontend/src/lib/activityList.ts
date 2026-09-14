@@ -11,7 +11,9 @@ export type ActivitySort =
   | "position_asc"
   | "position_desc"
   | "top_percent_asc"
-  | "top_percent_desc";
+  | "top_percent_desc"
+  | "weather_asc"
+  | "weather_desc";
 
 export type ActivityItem = {
   platform_code: string;
@@ -174,9 +176,35 @@ export function applyVolunteeringFilters(
   return result;
 }
 
+/** Температура в час старта; без погоды — в конец при любом направлении. */
+function compareWeather(a: { weather?: { temperature_c: number | null } | null }, b: { weather?: { temperature_c: number | null } | null }, asc: boolean): number {
+  const left = a.weather?.temperature_c ?? null;
+  const right = b.weather?.temperature_c ?? null;
+  if (left == null && right == null) {
+    return 0;
+  }
+  if (left == null) {
+    return 1;
+  }
+  if (right == null) {
+    return -1;
+  }
+  return asc ? left - right : right - left;
+}
+
+export function toggleWeatherSort(sort: ActivitySort): ActivitySort {
+  return sort === "weather_asc" ? "weather_desc" : "weather_asc";
+}
+
 export function sortRuns(items: RunItem[], sort: ActivitySort): RunItem[] {
   const sorted = [...items];
   switch (sort) {
+    case "weather_asc":
+      sorted.sort((a, b) => compareWeather(a, b, true) || compareDates(b.event_date, a.event_date));
+      break;
+    case "weather_desc":
+      sorted.sort((a, b) => compareWeather(a, b, false) || compareDates(b.event_date, a.event_date));
+      break;
     case "date_asc":
       sorted.sort((a, b) => compareDates(a.event_date, b.event_date));
       break;
@@ -282,6 +310,10 @@ export function sortRuns(items: RunItem[], sort: ActivitySort): RunItem[] {
 
 export function sortVolunteering(items: VolunteeringItem[], sort: ActivitySort): VolunteeringItem[] {
   const sorted = [...items];
+  if (sort === "weather_asc" || sort === "weather_desc") {
+    sorted.sort((a, b) => compareWeather(a, b, sort === "weather_asc") || compareDates(b.event_date, a.event_date));
+    return sorted;
+  }
   if (sort === "date_asc") {
     sorted.sort((a, b) => compareDates(a.event_date, b.event_date));
   } else {

@@ -331,6 +331,7 @@ class LocationEventRowResponse(BaseModel):
     is_platform_attendance_record: bool = False
     is_platform_course_record_male: bool = False
     is_platform_course_record_female: bool = False
+    weather: WeatherBriefResponse | None = None
 
 
 class LocationEventsResponse(BaseModel):
@@ -566,6 +567,7 @@ class LastResultsItemResponse(BaseModel):
     avg_time_display: str | None = None
     has_protocol: bool = False
     protocol_url: str | None = None
+    weather: WeatherBriefResponse | None = None
 
 
 class LastResultsResponse(BaseModel):

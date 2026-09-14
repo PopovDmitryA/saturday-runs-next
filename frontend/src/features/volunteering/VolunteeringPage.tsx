@@ -31,7 +31,8 @@ import {
 } from "../../lib/api";
 import { useAppDataSource } from "../../lib/appDataSource";
 import { useOptionalUser } from "../../lib/useOptionalUser";
-import { createFullSelection, sortVolunteering, toggleDateSort, uniquePlatforms } from "../../lib/activityList";
+import { createFullSelection, sortVolunteering, toggleDateSort, toggleWeatherSort, uniquePlatforms } from "../../lib/activityList";
+import { WeatherChip } from "../../components/WeatherChip";
 import { formatInt, platformCodeLabel } from "../../lib/format";
 import { ShareRowButton } from "../sharing/ShareRowButton";
 import { volunteeringSubject } from "../sharing/subjects";
@@ -279,6 +280,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
 
   const showEmpty = !loading && !error && items.length === 0;
   const dateSortActive = filters.sort === "date_desc" || filters.sort === "date_asc";
+  const weatherSortActive = filters.sort === "weather_asc" || filters.sort === "weather_desc";
 
   const pageBody = (
     <>
@@ -511,6 +513,12 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                                 name={item.location_name}
                                 slug={item.location_slug}
                               />
+                              {item.weather && (
+                                <>
+                                  {" "}
+                                  <WeatherChip weather={item.weather} locationSlug={item.location_slug} locationName={item.location_name} />
+                                </>
+                              )}
                             </div>
                           </td>
                           {showRating && (
@@ -544,7 +552,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
           ) : (
           <div className="table-wrap">
             <table className="data-table data-table-filterable data-table-layout-fixed data-table-volunteering">
-              <ActivityTableCols variant="volunteering" withRating={showRating} />
+              <ActivityTableCols variant="volunteering" withRating={showRating} withWeather />
               <thead>
                 <tr>
                   <ColumnHeader
@@ -609,6 +617,14 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
                     }
                   />
                   <ColumnHeader
+                    label="Погода"
+                    filterable={false}
+                    sortActive={weatherSortActive}
+                    sortAsc={filters.sort === "weather_asc"}
+                    onSort={() => filters.setSort((current) => toggleWeatherSort(current))}
+                    headerTitle="Погода в час старта по архиву Open-Meteo. Клик по значению — подробности"
+                  />
+                  <ColumnHeader
                     label="Роль"
                     filterActive={filters.roleFilterActive}
                     filterTitle="Фильтр по роли"
@@ -633,7 +649,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
               <tbody>
                 {displayedItems.length === 0 ? (
                   <tr>
-                    <td colSpan={showRating ? 5 : 4} className="table-empty-cell">
+                    <td colSpan={showRating ? 6 : 5} className="table-empty-cell">
                       <span className="muted">Нет строк по фильтрам</span>
                       {filters.hasActiveFilters && (
                         <button
@@ -673,6 +689,9 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
     имя самого старта подписываем второй строкой — иначе строка не
     отвечает, что именно человек бежал. */}
 {item.event_title && <span className="activity-event-title">{item.event_title}</span>}
+                      </td>
+                      <td className="td-compact td-weather">
+                        <WeatherChip weather={item.weather} locationSlug={item.location_slug} locationName={item.location_name} />
                       </td>
                       <td className="td-role">{item.role ?? "—"}</td>
                       {showRating &&

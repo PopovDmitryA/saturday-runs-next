@@ -11,7 +11,7 @@ import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
 import { LocationNameLink } from "../../components/LocationNameLink";
 import { LocationPrLocationName } from "../../components/LocationPrLocationName";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { weatherShort, weatherTitle } from "../../lib/weather";
+import { WeatherChip } from "../../components/WeatherChip";
 import { RateRunModal } from "../../components/RateRunModal";
 import { RunRatingStar } from "../../components/RunRatingStar";
 import { Snackbar } from "../../components/Snackbar";
@@ -33,6 +33,7 @@ import {
   runTopPercent,
   sortRuns,
   toggleDateSort,
+  toggleWeatherSort,
   toggleFinishSort,
   togglePaceSort,
   togglePositionSort,
@@ -216,6 +217,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const finishSortActive = filters.sort === "finish_asc" || filters.sort === "finish_desc";
   const paceSortActive = filters.sort === "pace_asc" || filters.sort === "pace_desc";
   const positionSortActive = filters.sort === "position_asc" || filters.sort === "position_desc";
+  const weatherSortActive = filters.sort === "weather_asc" || filters.sort === "weather_desc";
   const topPercentSortActive =
     filters.sort === "top_percent_asc" || filters.sort === "top_percent_desc";
 
@@ -413,7 +415,10 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                     <ColumnHeader
                       label="Погода"
                       filterable={false}
-                      headerTitle="Погода в час старта по архиву Open-Meteo: температура, осадки, ветер"
+                      sortActive={weatherSortActive}
+                      sortAsc={filters.sort === "weather_asc"}
+                      onSort={() => filters.setSort((current) => toggleWeatherSort(current))}
+                      headerTitle="Погода в час старта по архиву Open-Meteo: температура, осадки, ветер. Клик по значению — подробности"
                     />
                   )}
                   {show("participants") && (
@@ -522,8 +527,8 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       </td>
                       {show("position") && <td className="td-compact">{run.position ?? "—"}</td>}
                       {show("weather") && (
-                        <td className="td-compact td-weather" title={weatherTitle(run.weather)}>
-                          {weatherShort(run.weather)}
+                        <td className="td-compact td-weather">
+                          <WeatherChip weather={run.weather} locationSlug={run.location_slug} locationName={run.location_name} />
                         </td>
                       )}
                       {show("participants") && (

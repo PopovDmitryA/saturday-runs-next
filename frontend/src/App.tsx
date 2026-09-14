@@ -73,6 +73,7 @@ import { OrganizerLocationHubPage } from "./features/organizer/OrganizerLocation
 import { OrganizerLocationPage } from "./features/organizer/OrganizerLocationPage";
 import { LocationRecordsRatingPage } from "./features/leaderboards/LocationRecordsRatingPage";
 import { RegionsRatingPage } from "./features/leaderboards/RegionsRatingPage";
+import { LocationWeatherPage } from "./features/locations/LocationWeatherPage";
 import { WeatherRatingPage } from "./features/leaderboards/WeatherRatingPage";
 import { QueuePage } from "./features/queue/QueuePage";
 import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
@@ -447,6 +448,11 @@ function renderRoute(path: string): ReactElement {
   const locationTopsMatch = path.match(/^\/locations\/([^/]+)\/tops$/);
   if (locationTopsMatch) {
     return <LocationTopsPage slug={decodeURIComponent(locationTopsMatch[1])} />;
+  }
+  // Погода на стартах локации: графики по месяцам, рекорды, явка по погоде.
+  const locationWeatherMatch = path.match(/^\/locations\/([^/]+)\/weather$/);
+  if (locationWeatherMatch) {
+    return <LocationWeatherPage slug={decodeURIComponent(locationWeatherMatch[1])} />;
   }
   const locationMatch = path.match(/^\/locations\/([^/]+)$/);
   if (locationMatch) {

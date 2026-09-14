@@ -4,6 +4,7 @@ import { useRestorableState } from "../../hooks/useRestorableState";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { PlatformBadge } from "../../components/PlatformBadge";
+import { WeatherChip } from "../../components/WeatherChip";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
@@ -29,6 +30,7 @@ import { PlatformFilter } from "../../components/filters/PlatformFilter";
 import { LocationAttendanceJournal } from "../journal/LocationAttendanceJournal";
 
 type SortKey =
+  | "weather"
   | "date"
   | "finishers"
   | "volunteers"
@@ -45,6 +47,8 @@ function sortValue(row: LocationEventRow, key: SortKey): number | string | null 
   switch (key) {
     case "date":
       return row.event_date;
+    case "weather":
+      return row.weather?.temperature_c ?? null;
     case "finishers":
       return row.finishers;
     case "volunteers":
@@ -71,6 +75,7 @@ const EVENTS_COLUMNS: AdaptiveColumn[] = [
   { key: "date", width: 112, required: true },
   { key: "finishers", width: 148, required: true },
   { key: "platform", width: 104 },
+  { key: "weather", width: 96 },
   { key: "best_male", width: 184 },
   { key: "best_female", width: 184 },
   { key: "volunteers", width: 148 },
@@ -325,6 +330,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
               <col className={isSeries ? "col-series-start" : "col-number"} />
               <col className="col-date" />
               {show("platform") && <col className="col-platform" />}
+              {show("weather") && <col className="col-weather" />}
               <col className="col-compact" />
               {show("volunteers") && <col className="col-compact" />}
               {show("debutants") && <col className="col-compact" />}
@@ -349,6 +355,13 @@ function LocationEventsContent({ slug }: { slug: string }) {
                 />
                 <ColumnHeader label="Дата" {...sortProps("date")} />
                 {show("platform") && <ColumnHeader label="Система" filterable={false} />}
+                {show("weather") && (
+                  <ColumnHeader
+                    label="Погода"
+                    headerTitle="Погода в час старта по архиву Open-Meteo. Клик по значению — подробности"
+                    {...sortProps("weather")}
+                  />
+                )}
                 <ColumnHeader
                   label="Финишёров"
                   hint="Финишёров на старте"
@@ -457,6 +470,11 @@ function LocationEventsContent({ slug }: { slug: string }) {
                     {show("platform") && (
                       <td className="td-platform">
                         <PlatformBadge code={row.platform_code} />
+                      </td>
+                    )}
+                    {show("weather") && (
+                      <td className="td-compact td-weather">
+                        <WeatherChip weather={row.weather} locationSlug={data.slug} locationName={data.name} />
                       </td>
                     )}
                     <td className="td-compact">{row.finishers ?? "—"}</td>

@@ -98,7 +98,7 @@ function SeasonTable({ rows, title, hint }: { rows: SeasonLocationRow[]; title: 
         </StatHintTooltip>
       </h3>
       {rows.length === 0 ? (
-        <p className="muted">Недостаточно стартов с погодой.</p>
+        <p className="muted">Недостаточно стартов с погодой у локаций.</p>
       ) : (
         <TableWrap className="lb-table-wrap lb-table-wrap-flat">
           <table className="data-table lb-table">
