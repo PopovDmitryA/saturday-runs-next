@@ -191,11 +191,18 @@ def fetch_and_upsert_event_protocol(
     before_snapshot: dict[str, tuple] | None = None
     if previous_hash is not None and previous_hash != protocol_source_hash:
         before_snapshot = _result_snapshot(db, event_row.id)
-    run_results_upserted = upsert.replace_event_run_results(db, event_row, platform, run_results)
+    # Число финишёров и волонтёров из саммари — сторож от пустого разбора:
+    # страница техработ или сменившаяся вёрстка отдаёт 0 строк, и без него
+    # писатель стирал бы весь протокол (см. upsert.SuspectEmptyProtocolError).
+    run_results_upserted = upsert.replace_event_run_results(
+        db, event_row, platform, run_results, expected_count=summary.finishers_count
+    )
     if before_snapshot is not None:
         record_protocol_revision(db, event_row.id, before_snapshot, _result_snapshot(db, event_row.id))
     recalculate_event_gender_positions(db, event_row.id, platform.code)
-    volunteer_results_upserted = upsert.replace_event_volunteer_results(db, event_row, platform, volunteer_results)
+    volunteer_results_upserted = upsert.replace_event_volunteer_results(
+        db, event_row, platform, volunteer_results, expected_count=summary.volunteers_count
+    )
     run_results_count = (
         db.query(RunResult).filter(RunResult.event_id == event_row.id).count()
     )

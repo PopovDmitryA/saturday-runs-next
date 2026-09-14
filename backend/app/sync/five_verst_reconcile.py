@@ -520,6 +520,30 @@ def reconcile_stale_protocols(
                     )
 
                 persist_step_error(db, apply=_apply_missing)
+            except upsert.SuspectEmptyProtocolError as exc:
+                # Страница отдала 0 строк при непустой базе — протокол не
+                # трогаем (откат), но это ошибка, а не «страницы нет»: саммари
+                # красим в error, чтобы её было видно в отчёте, а отметку
+                # проверки двигаем — иначе тот же протокол стоял бы во главе
+                # каждой пачки, пока источник не починится.
+                result.errors.append(f"{candidate.external_event_key}: {exc}")
+
+                def _apply_suspect(
+                    session: Session,
+                    eid=event_id,
+                    key=candidate.external_event_key,
+                    message=str(exc),
+                ) -> None:
+                    if eid is not None:
+                        mark_protocol_check(session, eid)
+                    mark_event_summary_error(
+                        session,
+                        platform_id=platform.id,
+                        external_event_key=key,
+                        message=message,
+                    )
+
+                persist_step_error(db, apply=_apply_suspect)
             except Exception as exc:
                 result.errors.append(f"{candidate.external_event_key}: {exc}")
                 if event_id is not None:

@@ -46,6 +46,65 @@ logger = logging.getLogger(__name__)
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
+class SuspectEmptyProtocolError(RuntimeError):
+    """Протокол приехал пустым, а по этому старту уже есть сохранённые строки.
+
+    Пустой разбор — страницы 5 вёрст, JSON s95 или выборки RunPark — почти
+    никогда не «старт без финишёров», а сбой источника: сменилась вёрстка,
+    отдали заглушку техработ или страницу защиты, которую детектор бана не
+    узнал, оборвался ответ. До 13.09.2026 такой разбор считался авторитетным:
+    писатель удалял все строки старта, а в состояние протокола ложились
+    новый хэш и «0 строк» как свежая правка — и планировщик сверки не видел
+    повода перечитать (воспроизведено на стенде: 50 финишёров + 5 волонтёров
+    → 0/0 одной перечиткой).
+
+    Исключение доходит до вызывающего цикла как обычная ошибка протокола:
+    транзакция откатывается, саммари получает sync_status=error, хэш не
+    меняется — следующий прогон перечитает источник заново.
+    """
+
+
+def _reject_suspect_empty_protocol(
+    db: Session,
+    event: Event,
+    model: type[RunResult] | type[VolunteerResult],
+    *,
+    expected_count: int | None,
+    what: str,
+    refuse_on_summary_only: bool = True,
+) -> None:
+    """Не дать пустому списку стереть сохранённый протокол.
+
+    expected_count — сколько строк, по данным источника, должно быть (число
+    финишёров/волонтёров из саммари 5 вёрст, finishers_count из vw_events
+    RunPark). Явный ноль — источник сам говорит «никого не было» (отменённый
+    старт) — единственный случай, когда пустой список принимается при
+    непустой базе. None — источник не знает; тогда решает база: есть строки —
+    пустой список подозрителен.
+
+    refuse_on_summary_only разводит два разных риска. Пустые ФИНИШЁРЫ при
+    саммари с финишёрами — сбой разбора, и писать ноль нельзя даже в пустую
+    базу: протокол пометился бы синхронизированным и на выходных (сверка ходит
+    только по будням) до понедельника показывал бы старт без результатов.
+    Пустые ВОЛОНТЁРЫ при пустой базе — не потеря данных: стирать нечего, а
+    расхождение с саммари и так поднимает reconcile по volunteers_mismatch
+    (five_verst_reconcile.py). Отказ здесь стоил бы дороже пользы: волонтёры
+    пишутся в той же транзакции ПОСЛЕ финишёров, и исключение откатило бы
+    вместе с ними уже разобранный протокол — субботний старт остался бы без
+    результатов из-за одного недостающего волонтёра.
+    """
+    if expected_count == 0:
+        return
+    stored = db.query(model).filter(model.event_id == event.id).count()
+    if stored == 0 and (not expected_count or not refuse_on_summary_only):
+        return
+    raise SuspectEmptyProtocolError(
+        f"{what}: источник отдал 0 строк, в базе {stored}"
+        + (f", по саммари ожидается {expected_count}" if expected_count else "")
+        + " — протокол не перезаписан, будет перечитан"
+    )
+
+
 def _resolve_geo(
     location: CanonicalLocation, row: Location | None
 ) -> tuple[str | None, str | None, str | None]:
@@ -920,12 +979,35 @@ def replace_event_volunteer_results(
     event: Event,
     platform: Platform,
     results: list[CanonicalVolunteerResult],
+    *,
+    expected_count: int | None = None,
+    allow_empty: bool = False,
 ) -> int:
     """Upsert incoming volunteer results for an event and delete any that are no longer present.
 
     Use for protocol-based syncs where the fetched page is the complete authoritative list.
     Prevents stale records when roles or participants are removed from a protocol.
+
+    Пустой список при непустой базе — подозрение на сбой источника, а не
+    факт (см. SuspectEmptyProtocolError). allow_empty=True — вызывающий сам
+    убедился, что ответ настоящий (например, в том же ответе есть финишёры,
+    а волонтёров просто нет); expected_count — сколько волонтёров обещает
+    саммари, если оно это знает.
+
+    В отличие от финишёров, обещание саммари само по себе отказа не даёт:
+    когда в базе волонтёров ещё нет, стирать нечего, а расхождение подхватит
+    reconcile (volunteers_mismatch). Почему так — в докстринге
+    _reject_suspect_empty_protocol.
     """
+    if not results and not allow_empty:
+        _reject_suspect_empty_protocol(
+            db,
+            event,
+            VolunteerResult,
+            expected_count=expected_count,
+            what=f"волонтёры {platform.code}",
+            refuse_on_summary_only=False,
+        )
     incoming_keys = {item.external_result_key for item in results}
     upserted = upsert_volunteer_results(db, event, platform, results)
     deleted = 0
@@ -952,12 +1034,24 @@ def replace_event_run_results(
     *,
     from_profile: bool = False,
     recalculate_pr: bool = False,
+    expected_count: int | None = None,
+    allow_empty: bool = False,
 ) -> int:
     """Upsert incoming run results for an event and delete any that are no longer present.
 
     Use for protocol-based syncs where the fetched page is the complete authoritative list.
     Prevents stale records when results are corrected or participants are removed.
+
+    Пустой список при непустой базе (или при саммари с финишёрами) — не
+    авторитетный протокол, а подозрение на сбой источника: поднимаем
+    SuspectEmptyProtocolError и ничего не трогаем. expected_count — число
+    финишёров по саммари (явный 0 = старт действительно пустой), allow_empty —
+    вызывающий сам ручается за пустоту.
     """
+    if not results and not allow_empty:
+        _reject_suspect_empty_protocol(
+            db, event, RunResult, expected_count=expected_count, what=f"результаты {platform.code}"
+        )
     incoming_keys = {item.external_result_key for item in results}
     upserted = upsert_run_results(
         db,

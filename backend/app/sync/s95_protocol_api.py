@@ -192,10 +192,18 @@ def upsert_activity_protocol_api(
     summary_row, _ = upsert.upsert_event_summary(db, platform, location, summary)
     event_row = upsert.upsert_event_for_summary(db, platform, location, summary, summary_row)
 
+    # JSON без results (ключ пропал, null, [] у недовыложенного протокола)
+    # раньше стирал сохранённый протокол и ложился в состояние как свежая
+    # правка — а sync_updated_protocols не перечитывал его до следующего
+    # сдвига updated_at. Сторож в писателе: пустой список при непустой базе —
+    # ошибка протокола, не данные. Пустых волонтёров при непустых результатах
+    # принимаем: ответ настоящий, а волонтёров у старта может и не быть.
     upsert.replace_event_run_results(
         db, event_row, platform, parsed.run_results, recalculate_pr=recalculate_pr
     )
-    upsert.replace_event_volunteer_results(db, event_row, platform, parsed.volunteer_results)
+    upsert.replace_event_volunteer_results(
+        db, event_row, platform, parsed.volunteer_results, allow_empty=bool(parsed.run_results)
+    )
     _store_athlete_codes(db, platform, parsed)
     # После _store_athlete_codes: пол берётся из participants.profile_extra.
     recalculate_event_gender_positions(db, event_row.id, platform.code)
