@@ -15,6 +15,7 @@ Open-Meteo размазывает осадки, поэтому 0.3–1 мм — 
 from __future__ import annotations
 
 import json
+import math
 import statistics
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
@@ -118,7 +119,9 @@ def format_temperature(value: float | None) -> str:
 
     if value is None:
         return "—"
-    rounded = int(round(value))
+    # Половинки — от нуля (−43.5 → −44), а не банковское округление round():
+    # так же считает formatTemp на фронте, и плитка сходится с summary.
+    rounded = int(math.floor(abs(value) + 0.5)) * (-1 if value < 0 else 1)
     if rounded < 0:
         return f"−{abs(rounded)}°"
     return f"{rounded}°"

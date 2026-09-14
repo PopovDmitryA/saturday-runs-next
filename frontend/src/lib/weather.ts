@@ -43,8 +43,10 @@ export function formatTemp(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) {
     return "—";
   }
-  const rounded = Math.round(value);
-  return rounded < 0 ? `−${Math.abs(rounded)}°` : `${rounded}°`;
+  // Половинки — от нуля (−43.5 → −44), как в format_temperature на бэкенде:
+  // иначе плитка и summary одной пробежки расходились бы на градус.
+  const rounded = Math.sign(value) * Math.round(Math.abs(value));
+  return rounded < 0 ? `−${Math.abs(rounded)}°` : `${Math.abs(rounded)}°`;
 }
 
 /** Короткая подпись для таблиц: значок + градусы («🌧️ 12°»). */
