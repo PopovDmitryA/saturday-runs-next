@@ -171,6 +171,7 @@ OUTCOME_LABELS = {
     "error": "ошибки",
     "sync_error": "ошибки синка",
     "cooldown": "остановлено защитой (капча/бан)",
+    "exits_unavailable": "выходы не ответили",
     "skipped": "пропущено",
     "db_connection_lost": "обрыв связи с БД",
 }

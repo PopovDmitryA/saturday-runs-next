@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.parkrun.errors import (
     ParkrunBanDetected,
+    ParkrunExitUnavailable,
     ParkrunProfileNotFound,
     ParkrunProfileParseError,
 )
@@ -51,6 +52,18 @@ PERMANENT_ERROR_PREFIX = "[permanent] "
 # (см. "error" ниже) и cooldown/бан (см. "cooldown_exhausted") — обе после
 # этого числа попыток сдаются и ставят PERMANENT_ERROR_PREFIX.
 MAX_RETRY_ATTEMPTS = 5
+
+
+def _is_exit_unavailable_error(exc: BaseException) -> bool:
+    """Ни один исходящий выход не ответил (см. ParkrunExitUnavailable)."""
+    current: BaseException | None = exc
+    for _ in range(10):
+        if current is None:
+            return False
+        if isinstance(current, ParkrunExitUnavailable):
+            return True
+        current = current.__cause__
+    return False
 
 
 def is_fetch_cooldown_error(exc: BaseException) -> bool:
@@ -352,7 +365,12 @@ def _is_permanent_profile_error(exc: BaseException) -> bool:
             break
         if isinstance(cursor, (ParkrunProfileNotFound, ParkrunProfileParseError)):
             return True
-        if getattr(cursor, "status_code", None) in (404, 409):
+        # httpx.HTTPStatusError (raise_for_status у s95 и five_verst) держит код
+        # не на себе, а во вложенном ответе. Без второй проверки 404 у s95 не
+        # опознавался: строка исчерпывала попытки, уходила в failed БЕЗ метки
+        # «навсегда», reset_failed_pending воскрешал её — и так каждые 20 минут.
+        response_status = getattr(getattr(cursor, "response", None), "status_code", None)
+        if getattr(cursor, "status_code", None) in (404, 409) or response_status in (404, 409):
             return True
         cursor = cursor.__cause__
     return False
@@ -399,6 +417,17 @@ def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
         db.commit()
         return "done"
     except Exception as exc:
+        if _is_exit_unavailable_error(exc):
+            # Наши выходы молчат — parkrun этого запроса не видел. Строка ни в
+            # чём не виновата: возвращаем её в очередь БЕЗ попытки, иначе за
+            # несколько прогонов с мёртвым VPN живые профили набирают
+            # MAX_RETRY_ATTEMPTS и уходят в failed ни за что.
+            row.status = ProfileFetchPendingStatus.pending
+            row.last_error = str(exc)
+            row.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            logger.warning("pending profile fetch: выходы не отвечают, строка ждёт дальше")
+            return "exits_unavailable"
         if is_fetch_cooldown_error(exc):
             row.attempts += 1
             row.updated_at = datetime.now(timezone.utc)
@@ -599,12 +628,12 @@ def reset_failed_parkrun_pending(db: Session) -> int:
 STUCK_PROCESSING_AGE = timedelta(minutes=15)
 
 
-def requeue_stuck_processing_parkrun_pending(db: Session) -> int:
+def requeue_stuck_processing_pending(db: Session, platform_code: str) -> int:
     cutoff = datetime.now(timezone.utc) - STUCK_PROCESSING_AGE
     rows = (
         db.query(ProfileFetchPending)
         .filter(
-            ProfileFetchPending.platform_code == "parkrun",
+            ProfileFetchPending.platform_code == platform_code,
             ProfileFetchPending.status == ProfileFetchPendingStatus.processing,
             ProfileFetchPending.updated_at < cutoff,
         )
@@ -616,6 +645,10 @@ def requeue_stuck_processing_parkrun_pending(db: Session) -> int:
     if rows:
         db.commit()
     return len(rows)
+
+
+def requeue_stuck_processing_parkrun_pending(db: Session) -> int:
+    return requeue_stuck_processing_pending(db, "parkrun")
 
 
 def reset_failed_pending(db: Session, platform_code: str) -> int:

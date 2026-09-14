@@ -21,6 +21,7 @@ from app.services.profile_fetch_pending_service import (
     describe_processed_profile,
     list_pending_rows,
     process_pending_row,
+    requeue_stuck_processing_pending,
     reset_failed_pending,
 )
 
@@ -38,6 +39,11 @@ def run_s95_pending_queue(
 
     if reset_failed:
         reset_failed_pending(db, "s95")
+        # Строка помечается 'processing' ДО фетча. Если прогон оборвался на этом
+        # шаге, она висит так вечно: list_pending_rows берёт только 'pending'.
+        # У parkrun это подбиралось с самого начала, у s95 — нет, и четыре
+        # превью-заявки живых людей провисели в очереди с июня по сентябрь.
+        requeue_stuck_processing_pending(db, "s95")
 
     summary: dict[str, int] = {}
     details: list[str] = []
