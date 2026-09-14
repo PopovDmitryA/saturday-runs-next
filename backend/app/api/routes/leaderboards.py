@@ -205,6 +205,11 @@ def my_leaderboard_row(
     min_visits: Annotated[int, Query(ge=1, le=MAX_MIN_VISITS)] = 1,
     platform: str = "all",
     count_by: str = "locations",
+    # Те же фильтры, что у таблицы: без ролей строка «Вы» считалась по всем
+    # ролям, а место брала из отфильтрованного снапшота — и спорила с таблицей
+    # (аудит 13.09.2026, QRY-RATINGS-06). Витрина их и так шлёт.
+    roles: Annotated[list[str] | None, Query()] = None,
+    hide_ambiguous_home: bool = False,
 ) -> MyLeaderboardRowResponse:
     payload = get_my_leaderboard_row(
         db,
@@ -214,5 +219,7 @@ def my_leaderboard_row(
         min_visits,
         platform,
         count_by,
+        roles=roles,
+        hide_ambiguous_home=hide_ambiguous_home,
     )
     return MyLeaderboardRowResponse.model_validate(payload)

@@ -351,7 +351,18 @@ def _collect_field_comparison_pairs(
     return pairs
 
 
-def _location_field_avg_subquery(db: Session):
+def _location_field_avg_subquery(db: Session, event_scope):
+    """Запасное «среднее по полю» на старте — там, где нет EventSummary.avg_time_sec.
+
+    event_scope — подзапрос с парами (location_id, event_date) стартов самого
+    пользователя. Он обязателен: без него агрегат считался по ВСЕЙ таблице
+    run_results (Parallel Seq Scan на 2.3 млн строк, ~0.9 с — больше половины
+    времени БД на сборку каждого дашборда), хотя внешний LEFT JOIN ниже берёт
+    из него не более полутысячи строк. Сужение до стартов пользователя уводит
+    план в Nested Loop по ix_events_location_event_date и не меняет результат:
+    лишние группы всё равно отбрасывались джойном (аудит 13.09.2026,
+    QRY-USER-ADMIN-01).
+    """
     return (
         db.query(
             Event.location_id.label("location_id"),
@@ -361,6 +372,11 @@ def _location_field_avg_subquery(db: Session):
         )
         .select_from(RunResult)
         .join(Event, RunResult.event_id == Event.id)
+        .join(
+            event_scope,
+            (Event.location_id == event_scope.c.location_id)
+            & (Event.event_date == event_scope.c.event_date),
+        )
         .filter(RunResult.finish_time_sec.isnot(None))
         .group_by(Event.location_id, Event.event_date)
         .subquery()
@@ -663,7 +679,17 @@ def _compute_dashboard_analytics(
         or 0
     )
 
-    location_field_avg = _location_field_avg_subquery(db)
+    # Пары (локация, дата) стартов пользователя — по ним, и только по ним,
+    # считаем запасное среднее по полю (см. _location_field_avg_subquery).
+    user_event_scope = (
+        timed_runs.with_entities(
+            Event.location_id.label("location_id"),
+            Event.event_date.label("event_date"),
+        )
+        .distinct()
+        .subquery()
+    )
+    location_field_avg = _location_field_avg_subquery(db, user_event_scope)
     field_comparison_rows = (
         timed_runs.outerjoin(EventSummary, EventSummary.event_id == Event.id)
         .outerjoin(

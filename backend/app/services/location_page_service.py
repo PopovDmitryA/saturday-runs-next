@@ -19,7 +19,8 @@ from typing import Any, cast
 from uuid import UUID
 
 import redis
-from sqlalchemy import String, and_, bindparam, case, func, or_, select, text
+from sqlalchemy import Date, String, and_, bindparam, case, column, func, or_, select, text, values
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Session, aliased
 
 from app.activity_url import resolve_activity_url
@@ -570,6 +571,17 @@ def _course_record(
 
 
 def _histogram_rows(db: Session, event_ids: list[UUID]) -> list[dict[str, object]]:
+    """Гистограмма финишей: корзина по 10 секунд × пол.
+
+    По возрастной группе НЕ разбиваем: витрина (LocationFinishHistogram.tsx и
+    доля быстрых финишей в sharing/subjects.ts) складывает строки по корзине и
+    полу, а age_group не читает ни в одном месте. Разбивка по ней раздувала
+    payload страницы в двадцать раз — 6007 строк и 470 КБ из 515 КБ (аудит
+    13.09.2026, QRY-LOCATIONS-03). Поле age_group у строки ответа осталось
+    (схема отдаёт null) — его собирает страница протокола из своих данных.
+    Версию ключа кэша не бампаем: старый снимок валиден, просто толще, и за
+    три часа TTL уйдёт сам — бамп означал бы пересчёт всех трёх тысяч страниц.
+    """
     gender_expr = _gender_expression(
         Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
     )
@@ -578,7 +590,6 @@ def _histogram_rows(db: Session, event_ids: list[UUID]) -> list[dict[str, object
         db.query(
             bin_expr.label("start_sec"),
             gender_expr.label("gender"),
-            RunResult.age_category,
             func.count().label("count"),
         )
         .join(Event, RunResult.event_id == Event.id)
@@ -593,18 +604,18 @@ def _histogram_rows(db: Session, event_ids: list[UUID]) -> list[dict[str, object
         # "start_sec"/"gender": PostgreSQL при group-by по алиасу требует, чтобы
         # все колонки внутри выражения (platforms.code в CASE для gender) тоже
         # были в GROUP BY, и падал с GroupingError. Семантика та же.
-        .group_by(bin_expr, gender_expr, RunResult.age_category)
+        .group_by(bin_expr, gender_expr)
         .all()
     )
-    aggregated: dict[tuple[int, str | None, str | None], int] = {}
-    for start_sec, gender, age_category, count in rows:
+    aggregated: dict[tuple[int, str | None], int] = {}
+    for start_sec, gender, count in rows:
         if gender not in ("male", "female"):
             gender = None
-        key = (int(start_sec), gender, normalize_age_group(age_category))
+        key = (int(start_sec), gender)
         aggregated[key] = aggregated.get(key, 0) + int(count)
     return [
-        {"start_sec": start_sec, "gender": gender, "age_group": age_group, "count": count}
-        for (start_sec, gender, age_group), count in sorted(aggregated.items(), key=lambda item: item[0][0])
+        {"start_sec": start_sec, "gender": gender, "count": count}
+        for (start_sec, gender), count in sorted(aggregated.items(), key=lambda item: item[0][0])
     ]
 
 
@@ -3546,47 +3557,116 @@ def _compute_last_results(db: Session) -> dict[str, object]:
     if not location_ids:
         return {"saturday_date": None, "items": [], "total": 0}
 
-    event_rows = (
-        db.query(Event, Platform.code)
-        .join(Platform, Event.platform_id == Platform.id)
+    # Дедуп кросслинков — как в _bulk_identity_stats: вторичное событие не в
+    # счёт, если его первичное тоже принадлежит каталогу. Раньше это считалось
+    # в Python по ВСЕМ событиям каталога (на проде 178k ORM-объектов Event на
+    # каждую сборку: 3.9 с wall при 0.6 с SQL — вся разница уходила в
+    # гидрацию). Теперь условие живёт в SQL, а в Python приезжает только
+    # максимум даты по локации и события последнего дня — аудит 13.09.2026,
+    # QRY-LOCATIONS-02.
+    # Кросслинков немного, поэтому их проще привезти списком, чем гонять
+    # коррелированный NOT EXISTS по каждому событию каталога (на dev такой
+    # план стоил больше двух минут).
+    crosslink_rows = (
+        db.query(EventCrosslink.primary_event_id, EventCrosslink.secondary_event_id)
+        .join(Event, EventCrosslink.secondary_event_id == Event.id)
         .filter(Event.location_id.in_(location_ids), Event.is_test_event.is_(False))
         .all()
     )
-    # Дедуп кросслинков — как в _bulk_identity_stats: JOIN по location_id,
-    # а не IN() по десяткам тысяч event_id.
-    all_event_ids = {event.id for event, _code in event_rows}
-    excluded_secondary: set[UUID] = set()
-    if all_event_ids:
-        crosslink_rows = (
-            db.query(EventCrosslink.primary_event_id, EventCrosslink.secondary_event_id)
-            .join(Event, EventCrosslink.secondary_event_id == Event.id)
-            .filter(Event.location_id.in_(location_ids), Event.is_test_event.is_(False))
+    excluded_secondary: list[UUID] = []
+    if crosslink_rows:
+        catalog_primaries = {
+            row[0]
+            for row in db.query(Event.id)
+            .filter(
+                Event.id.in_({primary for primary, _secondary in crosslink_rows}),
+                Event.location_id.in_(location_ids),
+                Event.is_test_event.is_(False),
+            )
             .all()
-        )
-        excluded_secondary = {secondary for primary, secondary in crosslink_rows if primary in all_event_ids}
-    kept = [(event, code) for event, code in event_rows if event.id not in excluded_secondary]
+        }
+        excluded_secondary = [
+            secondary for primary, secondary in crosslink_rows if primary in catalog_primaries
+        ]
+
+    kept_conditions = [Event.location_id.in_(location_ids), Event.is_test_event.is_(False)]
+    if excluded_secondary:
+        kept_conditions.append(Event.id.notin_(excluded_secondary))
+    kept_events = and_(*kept_conditions)
 
     # «Последняя суббота» — как пульс на главной: максимальная субботняя дата.
     # Fallback на общий максимум нужен разве что теоретически (пустых суббот
     # при живых данных не бывает), но пусть страница не падает и на нём.
-    saturday_dates = [event.event_date for event, _code in kept if event.event_date.weekday() == 5]
-    saturday_date = max(saturday_dates, default=None) or max((event.event_date for event, _code in kept), default=None)
+    # extract('dow') = 6 — это суббота (в Python weekday() == 5).
+    saturday_row = (
+        db.query(
+            func.max(
+                case((func.extract("dow", Event.event_date) == 6, Event.event_date))
+            ).label("saturday"),
+            func.max(Event.event_date).label("latest"),
+        )
+        .filter(kept_events)
+        .one()
+    )
+    saturday_date = saturday_row.saturday or saturday_row.latest
 
     # Последний день каждой идентичности и события этого дня (обычно одно;
     # два бывает, когда локация в один день отметилась в двух системах без
     # кросслинка — тогда цифры складываем, времена берём лучшие).
+    latest_by_location: dict[UUID, date] = dict(
+        db.query(Event.location_id, func.max(Event.event_date))
+        .filter(kept_events)
+        .group_by(Event.location_id)
+        .all()
+    )
     latest_date: dict[str, date] = {}
-    for event, _code in kept:
-        identity_key = location_id_to_identity[event.location_id]
-        if identity_key not in latest_date or event.event_date > latest_date[identity_key]:
-            latest_date[identity_key] = event.event_date
-    chosen: dict[str, list[tuple[Event, str]]] = {}
-    for event, code in kept:
-        identity_key = location_id_to_identity[event.location_id]
-        if latest_date.get(identity_key) == event.event_date:
-            chosen.setdefault(identity_key, []).append((event, code))
+    for loc_id, loc_latest in latest_by_location.items():
+        identity_key = location_id_to_identity[loc_id]
+        if identity_key not in latest_date or loc_latest > latest_date[identity_key]:
+            latest_date[identity_key] = loc_latest
+
+    chosen: dict[str, list[tuple[Any, str]]] = {}
+    latest_pairs = [
+        (loc_id, latest_date[location_id_to_identity[loc_id]]) for loc_id in latest_by_location
+    ]
+    if latest_pairs:
+        # JOIN с VALUES, а не tuple_(...).in_(pairs): построчный IN из трёх
+        # тысяч пар разворачивается в OR-цепочку и считается почти три минуты,
+        # тот же отбор джойном — 0.4 с (замер на dev 14.09.2026).
+        pairs_source = values(
+            column("location_id", PG_UUID(as_uuid=True)),
+            column("event_date", Date),
+            name="latest_event_pairs",
+        ).data(latest_pairs)
+        chosen_rows = (
+            db.query(
+                Event.id.label("id"),
+                Event.location_id.label("location_id"),
+                Event.event_date.label("event_date"),
+                Event.event_number.label("event_number"),
+                Event.finishers_count.label("finishers_count"),
+                Event.source_url.label("source_url"),
+                Platform.code.label("platform_code"),
+            )
+            .join(Platform, Event.platform_id == Platform.id)
+            .join(
+                pairs_source,
+                and_(
+                    Event.location_id == pairs_source.c.location_id,
+                    Event.event_date == pairs_source.c.event_date,
+                ),
+            )
+            .filter(kept_events)
+            .all()
+        )
+        for event_row in chosen_rows:
+            identity_key = location_id_to_identity[event_row.location_id]
+            chosen.setdefault(identity_key, []).append((event_row, event_row.platform_code))
 
     chosen_event_ids = [event.id for pairs in chosen.values() for event, _code in pairs]
+    # Локации выбранных событий — включая parkrun-эпоху, которой нет среди
+    # витринных members идентичности (из них берётся слаг для ссылки на
+    # протокол).
     chosen_location_ids = {event.location_id for pairs in chosen.values() for event, _code in pairs}
     last_results_weather = weather_for_pairs(
         db, [(event.location_id, event.event_date) for pairs in chosen.values() for event, _code in pairs]

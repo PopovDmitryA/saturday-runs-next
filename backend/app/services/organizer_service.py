@@ -80,8 +80,32 @@ def build_location_absence(
     return payload
 
 
+def _participant_ids_for_groups(db: Session, group_keys: list[Any]) -> list[Any]:
+    """Все participant_id, которые могут дать один из group_keys.
+
+    group_key — это coalesce(platform_links.user_id, participant_id), и фильтр
+    по нему планировщик протолкнуть не умеет: он материализует весь LEFT JOIN
+    (Seq Scan по run_results на 2.3 млн строк ради 398 строк ответа, ~2.5 с —
+    аудит 13.09.2026, QRY-USER-ADMIN-02). Поэтому тяжёлым выборкам добавляется
+    ВТОРОЕ условие — по самому participant_id, которое индекс
+    ix_run_results_participant_event уже понимает.
+
+    Ключи-участники годятся как есть, ключи-профилей разворачиваем в их
+    привязки — тем же правилом связки (platform_id, external_user_id), что и
+    _platform_link_join. Множество заведомо не уже нужного, а исходный
+    coalesce-фильтр остаётся на месте и режет лишнее: семантика не меняется.
+    """
+    linked = (
+        db.query(Participant.id)
+        .join(PlatformLink, _platform_link_join())
+        .filter(PlatformLink.user_id.in_(group_keys))
+        .all()
+    )
+    return list({*group_keys, *(row[0] for row in linked)})
+
+
 def _last_activity_anywhere(
-    db: Session, group_keys: list[Any]
+    db: Session, group_keys: list[Any], participant_ids: list[Any]
 ) -> dict[Any, tuple[date, str, str]]:
     """По каждому человеку — его последняя активность на любой площадке.
 
@@ -113,6 +137,8 @@ def _last_activity_anywhere(
             .outerjoin(PlatformLink, _platform_link_join())
             .filter(
                 key.in_(group_keys),
+                # Сарджабельный дубль того же условия, см. _participant_ids_for_groups.
+                model.participant_id.in_(participant_ids),
                 Event.is_test_event.is_(False),
                 # Волонтёрства parkrun-эпохи лежат на дате-заглушке 1970-01-01.
                 Event.event_date > date(1970, 1, 1),
@@ -204,6 +230,7 @@ def _compute_location_absence(
     # Дедуп RunPark-дублей здесь через NOT IN по кросслинкам: событий много,
     # IN-список всех event_id мира сюда не привезёшь.
     group_keys = [row.group_key for row in local_rows]
+    group_participant_ids = _participant_ids_for_groups(db, group_keys)
     secondary_events = select(EventCrosslink.secondary_event_id)
     total_rows = (
         db.query(
@@ -215,6 +242,8 @@ def _compute_location_absence(
         .outerjoin(PlatformLink, _platform_link_join())
         .filter(
             group_key.in_(group_keys),
+            # Сарджабельный дубль того же условия, см. _participant_ids_for_groups.
+            RunResult.participant_id.in_(group_participant_ids),
             Event.is_test_event.is_(False),
             Event.id.notin_(secondary_events),
         )
@@ -274,7 +303,7 @@ def _compute_location_absence(
         db, identity.identity_key, {pid for pids in participant_by_group.values() for pid in pids}
     )
 
-    elsewhere = _last_activity_anywhere(db, group_keys)
+    elsewhere = _last_activity_anywhere(db, group_keys, group_participant_ids)
 
     items: list[dict[str, Any]] = []
     for row in local_rows:
