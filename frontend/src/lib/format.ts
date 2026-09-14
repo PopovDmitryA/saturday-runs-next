@@ -402,24 +402,32 @@ export function platformCodeLabel(code: string): string {
   return labels[code] ?? code;
 }
 
+// Штрихкод — латинская «A» + цифры во всех четырёх системах: A790096427 у
+// 5 вёрст, A7035519 у parkrun/RunPark, A770012057 у С95. Из базы значение
+// приходит не всегда в этом виде: часть кодов С95 приехала из легаси без «A»
+// (770012057), а руками их вводят и с кириллической «А». Сканер на финише
+// такой код не читает, поэтому берём из значения только цифры.
+const SCAN_CODE_RE = /^[AaАа]?(\d+)$/;
+
 /**
  * Текст личного QR/штрихкода участника для платформы — то же значение,
  * что показывают штатные приложения parkrun/S95/RunPark/5 вёрст на экране
  * «мой QR-код». У 5 вёрст отдельного barcode_id в базе нет (см. url.py
  * BARCODE_RE) — на сайте это буква A + номер участника (external_user_id).
+ * Вернёт null, если кода в этом формате не собирается: лучше не показывать
+ * кнопку QR, чем выдать на финише код, который не отсканируется.
  */
 export function platformScanCode(
   platformCode: string,
   barcodeId: string | null | undefined,
   externalUserId: string | null | undefined,
 ): string | null {
-  if (barcodeId) {
-    return barcodeId.toUpperCase();
+  const source = barcodeId || (platformCode === "five_verst" ? externalUserId : null);
+  if (!source) {
+    return null;
   }
-  if (platformCode === "five_verst" && externalUserId) {
-    return `A${externalUserId}`;
-  }
-  return null;
+  const digits = SCAN_CODE_RE.exec(source.trim().replace(/\s+/g, ""))?.[1];
+  return digits ? `A${digits}` : null;
 }
 
 type PlatformActivityStats = {

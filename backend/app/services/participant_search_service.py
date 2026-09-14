@@ -75,8 +75,9 @@ class ParticipantSearchPage:
 
 # Код участника: «A7035519» (штрихкод из QR любой системы) или просто цифры
 # (номер участника 5 вёрст / parkrun / С95). Минимум 3 цифры, чтобы не путать
-# с короткими именами.
-_IDENTIFIER_RE = re.compile(r"^[Aa]?\d{3,16}$")
+# с короткими именами. Кириллическую «А» принимаем наравне с латинской: на
+# русской раскладке её набирают, не глядя, а штрихкод от этого не меняется.
+_IDENTIFIER_RE = re.compile(r"^[AaАа]?(\d{3,16})$")
 
 
 def _escape_like(term: str) -> str:
@@ -89,13 +90,17 @@ def _query_words(raw_query: str) -> list[str]:
 
 def _apply_query_filters(query, words: list[str]):
     """Общие условия поиска: код участника (точно) или все слова имени (подстроки)."""
-    if len(words) == 1 and _IDENTIFIER_RE.match(words[0]):
+    identifier = _IDENTIFIER_RE.match(words[0]) if len(words) == 1 else None
+    if identifier:
         # Ввели код участника — точное совпадение во всех системах:
-        # и как штрихкод (A…), и как номер участника (цифры).
-        digits = words[0].lstrip("Aa")
+        # и как штрихкод (A…), и как номер участника (цифры). Штрихкод сверяем
+        # в обеих формах: часть кодов С95 лежит в базе без префикса «A»
+        # (приехали из легаси голыми цифрами), и без этого свой же QR —
+        # A770012057 — в поиске ничего не находил.
+        digits = identifier.group(1)
         return query.filter(
             or_(
-                func.upper(Participant.barcode_id) == f"A{digits}",
+                func.upper(Participant.barcode_id).in_((f"A{digits}", digits)),
                 Participant.external_user_id == digits,
             )
         )

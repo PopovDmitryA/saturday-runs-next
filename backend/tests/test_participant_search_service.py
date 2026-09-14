@@ -133,6 +133,23 @@ def test_search_by_barcode_and_numeric_id(db_session: Session, search_user: User
     assert page.results == []
 
 
+def test_search_by_s95_legacy_barcode_without_prefix(db_session: Session, search_user: User) -> None:
+    """Штрихкод С95 без «A» в базе — свой же QR (A770012057) должен его находить.
+
+    Часть кодов С95 приехала из легаси голыми цифрами (770012057 вместо
+    A770012057), при том что и сам С95, и наш личный кабинет показывают их
+    с префиксом.
+    """
+    platform = db_session.query(Platform).filter(Platform.code == "s95").one()
+    legacy = _make_participant(db_session, platform, "Легаси Тест", barcode_id="770012057")
+
+    # \u0410 — кириллическая «А»: на глаз не отличить от латинской, а набирают
+    # её на русской раскладке постоянно.
+    for query in ("A770012057", "a770012057", "\u0410770012057", "770012057"):
+        page = search_participants(db_session, search_user, query)
+        assert [item.participant_id for item in page.results] == [legacy.id], query
+
+
 def test_search_excludes_platforms_already_linked_by_user(db_session: Session, search_user: User) -> None:
     platform = _five_verst(db_session)
     mine = _make_participant(db_session, platform, "Исключение Привязанный Тест")

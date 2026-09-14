@@ -3444,12 +3444,15 @@ button.badge-platform-btn:hover {
   color: var(--text);
 }
 
+/* Код читают вслух и вбивают руками, когда сканер не взял QR, — поэтому
+   он крупный и моноширинный, а не подписью под именем. */
 .qr-modal-code {
   margin: 0 0 0.9rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  color: var(--text-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
 }
 
 .qr-modal-image-wrap {
