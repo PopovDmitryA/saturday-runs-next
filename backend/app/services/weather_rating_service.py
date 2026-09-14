@@ -24,7 +24,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.redis_client import get_redis_client
-from app.models import Event, Location, Platform, RunResult, StartWeather
+from app.models import Event, Location, Platform, PlatformLink, RunResult, StartWeather
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.start_weather_service import DEEP_FROST_C, format_temperature, weather_brief
 
@@ -63,10 +63,23 @@ def _walruses(db: Session) -> dict[str, Any]:
         .all()
     )
     catalog_index = LocationCatalogIndex(db)
+    # Один человек с привязанными профилями двух систем — одна строка: parkrun-
+    # зимы Якутска и 5 вёрст после него складываются. Без привязки участники
+    # разных систем остаются отдельными строками, как в остальных рейтингах.
+    participant_ids = {row[0] for row in rows}
+    user_of: dict[UUID, UUID] = {
+        participant_id: user_id
+        for participant_id, user_id in db.query(PlatformLink.participant_id, PlatformLink.user_id)
+        .filter(PlatformLink.participant_id.in_(list(participant_ids)))
+        .all()
+    }
     per_participant: dict[UUID, dict[str, Any]] = {}
+    key_participant: dict[UUID, UUID] = {}
     for participant_id, code, when, location, temp in rows:
+        key = user_of.get(participant_id, participant_id)
+        key_participant.setdefault(key, participant_id)
         entry = per_participant.setdefault(
-            participant_id,
+            key,
             {"count": 0, "coldest_c": None, "coldest_date": None, "coldest_location": None, "platform_code": code},
         )
         entry["count"] += 1
@@ -75,10 +88,11 @@ def _walruses(db: Session) -> dict[str, Any]:
             entry["coldest_c"] = value
             entry["coldest_date"] = when.isoformat()
             entry["coldest_location"] = catalog_index.display_name(location, code)
-    names = _participant_display_names(db, per_participant.keys())
+            entry["platform_code"] = code
+    names = _participant_display_names(db, key_participant.values())
     items = []
-    for participant_id, entry in per_participant.items():
-        name, handle = names.get(participant_id, (None, None))
+    for key, entry in per_participant.items():
+        name, handle = names.get(key_participant[key], (None, None))
         items.append(
             {
                 "name": name or "Участник",
