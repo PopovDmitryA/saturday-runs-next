@@ -23,7 +23,7 @@ const RECORD_TITLES: Array<{ key: string; label: string; value: (record: Weather
   {
     key: "windiest",
     label: "Самый ветреный",
-    value: (r) => `${Math.round(r.weather.wind_gusts_ms ?? 0)} м/с`,
+    value: (r) => `порывы ${Math.round(r.weather.wind_gusts_ms ?? 0)} м/с`,
   },
   { key: "snowiest", label: "Самый снежный", value: (r) => `${Math.round(r.weather.snow_depth_cm ?? 0)} см` },
 ];

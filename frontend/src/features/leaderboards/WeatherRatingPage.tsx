@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { TableWrap } from "../../components/tableUx/TableWrap";
-import { formatDate, formatInt, pluralizeRu } from "../../lib/format";
+import { formatDate, formatInt, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { surnameFirst } from "../../lib/personName";
 import { formatTemp, temperatureTone } from "../../lib/weather";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
@@ -30,7 +30,7 @@ const EXTREME_TITLES: Array<{ key: string; label: string; value: (item: WeatherE
     label: "Самый мокрый старт",
     value: (i) => `${(i.weather.precipitation_run_mm ?? 0).toFixed(1)} мм`,
   },
-  { key: "windiest", label: "Самый ветреный старт", value: (i) => `${Math.round(i.weather.wind_gusts_ms ?? 0)} м/с` },
+  { key: "windiest", label: "Самый ветреный старт", value: (i) => `порывы ${Math.round(i.weather.wind_gusts_ms ?? 0)} м/с` },
 ];
 
 function PersonName({ row }: { row: WalrusRow }) {
@@ -153,7 +153,7 @@ function TemperatureTable({ rows }: { rows: TemperatureBucket[] }) {
           Быстрее всего страна бежит при{" "}
           <b className={`temp-${temperatureTone(fastest.from_c)}`}>{fastest.label}</b>: среднее время{" "}
           <b>{formatFinishTime(fastest.avg_finish_sec)}</b> по {formatInt(fastest.finishes)}{" "}
-          {pluralizeRu(fastest.finishes, ["финишу", "финишам", "финишам"]).replace(/^\d+\s/, "")}.
+          {pluralFormRu(fastest.finishes, ["финишу", "финишам", "финишам"])}.
         </p>
       )}
       <TableWrap className="lb-table-wrap lb-table-wrap-flat">
@@ -274,7 +274,7 @@ export function WeatherRatingPage() {
             <h2>🥶 Моржи</h2>
             <p className="lb-weather-lead muted">
               {formatInt(data.walruses.participants)}{" "}
-              {pluralizeRu(data.walruses.participants, ["человек выходил", "человека выходили", "человек выходили"]).replace(/^\d+\s/, "")}{" "}
+              {pluralFormRu(data.walruses.participants, ["человек выходил", "человека выходили", "человек выходили"])}{" "}
               на старт при {formatTemp(data.walruses.threshold_c)} и ниже.
             </p>
             <div className="aj-tabs" role="tablist">
