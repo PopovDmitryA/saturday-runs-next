@@ -1,3 +1,13 @@
+# Ротация логов контейнеров. Без неё json-file растёт бесконечно: beat и шесть
+# воркеров пишут с --loglevel=info, наблюдатель протоколов — каждую минуту в
+# субботу, а полный диск на проде кладёт PG на хосте (INFRA-05, 13.09.2026).
+# 3 × 20 МБ на сервис; полностью хватает на разбор инцидента за пару суток.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -13,6 +23,7 @@ services:
     # «could not resize shared memory segment … No space left on device»
     # (стенд 02.09.2026). На проде PG на хосте — там лимита нет.
     shm_size: "1g"
+    logging: *default-logging
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -25,6 +36,7 @@ services:
   redis:
     image: redis:7-alpine
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    logging: *default-logging
     volumes:
       - ./deploy/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis_data:/data
@@ -49,19 +61,28 @@ services:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
       ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID:-}
       TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
-      DEBUG_AGENT_LOG_PATH: /cursor-debug/debug-31e6fc.log
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
       - ./data:/data
       - ./.env:/app/.env:ro
-      - ./.cursor:/cursor-debug
       # Только для теста-сторожа аналитики: он читает список роутов прямо из
       # App.tsx, чтобы забыть внести новый раздел в классификатор было нельзя.
       # Read-only и на работу приложения не влияет.
       - ./frontend/src:/frontend-src:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # /health не ходит в базу — это проверка «процесс жив и отвечает», а не
+    # готовность (для неё есть /health/ready). curl'а в python:slim нет,
+    # поэтому urllib. На неё смотрит nginx (depends_on: service_healthy):
+    # раньше он стартовал вместе с api и первые секунды отдавал 502.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,6 +105,7 @@ services:
       - ./backend:/app
       - ./.env:/app/.env:ro
     command: python -m bot_app.main
+    logging: *default-logging
     depends_on:
       api:
         condition: service_started
@@ -98,6 +120,7 @@ services:
       - ./deploy/tg-proxy/config.json:/etc/xray/config.json:ro
     entrypoint: ["xray"]
     command: ["run", "-c", "/etc/xray/config.json"]
+    logging: *default-logging
     restart: unless-stopped
 
   worker:
@@ -108,13 +131,20 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
       REDIS_URL: redis://redis:6379/0
       # База обхода parkrun: тут крутится sweep_hq.refresh_snapshot (очередь по
-      # умолчанию). Читается через os.getenv, поля в Settings нет, поэтому
-      # смонтированного .env недостаточно — переменную надо передать явно.
+      # умолчанию). С 13.09.2026 читается через Settings (pm_world_dsn), то есть
+      # и из смонтированного .env; явная переменная оставлена, чтобы стенды с
+      # PM_WORLD_DSN в окружении хоста работали как раньше.
       PM_WORLD_DSN: ${PM_WORLD_DSN:-}
     volumes:
       - ./backend:/app
       - ./.env:/app/.env:ro
-    command: celery -A app.workers.celery_app worker --loglevel=info
+    # Две очереди: дефолтная celery (наблюдатель протоколов раз в минуту,
+    # прогрев главной, агрегаты, сводка, снимок /hq) и warm — прогревы кэша
+    # рейтингов и локаций. Прогревы до 13.09.2026 жили на воркере runpark и
+    # блокировались его синком (и наоборот); здесь concurrency=2, чтобы
+    # минутные задачи не ждали многоминутный прогрев.
+    command: celery -A app.workers.celery_app worker -Q celery,warm --concurrency=2 --loglevel=info
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -132,7 +162,16 @@ services:
     volumes:
       - ./backend:/app
       - ./.env:/app/.env:ro
-    command: celery -A app.workers.celery_app worker -Q s95_user,s95 --concurrency=1 --loglevel=info
+    # --prefetch-multiplier=1: с дефолтными 4 воркер заранее резервировал
+    # задачи из s95_user, и список в Redis пустел ещё до их запуска — а батч
+    # решает «уступить ли пользователю» по LLEN(s95_user) (s95/fetch/priority.py),
+    # то есть не уступал никогда, и «обновить» ждало весь проход JSON-синка
+    # (15–150 мин, SYNC-OTHER-02). С prefetch 1 задача пользователя лежит в
+    # списке, пока батч не закончит или не уступит. -O fair — дефолт с Celery 4,
+    # написан явно, чтобы было видно намерение: следующую задачу берёт
+    # свободный процесс, а не тот, кто первый зарезервировал.
+    command: celery -A app.workers.celery_app worker -Q s95_user,s95 --concurrency=1 --prefetch-multiplier=1 -O fair --loglevel=info
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -166,6 +205,7 @@ services:
       - ./backend:/app
       - ./.env:/app/.env:ro
     command: celery -A app.workers.celery_app worker -Q five_verst_fresh,five_verst --concurrency=1 --prefetch-multiplier=1 --loglevel=info
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -188,6 +228,7 @@ services:
       - ./backend:/app
       - ./.env:/app/.env:ro
     command: celery -A app.workers.celery_app worker -Q five_verst_user --concurrency=1 --loglevel=info
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -206,7 +247,11 @@ services:
       - ./backend:/app
       - ./data:/data
       - ./.env:/app/.env:ro
-    command: celery -A app.workers.celery_app worker -Q parkrun --concurrency=1 --loglevel=info
+    # --max-tasks-per-child: в этом образе живёт Chromium (og_render, фетч
+    # parkrun через Playwright), и процесс воркера со временем пухнет — раз в
+    # сотню задач его дешевле пересоздать, чем ловить OOM.
+    command: celery -A app.workers.celery_app worker -Q parkrun --concurrency=1 --max-tasks-per-child=100 --loglevel=info
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -226,6 +271,7 @@ services:
       - ./data:/data
       - ./.env:/app/.env:ro
     command: celery -A app.workers.celery_app worker -Q runpark --concurrency=1 --max-tasks-per-child=1 --loglevel=info
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -249,6 +295,7 @@ services:
       - ./backend:/app
       - ./.env:/app/.env:ro
     command: celery -A app.workers.celery_app worker -Q warm --concurrency=1 --loglevel=info
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -267,6 +314,7 @@ services:
       - ./backend:/app
       - ./.env:/app/.env:ro
     command: celery -A app.workers.celery_app beat --loglevel=info
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -286,8 +334,12 @@ services:
       - ./data/og:/og-static/og:ro
       # Страницы обслуживания и флаг планового окна (deploy/nginx/maintenance_on).
       - ./deploy/nginx:/usr/share/nginx/maintenance:ro
+    logging: *default-logging
+    # Ждём здоровый api, а не просто запущенный: иначе первые секунды после
+    # `up` nginx отдавал 502 на всё, включая smoke-проверку деплоя.
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
