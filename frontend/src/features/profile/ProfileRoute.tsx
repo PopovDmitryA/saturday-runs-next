@@ -8,19 +8,23 @@
  * кабинета, а публичные страницы сайта имели «человеческие» адреса.
  */
 import { useEffect } from "react";
-import { PublicProfilePage } from "../public_profile/PublicProfilePage";
 import { PortalCabinetDashboardPage } from "../portal/cabinet/PortalCabinetDashboardPage";
-import {
-  PortalCabinetAchievementsPage,
-  PortalCabinetHistoryPage,
-  PortalCabinetMapPage,
-  PortalCabinetMeetingsPage,
-  PortalCabinetRunsPage,
-  PortalCabinetVolunteeringPage,
-} from "../portal/cabinet/PortalCabinetPages";
 import { NotFoundPage } from "../NotFoundPage";
+import { lazyPage } from "../../lib/lazyPage";
 import { CABINET_TAB_SEGMENTS, isOwnHandle, type CabinetTabSegmentKey } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
+
+// Сводка кабинета — первый экран залогиненного, она в стартовом чанке.
+// Остальные вкладки (с картой на leaflet, ачивками, историей) и чужой профиль
+// подгружаются по первому обращению; Suspense-фолбэк держит App.
+const cabinetPages = () => import("../portal/cabinet/PortalCabinetPages");
+const PublicProfilePage = lazyPage(() => import("../public_profile/PublicProfilePage"), (m) => m.PublicProfilePage);
+const PortalCabinetRunsPage = lazyPage(cabinetPages, (m) => m.PortalCabinetRunsPage);
+const PortalCabinetVolunteeringPage = lazyPage(cabinetPages, (m) => m.PortalCabinetVolunteeringPage);
+const PortalCabinetAchievementsPage = lazyPage(cabinetPages, (m) => m.PortalCabinetAchievementsPage);
+const PortalCabinetMeetingsPage = lazyPage(cabinetPages, (m) => m.PortalCabinetMeetingsPage);
+const PortalCabinetMapPage = lazyPage(cabinetPages, (m) => m.PortalCabinetMapPage);
+const PortalCabinetHistoryPage = lazyPage(cabinetPages, (m) => m.PortalCabinetHistoryPage);
 
 /** Сегмент адреса → вкладка кабинета. */
 const SEGMENT_TO_TAB = Object.fromEntries(

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
@@ -51,7 +51,7 @@ import { PlatformFilter as PlatformFilterControl } from "../../components/filter
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import { JOURNAL_METRICS, type JournalMetric } from "../journal/attendanceApi";
 import { RatingJournalPanel } from "../journal/RatingJournalPanel";
-import { TouristMapPanel } from "./TouristMapPanel";
+import { lazyPage } from "../../lib/lazyPage";
 import { useTouristMap } from "./useTouristMap";
 import { VolunteerRolesModal } from "./VolunteerRolesModal";
 import { TableWrap } from "../../components/tableUx/TableWrap";
@@ -61,6 +61,9 @@ import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns
 import { PinnedMeBar } from "../../components/tableUx/PinnedMeBar";
 import { surnameFirst } from "../../lib/personName";
 import "./leaderboards.css";
+
+// Карта туристов (leaflet) открывается кнопкой — код едет отдельным чанком.
+const TouristMapPanel = lazyPage(() => import("./TouristMapPanel"), (m) => m.TouristMapPanel);
 
 const PAGE_STEP = 100;
 const SCROLL_TOP_THRESHOLD = 480;
@@ -2073,11 +2076,13 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                   )}
                 </button>
                 {mapOpen && (
-                  <TouristMapPanel
-                    state={touristMap}
-                    verb={metric === "volunteer_locations" ? "волонтёрили" : "бегали"}
-                    onShowTable={scrollToTable}
-                  />
+                  <Suspense fallback={<p className="muted">Загрузка…</p>}>
+                    <TouristMapPanel
+                      state={touristMap}
+                      verb={metric === "volunteer_locations" ? "волонтёрили" : "бегали"}
+                      onShowTable={scrollToTable}
+                    />
+                  </Suspense>
                 )}
               </section>
             )}

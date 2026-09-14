@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { trackCtaClick, trackHomeLinkClick, useFunnelHomeView } from "../../lib/abTest";
 import { cabinetTabHref, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
@@ -7,7 +7,7 @@ import { CountUpNumber } from "./CountUpNumber";
 import { PortalBlogSection } from "./PortalBlogSection";
 import { PortalHomeAnchors } from "./PortalHomeAnchors";
 import { PortalFooter } from "./PortalFooter";
-import { PortalGeoMap } from "./PortalGeoMap";
+import { lazyPage } from "../../lib/lazyPage";
 import { PortalHeader } from "./PortalHeader";
 import { PLATFORM_CHART_META, PortalTrendChart, type TrendPoint } from "./PortalTrendChart";
 import { PortalTeaserCard } from "./PortalTeaser";
@@ -22,6 +22,10 @@ import {
 } from "./portalTypes";
 import "./portal.css";
 import { COUNT_FORMS, formatInt, pluralFormRu, pluralizeRu } from "../../lib/format";
+
+// Карта географии — единственное место главной, где нужен leaflet; грузим его
+// отдельным чанком, когда данные пришли (см. lib/lazyPage).
+const PortalGeoMap = lazyPage(() => import("./PortalGeoMap"), (m) => m.PortalGeoMap);
 
 const EARTH_EQUATOR_KM = 40_075;
 const SECONDS_PER_YEAR = 365 * 24 * 3600;
@@ -999,7 +1003,9 @@ export function PortalHomePage() {
                   </p>
                 </div>
               </div>
-              <PortalGeoMap points={data.geo.points} />
+              <Suspense fallback={<div className="portal-geo-leaflet" />}>
+                <PortalGeoMap points={data.geo.points} />
+              </Suspense>
             </section>
 
             <section className="portal-panel" aria-label="Самый массовый день">

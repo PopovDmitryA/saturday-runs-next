@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
 import { useCachedResource } from "../../hooks/useCachedResource";
 import { useRestorableState } from "../../hooks/useRestorableState";
 import { LocationCancellationNotice } from "../../components/LocationCancellationNotice";
@@ -41,7 +41,7 @@ import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
 import { locationCardSubject, locationEventSubject, locationMeSubject } from "../sharing/subjects";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
-import { LocationMiniMap } from "./LocationMiniMap";
+import { lazyPage } from "../../lib/lazyPage";
 import { LocationRouteButton } from "./LocationRouteButton";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
 import {
@@ -58,6 +58,10 @@ import {
   WINS_OVERALL_HINT,
   stripLeadingHours,
 } from "./LocationTopCards";
+
+// Мини-карта — единственный потребитель leaflet на странице; грузим его
+// отдельным чанком, когда координаты пришли (см. lib/lazyPage).
+const LocationMiniMap = lazyPage(() => import("./LocationMiniMap"), (m) => m.LocationMiniMap);
 
 function StatTile({
   value,
@@ -912,7 +916,9 @@ function LocationInfoCard({ page }: { page: LocationPageData }) {
   return (
     <div className="loc-info">
       {page.latitude !== null && page.longitude !== null && (
-        <LocationMiniMap latitude={page.latitude} longitude={page.longitude} name={page.name} />
+        <Suspense fallback={<div className="loc-mini-map" />}>
+          <LocationMiniMap latitude={page.latitude} longitude={page.longitude} name={page.name} />
+        </Suspense>
       )}
       <ul className="loc-info-list">
         {placeParts.length > 0 && (
