@@ -125,15 +125,21 @@ def _format_volunteering_index(runs: int, volunteering: int) -> str | None:
 
 
 def _week_saturday(value: date) -> date:
-    """Saturday closing the Sunday-Saturday week that contains the given date.
+    """Суббота недели (пн–вс), в которую попал старт.
 
     Календарь суббот считает по неделям, а не по буквальной дате старта: если
     в одну и ту же неделю пришлось два старта (та же суббота двумя протоколами
     или, например, суббота + внеплановый будний старт), это одна и та же
     неделя — засчитываем её один раз. Совпадает с weekSaturday() во
     фронтенд-виджете (ActivityCalendarHeatmap.tsx).
+
+    Воскресенье относится к субботе, которая только что прошла, а не к
+    следующей (репорт Дмитрия Евлаша 16.09.2026). Ровно так выглядит перенос:
+    01.11.2025 была рабочей субботой, и 122 локации 5 вёрст побежали в
+    воскресенье 02.11 — при неделе вс–сб эти старты уезжали в клетку 08.11,
+    сама суббота 01.11 показывалась как «Без активности», а серия рвалась.
     """
-    return value + timedelta(days=(5 - value.weekday()) % 7)
+    return value + timedelta(days=5 - value.weekday())
 
 
 def _saturday_streak(activity_dates: set[date]) -> int:

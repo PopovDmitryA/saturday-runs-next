@@ -49,10 +49,17 @@ function toIsoDate(value: Date): string {
   return `${value.getFullYear()}-${month}-${day}`;
 }
 
-/** Saturday closing the Sunday–Saturday week that contains the given date. */
+/**
+ * Суббота недели (пн–вс), в которую попал старт. Воскресенье относится к
+ * субботе, которая только что прошла: перенос старта на воскресенье (рабочая
+ * суббота 01.11.2025) иначе уезжал в клетку следующей недели, а сама суббота
+ * показывалась «Без активности» и рвала серию. Та же логика на бэкенде —
+ * _week_saturday в dashboard_service.
+ */
 function weekSaturday(value: Date): Date {
   const result = new Date(value);
-  result.setDate(result.getDate() + (6 - result.getDay()));
+  const mondayBased = (result.getDay() + 6) % 7;
+  result.setDate(result.getDate() + (5 - mondayBased));
   return result;
 }
 
@@ -153,10 +160,13 @@ export function ActivityCalendarHeatmap({
     if (!parsed || (day.runs <= 0 && day.volunteering <= 0)) {
       continue;
     }
-    if (firstActivity === null || parsed < firstActivity) {
-      firstActivity = parsed;
-    }
     const saturday = weekSaturday(parsed);
+    // Первой считаем именно клетку, а не дату старта: воскресный старт
+    // ложится в субботу накануне, и она может оказаться в прошлом году —
+    // без этого ряд того года не рисовался бы и клетка пропадала.
+    if (firstActivity === null || saturday < firstActivity) {
+      firstActivity = saturday;
+    }
     const key = toIsoDate(saturday);
     const aggregate = byWeekSaturday.get(key) ?? { runs: 0, volunteering: 0, days: [] };
     aggregate.runs += day.runs;

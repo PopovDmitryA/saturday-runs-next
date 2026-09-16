@@ -62,12 +62,22 @@ def test_saturday_consistency() -> None:
     assert pct == round(active / total * 100, 1)
 
 
-def test_week_saturday_maps_any_weekday_to_closing_saturday() -> None:
+def test_week_saturday_maps_any_weekday_to_its_week_saturday() -> None:
     saturday = date(2026, 5, 23)
     assert _week_saturday(saturday) == saturday
-    assert _week_saturday(date(2026, 5, 20)) == saturday  # Wednesday, same week
-    assert _week_saturday(date(2026, 5, 17)) == saturday  # Sunday, same week (opens it)
-    assert _week_saturday(date(2026, 5, 24)) == date(2026, 5, 30)  # Sunday, next week
+    assert _week_saturday(date(2026, 5, 20)) == saturday  # среда той же недели
+    assert _week_saturday(date(2026, 5, 18)) == saturday  # понедельник той же недели
+    assert _week_saturday(date(2026, 5, 24)) == saturday  # воскресенье, закрывает ту же неделю
+    assert _week_saturday(date(2026, 5, 17)) == date(2026, 5, 16)  # воскресенье прошлой недели
+
+
+def test_week_saturday_keeps_sunday_transfer_in_its_own_saturday() -> None:
+    # 01.11.2025 была рабочей субботой, и старты перенесли на воскресенье
+    # 02.11 — это та же неделя, а не следующая (репорт Дмитрия Евлаша).
+    assert _week_saturday(date(2025, 11, 2)) == date(2025, 11, 1)
+    assert _max_saturday_streak(
+        {date(2025, 10, 25), date(2025, 11, 2), date(2025, 11, 8)}
+    ) == 3
 
 
 def test_saturday_streak_counts_by_week_not_extra_starts_same_week() -> None:
