@@ -3896,9 +3896,8 @@ def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[st
         "last_run_date": None,
         "volunteering_count": 0,
         "top_volunteer_role": None,
-        "gender": None,
-        "rank_by_runs_gender": None,
-        "runners_total_gender": None,
+        "rank_by_runs": None,
+        "runners_total": None,
         "age_groups": [],
         "home_distance": _location_home_distance(db, user, identity),
     }
@@ -3957,42 +3956,33 @@ def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[st
         payload["first_run_date"] = min(real_dates)
         payload["last_run_date"] = max(real_dates)
 
-    # Место в топе локации по числу пробежек — внутри своего пола. Группировка
-    # та же, что в build_location_leaders: привязанные аккаунты сливаются по
-    # user_id. Общего места (без разбивки) больше нет: сравнение мужчин и женщин
-    # одной строкой мало что говорит, а в знаменатель попадали неопознанные
-    # финишёры протокола — у них пол не заполнен, и срез по полу отсекает их сам.
-    #
-    # Пол берём из participants.gender — он
-    # материализован по всем системам (gender_position_service), поэтому срез
-    # работает и на parkrun-эпохе, где протокол категории не публикует.
-    my_gender = (
-        db.query(Participant.gender)
-        .join(PlatformLink, _platform_link_join())
-        .filter(PlatformLink.user_id == user_id, Participant.gender.isnot(None))
-        .limit(1)
-        .scalar()
+    # Место в топе локации по числу пробежек — среди всех бегунов площадки, без
+    # разбивки по полу (решение Дмитрия 17.09.2026). Группировка и отсечка
+    # безымянных — ровно те же, что в build_location_leaders: привязанные
+    # аккаунты сливаются по user_id, а заглушки протокола («НЕИЗВЕСТНЫЙ», у s95
+    # это к тому же один общий аккаунт на всех) в знаменатель не идут. Иначе
+    # плитка и таблица лидеров на одной странице показывали бы разные числа.
+    leader_name = func.max(func.coalesce(User.display_name, Participant.display_name))
+    runner_runs = (
+        db.query(func.count(func.distinct(RunResult.event_id)).label("runs"))
+        .join(Participant, RunResult.participant_id == Participant.id)
+        .outerjoin(PlatformLink, _platform_link_join())
+        .outerjoin(User, PlatformLink.user_id == User.id)
+        .filter(RunResult.event_id.in_(event_ids))
+        .group_by(func.coalesce(PlatformLink.user_id, RunResult.participant_id))
+        .having(_identified_name_clause(leader_name))
+        .subquery()
     )
-    if my_gender in ("male", "female"):
-        gender_runs = (
-            db.query(func.count(func.distinct(RunResult.event_id)).label("runs"))
-            .join(Participant, RunResult.participant_id == Participant.id)
-            .outerjoin(PlatformLink, _platform_link_join())
-            .filter(RunResult.event_id.in_(event_ids), Participant.gender == my_gender)
-            .group_by(func.coalesce(PlatformLink.user_id, RunResult.participant_id))
-            .subquery()
+    ahead, total = (
+        db.query(
+            func.count(case((runner_runs.c.runs > runs_count, 1))),
+            func.count(),
         )
-        ahead_gender, total_gender = (
-            db.query(
-                func.count(case((gender_runs.c.runs > runs_count, 1))),
-                func.count(),
-            )
-            .select_from(gender_runs)
-            .one()
-        )
-        payload["gender"] = my_gender
-        payload["rank_by_runs_gender"] = int(ahead_gender) + 1
-        payload["runners_total_gender"] = int(total_gender)
+        .select_from(runner_runs)
+        .one()
+    )
+    payload["rank_by_runs"] = int(ahead) + 1
+    payload["runners_total"] = int(total)
 
     payload["age_groups"] = build_location_age_group_standings(db, user_id, event_ids)
 

@@ -701,12 +701,10 @@ class LocationPersonalStatsResponse(BaseModel):
     # Любимая роль на этой локации: чаще всего выходил (ярлыки систем схлопнуты
     # в канон, см. volunteer_role_taxonomy).
     top_volunteer_role: LocationTopRoleResponse | None = None
-    # Место в топе локации по числу пробежек (та же группировка, что у лидеров).
-    # Место в топе по пробежкам — внутри своего пола (пол материализован в
-    # participants.gender). Общего места нет: см. build_location_personal_stats.
-    gender: str | None = None
-    rank_by_runs_gender: int | None = None
-    runners_total_gender: int | None = None
+    # Место в топе локации по числу пробежек — среди всех бегунов площадки
+    # (та же группировка и та же отсечка безымянных, что у таблицы лидеров).
+    rank_by_runs: int | None = None
+    runners_total: int | None = None
     # Возрастные группы 5 вёрст, в которых пользователь здесь бегал.
     age_groups: list[LocationAgeGroupStandingResponse] = Field(default_factory=list)
     # Расстояние от домашней локации. None — дом не определился (нет пробежек),

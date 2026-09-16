@@ -3231,10 +3231,9 @@ export type LocationPersonalStats = {
   organizer_access: boolean;
   /** Любимая роль на этой локации: чаще всего выходил. */
   top_volunteer_role: { role: string; count: number } | null;
-  // Место в топе по пробежкам — только внутри своего пола
-  gender: string | null;
-  rank_by_runs_gender: number | null;
-  runners_total_gender: number | null;
+  // Место в топе по пробежкам — среди всех бегунов локации
+  rank_by_runs: number | null;
+  runners_total: number | null;
   age_groups: LocationAgeGroupStanding[];
   /** null — домашняя локация не определилась (у пользователя нет пробежек). */
   home_distance: LocationHomeDistance | null;
