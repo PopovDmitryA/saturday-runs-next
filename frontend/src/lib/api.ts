@@ -372,6 +372,9 @@ export type RunItem = {
   location_is_cancelled?: boolean;
   position: number | null;
   gender_position?: number | null;
+  /** Место в своей возрастной категории на этом старте и размер категории. */
+  age_group_position?: number | null;
+  age_group_total?: number | null;
   // Всего человек в протоколе старта; null — протокол неполон, честного числа нет.
   participants_total?: number | null;
   finish_time_display: string | null;

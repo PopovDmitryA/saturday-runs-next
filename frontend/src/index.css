@@ -2438,6 +2438,11 @@ input[type="search"]:focus,
   width: 8.5rem;
 }
 
+/* «Место (группа)» — подпись длиннее «Места (пол)», режется без своей ширины. */
+.runs-table .col-age-group {
+  width: 10.5rem;
+}
+
 /* «Участников» и «Топ %» — под полные подписи с иконкой подсказки. */
 .runs-table .col-participants {
   width: 8.25rem;
