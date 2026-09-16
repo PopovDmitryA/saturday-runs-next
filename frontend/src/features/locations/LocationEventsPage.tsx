@@ -36,6 +36,7 @@ type SortKey =
   | "best_female"
   | "avg"
   | "debutants"
+  | "first_here"
   | "guests"
   | "prs";
 
@@ -57,8 +58,10 @@ function sortValue(row: LocationEventRow, key: SortKey): number | string | null 
       return row.avg_time_sec;
     case "debutants":
       return row.debutants;
-    case "guests":
+    case "first_here":
       return row.first_at_location;
+    case "guests":
+      return row.guests;
     case "prs":
       return row.prs;
   }
@@ -75,6 +78,7 @@ const EVENTS_COLUMNS: AdaptiveColumn[] = [
   { key: "best_female", width: 184 },
   { key: "volunteers", width: 148 },
   { key: "debutants", width: 148 },
+  { key: "first_here", width: 176 },
   { key: "guests", width: 148 },
   { key: "avg", width: 184 },
   { key: "prs", width: 184 },
@@ -322,6 +326,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
               <col className="col-compact" />
               {show("volunteers") && <col className="col-compact" />}
               {show("debutants") && <col className="col-compact" />}
+              {show("first_here") && <col className="col-compact-wide" />}
               {show("guests") && <col className="col-compact" />}
               {show("best_male") && <col className="col-time" />}
               {show("best_female") && <col className="col-time" />}
@@ -353,20 +358,28 @@ function LocationEventsContent({ slug }: { slug: string }) {
                     {...sortProps("volunteers")}
                   />
                 )}
-                {/* Новички разведены на две колонки: дебютанты показывают,
-                    сколько людей площадка привела в движение с нуля, гости —
-                    насколько хорошо она зазывает уже бегающих. */}
+                {/* Три расходящихся круга: новички — впервые в системе,
+                    «впервые здесь» — впервые на этой площадке, «гостей» — все
+                    приезжие, включая тех, кто ездит сюда годами. Каждый
+                    следующий шире предыдущего. */}
                 {show("debutants") && (
                   <ColumnHeader
-                    label="Дебютантов"
+                    label="Новичков"
                     hint="Первый старт в системе: этих людей площадка привела в движение с нуля"
                     {...sortProps("debutants")}
+                  />
+                )}
+                {show("first_here") && (
+                  <ColumnHeader
+                    label="Впервые здесь"
+                    hint="Уже бегали в системе, но на эту площадку приехали впервые. Часть колонки «Гостей»"
+                    {...sortProps("first_here")}
                   />
                 )}
                 {show("guests") && (
                   <ColumnHeader
                     label="Гостей"
-                    hint="Уже бегали в системе, но на эту площадку приехали впервые"
+                    hint="Все приезжие: финишёры, чья домашняя локация другая. Приезжать сюда они могут не первый раз, поэтому гостей всегда больше, чем «Впервые здесь»"
                     {...sortProps("guests")}
                   />
                 )}
@@ -450,7 +463,10 @@ function LocationEventsContent({ slug }: { slug: string }) {
                     <td className="td-compact">{row.finishers ?? "—"}</td>
                     {show("volunteers") && <td className="td-compact">{row.volunteers ?? "—"}</td>}
                     {show("debutants") && <td className="td-compact">{row.debutants ?? "—"}</td>}
-                    {show("guests") && <td className="td-compact">{row.first_at_location ?? "—"}</td>}
+                    {show("first_here") && (
+                      <td className="td-compact">{row.first_at_location ?? "—"}</td>
+                    )}
+                    {show("guests") && <td className="td-compact">{row.guests ?? "—"}</td>}
                     {show("best_male") && (
                       <td className="td-time">
                         <span className="loc-events-number">

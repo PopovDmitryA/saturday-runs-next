@@ -151,9 +151,9 @@ function OrganizerNewcomersContent({ slug }: { slug: string }) {
       <section className="card org-toolbar-card">
         <div className="org-toolbar-row">
           <label className="org-toolbar-label">
-            Дебюты за{" "}
+            Новички за{" "}
             <FilterSelect
-              ariaLabel="Дебюты за период"
+              ariaLabel="Новички за период"
               value={days}
               onChange={setDays}
               options={PERIOD_OPTIONS.map((option) => ({ value: option.days, label: option.label }))}
@@ -174,7 +174,7 @@ function OrganizerNewcomersContent({ slug }: { slug: string }) {
                   {" "}
                   · вернулись сюда: <strong>{data.retention_pct}%</strong> (
                   {formatInt(data.returned_here_total)} из {formatInt(data.eligible_total)}, без
-                  дебютантов последнего старта)
+                  новичков последнего старта)
                 </>
               )}
             </span>
@@ -192,7 +192,7 @@ function OrganizerNewcomersContent({ slug }: { slug: string }) {
 
       {!loading && !error && data && data.items.length === 0 && (
         <div className="card">
-          <p className="muted">За выбранный период дебютов на локации не было.</p>
+          <p className="muted">За выбранный период новичков на локации не было.</p>
         </div>
       )}
 
@@ -204,19 +204,19 @@ function OrganizerNewcomersContent({ slug }: { slug: string }) {
                 <tr>
                   <ColumnHeader label="Имя" {...sortProps("name")} />
                   <ColumnHeader
-                    label="Дебют"
-                    hint="Дата первой пробежки в системе — она же дебют здесь"
+                    label="Первый старт"
+                    hint="Дата первой пробежки в системе — она же первая здесь"
                     {...sortProps("debut")}
                   />
                   <ColumnHeader label="Вернулся сюда" {...sortProps("returned")} />
                   <ColumnHeader
                     label="Здесь"
-                    hint="Пробежек на этой локации, включая дебют"
+                    hint="Пробежек на этой локации, включая первую"
                     {...sortProps("runs_here")}
                   />
                   <ColumnHeader
                     label="В других местах"
-                    hint="Пробежек на других локациях после дебюта"
+                    hint="Пробежек на других локациях после первого старта"
                     {...sortProps("runs_elsewhere")}
                   />
                   <ColumnHeader

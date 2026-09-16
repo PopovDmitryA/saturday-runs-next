@@ -27,6 +27,7 @@ import {
   COUNT_FORMS,
   formatDate,
   formatInt,
+  formatNumber,
   formatKm,
   formatStatValue,
   platformCodeLabel,
@@ -251,12 +252,12 @@ function LastEventSection({ lastEvent, page }: { lastEvent: LocationLastEvent; p
         {newcomers !== null && (
           <StatTile
             value={newcomers}
-            label={pluralFormRu(newcomers, COUNT_FORMS.newcomers)}
+            label={pluralFormRu(newcomers, COUNT_FORMS.newFaces)}
             sub={
               lastEvent.debutants || lastEvent.first_at_location
                 ? [
                     lastEvent.debutants
-                      ? `${pluralizeRu(lastEvent.debutants, COUNT_FORMS.debuts)} в системе`
+                      ? pluralizeRu(lastEvent.debutants, COUNT_FORMS.newcomers)
                       : null,
                     lastEvent.first_at_location
                       ? `${lastEvent.first_at_location} впервые здесь`
@@ -266,6 +267,13 @@ function LastEventSection({ lastEvent, page }: { lastEvent: LocationLastEvent; p
                     .join(" · ")
                 : undefined
             }
+          />
+        )}
+        {lastEvent.guests !== null && (
+          <StatTile
+            value={lastEvent.guests}
+            label={pluralFormRu(lastEvent.guests, COUNT_FORMS.guests)}
+            hint="Все приезжие: финишёры, чья домашняя локация другая. В отличие от «впервые здесь», гость мог приезжать сюда и раньше — поэтому гостей всегда больше."
           />
         )}
         {lastEvent.prs !== null && (
@@ -1310,6 +1318,25 @@ function LocationPageContent({ slug }: { slug: string }) {
             value={stats.unique_participants}
             label={pluralFormRu(stats.unique_participants, COUNT_FORMS.uniqueParticipants)}
           />
+          {/* «Туристическая привлекательность» площадки — заявка из бэклога
+              сайта: «сколько всего, в среднем и на последней пробежке». */}
+          {stats.guests && stats.guests.total > 0 && (
+            <StatTile
+              value={stats.guests.total}
+              label={pluralFormRu(stats.guests.total, COUNT_FORMS.guests)}
+              sub={[
+                stats.guests.share_pct !== null
+                  ? `${formatNumber(stats.guests.share_pct)}% всех финишей`
+                  : null,
+                stats.guests.avg_per_event !== null
+                  ? `в среднем ${formatNumber(stats.guests.avg_per_event)} на старте`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              hint="Все приезжие за историю локации: финишёры, чья домашняя локация другая. Приезжать гость может не в первый раз, поэтому их всегда больше, чем пришедших сюда впервые."
+            />
+          )}
           <StatTile
             value={stats.volunteers_total}
             label={pluralFormRu(stats.volunteers_total, COUNT_FORMS.volunteering)}

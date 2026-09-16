@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_optional_user
+from app.api.deps import get_current_user, get_db, get_optional_user
 from app.config import Settings, get_settings
 from app.core.admin import is_admin_user
 from app.models import User
@@ -26,6 +26,7 @@ from app.schemas.locations import (
     MapLocationsResponse,
     UniqueLocationsDetailResponse,
 )
+from app.schemas.profiles import ProfileCompareLocationsResponse
 from app.services.achievements_service import compute_challenges
 from app.services.admin_users_service import (
     get_admin_user_preview_best_results,
@@ -44,6 +45,7 @@ from app.services.home_distance_service import build_home_distance_detail
 from app.services.location_catalog_table_service import build_catalog_locations_table
 from app.services.location_map_service import list_user_visited_map_locations
 from app.services.my_history_service import get_my_history
+from app.services.profile_compare_service import build_location_comparison
 from app.services.profile_slug_service import resolve_profile_handle
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
@@ -283,6 +285,30 @@ def public_profile_co_runners(
         platform_codes=parse_platform_codes(platforms),
     )
     return [CoRunnerResponse.model_validate(i) for i in items]
+
+
+@router.get(
+    "/{serial_id}/profile/compare/locations",
+    response_model=ProfileCompareLocationsResponse,
+)
+def public_profile_compare_locations(
+    serial_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    viewer: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ProfileCompareLocationsResponse:
+    """Локации, где бегали оба: лучшее время каждого и совместные старты.
+
+    Только для залогиненного — сравнение всегда «со мной». Приватность цели
+    проверяется тем же _get_user, что и остальные вкладки профиля.
+    """
+    target_id = _get_user_uuid(serial_id, db, viewer, settings)
+    if target_id == viewer.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Нельзя сравнить профиль с самим собой"
+        )
+    payload = build_location_comparison(db, viewer.id, target_id)
+    return ProfileCompareLocationsResponse.model_validate(payload)
 
 
 @router.get(

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCachedResource } from "../../hooks/useCachedResource";
 import { useRestorableState } from "../../hooks/useRestorableState";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
@@ -13,7 +13,8 @@ import {
   FilterSearch,
 } from "../../components/filters/FilterPanel";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
-import { getLocationsIndex, type LocationIndexItem } from "../../lib/api";
+import { getHomeLocation, getLocationsIndex, type LocationIndexItem } from "../../lib/api";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import {
   formatDate,
   formatFinishTimeValue,
@@ -141,9 +142,11 @@ const LOCATIONS_COLUMNS: AdaptiveColumn[] = [
 function LocationsTable({
   items,
   tableColumns,
+  homeIdentityKey,
 }: {
   items: LocationIndexItem[];
   tableColumns: TableColumns;
+  homeIdentityKey: string | null;
 }) {
   const [sort, setSort] = useRestorableState<SortState>("locations.sort", {
     key: "events_count",
@@ -174,8 +177,18 @@ function LocationsTable({
             : 1;
       return sort.asc ? compare : -compare;
     });
+    // «Моя» локация всегда сверху и на виду — как своя строка в рейтингах
+    // (просьба из бэклога сайта). Только если она проходит текущие фильтры:
+    // при поиске по другому названию поднимать её наверх было бы враньём.
+    const homeIndex = homeIdentityKey
+      ? copy.findIndex((item) => item.identity_key === homeIdentityKey)
+      : -1;
+    if (homeIndex > 0) {
+      const [home] = copy.splice(homeIndex, 1);
+      copy.unshift(home);
+    }
     return copy;
-  }, [items, sort]);
+  }, [items, sort, homeIdentityKey]);
 
   const toggleSort = (key: SortKey) => {
     setSort((current) =>
@@ -292,9 +305,24 @@ function LocationsTable({
             </tr>
           ) : (
             sorted.map((item) => (
-              <tr key={item.identity_key}>
+              <tr
+                key={item.identity_key}
+                className={item.identity_key === homeIdentityKey ? "loc-index-row-home" : undefined}
+              >
                 <td className="td-location">
                   <a href={`/locations/${item.slug}`}>{item.name}</a>
+                  {item.identity_key === homeIdentityKey && (
+                    // Плашка — ссылка в настройки: «моя» вызывает вопрос «а
+                    // почему эта?», и ответ вместе с возможностью сменить
+                    // лежат в одном месте (правка Дмитрия 17.09.2026).
+                    <a
+                      className="location-status-badge loc-index-home-badge"
+                      href="/settings#home-location"
+                      title="Ваша домашняя локация: от неё считается дальность стартов, по ней вы «свой» на площадке. Выбирается по вашим пробежкам автоматически — нажмите, чтобы посмотреть или сменить в настройках"
+                    >
+                      🏠 моя
+                    </a>
+                  )}
                   <LocationStatusBadge isPaused={item.is_paused} isCancelled={item.is_cancelled} />
                 </td>
                 {show("city") && (
@@ -394,6 +422,30 @@ function LocationsIndexContent() {
   // и S95 вместе» — мультивыбор здесь только путал (Дмитрий 02.09.2026).
   const [platform, setPlatform] = useRestorableState("locations.platform", "all");
   const [showPaused, setShowPaused] = useRestorableState("locations.paused", false);
+  // Домашняя локация зрителя — её строка поднимается наверх и подсвечивается.
+  // Спрашиваем отдельным запросом: каталог кэшируется одним блобом на всех,
+  // личным данным в этом кэше не место.
+  const viewer = useOptionalUser();
+  const [homeIdentityKey, setHomeIdentityKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!viewer) {
+      setHomeIdentityKey(null);
+      return;
+    }
+    let cancelled = false;
+    getHomeLocation()
+      .then((payload) => {
+        if (!cancelled) {
+          setHomeIdentityKey(payload.location?.catalog_identity_key ?? null);
+        }
+      })
+      .catch(() => {
+        // Не смогли — каталог просто останется без отметки «моя».
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewer]);
 
   const filtered = useMemo(() => {
     if (!items) {
@@ -471,7 +523,11 @@ function LocationsIndexContent() {
             <p className="muted loc-index-count">
               {pluralizeRu(filtered.length, ["локация", "локации", "локаций"])}
             </p>
-            <LocationsTable items={filtered} tableColumns={tableColumns} />
+            <LocationsTable
+              items={filtered}
+              tableColumns={tableColumns}
+              homeIdentityKey={homeIdentityKey}
+            />
           </>
         )}
       </section>

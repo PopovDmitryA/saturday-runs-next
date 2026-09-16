@@ -1108,13 +1108,18 @@ def test_analytics_endpoints(
     assert payload["record_finishers"] == 2
     assert all(month["avg_finishers"] == 2.0 for month in payload["months"])
 
-    # --- Портрет: пол пополам, группы чистятся от «(1)», клуб виден.
+    # --- Портрет: пол пополам, пирамида разводит М и Ж по сторонам одной
+    # строки, категория чистится от «(1)» и от буквы пола, клуб виден.
     audience = client.get(f"/api/organizer/{location.external_key}/audience")
     assert audience.status_code == 200
     payload = audience.json()
     assert payload["people_total"] == 2
-    groups = {g["group"] for g in payload["age_groups"]}
-    assert groups == {"М35-39", "Ж30-34"}
+    pyramid = {row["range"]: row for row in payload["age_pyramid"]}
+    assert set(pyramid) == {"30-34", "35-39"}
+    assert pyramid["35-39"]["male_finishes"] == 6
+    assert pyramid["35-39"]["female_finishes"] == 0
+    assert pyramid["30-34"]["female_finishes"] == 6
+    assert pyramid["30-34"]["male_finishes"] == 0
     genders = {g["label"]: g["share_pct"] for g in payload["genders"]}
     assert genders == {"Мужчины": 50.0, "Женщины": 50.0}
     assert payload["clubs"][0]["club"] == "ТестКлуб"

@@ -335,6 +335,20 @@ class LocationCatalogIndex:
         return f"location:{location.id}"
 
 
+def identity_key_by_location_id(db: Session, catalog_index: LocationCatalogIndex) -> dict[UUID, str]:
+    """location_id → canonical identity key для ВСЕХ площадок каталога.
+
+    Свёртка нужна везде, где считают «одну и ту же точку»: переезд площадки
+    между системами (5 вёрст → RunPark, parkrun-эпоха → 5 вёрст) не должен
+    выглядеть двумя разными локациями.
+    """
+    rows = db.query(Location, Platform.code).join(Platform, Location.platform_id == Platform.id)
+    return {
+        location.id: catalog_index.canonical_identity_key(location, platform_code)
+        for location, platform_code in rows
+    }
+
+
 # Русские паркраны, которых нет в каталоге локаций (закрылись без преемника в
 # 5 вёрст/S95 и потому не попали в location_catalog). Дополнять по мере
 # обнаружения: SELECT parkrun-локации без location_catalog_links с русскими

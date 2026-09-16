@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
   getHomeLocation,
@@ -72,6 +72,11 @@ export function HomeLocationSection() {
   const [candidates, setCandidates] = useState<HomeLocationCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+  // Пришли по якорю #home-location (плашка «🏠 моя» из каталога, попап точки
+  // на карте) — подводим секцию к глазам и разово подсвечиваем. Браузер сам
+  // этого не делает: секции ещё нет в DOM, когда он обрабатывает якорь.
+  const [highlight, setHighlight] = useState(false);
+  const sectionRef = useRef<HTMLElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -93,6 +98,18 @@ export function HomeLocationSection() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Скролл и вспышка — только когда секция уже отрисована с данными: раньше
+  // её высота меняется и браузер промахивается мимо.
+  useEffect(() => {
+    if (loading || window.location.hash !== "#home-location") {
+      return;
+    }
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlight(true);
+    const timer = window.setTimeout(() => setHighlight(false), 2200);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
 
   const warning = useMemo(() => homeLocationWarning(current, candidates), [current, candidates]);
 
@@ -125,7 +142,11 @@ export function HomeLocationSection() {
 
   return (
     // id — якорь для ссылок «сменить дом» (попап точки на карте ведёт сюда).
-    <section className="card" id="home-location">
+    <section
+      ref={sectionRef}
+      className={`card${highlight ? " settings-anchor-flash" : ""}`}
+      id="home-location"
+    >
       <h2 className="section-title">Домашняя локация</h2>
       <p className="muted settings-lead">
         По умолчанию выбирается локация, где вы бегали чаще всего — но вы можете выбрать любую

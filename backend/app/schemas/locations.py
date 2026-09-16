@@ -152,10 +152,13 @@ class LocationLastEventResponse(BaseModel):
     best_male_time_display: str | None = None
     best_female_time_sec: int | None = None
     best_female_time_display: str | None = None
-    # Те же метрики, что в журнале протоколов. Дебютанты системы и гости
-    # площадки не пересекаются: см. app/services/newcomer_counts.py.
+    # Те же метрики, что в журнале протоколов. Дебютанты системы и «впервые
+    # здесь» не пересекаются: см. app/services/newcomer_counts.py.
     debutants: int | None = None
     first_at_location: int | None = None
+    # Гости старта: дом у человека — другая площадка. «Впервые здесь» —
+    # подмножество гостей, см. location_guests_service.
+    guests: int | None = None
     prs: int | None = None
     male_finishers: int | None = None
     female_finishers: int | None = None
@@ -163,6 +166,14 @@ class LocationLastEventResponse(BaseModel):
     best_female_name: str | None = None
     milestones: list[LocationMilestoneResponse] = []
     one_step: list[LocationOneStepResponse] = []
+
+
+class LocationGuestsResponse(BaseModel):
+    """Гости площадки за всю её историю: приезжие, чей дом в другом месте."""
+
+    total: int = 0
+    share_pct: float | None = None
+    avg_per_event: float | None = None
 
 
 class LocationPageStatsResponse(BaseModel):
@@ -181,6 +192,7 @@ class LocationPageStatsResponse(BaseModel):
     median_finish_time_sec: int | None = None
     median_finish_time_display: str | None = None
     last_event: LocationLastEventResponse | None = None
+    guests: LocationGuestsResponse | None = None
     # Насколько последний старт сдвинул агрегат по сравнению со всеми
     # предыдущими (avg_after - avg_before); отрицательное значение — быстрее.
     avg_finish_time_delta_sec: int | None = None
@@ -308,11 +320,13 @@ class LocationEventRowResponse(BaseModel):
     best_female_runner_serial_id: int | None = None
     avg_time_sec: int | None = None
     avg_time_display: str | None = None
-    # Дебютанты системы (первый старт вообще) и гости площадки (в системе не
-    # впервые, здесь впервые) — непересекающиеся множества, их можно и
+    # Дебютанты системы (первый старт вообще) и «впервые здесь» (в системе не
+    # впервые, на площадке впервые) — непересекающиеся множества, их можно и
     # складывать, и показывать порознь. См. app/services/newcomer_counts.py.
     debutants: int | None = None
     first_at_location: int | None = None
+    # Гости старта — см. LocationLastEventResponse.guests.
+    guests: int | None = None
     prs: int | None = None
     has_protocol: bool = False
     protocol_url: str | None = None
@@ -492,6 +506,10 @@ class LastResultsItemResponse(BaseModel):
     finishers: int | None = None
     volunteers: int | None = None
     debutants: int | None = None
+    first_at_location: int | None = None
+    # Гости берутся из кэша площадки (его наполняет прогрев): None — кэш ещё
+    # холодный, страница покажет прочерк, а не станет ждать расчёта.
+    guests: int | None = None
     prs: int | None = None
     best_male_time_sec: int | None = None
     best_male_time_display: str | None = None

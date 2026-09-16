@@ -45,7 +45,6 @@ def warm_locations_cache() -> dict[str, object]:
         # use_cache=False, но это «не читать И не писать»: прогрев считал всё
         # впустую, кэш наполняли сами посетители ценой холодного расчёта.
         index = build_locations_index(db, refresh=True)
-        build_last_results(db, refresh=True)
         items = cast(list[dict[str, Any]], index.get("items") or [])
         for item in items:
             slug = item.get("slug")
@@ -61,6 +60,10 @@ def warm_locations_cache() -> dict[str, object]:
                 logger.exception("locations warm failed for slug %s", slug)
                 db.rollback()
                 failed += 1
+        # «Последние пробежки» — ПОСЛЕ страниц локаций: витрина берёт число
+        # гостей из кэша каждой площадки, а его только что наполнил цикл выше.
+        # До перестановки страница отставала на один прогрев.
+        build_last_results(db, refresh=True)
         # Единый протокол: свежая неделя и предыдущая. Холодный расчёт недели
         # — это 12–16 тыс. строк со всей страны, и без прогрева его оплатил бы
         # первый же посетитель субботним вечером. Список недель тоже трогаем:

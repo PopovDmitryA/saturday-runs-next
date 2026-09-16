@@ -218,7 +218,7 @@ export function runSubject(run: RunItem, user: User | null, options?: { yearsAgo
     pushMetric(metrics, "first_here", "впервые", "на этой локации");
   }
   if (run.is_first_run) {
-    pushMetric(metrics, "first_run", "дебют", "первая пробежка");
+    pushMetric(metrics, "first_run", "новичок", "первая пробежка");
   }
   for (const label of run.achievement_labels ?? []) {
     pushMetric(metrics, `achievement_${label}`, label, "достижение");

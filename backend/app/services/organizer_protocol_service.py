@@ -253,7 +253,7 @@ def _compute_protocol_timeline(db: Session, identity: LocationIdentity, *, limit
     base["items"] = items
     if delays_12m:
         base["median_delay_hours_12m"] = round(median(delays_12m), 1)
-        network = _network_protocol_medians(db)
+        network = network_protocol_medians(db)
         if network:
             values = sorted(network.values())
             our = base["median_delay_hours_12m"]
@@ -262,7 +262,7 @@ def _compute_protocol_timeline(db: Session, identity: LocationIdentity, *, limit
     return base
 
 
-def _network_protocol_medians(db: Session) -> dict[str, float]:
+def network_protocol_medians(db: Session) -> dict[str, float]:
     """Медианная задержка выгрузки за 12 мес по каждой 5в-локации (кэш сутки).
 
     Считается в Python: сезонные окна расписания из jsonb в SQL раскрывать
@@ -543,7 +543,7 @@ def _compute_location_health(db: Session, identity: LocationIdentity) -> dict[st
                 "вас, вернулись хотя бы ещё раз."
             ),
             "advice": (
-                "Как улучшить: встречайте дебютантов — назовите по имени на "
+                "Как улучшить: встречайте новичков — назовите по имени на "
                 "брифинге, отметьте в посте-отчёте (формат «Привет новичкам»), "
                 "позовите на следующую субботу. Человек возвращается туда, где "
                 "его заметили."

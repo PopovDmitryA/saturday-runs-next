@@ -2516,6 +2516,8 @@ export type LocationLastEvent = {
   best_female_time_display: string | null;
   debutants: number | null;
   first_at_location: number | null;
+  /** Гости старта: дом у человека — другая площадка. */
+  guests: number | null;
   prs: number | null;
   male_finishers: number | null;
   female_finishers: number | null;
@@ -2541,6 +2543,12 @@ export type LocationPageStats = {
   median_finish_time_sec: number | null;
   median_finish_time_display: string | null;
   last_event: LocationLastEvent | null;
+  /** Гости площадки за всю историю: приезжие, чей дом в другом месте. */
+  guests: {
+    total: number;
+    share_pct: number | null;
+    avg_per_event: number | null;
+  } | null;
   avg_finish_time_delta_sec: number | null;
   median_finish_time_delta_sec: number | null;
 };
@@ -2680,11 +2688,13 @@ export type LocationEventRow = {
   best_female_runner_serial_id: number | null;
   avg_time_sec: number | null;
   avg_time_display: string | null;
-  // Дебютанты системы и гости площадки не пересекаются: у дебютанта старт
+  // Дебютанты системы и «впервые здесь» не пересекаются: у дебютанта старт
   // здесь тоже первый, но в first_at_location он не попадает (иначе сумма
   // «новичков» считала бы его дважды).
   debutants: number | null;
   first_at_location: number | null;
+  /** Гости старта: дом у человека — другая площадка; «впервые здесь» — их часть. */
+  guests: number | null;
   prs: number | null;
   has_protocol: boolean;
   protocol_url: string | null;
@@ -3175,6 +3185,10 @@ export type LastResultsItem = {
   finishers: number | null;
   volunteers: number | null;
   debutants: number | null;
+  /** Впервые на этой локации (в системе не впервые). */
+  first_at_location: number | null;
+  /** Все приезжие; null — кэш площадки ещё не пересчитан. */
+  guests: number | null;
   prs: number | null;
   best_male_time_sec: number | null;
   best_male_time_display: string | null;
@@ -3858,6 +3872,14 @@ export type OrganizerTeamLoadResponse = {
     /** Смены, когда человек в этот день нигде не бежал. */
     pure_slots?: number;
   }[];
+  /** Поимённо, кто и сколько раз вёл старт за период. */
+  organizers: {
+    participant_id: string;
+    name: string | null;
+    slots: number;
+    share_pct: number;
+    runs_here: number;
+  }[];
   roles: OrganizerTeamRole[];
   /** Светофор ротации организаторов: не держится ли старт на одном человеке. */
   director_rotation?: {
@@ -3913,7 +3935,14 @@ export type OrganizerAudienceResponse = {
   months: number;
   finishes_total: number;
   people_total: number;
-  age_groups: { group: string; finishes: number; share_pct: number }[];
+  /** Возрастная пирамида: строка = диапазон лет, в ней мужчины и женщины. */
+  age_pyramid: {
+    range: string;
+    male_finishes: number;
+    female_finishes: number;
+    male_share_pct: number;
+    female_share_pct: number;
+  }[];
   genders: { label: string; finishes: number; share_pct: number }[];
   clubs: { club: string; people: number; finishes: number }[];
 };
@@ -3934,12 +3963,19 @@ export type OrganizerBenchmarkResponse = {
   metrics: {
     key: string;
     label: string;
+    /** Раздел таблицы: «Явка», «Поле», «Новые лица», «Команда». */
+    group: string;
+    /** null — метрика-профиль (доля женщин, доля гостей): лучше не бывает. */
+    higher_is_better: boolean | null;
     our_value: number;
     median: number | null;
     best: number | null;
     rank: number | null;
     peers: number;
     delta_vs_median_pct: number | null;
+    /** Скоуп «одна локация»: цифра выбранной площадки и разница с ней. */
+    peer_value: number | null;
+    delta_vs_peer_pct: number | null;
   }[];
   peers: {
     location_id: string;
@@ -3951,15 +3987,33 @@ export type OrganizerBenchmarkResponse = {
     avg_volunteers: number;
     unique_runners: number;
     unique_volunteers: number;
+    avg_finish_time_sec: number | null;
+    avg_debutants: number;
+    avg_first_here: number;
+    avg_guests: number;
+    guests_share_pct: number;
+    avg_prs: number;
     female_share_pct: number;
     volunteer_rotation_pct: number;
+    organizers_count: number;
+    organizer_rotation_pct: number;
+    protocol_delay_hours: number | null;
     is_ours: boolean;
   }[];
+  /** Скоуп «одна локация»: с кем сравниваем и почему не вышло. */
+  peer_location: { slug: string; name: string } | null;
+  peer_note: string | null;
 };
 
-export function getOrganizerBenchmark(slug: string, scope = "network", months = 12) {
+export function getOrganizerBenchmark(
+  slug: string,
+  scope = "network",
+  months = 12,
+  peerSlug?: string | null,
+) {
+  const peer = peerSlug ? `&peer=${encodeURIComponent(peerSlug)}` : "";
   return apiFetch<OrganizerBenchmarkResponse>(
-    `/organizer/${encodeURIComponent(slug)}/benchmark?scope=${scope}&months=${months}`,
+    `/organizer/${encodeURIComponent(slug)}/benchmark?scope=${scope}&months=${months}${peer}`,
   );
 }
 
@@ -4059,6 +4113,30 @@ export function getAllUserVolunteering(includeTest = false) {
 }
 
 // Public profile API (serial_id — числовой ID пользователя)
+export type ProfileCompareLocationRow = {
+  identity_key: string;
+  name: string;
+  slug: string | null;
+  my_runs: number;
+  my_best_sec: number | null;
+  my_last_date: string | null;
+  their_runs: number;
+  their_best_sec: number | null;
+  their_last_date: string | null;
+  /** 0 — локация общая, но на одном старте не стояли ни разу. */
+  together_runs: number;
+};
+
+export type ProfileCompareLocations = {
+  items: ProfileCompareLocationRow[];
+  shared_total: number;
+};
+
+/** Локации, где бегали и я, и участник: лучшее время каждого и общие старты. */
+export function getProfileCompareLocations(serialId: number) {
+  return apiFetch<ProfileCompareLocations>(`/users/${serialId}/profile/compare/locations`);
+}
+
 export function getPublicProfileDashboard(serialId: number) {
   return apiFetch<AdminUserPreviewDashboard>(`/users/${serialId}/profile/dashboard`);
 }

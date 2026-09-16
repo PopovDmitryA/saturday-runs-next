@@ -449,6 +449,13 @@
   font-size: 0.85em;
 }
 
+/* Нейтральная дельта: цвета нет, но кегль тот же — иначе строка с окрашенным
+   процентом и строка без него набирались бы по-разному. */
+.org-delta {
+  font-size: 0.85em;
+  color: var(--text-3);
+}
+
 /* Горизонтальные бары (доля нагрузки, возрастные группы). */
 .org-bar-row {
   display: flex;
@@ -680,20 +687,211 @@
   margin-bottom: 0;
 }
 
-.org-age-row {
-  display: grid;
-  grid-template-columns: 5.5rem 1fr;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.2rem 0;
+/* Клубы не выше пирамиды: потолок высоты ставит JS (он меряет соседнюю
+   карточку), а здесь — колонка-флекс, чтобы таблица заняла остаток и
+   скроллилась внутри. Общий .org-two-col не трогаем: align-items: start
+   нужен другим страницам кабинета. */
+.org-audience-clubs {
+  /* .card — это grid, а не блок (index.css), поэтому раскладываем строками
+     его же сеткой: шапка по содержимому, таблица — весь остаток. minmax(0,1fr)
+     обязателен: без него строка сетки не сжимается ниже содержимого, карточка
+     просто обрезала список и скролла не было. */
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
-.org-age-label {
-  font-size: 0.85rem;
+.org-audience-clubs .tshadow-host {
+  min-height: 0;
+}
+
+.org-audience-clubs .table-wrap {
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Шапка таблицы не уезжает вместе со строками. */
+.org-audience-clubs .org-svod-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+/* Возрастная пирамида: мужчины растут влево, женщины вправо, годы посередине.
+   Заявка из бэклога сайта: два раздельных списка «Ж…» и «М…» друг под другом
+   не читались, а рядом — сразу видно перекос по полу в каждом возрасте. */
+.org-pyramid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  /* Колонка под число — фиксированной ширины, одинаковой во всех строках:
+     на auto дорожка начиналась бы в каждой строке со своего места, и длины
+     столбиков перестали бы быть сопоставимыми. */
+  --pyramid-value-width: 3.2rem;
+}
+
+.org-pyramid-head,
+.org-pyramid-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.25rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.org-pyramid-head {
+  margin-bottom: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.org-pyramid-head-male {
+  text-align: right;
+  color: var(--series-male);
+}
+
+.org-pyramid-head-age {
+  text-align: center;
+  font-weight: 400;
+}
+
+.org-pyramid-head-female {
+  color: var(--series-female);
+}
+
+.org-pyramid-row {
+  padding: 0.1rem 0;
+}
+
+.org-pyramid-age {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* Сетка, а не flex: ширина столбика задаётся процентом, и он обязан считаться
+   от ДОРОЖКИ, а не от всей половины строки. На flex число подписи забирало
+   часть места, и самый длинный столбик вылезал за карточку. */
+.org-pyramid-side {
+  display: grid;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+/* Число — у центральной оси, дорожка столбика уходит к краю карточки. */
+.org-pyramid-side-male {
+  grid-template-columns: minmax(0, 1fr) var(--pyramid-value-width);
+}
+
+.org-pyramid-side-female {
+  grid-template-columns: var(--pyramid-value-width) minmax(0, 1fr);
+}
+
+.org-pyramid-bar {
+  height: 0.7rem;
+  border-radius: 4px;
+  min-width: 2px;
+  max-width: 100%;
+}
+
+/* Столбики растут от центра наружу: мужской вправо-налево, женский слева
+   направо, поэтому каждый прижат к своей центральной кромке. */
+.org-pyramid-side-male .org-pyramid-bar {
+  justify-self: end;
+}
+
+.org-pyramid-side-female .org-pyramid-bar {
+  justify-self: start;
+}
+
+.org-pyramid-bar-male {
+  background: var(--series-male);
+}
+
+.org-pyramid-bar-female {
+  background: var(--series-female);
+}
+
+.org-pyramid-value {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.org-pyramid-side-male .org-pyramid-value {
+  text-align: right;
 }
 
 .org-benchmark-tabs {
   margin: 0;
+}
+
+/* Разделы таблицы бенчмарка: подзаголовок строкой внутри таблицы. */
+.org-benchmark-table .org-benchmark-group th {
+  padding-top: 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: var(--bg-muted);
+}
+
+/* Поиск площадки для сравнения: подсказки висят поверх таблицы. */
+.org-peer-picker {
+  position: relative;
+  flex: 1 1 16rem;
+  max-width: 24rem;
+}
+
+.org-peer-input {
+  width: 100%;
+}
+
+.org-peer-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 18%);
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.org-peer-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.org-peer-option:hover,
+.org-peer-option:focus-visible {
+  background: var(--bg-muted);
+}
+
+.org-peer-name {
+  font-size: 0.9rem;
+}
+
+.org-peer-meta {
+  font-size: 0.78rem;
 }
 
 .org-benchmark-note {
@@ -879,6 +1077,11 @@ select.org-select-compact {
 .org-delta-mid {
   color: #9a6700;
   font-size: 0.85em;
+}
+
+/* На тёмном фоне охра почти сливается с полотном — берём светлее. */
+:root[data-theme="dark"] .org-delta-mid {
+  color: var(--accent-amber-text);
 }
 
 /* Возрастная группа в своде: «М35-39» не должна переноситься. */

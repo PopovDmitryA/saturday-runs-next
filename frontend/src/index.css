@@ -76,6 +76,10 @@
   --series-s95: #2563eb;
   --series-parkrun: #7c3aed;
   --series-runpark: #ea580c;
+  /* Пол на графиках — тем же принципом, что и системы: заливка, а не фон
+     бейджа. Розовый у женщин выбран автором заявки в бэклоге сайта. */
+  --series-male: #2563eb;
+  --series-female: #db2777;
 }
 
 :root[data-theme="dark"] {
@@ -145,6 +149,8 @@
   --series-s95: #60a5fa;
   --series-parkrun: #a78bfa;
   --series-runpark: #fb923c;
+  --series-male: #60a5fa;
+  --series-female: #f472b6;
 }
 
 * {
@@ -2322,6 +2328,15 @@ a.last-saturday-location:hover {
 
 .co-runners-profile-icon-site a:hover {
   background: var(--tint-indigo-bg-strong);
+}
+
+/* Вторая иконка у имени — вход в сравнение со мной. */
+.co-runners-compare-icon a {
+  color: var(--accent-teal-text);
+}
+
+.co-runners-compare-icon a:hover {
+  background: var(--tint-teal-bg);
 }
 
 .co-runners-badges {
@@ -11389,6 +11404,118 @@ a.admin-system-chip:hover {
    рядом с датой стоит плашка системы. */
 .loc-index-table .col-date-wide {
   width: 13rem;
+}
+
+/* Сравнение с участником: очный счёт крупно, выигранные строки — акцентом.
+   Заявка из бэклога сайта «Добавление в друзья, сравнения». */
+.cmp-score {
+  margin: 0.25rem 0 0.35rem;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.cmp-score-dash {
+  margin: 0 0.4rem;
+  color: var(--text-3);
+}
+
+.cmp-win {
+  color: var(--accent-green-text);
+}
+
+/* Переключатель видов во «Встречах»: список встреч или сравнение со мной. */
+.cmp-view-tabs {
+  margin: 0 0 0.75rem;
+}
+
+/* Разделы сравнения: подзаголовок строкой внутри таблицы. */
+.cmp-table .cmp-group th {
+  padding-top: 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: var(--bg-muted);
+}
+
+.cmp-table td:nth-child(2),
+.cmp-table td:nth-child(3),
+.cmp-table th:nth-child(2),
+.cmp-table th:nth-child(3) {
+  width: 30%;
+}
+
+.cmp-cell-win {
+  font-weight: 700;
+  background: var(--tint-green-bg);
+}
+
+/* Таблица общих локаций: время крупнее, число пробежек рядом мелко. */
+.cmp-locations-table td:first-child {
+  min-width: 12rem;
+}
+
+.cmp-runs {
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.cmp-locations-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+}
+
+/* Переход по якорю в настройки: секция разово моргает, чтобы её заметили
+   (просьба Дмитрия 17.09.2026). Дважды, затем гаснет. */
+@keyframes settings-anchor-flash {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    border-color: var(--border);
+  }
+  15%,
+  55% {
+    box-shadow: 0 0 0 4px var(--tint-indigo-bg-strong);
+    border-color: var(--accent-indigo);
+  }
+  35%,
+  75% {
+    box-shadow: 0 0 0 0 transparent;
+    border-color: var(--border);
+  }
+}
+
+.settings-anchor-flash {
+  animation: settings-anchor-flash 2.2s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-anchor-flash {
+    animation: none;
+    border-color: var(--accent-indigo);
+  }
+}
+
+/* «Моя» локация в каталоге: строка поднята наверх и подсвечена — как своя
+   строка в рейтингах (просьба из бэклога сайта). */
+.loc-index-row-home td {
+  background: var(--tint-indigo-bg);
+}
+
+.loc-index-home-badge {
+  background: var(--tint-indigo-bg-strong);
+  color: var(--tint-blue-text);
+  margin-left: 0.35rem;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.loc-index-home-badge:hover,
+.loc-index-home-badge:focus-visible {
+  background: var(--tint-blue-border);
 }
 
 /* Дата и плашка системы в одной ячейке: плашка переносится под дату, когда

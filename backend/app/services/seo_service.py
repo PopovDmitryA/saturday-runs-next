@@ -335,7 +335,7 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
         return _meta(
             "Протокол старта — run5k.run",
             "Полный протокол старта: места по полу и возрастным группам, "
-            "личные рекорды, дебютанты и волонтёры дня.",
+            "личные рекорды, новички и волонтёры дня.",
             indexable=True,
         )
     if _LOCATION_EVENTS_RE.match(path):
@@ -1734,7 +1734,7 @@ def build_protocol_meta(payload: dict[str, Any]) -> PageMeta:
     description = f"Протокол старта {platform} «{name}» {day}".strip()
     if numbers:
         description += f": {numbers}"
-    description += ". Места по полу и возрастным группам, личные рекорды и дебютанты."
+    description += ". Места по полу и возрастным группам, личные рекорды и новички."
     return _meta(f"{title_head} — {SITE_NAME}", description, indexable=True)
 
 

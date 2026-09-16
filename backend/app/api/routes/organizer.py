@@ -298,7 +298,9 @@ def organizer_team_load(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     settings: Annotated[Settings, Depends(get_settings)],
-    months: Annotated[int, Query(ge=3, le=60)] = 12,
+    # 0 — текущий календарный год, 120 — «всё время»: тот же словарь периодов,
+    # что у портрета участника и бенчмарка (правка Дмитрия 17.09.2026).
+    months: Annotated[int, Query(ge=0, le=120)] = 12,
 ) -> TeamLoadResponse:
     """Нагрузка на команду и bus-фактор ролей: кто выгорит первым."""
     identity = _require_identity_access(db, user, settings, slug)
@@ -338,12 +340,29 @@ def organizer_benchmark(
     settings: Annotated[Settings, Depends(get_settings)],
     # 0 — текущий календарный год (с 1 января).
     months: Annotated[int, Query(ge=0, le=120)] = 12,
-    scope: Annotated[str, Query(pattern="^(city|region|nearest|network)$")] = "network",
+    scope: Annotated[str, Query(pattern="^(city|region|nearest|network|location)$")] = "network",
+    # Слаг площадки для скоупа «одна локация» — сравнение с кем угодно, в том
+    # числе из другой системы (заявка из бэклога сайта).
+    peer: Annotated[str | None, Query(max_length=255)] = None,
 ) -> BenchmarkResponse:
-    """Сравнение с соседями: город, регион или вся система."""
+    """Сравнение: город, регион, вся система или одна выбранная локация."""
     identity = _require_identity_access(db, user, settings, slug)
+    peer_identity = None
+    if scope == "location" and peer:
+        # Доступ организатора проверяется только к СВОЕЙ локации: сравнивают с
+        # публичными цифрами каталога, они и так открыты на странице локации.
+        peer_identity = resolve_location_identity(db, peer)
+        if peer_identity is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Локация для сравнения не найдена"
+            )
+        if peer_identity.identity_key == identity.identity_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Локация сравнивается сама с собой",
+            )
     return BenchmarkResponse.model_validate(
-        build_benchmark(db, identity, months=months, scope=scope)
+        build_benchmark(db, identity, months=months, scope=scope, peer=peer_identity)
     )
 
 

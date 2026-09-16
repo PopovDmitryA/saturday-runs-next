@@ -63,6 +63,7 @@ import { OrganizerAttendancePage } from "./features/organizer/OrganizerAttendanc
 import { OrganizerProtocolsPage } from "./features/organizer/OrganizerProtocolsPage";
 import { OrganizerAudiencePage } from "./features/organizer/OrganizerAudiencePage";
 import { OrganizerBenchPage } from "./features/organizer/OrganizerBenchPage";
+import { OrganizerBenchmarkPage } from "./features/organizer/OrganizerBenchmarkPage";
 import { OrganizerIndexPage } from "./features/organizer/OrganizerIndexPage";
 import { OrganizerMilestonesPage } from "./features/organizer/OrganizerMilestonesPage";
 import { OrganizerNewcomersPage } from "./features/organizer/OrganizerNewcomersPage";
@@ -397,6 +398,10 @@ function renderRoute(path: string): ReactElement {
   const organizerAttendanceMatch = path.match(/^\/organizer\/([^/]+)\/attendance$/);
   if (organizerAttendanceMatch) {
     return <OrganizerAttendancePage slug={decodeURIComponent(organizerAttendanceMatch[1])} />;
+  }
+  const organizerBenchmarkMatch = path.match(/^\/organizer\/([^/]+)\/benchmark$/);
+  if (organizerBenchmarkMatch) {
+    return <OrganizerBenchmarkPage slug={decodeURIComponent(organizerBenchmarkMatch[1])} />;
   }
   const organizerAudienceMatch = path.match(/^\/organizer\/([^/]+)\/audience$/);
   if (organizerAudienceMatch) {

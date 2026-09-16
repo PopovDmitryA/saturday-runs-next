@@ -314,7 +314,7 @@ export function resolvePageMeta(rawPath: string): PageMeta {
       title: "Протокол старта — run5k.run",
       description:
         "Полный протокол старта: места по полу и возрастным группам, личные " +
-        "рекорды, дебютанты и волонтёры дня.",
+        "рекорды, новички и волонтёры дня.",
       indexable: true,
     };
   }
@@ -626,8 +626,8 @@ export function locationProtocolMeta(payload: {
     description: describe(
       `Протокол старта ${platform} «${name}» ${day}`,
       parts.join(", "),
-      ". Места по полу и возрастным группам, личные рекорды и дебютанты.",
-      ". Места, рекорды и дебютанты дня.",
+      ". Места по полу и возрастным группам, личные рекорды и новички.",
+      ". Места, рекорды и новички дня.",
     ),
     indexable: true,
   };

@@ -121,7 +121,7 @@ function RunnerCell({ row }: { row: UnifiedProtocolRow }) {
       {row.is_me && <span className="protocol-row-badge protocol-badge-me">вы</span>}
       {row.is_first_run && (
         <StatHintTooltip text="Первый старт в системе">
-          <span className="protocol-row-badge">дебют</span>
+          <span className="protocol-row-badge">новичок</span>
         </StatHintTooltip>
       )}
       {row.is_pr && (

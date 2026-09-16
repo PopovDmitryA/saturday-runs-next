@@ -214,7 +214,7 @@ function OrganizerHubContent({ slug }: { slug: string }) {
             {newcomers === null
               ? "Считаем…"
               : newcomers.retention_pct === null
-                ? "Дебютов за полгода не было"
+                ? "Новичков за полгода не было"
                 : `Вернулись сюда: ${newcomers.retention_pct}% новичков за полгода`}
           </span>
         </a>
@@ -261,10 +261,22 @@ function OrganizerHubContent({ slug }: { slug: string }) {
           </span>
           <h2 className="org-hub-title">Портрет участника</h2>
           <p className="muted org-hub-text">
-            Кто к нам ходит: возраст, пол и клубы участников — и сравнение локации с соседями по
-            городу, региону и всей системе.
+            Кто к нам ходит: возрастная пирамида (мужчины слева, женщины справа) и клубы
+            участников.
           </p>
-          <span className="org-hub-meta">Плюс «мы и соседи»</span>
+          <span className="org-hub-meta">За последние 12 месяцев</span>
+        </a>
+
+        <a className="card org-hub-card" href={`/organizer/${slug}/benchmark`}>
+          <span className="org-hub-emoji" aria-hidden="true">
+            ⚖️
+          </span>
+          <h2 className="org-hub-title">Мы и соседи</h2>
+          <p className="muted org-hub-text">
+            Как локация выглядит на фоне других: по городу, региону, ближайшим соседям и всей
+            системе — или рядом с любой выбранной площадкой.
+          </p>
+          <span className="org-hub-meta">Явка, волонтёры, ротация и место в выборке</span>
         </a>
 
         {/* Наблюдатель выгрузки умеет только 5verst.ru: локациям других систем
