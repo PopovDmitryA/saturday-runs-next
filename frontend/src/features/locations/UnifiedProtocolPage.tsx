@@ -506,7 +506,7 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
         <section className="card loc-section uniprot-weather">
           <h2 className="section-title">
             Погода недели
-            <StatHintTooltip text="Архив Open-Meteo в час старта по каждой локации недели. Крайности — среди локаций, где в эту субботу был старт; «по стране» — медиана температуры на старте.">
+            <StatHintTooltip text="Погода из архива Open-Meteo на время старта каждой локации недели. Крайности — среди локаций, где в эту субботу был старт; «по стране» — медиана температуры на старте.">
               <span className="loc-section-title-info" aria-label="Как считается">
                 ⓘ
               </span>

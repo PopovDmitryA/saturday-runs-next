@@ -70,7 +70,7 @@ export function LocationWeatherSection({ slug }: { slug: string }) {
       <div className="loc-section-head">
         <h2 className="section-title">
           Погода на стартах
-          <StatHintTooltip text="Архив погоды Open-Meteo в точке старта, снятый в час старта. По месяцам — медиана по реальным стартам локации.">
+          <StatHintTooltip text="Погода из архива Open-Meteo: координаты локации, время старта. По месяцам — медиана по реальным стартам локации.">
             <span className="loc-section-title-info" aria-label="Как считается">
               ⓘ
             </span>
