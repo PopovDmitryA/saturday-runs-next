@@ -47,6 +47,7 @@ from app.models import (
     UserGoal,
     VolunteerResult,
 )
+from app.saturday_week import max_saturday_streak, saturday_weeks
 from app.services.location_catalog_service import LocationCatalogIndex, russian_parkrun_location_ids
 from app.services.location_map_service import MAP_HISTORIC_PLATFORM
 from app.services.platform_titles import PLATFORM_TITLES
@@ -2004,23 +2005,11 @@ def _regions_challenge(rows: list[RunRow]) -> dict[str, object]:
     )
 
 
-def _max_saturday_streak(dates: set[date]) -> int:
-    saturdays = sorted(value for value in dates if value.weekday() == 5)
-    best = 0
-    current = 0
-    previous: date | None = None
-    for value in saturdays:
-        current = current + 1 if previous is not None and value - previous == timedelta(days=7) else 1
-        best = max(best, current)
-        previous = value
-    return best
-
-
 def _streak_level_dates(activity_dates: set[date], levels: dict[str, int]) -> dict[str, str | None]:
     """Идём по субботам-с-активностью по порядку; в момент, когда текущая
     (не обязательно ещё финальная) серия впервые достигает порога — это и есть
     дата уровня, даже если серия потом прервётся."""
-    saturdays = sorted(value for value in activity_dates if value.weekday() == 5)
+    saturdays = sorted(saturday_weeks(activity_dates))
     achieved: dict[str, date | None] = {level: None for level in LEVEL_ORDER}
     current_run = 0
     previous: date | None = None
@@ -2034,10 +2023,17 @@ def _streak_level_dates(activity_dates: set[date], levels: dict[str, int]) -> di
 
 
 def _streak_challenge(rows: list[RunRow], vol_rows: dict[str, list[tuple[date, str]]]) -> dict[str, object]:
+    """«Серийный бегун» — по неделям, как календарь суббот и серии дашборда.
+
+    До 16.09.2026 челлендж считал только буквальные субботы (weekday() == 5) и
+    расходился с календарём: перенос старта на воскресенье (рабочая суббота
+    01.11.2025) рвал серию здесь, хотя в календаре она шла дальше. Правило
+    одно на весь сайт — app.saturday_week.
+    """
     activity_dates = {row.event_date for row in rows}
     for platform_code, platform_rows in vol_rows.items():
         activity_dates |= volunteer_occasion_dates(platform_code, platform_rows)
-    streak = _max_saturday_streak(activity_dates)
+    streak = max_saturday_streak(activity_dates)
     return _challenge(
         code="streak",
         title="Серийный бегун",
@@ -2858,13 +2854,14 @@ def _preset_current(
         return (best or 0), (_time_display(best) if best else None)
     if goal_type == "saturday_streak":
         year_dates = _year_activity_dates(year, rows, vol_rows)
-        return _max_saturday_streak(year_dates), None
+        return max_saturday_streak(year_dates), None
     if goal_type == "pr_count_year":
         return sum(1 for row in year_rows if row.is_pr), None
     if goal_type == "saturday_consistency_year":
         year_dates = _year_activity_dates(year, rows, vol_rows)
         all_saturdays = _saturdays_of_year(year)
-        active_saturdays = sum(1 for day in all_saturdays if day in year_dates)
+        active_weeks = saturday_weeks(year_dates)
+        active_saturdays = sum(1 for day in all_saturdays if day in active_weeks)
         # Текущий темп: доля АКТИВНЫХ суббот среди уже ПРОШЕДШИХ (не всего года) —
         # иначе в январе даже идеальная регулярность показывала бы единицы процентов.
         elapsed_saturdays = max(sum(1 for day in all_saturdays if day <= today), 1)
@@ -2918,11 +2915,12 @@ def _goal_progress(
         # плюс оставшиеся субботы года.
         live_streak = 0
         if not done:
+            year_saturdays = saturday_weeks(year_dates)
             last_saturday = today - timedelta(days=(today.weekday() - 5) % 7)
             expected = last_saturday
-            if expected not in year_dates:
+            if expected not in year_saturdays:
                 expected -= timedelta(days=7)
-            while expected in year_dates and expected.year == year:
+            while expected in year_saturdays and expected.year == year:
                 live_streak += 1
                 expected -= timedelta(days=7)
             on_track = live_streak + _saturdays_left(today) >= goal.target_value

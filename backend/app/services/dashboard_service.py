@@ -29,6 +29,7 @@ from app.models import (
     VolunteerResult,
 )
 from app.parkrun.volunteer_credits import count_parkrun_volunteering
+from app.saturday_week import max_saturday_streak, saturday_weeks
 from app.services.home_distance_service import build_home_distance_overview
 from app.services.location_catalog_service import (
     PARKRUN_PLATFORM_CODE,
@@ -124,26 +125,8 @@ def _format_volunteering_index(runs: int, volunteering: int) -> str | None:
     return f"{round(ratio * 100)}%"
 
 
-def _week_saturday(value: date) -> date:
-    """Суббота недели (пн–вс), в которую попал старт.
-
-    Календарь суббот считает по неделям, а не по буквальной дате старта: если
-    в одну и ту же неделю пришлось два старта (та же суббота двумя протоколами
-    или, например, суббота + внеплановый будний старт), это одна и та же
-    неделя — засчитываем её один раз. Совпадает с weekSaturday() во
-    фронтенд-виджете (ActivityCalendarHeatmap.tsx).
-
-    Воскресенье относится к субботе, которая только что прошла, а не к
-    следующей (репорт Дмитрия Евлаша 16.09.2026). Ровно так выглядит перенос:
-    01.11.2025 была рабочей субботой, и 122 локации 5 вёрст побежали в
-    воскресенье 02.11 — при неделе вс–сб эти старты уезжали в клетку 08.11,
-    сама суббота 01.11 показывалась как «Без активности», а серия рвалась.
-    """
-    return value + timedelta(days=5 - value.weekday())
-
-
 def _saturday_streak(activity_dates: set[date]) -> int:
-    saturdays = {_week_saturday(value) for value in activity_dates}
+    saturdays = saturday_weeks(activity_dates)
     if not saturdays:
         return 0
     streak = 0
@@ -159,7 +142,7 @@ def _current_saturday_streak(activity_dates: set[date], today: date) -> int:
     Unlike _saturday_streak (which counts from the last active Saturday whenever it
     was), a missed last Saturday breaks the streak. The very last Saturday is allowed
     to be missing for one week — protocols are often synced with a delay."""
-    saturdays = {_week_saturday(value) for value in activity_dates}
+    saturdays = saturday_weeks(activity_dates)
     if not saturdays:
         return 0
     last_saturday = today - timedelta(days=(today.weekday() - 5) % 7)
@@ -171,18 +154,6 @@ def _current_saturday_streak(activity_dates: set[date], today: date) -> int:
         streak += 1
         expected -= timedelta(days=7)
     return streak
-
-
-def _max_saturday_streak(activity_dates: set[date]) -> int:
-    saturdays = sorted({_week_saturday(value) for value in activity_dates})
-    best = 0
-    current = 0
-    previous: date | None = None
-    for value in saturdays:
-        current = current + 1 if previous is not None and value - previous == timedelta(days=7) else 1
-        best = max(best, current)
-        previous = value
-    return best
 
 
 def _saturdays_in_range(start: date, end: date) -> list[date]:
@@ -200,7 +171,7 @@ def _saturday_consistency(activity_dates: set[date], today: date) -> tuple[float
     saturdays = _saturdays_in_range(window_start, today)
     if not saturdays:
         return None, 0, 0
-    active_weeks = {_week_saturday(value) for value in activity_dates}
+    active_weeks = saturday_weeks(activity_dates)
     active = sum(1 for value in saturdays if value in active_weeks)
     pct = round(active / len(saturdays) * 100, 1)
     return pct, active, len(saturdays)
@@ -1151,9 +1122,9 @@ def _compute_dashboard_analytics(
         "runs_current_year": runs_current_year,
         "volunteering_index": _format_volunteering_index(total_runs, total_volunteering),
         "saturday_streak": _saturday_streak(all_activity_dates),
-        "saturday_streak_max": _max_saturday_streak(all_activity_dates),
-        "saturday_run_streak_max": _max_saturday_streak(run_activity_dates),
-        "saturday_vol_streak_max": _max_saturday_streak(vol_activity_dates),
+        "saturday_streak_max": max_saturday_streak(all_activity_dates),
+        "saturday_run_streak_max": max_saturday_streak(run_activity_dates),
+        "saturday_vol_streak_max": max_saturday_streak(vol_activity_dates),
         "saturday_streak_current": _current_saturday_streak(all_activity_dates, today),
         "saturday_run_streak_current": _current_saturday_streak(run_activity_dates, today),
         "saturday_vol_streak_current": _current_saturday_streak(vol_activity_dates, today),

@@ -17,7 +17,7 @@ from app.models import (
     RunResult,
     VolunteerResult,
 )
-from app.services.dashboard_service import _week_saturday
+from app.saturday_week import week_saturday
 from app.services.history_milestone_settings_service import get_disabled_milestone_kinds
 from app.services.location_catalog_service import LocationCatalogIndex, is_foreign_location
 from app.services.location_records_service import get_user_location_records
@@ -662,8 +662,8 @@ def _collect_saturday_streak_milestones(
 ) -> list[dict[str, object]]:
     """Вехи рекордных серий суббот — общая, только пробежки, только волонтёрства.
 
-    Неделя считается активной по субботе, закрывающей её (_week_saturday из
-    dashboard_service) — тот же принцип, что у стриков дашборда и у календаря
+    Неделя считается активной по субботе, закрывающей её (week_saturday из
+    app.saturday_week) — тот же принцип, что у стриков дашборда и у календаря
     активности: два старта в одну неделю не удлиняют серию.
 
     Три трека независимы, но у обычного бегуна общая серия совпадает с беговой
@@ -689,7 +689,7 @@ def _collect_saturday_streak_milestones(
                 continue
             if only == "volunteer" and is_run:
                 continue
-            by_saturday.setdefault(_week_saturday(visit[0]), visit)
+            by_saturday.setdefault(week_saturday(visit[0]), visit)
         return by_saturday
 
     tracks = (

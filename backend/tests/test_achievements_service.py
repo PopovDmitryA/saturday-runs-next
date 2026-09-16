@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from app.models import UserGoal
+from app.saturday_week import max_saturday_streak
 from app.services.achievements_service import (
     CHALLENGE_TIERS,
     PLAN_SPECS,
@@ -28,7 +29,6 @@ from app.services.achievements_service import (
     _inspector_challenge,
     _is_prime,
     _level_dates,
-    _max_saturday_streak,
     _minute_range_challenge,
     _nelson_challenge,
     _number_match_challenge,
@@ -49,6 +49,7 @@ from app.services.achievements_service import (
     _scope_by_platform,
     _seconds_challenge,
     _start_numbers_range_challenge,
+    _streak_challenge,
     _streak_level_dates,
     _threshold_dates,
     _time_display,
@@ -354,9 +355,18 @@ def test_max_saturday_streak() -> None:
         date(2026, 6, 20),
         # пропуск 27 июня
         date(2026, 7, 4),
-        date(2026, 7, 8),  # не суббота — не участвует
+        date(2026, 7, 8),  # среда — считается за свою неделю (суббота 11.07)
     }
-    assert _max_saturday_streak(dates) == 3
+    assert max_saturday_streak(dates) == 3
+
+
+def test_streak_challenge_counts_sunday_transfer_as_its_saturday() -> None:
+    # 01.11.2025 была рабочей субботой, старты перенесли на воскресенье 02.11.
+    # До 16.09.2026 челлендж считал только буквальные субботы и рвал здесь
+    # серию, хотя календарь суббот её продолжал.
+    dates = [date(2025, 10, 18), date(2025, 10, 25), date(2025, 11, 2), date(2025, 11, 8)]
+    challenge = _streak_challenge([_row(event_date=value) for value in dates], {})
+    assert challenge["current"] == 4
 
 
 def test_first_letter_rules() -> None:
