@@ -273,6 +273,11 @@ ${MARKER}
 # (не Desktop с его подменой владельца), поэтому uid/gid задаём явно.
 x-worktree-api: &worktree-api
   user: "${me}"
+  # Потолок памяти и запрет автоподъёма: боевой сайт и песочница живут на одной
+  # машине, и забытый стенд не должен ни отбирать память у прода, ни воскресать
+  # сам после перезагрузки (у базового compose restart: unless-stopped).
+  mem_limit: 1500m
+  restart: "no"
   environment:
     DATABASE_URL: postgresql+psycopg://\${POSTGRES_USER:-saturday_runs}:\${POSTGRES_PASSWORD:-saturday_runs}@host.docker.internal:${pg_port}/${db}
     HOME: /tmp
@@ -293,9 +298,13 @@ services:
     <<: *worktree-api
   redis:
     ports: !override []
+    mem_limit: 512m
+    restart: "no"
   nginx:
     ports: !override
       - "0.0.0.0:${nginx_port}:80"
+    mem_limit: 128m
+    restart: "no"
 YAML
 }
 

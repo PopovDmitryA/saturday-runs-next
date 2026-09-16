@@ -20,6 +20,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -35,6 +36,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
 
   api:
     build:
@@ -65,6 +67,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
 
   bot:
     profiles: ["telegram"]
@@ -222,7 +225,7 @@ services:
       - ./backend:/app
       - ./data:/data
       - ./.env:/app/.env:ro
-    command: celery -A app.workers.celery_app worker -Q runpark --concurrency=1 --loglevel=info
+    command: celery -A app.workers.celery_app worker -Q runpark --concurrency=1 --max-tasks-per-child=1 --loglevel=info
     depends_on:
       postgres:
         condition: service_healthy
@@ -262,6 +265,7 @@ services:
       - ./deploy/nginx:/usr/share/nginx/maintenance:ro
     depends_on:
       - api
+    restart: unless-stopped
 
 volumes:
   postgres_data:
