@@ -534,8 +534,23 @@ def _event_guest_homes(db: Session, svod: dict[str, Any]) -> list[dict[str, Any]
                 "home_city": entry.get("city"),
             }
         )
-    guests.sort(key=lambda item: item["name"])
-    return guests
+    return sort_guest_homes(guests)
+
+
+def sort_guest_homes(guests: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Гости — по домашнему парку, а не по фамилии (просьба Дмитрия 16.09.2026).
+
+    В посте этот список читают блоками «кто приехал из Вернадского», и алфавит
+    фамилий такие блоки перемешивал. Внутри одного парка — по имени.
+    """
+    return sorted(
+        guests,
+        key=lambda item: (
+            str(item["home_name"] or ""),
+            str(item.get("home_city") or ""),
+            str(item["name"] or ""),
+        ),
+    )
 
 
 def build_travelers_post(
