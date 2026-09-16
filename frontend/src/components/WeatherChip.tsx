@@ -13,6 +13,8 @@ type Props = {
   locationName?: string | null;
   /** Полная строка вместо «значок + градусы» (шапка протокола, последняя суббота). */
   full?: boolean;
+  /** Только значок и словесная погода, без градусов: рядом с крупной цифрой. */
+  labelOnly?: boolean;
   className?: string;
 };
 
@@ -36,13 +38,17 @@ function mm(value: number | null): string | null {
   return value == null ? null : `${value.toFixed(1)} мм`;
 }
 
-export function WeatherChip({ weather, locationSlug, locationName, full = false, className }: Props) {
+export function WeatherChip({ weather, locationSlug, locationName, full = false, labelOnly = false, className }: Props) {
   const [open, setOpen] = useState(false);
   if (!weather) {
     return <span className="muted">—</span>;
   }
   const tone = temperatureTone(weather.temperature_c);
-  const label = full ? weather.summary : `${weather.icon} ${formatTemp(weather.temperature_c)}`;
+  const label = full
+    ? weather.summary
+    : labelOnly
+      ? weather.label || weather.summary
+      : `${weather.icon} ${formatTemp(weather.temperature_c)}`;
   const dayRange =
     weather.day_temperature_min_c != null && weather.day_temperature_max_c != null
       ? `${formatTemp(weather.day_temperature_min_c)} … ${formatTemp(weather.day_temperature_max_c)}`
@@ -59,7 +65,7 @@ export function WeatherChip({ weather, locationSlug, locationName, full = false,
         title={weather.is_preliminary ? "Предварительно, архив уточнит в понедельник" : "Подробнее о погоде"}
         data-tap-tooltip="off"
       >
-        {full && <span aria-hidden>{weather.icon} </span>}
+        {(full || labelOnly) && <span aria-hidden>{weather.icon} </span>}
         {label}
         {weather.is_preliminary && <span className="weather-chip-prelim" aria-label="предварительно">*</span>}
       </button>
@@ -96,8 +102,9 @@ export function WeatherChip({ weather, locationSlug, locationName, full = false,
           />
           <Row label="Восход" value={weather.sunrise_local} />
           <p className="muted weather-detail-note">
-            Архив Open-Meteo в точке старта, час старта. Осадки сетка размазывает по времени и площади:
-            {" "}дождь «по модели» иногда идёт на пару часов раньше или позже настоящего.
+            Данные из архива погоды Open-Meteo: координаты локации, время старта. Температура и ветер
+            надёжны, а осадки модель размазывает по времени и площади — дождь по ней иногда идёт на пару
+            часов раньше или позже настоящего.
             {weather.is_preliminary && " Строка предварительная, архив уточнит её в понедельник."}
           </p>
           {locationSlug && (

@@ -54,7 +54,6 @@ from app.services.start_weather_service import (
     DOWNPOUR_MM,
     FROST_C,
     HEAT_C,
-    HOT_C,
     RAIN_MM,
     SNOW_CODES,
     SNOW_DEPTH_CM,
@@ -177,8 +176,8 @@ CHALLENGE_TIERS: dict[str, dict[str, tuple[int, int, int]]] = {
     "primes": {"easy": (2, 5, 10), "medium": (17, 23, 31), "hard": (38, 45, 57)},
     # Погодные челленджи (Дмитрий, 14.09.2026). «Морж» — старт при −20° и ниже:
     # в средней полосе такое случается раз в несколько зим, в Якутске — всю зиму,
-    # поэтому средний и сложный тиры — сибирские. «Огнеупорный» — от +28° в час
-    # старта, симметричная редкость. «Под дождём» — от 1 мм в окне старта.
+    # поэтому средний и сложный тиры — сибирские. «Огнеупорный» — от +25° в час
+    # старта, симметричная редкость (+25°). «Под дождём» — от 1 мм в окне старта.
     "walrus": {"easy": (1, 2, 3), "medium": (5, 8, 12), "hard": (20, 35, 50)},
     "heatproof": {"easy": (1, 2, 3), "medium": (5, 8, 12), "hard": (20, 35, 50)},
     "rain_runner": {"easy": (3, 7, 12), "medium": (20, 30, 45), "hard": (60, 80, 100)},
@@ -1038,9 +1037,7 @@ def _numbers_from_predictions(
     for item in predictions:
         if item.week_index >= weeks or item.number > max_number:
             continue
-        upcoming.setdefault((item.platform_code, item.number), []).append(
-            (item.event_date, item.location_name)
-        )
+        upcoming.setdefault((item.platform_code, item.number), []).append((item.event_date, item.location_name))
     for entries in upcoming.values():
         entries.sort()
     return upcoming
@@ -1346,10 +1343,7 @@ def _countries_challenge(rows: list[RunRow], home_country: str | None) -> dict[s
     elif abroad == 0:
         note = f"Дом — {home_country}. Заграничных стартов пока нет."
     else:
-        note = (
-            f"Дом — {home_country}; "
-            f"{abroad} {_plural_ru(abroad, ('страна', 'страны', 'стран'))} за его пределами."
-        )
+        note = f"Дом — {home_country}; {abroad} {_plural_ru(abroad, ('страна', 'страны', 'стран'))} за его пределами."
     return _challenge(
         code="countries",
         title="Международный турист",
@@ -1443,8 +1437,7 @@ def _minute_range_challenge(rows: list[RunRow]) -> dict[str, object]:
 # Две строки максимум (правка Дмитрия 11.09.2026): подробности человек и так
 # видит на ленте клеток, объяснять их словами в шапке карточки незачем.
 _MINUTE_RANGE_DESCRIPTION = (
-    "Собери разные минуты на финишных часах: 21:xx, 22:xx, 23:xx… "
-    "Каждая новая минута — плюс одна корзина."
+    "Собери разные минуты на финишных часах: 21:xx, 22:xx, 23:xx… Каждая новая минута — плюс одна корзина."
 )
 
 
@@ -1486,9 +1479,7 @@ def _wilson_level_dates(rows: list[RunRow], levels: dict[str, int]) -> dict[str,
     return {level: (value.isoformat() if value else None) for level, value in achieved.items()}
 
 
-def _wilson_challenge(
-    rows: list[RunRow], planned: dict[tuple[str, int], list[tuple[date, str]]]
-) -> dict[str, object]:
+def _wilson_challenge(rows: list[RunRow], planned: dict[tuple[str, int], list[tuple[date, str]]]) -> dict[str, object]:
     """Ч26. Индекс Уилсона в обеих вариациях — считаем по номерам стартов в
     любой системе, как и «Нумератор»: номер №4 на S95 закрывает то же число,
     что №4 на 5 вёрстах.
@@ -1538,9 +1529,7 @@ def _wilson_challenge(
         + (f" (№1–№{classic}), следующий нужен №{classic + 1}." if classic else ": нужен старт №1."),
     ]
     if floating:
-        note_parts.append(
-            f"Самая длинная цепочка — {floating} (№{floating_start}–№{floating_start + floating - 1})."
-        )
+        note_parts.append(f"Самая длинная цепочка — {floating} (№{floating_start}–№{floating_start + floating - 1}).")
     note_parts.append("Уровни считаются по цепочке с начала; даты стартов приблизительные.")
     return _challenge(
         code="wilson",
@@ -1559,9 +1548,7 @@ def _wilson_challenge(
     )
 
 
-def _nelson_challenge(
-    rows: list[RunRow], planned: dict[tuple[str, int], list[tuple[date, str]]]
-) -> dict[str, object]:
+def _nelson_challenge(rows: list[RunRow], planned: dict[tuple[str, int], list[tuple[date, str]]]) -> dict[str, object]:
     """Ч27. «Нельсоны» — номера, кратные 111.
 
     Решение Дмитрия 11.09.2026: планирование НУЖНО — карточка показывает, где и
@@ -1660,9 +1647,7 @@ def _is_prime(number: int) -> bool:
 PRIME_NUMBERS: tuple[int, ...] = tuple(n for n in range(2, PRIME_STRIP_MAX + 1) if _is_prime(n))
 
 
-def _primes_challenge(
-    rows: list[RunRow], planned: dict[tuple[str, int], list[tuple[date, str]]]
-) -> dict[str, object]:
+def _primes_challenge(rows: list[RunRow], planned: dict[tuple[str, int], list[tuple[date, str]]]) -> dict[str, object]:
     """Ч29. Коллекция простых номеров стартов.
 
     Была счётчиком финишей, стала коллекцией плитками (просьба Дмитрия
@@ -1909,9 +1894,7 @@ def _v_index_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
         code="v_index",
         title="V-индекс",
         icon="🧰",
-        description=(
-            "V локаций, на каждой минимум по V волонтёрств."
-        ),
+        description=("V локаций, на каждой минимум по V волонтёрств."),
         category="community",
         current=current,
         unit="",
@@ -2263,9 +2246,9 @@ def _heatproof_challenge(rows: list[RunRow]) -> dict[str, object]:
         code="heatproof",
         title="Огнеупорный",
         icon="🔥",
-        description="Финишируй при +28° и выше в час старта — жара в девять утра редкость даже на юге.",
+        description="Финишируй при +25° и выше в час старта — жара в девять утра редкость даже на юге.",
         unit="жарких стартов",
-        predicate=lambda row: row.temperature_c is not None and row.temperature_c >= HOT_C,
+        predicate=lambda row: row.temperature_c is not None and row.temperature_c >= HEAT_C,
     )
 
 
@@ -2542,9 +2525,7 @@ NUMBER_MATCH_PLAN_DEPTH = 10
 
 # Ч «Юбилейщик»: круглые номера, до которых наши системы вообще доросли.
 JUBILEE_STEP = 50
-JUBILEE_NUMBERS: tuple[int, ...] = tuple(
-    range(JUBILEE_STEP, PLANNING_MAX_NUMBER + 1, JUBILEE_STEP)
-)
+JUBILEE_NUMBERS: tuple[int, ...] = tuple(range(JUBILEE_STEP, PLANNING_MAX_NUMBER + 1, JUBILEE_STEP))
 
 
 def _number_match_plan_numbers(runs: int) -> tuple[int, ...]:
@@ -2670,11 +2651,7 @@ def build_start_numbers_plan(
     # набрано, поэтому список считается ПОСЛЕ сужения по системе — под фильтром
     # «только 5 вёрст» челлендж считает свои пробежки тем же способом.
     numbers = spec.numbers(len(my_rows))
-    done_numbers = (
-        {row.event_number for row in my_rows if row.event_number is not None}
-        if spec.tracks_done
-        else set()
-    )
+    done_numbers = {row.event_number for row in my_rows if row.event_number is not None} if spec.tracks_done else set()
 
     wanted = set(numbers)
     high = max(numbers)
@@ -2752,11 +2729,7 @@ def _resolve_home_country(db: Session, user_id: UUID, rows: list[RunRow]) -> str
         candidate, _is_auto = resolve_home_location(db, user)
         if candidate is not None:
             home_country = next(
-                (
-                    row.country
-                    for row in rows
-                    if row.location_key == candidate.catalog_identity_key and row.country
-                ),
+                (row.country for row in rows if row.location_key == candidate.catalog_identity_key and row.country),
                 None,
             )
             if home_country is not None:
@@ -2781,9 +2754,7 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
     upcoming = _numbers_from_predictions(
         predictions, weeks=START_NUMBER_PLAN_WEEKS, max_number=START_NUMBER_RANGES["start_numbers_pro"][1]
     )
-    planned = _numbers_from_predictions(
-        predictions, weeks=PLANNING_WEEKS, max_number=PLANNING_MAX_NUMBER
-    )
+    planned = _numbers_from_predictions(predictions, weeks=PLANNING_WEEKS, max_number=PLANNING_MAX_NUMBER)
     rating_rows = _collect_rating_rows(db, user_id)
     vol_role_rows = _collect_volunteer_role_rows(db, user_id)
 
@@ -2797,9 +2768,7 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
     # Прогноз для числовых челленджей сужается тем же фильтром систем: под
     # «только 5 вёрст» подсказка не должна звать на старт S95.
     scoped_planned = (
-        planned
-        if platform_code is None
-        else {key: value for key, value in planned.items() if key[0] == platform_code}
+        planned if platform_code is None else {key: value for key, value in planned.items() if key[0] == platform_code}
     )
 
     # Каталог букв «Алфавита» зависит от того же фильтра систем — читаем его

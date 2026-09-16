@@ -19,7 +19,6 @@ from app.services.leaderboard_service import (
     refresh_tourist_map_cache,
 )
 from app.services.location_records_rating_service import refresh_location_records_rating_cache
-from app.services.weather_rating_service import refresh_weather_rating_cache
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -211,16 +210,6 @@ def warm_leaderboards_cache() -> dict[str, object]:
             logger.info("location records rating warmed: %s локаций", warmed)
         except Exception:
             logger.exception("leaderboards warm failed for location_records")
-            db.rollback()
-
-        # Рейтинг «Погода»: моржи, суровые локации и корзины температуры —
-        # проход по всем финишам с погодой, поэтому только кэшем и прогревом.
-        try:
-            warmed = refresh_weather_rating_cache(db)
-            db.rollback()
-            logger.info("weather rating warmed: %s моржей", warmed)
-        except Exception:
-            logger.exception("leaderboards warm failed for weather")
             db.rollback()
 
         # Рейтинг быстрых — тем же проходом и по той же причине: свой снапшот,

@@ -29,7 +29,6 @@ from app.api.routes import (
     sweep_hq,
     sync,
     unified_protocol,
-    weather_rating,
 )
 
 api_router = APIRouter()
@@ -46,7 +45,6 @@ api_router.include_router(fastest.router)
 api_router.include_router(location_ratings.router)
 api_router.include_router(location_records.router)
 api_router.include_router(location_regions.router)
-api_router.include_router(weather_rating.router)
 api_router.include_router(locations.router)
 api_router.include_router(unified_protocol.router)
 api_router.include_router(media.router)

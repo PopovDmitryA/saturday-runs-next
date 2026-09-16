@@ -25,7 +25,6 @@ import {
 import { formatFinishTime } from "./formatFinishTime";
 import { getFastestRating, type FastestRatingResponse } from "./fastestApi";
 import { getRegionsRating, type RegionRatingRow, type RegionsPlatform } from "./regionsApi";
-import { getWeatherRating, type WalrusRow } from "./weatherRatingApi";
 import { surnameFirst } from "../../lib/personName";
 import "./leaderboards.css";
 
@@ -414,55 +413,6 @@ function RegionsHubCard({ platform }: { platform: PlatformFilter }) {
   );
 }
 
-/** Карточка «Погода»: топ-3 моржей — люди с самым числом стартов при −20° и ниже. */
-function WeatherHubCard() {
-  const [rows, setRows] = useState<WalrusRow[] | null>(null);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    getWeatherRating()
-      .then((payload) => {
-        if (!cancelled) {
-          setRows(payload.walruses.by_count.slice(0, HUB_TOP_N));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setError(true);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return (
-    <a className="lb-hub-card lb-hub-card-live" href="/ratings/weather">
-      <div className="lb-hub-card-top">
-        <span className="lb-hub-card-title">Моржи и суровые локации</span>
-      </div>
-      {rows === null && !error && <p className="lb-hub-loading muted">Считаем…</p>}
-      {error && <p className="lb-hub-loading muted">Не удалось загрузить</p>}
-      {rows && (
-        <div className="lb-hub-top3">
-          <p className="lb-hub-top3-label">Больше всего стартов при −20° и ниже</p>
-          {rows.map((row, index) => (
-            <div className="lb-hub-rank-row" key={`${row.name}-${index}`}>
-              <span className={`lb-hub-rank-chip lb-hub-rank-${RANK_TIER[index] ?? "silver"}`}>
-                {row.place}
-              </span>
-              <span className="lb-hub-rank-name">{surnameFirst(row.name)}</span>
-              <span className="lb-hub-rank-value">{formatInt(row.count)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      <span className="lb-hub-see-all">Смотреть рейтинг →</span>
-    </a>
-  );
-}
-
 export function LeaderboardsHubPage() {
   const [platform, setPlatform] = useState<PlatformFilter>("all");
   // Закрытые рейтинги показываем только админу: карточка тянет данные, а API
@@ -533,14 +483,6 @@ export function LeaderboardsHubPage() {
           <div className="lb-hub-cards">
             <LocationRecordsHubCard platform={platform} />
             <RegionsHubCard platform={platform} />
-          </div>
-        </section>
-        <section className="lb-hub-section">
-          <h2>
-            <span aria-hidden>🌦️</span> Погода
-          </h2>
-          <div className="lb-hub-cards">
-            <WeatherHubCard />
           </div>
         </section>
       </div>

@@ -17162,3 +17162,11 @@ input.participant-name-search-input:focus {
 .uniprot-weather-card .loc-stat-sub a {
   text-decoration: none;
 }
+
+/* Погода недели в едином протоколе — своя секция, а не продолжение плиток. */
+.uniprot-weather {
+  margin-top: 1rem;
+}
+.loc-weather-share-pct {
+  margin-bottom: 0.15rem;
+}

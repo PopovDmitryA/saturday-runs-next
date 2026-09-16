@@ -11,7 +11,6 @@ import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
 import { applyPageMeta } from "../../lib/pageMeta";
 import { formatTemp, temperatureTone, type WeatherRecord } from "../../lib/weather";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
-import { MonthStrip } from "./LocationWeatherSection";
 
 // Отдельная страница «Погода на стартах» локации: график по месяцам
 // (медиана и разброс температуры в час старта), доли дождя и снега, рекорды,
@@ -128,10 +127,10 @@ function ShareBars({ months, field, label }: { months: LocationWeatherMonth[]; f
           const pct = share == null ? 0 : Math.round(share * 100);
           return (
             <div className="loc-weather-share" key={month.month} title={`${month.label}: ${share == null ? "нет данных" : `${pct}%`}`}>
+              <div className="loc-weather-share-pct">{share == null ? "·" : `${pct}`}</div>
               <div className="loc-weather-share-bar">
                 <div className={`loc-weather-share-fill loc-weather-share-${field === "rain_share" ? "rain" : "snow"}`} style={{ height: `${pct}%` }} />
               </div>
-              <div className="loc-weather-share-pct">{share == null ? "·" : `${pct}`}</div>
               <div className="loc-weather-share-month muted">{month.label.slice(0, 3)}</div>
             </div>
           );
@@ -160,7 +159,9 @@ function AttendanceChart({ data }: { data: LocationWeather }) {
           </div>
           <div className="loc-weather-attendance-bar-value">
             <b>{formatInt(Math.round(item.avg_finishers ?? 0))}</b>{" "}
-            <span className="muted">· {pluralizeRu(item.starts, ["старт", "старта", "стартов"])}</span>
+            <span className="muted">
+              финишёров в среднем · {pluralizeRu(item.starts, ["старт", "старта", "стартов"])}
+            </span>
           </div>
         </div>
       ))}
@@ -266,13 +267,12 @@ export function LocationWeatherPage({ slug }: { slug: string }) {
           <section className="card loc-section loc-weather">
             <h2 className="section-title">
               Температура на старте по месяцам
-              <StatHintTooltip text="Столбик — от самого холодного до самого тёплого старта в этом месяце за все годы, отметка — медиана. Месяцы без стартов (бледные) считаются по субботам локации без старта.">
+              <StatHintTooltip text="Столбик — от самого холодного до самого тёплого старта в этом месяце за все годы, отметка — медиана.">
                 <span className="loc-section-title-info" aria-label="Как считается">
                   ⓘ
                 </span>
               </StatHintTooltip>
             </h2>
-            <MonthStrip months={data.months} slug={data.slug} />
             <MonthChart months={data.months} />
             <div className="loc-weather-shares-grid">
               <ShareBars months={data.months} field="rain_share" label="Доля стартов с дождём, %" />

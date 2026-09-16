@@ -551,7 +551,12 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
                     <a href={`/locations/${item.location_slug ?? ""}`}>{item.location_name}</a>
                   </span>
                   <span className="loc-stat-sub">
-                    <WeatherChip weather={item.weather} locationSlug={item.location_slug} locationName={item.location_name} />
+                    <WeatherChip
+                      weather={item.weather}
+                      locationSlug={item.location_slug}
+                      locationName={item.location_name}
+                      labelOnly
+                    />
                   </span>
                 </div>
               ) : null,
