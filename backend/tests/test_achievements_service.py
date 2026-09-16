@@ -28,6 +28,7 @@ from app.services.achievements_service import (
     _goal_progress,
     _inspector_challenge,
     _is_prime,
+    _jubilee_challenge,
     _level_dates,
     _minute_range_challenge,
     _nelson_challenge,
@@ -336,6 +337,19 @@ def test_number_match_uses_chronological_run_index() -> None:
     challenge = _number_match_challenge(rows)
     assert challenge["current"] == 1
     assert challenge["detail"]["items"][0]["value"] == "№2"  # type: ignore[index]
+
+
+def test_coincidence_items_carry_platform_label() -> None:
+    # Номер старта у каждой системы свой, поэтому в строке детализации нужна
+    # плашка системы (просьба Дмитрия 17.09.2026).
+    rows = [
+        _row(event_date=date(2026, 2, 7), event_number=1, platform_code="s95"),
+        _row(event_date=date(2026, 2, 14), event_number=50, platform_code="runpark"),
+    ]
+    match_items = _number_match_challenge(rows)["detail"]["items"]  # type: ignore[index]
+    assert [item["platform_code"] for item in match_items] == ["s95"]
+    jubilee_items = _jubilee_challenge(rows)["detail"]["items"]  # type: ignore[index]
+    assert [item["platform_code"] for item in jubilee_items] == ["runpark"]
 
 
 def test_p_index() -> None:

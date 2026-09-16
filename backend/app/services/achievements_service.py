@@ -1168,6 +1168,10 @@ def _number_match_challenge(rows: list[RunRow]) -> dict[str, object]:
                     "date": row.event_date.isoformat(),
                     "value": f"№{row.event_number}",
                     "location": row.location_name,
+                    # Система нужна в строке: номер старта у каждой системы
+                    # свой, и на мультисистемной площадке «№30» без плашки не
+                    # говорит, чей это номер (просьба Дмитрия 17.09.2026).
+                    "platform_code": row.platform_code,
                 }
             )
     detail: dict[str, object] = {"items": items}
@@ -1203,6 +1207,7 @@ def _jubilee_challenge(rows: list[RunRow]) -> dict[str, object]:
                     "date": row.event_date.isoformat(),
                     "value": f"№{row.event_number}",
                     "location": row.location_name,
+                    "platform_code": row.platform_code,
                 }
             )
     sorted_dates = [date.fromisoformat(str(item["date"])) for item in items]

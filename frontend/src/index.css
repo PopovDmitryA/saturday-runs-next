@@ -10178,6 +10178,13 @@ a.admin-system-chip:hover {
   flex: none;
 }
 
+/* Плашка системы в строке совпадения: номер забега у каждой системы свой, и на
+   мультисистемной площадке без неё «№30» непонятно чей. Не растягивается и не
+   сжимает название локации. */
+.challenge-item .badge-platform {
+  flex: none;
+}
+
 .challenge-item-date {
   color: var(--text-muted);
   flex: none;

@@ -1154,6 +1154,8 @@ export type ChallengeDetailItem = {
   value?: string;
   location?: string;
   count?: number;
+  /** Система старта: номера забегов у систем свои, и на общей площадке «№30» без плашки не читается. */
+  platform_code?: string | null;
   occurrences?: Array<{ date: string; location: string }>;
 };
 
