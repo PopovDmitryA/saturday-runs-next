@@ -33,7 +33,15 @@ trap 'rm -f "$MAINT_CURRENT"' EXIT HUP INT TERM
 # (nginx:1.27-alpine), build-контекст есть только у python-сервисов.
 # tg-proxy (xray) — тоже готовый образ; без него бот не видит Telegram и ляжет,
 # поэтому он в списке и попадает в проверку «все ли running» ниже.
-SERVICES="worker worker-s95 worker-five-verst worker-five-verst-user worker-parkrun worker-runpark api nginx beat tg-proxy bot"
+SERVICES="worker worker-five-verst-user worker-parkrun api nginx beat tg-proxy bot"
+
+# Воркеры, уехавшие на домашний сервер (см. docker-compose.home.yml). База и
+# брокер остались здесь, поэтому прод обязан их НЕ поднимать: иначе задачи
+# разбирались бы в двух местах сразу. Деплой приводит прод к этому состоянию
+# сам — чтобы поднятый вручную на время аварии воркер не остался жить навсегда.
+# Откат (дом недоступен, всё разбираем на проде): KEEP_HOME_WORKERS=1 ./deploy
+# и руками `compose up -d $HOME_SERVICES`.
+HOME_SERVICES="worker-s95 worker-five-verst worker-runpark"
 
 # NB: `docker compose exec/run -T` всё равно цепляет контейнер к stdin, поэтому
 # каждый exec/run обязан читать из /dev/null — иначе он сожрёт остаток скрипта.
@@ -72,6 +80,19 @@ compose restart nginx
 # синки 5 вёрст обслуживает он, а батч на это время встаёт на паузу.
 compose stop worker-s95-user 2>/dev/null || true
 compose rm -f worker-s95-user 2>/dev/null || true
+
+# Воркеры домашнего сервера: гасим здесь, если кто-то поднял их на проде.
+if [ "${KEEP_HOME_WORKERS:-0}" = "1" ]; then
+  echo "KEEP_HOME_WORKERS=1 — домашние воркеры оставлены на проде"
+else
+  for svc in $HOME_SERVICES; do
+    if compose ps --status running --services 2>/dev/null | grep -Fxq "$svc"; then
+      echo "останавливаю $svc — он работает на домашнем сервере"
+      compose stop "$svc" 2>/dev/null || true
+      compose rm -f "$svc" 2>/dev/null || true
+    fi
+  done
+fi
 
 echo "--- host nginx (run5k.run Grafana redirects) ---"
 if sudo -n cp deploy/nginx/run5k.run.conf /etc/nginx/sites-available/run5k.run 2>/dev/null; then
