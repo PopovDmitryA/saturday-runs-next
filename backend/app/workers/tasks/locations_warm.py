@@ -20,14 +20,15 @@ from app.services.unified_protocol_service import (
     week_start_of,
 )
 from app.workers.celery_app import celery_app
+from app.workers.queues import WARM_QUEUE
 
 logger = logging.getLogger(__name__)
 
 
-# Очередь runpark — как у leaderboards.warm_cache: её воркер самый свободный
-# и не обслуживает user-очереди, так что долгий прогрев не задержит
-# пользовательский sync.
-@celery_app.task(name="locations.warm_cache", queue="runpark")
+# Очередь warm — общая с leaderboards.warm_cache: оба прогрева тяжёлые по базе,
+# и живут они рядом с ней, на том же хосте. Держать их на очереди синка нельзя —
+# пользовательский sync вставал за ними в хвост (см. app/workers/queues.py).
+@celery_app.task(name="locations.warm_cache", queue=WARM_QUEUE)
 def warm_locations_cache() -> dict[str, object]:
     """Пересчитывает кэш каталога и страниц локаций, не дожидаясь TTL.
 

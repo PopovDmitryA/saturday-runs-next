@@ -5,7 +5,7 @@ from celery.schedules import crontab
 
 from app.config import get_settings
 from app.platform_adapters.registry import ensure_adapters_registered
-from app.workers.queues import FIVE_VERST_BATCH_QUEUE, FIVE_VERST_FRESH_QUEUE
+from app.workers.queues import FIVE_VERST_BATCH_QUEUE, FIVE_VERST_FRESH_QUEUE, WARM_QUEUE
 
 settings = get_settings()
 
@@ -64,6 +64,9 @@ celery_app.conf.update(
         "s95_sync.*": {"queue": "s95"},
         "parkrun_sync.*": {"queue": "parkrun"},
         "runpark_sync.*": {"queue": "runpark"},
+        # Прогревы кэша — своя очередь рядом с базой, см. app/workers/queues.py.
+        "leaderboards.warm_cache": {"queue": WARM_QUEUE},
+        "locations.warm_cache": {"queue": WARM_QUEUE},
         # OG-картинки рендерит Playwright — Chromium есть только в образе
         # worker-parkrun (Dockerfile.parkrun), поэтому очередь parkrun.
         "og_render.*": {"queue": "parkrun"},
@@ -361,8 +364,8 @@ celery_app.conf.update(
             "schedule": crontab(hour=3, minute=30),
             "options": {"queue": "runpark"},
         },
-        # Прогрев кэша рейтингов (TTL 6ч): каждые 2 часа, со сдвигом от :00,
-        # чтобы не толкаться с runpark-latest на том же воркере. Это страховка и
+        # Прогрев кэша рейтингов (TTL 6ч): каждые 2 часа, со сдвигом от :00.
+        # Очередь warm, её разбирает отдельный воркер рядом с базой. Это страховка и
         # обещанный витриной срок пересчёта (REFRESH_INTERVAL_HOURS в
         # app/services/leaderboard_service.py — парное место, менять вместе);
         # свежие протоколы доезжают быстрее: каждый синк, записавший результаты,
@@ -370,14 +373,14 @@ celery_app.conf.update(
         "leaderboards-warm-cache": {
             "task": "leaderboards.warm_cache",
             "schedule": crontab(minute=20, hour="*/2"),
-            "options": {"queue": "runpark"},
+            "options": {"queue": WARM_QUEUE},
         },
         # Прогрев кэша локаций (TTL 3ч): каждые 2 часа, со сдвигом от рейтингов
         # (:20) — чтобы два тяжёлых прогрева не шли одновременно на одном воркере.
         "locations-warm-cache": {
             "task": "locations.warm_cache",
             "schedule": crontab(minute=40, hour="*/2"),
-            "options": {"queue": "runpark"},
+            "options": {"queue": WARM_QUEUE},
         },
         # Прогрев Redis-кэша главной портала (TTL 24ч) — раз в час, чтобы ни один
         # запрос не попадал на холодный пересчёт (~2 мин на проде) и данные не

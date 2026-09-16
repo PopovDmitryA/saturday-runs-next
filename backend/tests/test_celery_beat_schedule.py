@@ -8,6 +8,7 @@ from app.workers.queues import (
     FIVE_VERST_BATCH_QUEUE,
     FIVE_VERST_FRESH_QUEUE,
     FIVE_VERST_WORKER_QUEUES,
+    WARM_QUEUE,
 )
 
 COMPOSE = Path(__file__).resolve().parents[2] / "docker-compose.yml"
@@ -41,6 +42,7 @@ CONSUMED_QUEUES = frozenset(
         "s95_user",
         "parkrun",
         "runpark",
+        "warm",
     }
 )
 
@@ -258,6 +260,22 @@ def test_worker_takes_the_fresh_queue_before_the_batch_one() -> None:
     # ждёт ещё один кусок сверх текущего.
     assert "--prefetch-multiplier=1" in command, command
     assert celery_app.conf.broker_transport_options["queue_order_strategy"] == "priority"
+
+
+def test_cache_warmups_do_not_share_a_queue_with_syncs() -> None:
+    """Прогревы кэша — на своей очереди и своём воркере.
+
+    До 17.09.2026 они ехали в runpark «к самому свободному воркеру». Когда
+    воркеры синков уехали на домашний сервер, очередь runpark оказалась забита
+    четырьмя десятками прогревов, а пользовательский runpark_sync.user_sync —
+    в хвосте за ними. Плюс прогрев считал агрегаты через WAN до базы.
+    """
+    schedule = celery_app.conf.beat_schedule
+    for key in ("leaderboards-warm-cache", "locations-warm-cache"):
+        assert beat_queue(schedule[key]) == WARM_QUEUE, key
+    assert beat_queue({"task": "runpark_sync.user_sync"}) == "runpark"
+    command = _worker_command("worker-warm")
+    assert "-Q warm" in command, command
 
 
 def test_user_sync_keeps_its_own_worker() -> None:
