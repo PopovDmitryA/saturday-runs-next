@@ -169,12 +169,35 @@ def test_observation_dates_upper_override_and_dates_to_fetch() -> None:
     # Архивный прогон в ту же субботу: 12.09 ещё за границей лага.
     assert observation_dates(events, today=date(2026, 9, 12))[-1] == date(2026, 9, 5)
 
-    stored = {date(2026, 9, 5): "archive", date(2026, 9, 12): "forecast"}
-    dates = [date(2026, 9, 5), date(2026, 9, 12), date(2026, 9, 19)]
-    # Архив: заменить предварительную строку и добрать отсутствующую.
-    assert dates_to_fetch(dates, stored, preliminary=False) == [date(2026, 9, 12), date(2026, 9, 19)]
+    # Лестница источников: окончательна только строка era5, всё остальное
+    # архивный прогон обязан переписать.
+    stored = {
+        date(2026, 9, 5): "era5",
+        date(2026, 9, 12): "archive",
+        date(2026, 9, 19): "forecast",
+    }
+    dates = [date(2026, 9, 5), date(2026, 9, 12), date(2026, 9, 19), date(2026, 9, 26)]
+    assert dates_to_fetch(dates, stored, preliminary=False) == [
+        date(2026, 9, 12),
+        date(2026, 9, 19),
+        date(2026, 9, 26),
+    ]
     # Предварительный: только то, чего нет вовсе.
-    assert dates_to_fetch(dates, stored, preliminary=True) == [date(2026, 9, 19)]
+    assert dates_to_fetch(dates, stored, preliminary=True) == [date(2026, 9, 26)]
+
+
+def test_chunks_split_fresh_dates_from_history() -> None:
+    """Год ради одной свежей субботы не просим: чанк режется по разрыву."""
+    from app.services.weather_service import _year_chunks
+
+    dates = [date(2026, 1, 3), date(2026, 1, 10), date(2026, 1, 17), date(2026, 9, 12)]
+    chunks = _year_chunks(dates)
+    assert [(start, end) for start, end, _ in chunks] == [
+        (date(2026, 1, 3), date(2026, 1, 17)),
+        (date(2026, 9, 12), date(2026, 9, 12)),
+    ]
+    # Разные годы не склеиваются даже впритык.
+    assert len(_year_chunks([date(2025, 12, 27), date(2026, 1, 3)])) == 2
 
 
 def test_preliminary_report_wording() -> None:

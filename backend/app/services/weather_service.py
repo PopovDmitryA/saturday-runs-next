@@ -51,12 +51,27 @@ OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 # Прогнозная модель отдаёт и прошедшие дни (до 92 суток): из неё берём
 # субботу в саму субботу, пока архив не догнал.
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-MODEL = "best_match"
+# Лестница источников: чем ниже строка, тем окончательнее.
+#   forecast — прогнозная модель, снимок субботним вечером;
+#   archive  — best_match, склейка ERA5 с оперативной моделью (доступна сразу);
+#   era5     — чистый реанализ, догоняет с отставанием ~5 суток и на этом
+#              останавливается: дальше строка не меняется.
+# Замер 17.09.2026 на 30 локациях (станция ближе 6 км, 4086 сверок): средняя
+# ошибка era5 0.98° против 1.20° у best_match, и era5 точнее на 28 локациях
+# из 30. По осадкам разницы нет — их сетка размазывает у обеих моделей.
+FINAL_MODEL = "era5"
+MODEL_FORECAST_NAME = "best_match"
+FALLBACK_MODEL = "best_match"
+SOURCE_ERA5 = "era5"
 SOURCE_ARCHIVE = "archive"
 SOURCE_FORECAST = "forecast"
 DEFAULT_START_TIME = time(9, 0)
-# Реанализ догоняет реальность с задержкой ~2 суток (05.09 был доступен 07.09).
+# Оперативная склейка (best_match) доступна почти сразу: 2 суток хватает.
 ARCHIVE_LAG_DAYS = 2
+# Чистый ERA5 отстаёт на 5 суток (проверено 17.09.2026: при «сегодня» 16.09
+# последние данные за 11.09). Пока он не догнал, держим строку на best_match и
+# перезаписываем её следующим прогоном.
+ERA5_LAG_DAYS = 6
 # Площадка без стартов дольше этого срока считается закрытой: субботы после
 # последнего старта + хвост не собираем.
 INACTIVE_TAIL_DAYS = 45
@@ -164,13 +179,14 @@ def stored_dates_for_location(db: Session, location_id: UUID) -> dict[date, str]
 def dates_to_fetch(dates: Sequence[date], stored: dict[date, str], *, preliminary: bool) -> list[date]:
     """Что просить у API при докачке.
 
-    Архивный прогон берёт даты без строки и даты с предварительной строкой
-    (их пора заменить). Предварительный — только даты без строки вообще.
+    Архивный прогон берёт всё, что ещё не окончательно: пустые даты,
+    предварительные строки и строки best_match, до которых ERA5 уже дошёл.
+    Предварительный прогон — только даты, которых нет вовсе.
     """
 
     if preliminary:
         return [d for d in dates if d not in stored]
-    return [d for d in dates if stored.get(d) != SOURCE_ARCHIVE]
+    return [d for d in dates if stored.get(d) != SOURCE_ERA5]
 
 
 # --------------------------------------------------------------------------- dates & time
@@ -278,6 +294,7 @@ def fetch_archive(
     retries: int = 5,
     wait_hourly_reset: bool = True,
     endpoint: str = OPEN_METEO_ARCHIVE_URL,
+    model: str = FINAL_MODEL,
 ) -> dict[str, Any]:
     """Один вызов архива (или прогнозной модели, endpoint=OPEN_METEO_FORECAST_URL).
 
@@ -292,7 +309,7 @@ def fetch_archive(
         "hourly": ",".join(HOURLY_VARS),
         "timezone": "auto",
         "wind_speed_unit": "ms",
-        "models": MODEL,
+        "models": model,
     }
     delay = 2.0
     hourly_waits = 0
@@ -481,11 +498,21 @@ def remember_timezone(db: Session, location_id: UUID, timezone_name: str | None)
         location.timezone = timezone_name
 
 
+# Вес вызова считается по длине периода: две недели = один вызов. Просить год
+# ради одной свежей субботы — впустую жечь суточный лимит, поэтому режем не
+# только по годам, но и по разрывам: подряд идущие даты собираются в диапазон,
+# а одинокая суббота стоит своим коротким запросом.
+CHUNK_GAP_DAYS = 45
+
+
 def _year_chunks(dates: Sequence[date]) -> list[tuple[date, date, list[date]]]:
-    chunks: dict[int, list[date]] = {}
-    for d in dates:
-        chunks.setdefault(d.year, []).append(d)
-    return [(min(ds), max(ds), ds) for _, ds in sorted(chunks.items())]
+    chunks: list[list[date]] = []
+    for day in sorted(dates):
+        if chunks and day.year == chunks[-1][-1].year and (day - chunks[-1][-1]).days <= CHUNK_GAP_DAYS:
+            chunks[-1].append(day)
+        else:
+            chunks.append([day])
+    return [(group[0], group[-1], group) for group in chunks]
 
 
 def collect_location_weather(
@@ -532,25 +559,39 @@ def collect_location_weather(
     # а Postgres рвёт idle-in-transaction через 60 секунд.
     db.rollback()
     endpoint = OPEN_METEO_FORECAST_URL if preliminary else OPEN_METEO_ARCHIVE_URL
-    source = SOURCE_FORECAST if preliminary else SOURCE_ARCHIVE
-    for start, end, chunk_dates in _year_chunks(dates):
-        payload = fetch_archive(
-            client,
-            location.latitude,
-            location.longitude,
-            start,
-            end,
-            wait_hourly_reset=wait_hourly_reset,
-            endpoint=endpoint,
-        )
-        stats.api_calls += 1
-        remember_timezone(db, location.id, payload.get("timezone"))
-        rows, skipped = build_rows(payload, location, chunk_dates, fetched_at=datetime.now(UTC), source=source)
-        stats.skipped_no_data += skipped
-        stats.rows_written += upsert_rows(db, rows)
-        db.commit()
-        if pause_seconds:
-            _time.sleep(pause_seconds)
+    era5_upper = today - timedelta(days=ERA5_LAG_DAYS)
+    for _start, _end, chunk_dates in _year_chunks(dates):
+        # Даты, до которых ERA5 дошёл, берём у него — это окончательная строка;
+        # свежие добираем best_match и помечаем как промежуточные.
+        groups: list[tuple[str, str, list[date]]] = []
+        if preliminary:
+            groups.append((MODEL_FORECAST_NAME, SOURCE_FORECAST, chunk_dates))
+        else:
+            final_dates = [d for d in chunk_dates if d <= era5_upper]
+            fresh_dates = [d for d in chunk_dates if d > era5_upper]
+            if final_dates:
+                groups.append((FINAL_MODEL, SOURCE_ERA5, final_dates))
+            if fresh_dates:
+                groups.append((FALLBACK_MODEL, SOURCE_ARCHIVE, fresh_dates))
+        for model, source, group_dates in groups:
+            payload = fetch_archive(
+                client,
+                location.latitude,
+                location.longitude,
+                group_dates[0],
+                group_dates[-1],
+                wait_hourly_reset=wait_hourly_reset,
+                endpoint=endpoint,
+                model=model,
+            )
+            stats.api_calls += 1
+            remember_timezone(db, location.id, payload.get("timezone"))
+            rows, skipped = build_rows(payload, location, group_dates, fetched_at=datetime.now(UTC), source=source)
+            stats.skipped_no_data += skipped
+            stats.rows_written += upsert_rows(db, rows)
+            db.commit()
+            if pause_seconds:
+                _time.sleep(pause_seconds)
     return stats
 
 

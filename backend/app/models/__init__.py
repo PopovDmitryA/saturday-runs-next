@@ -1815,8 +1815,9 @@ class StartWeather(Base):
     location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), primary_key=True)
     obs_date: Mapped[date] = mapped_column(Date, primary_key=True)
     start_time_local: Mapped[time] = mapped_column(Time, nullable=False)
-    # archive — окончательный реанализ; forecast — предварительная погода из
-    # прогнозной модели субботним вечером, её заменяет архив (миграция 087).
+    # Лестница: forecast (прогнозная модель субботним вечером) → archive
+    # (best_match, оперативная склейка) → era5 (чистый реанализ, окончательно,
+    # догоняет за ~5 суток). Каждый ночной прогон поднимает строку на ступень.
     source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="archive")
 
     temperature_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
