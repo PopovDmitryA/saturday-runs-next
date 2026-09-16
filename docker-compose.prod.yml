@@ -6,7 +6,10 @@ services:
     profiles: ["dev-db"]
 
   redis:
-    ports: !override []
+    # Брокер общий с воркерами домашнего сервера, поэтому публикуем — но только
+    # на адрес из REDIS_BIND (у нас это tailnet-адрес прода), не на 0.0.0.0.
+    ports: !override
+      - "${REDIS_BIND:-127.0.0.1}:6379:6379"
 
   api:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
@@ -20,7 +23,10 @@ services:
       # в ~2 минуты, так что 180s не мешает живым страницам, но не даёт одному
       # сорвавшемуся запросу держать слот пула часами (см. app/db/session.py).
       DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-180s}
-    ports: []
+    # !override обязателен: голый `ports: []` списки не затирает, а склеивает,
+    # поэтому базовый "8000:8000" оставался и api висел на 0.0.0.0 мимо nginx
+    # (проверено 17.09.2026 снаружи: http://<прод>:8000/health отдавал 200).
+    ports: !override []
     volumes:
       - ./.env:/app/.env:ro
       - ./data:/data
