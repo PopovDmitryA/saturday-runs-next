@@ -90,6 +90,10 @@ class ParsedRegistryEntry:
     city_group: str | None
     status: LocationRegistryStatus
     status_note: str | None = None
+    # Текст организатора из блока отмен на /events/ («Проведение регионального
+    # мероприятия в это время»). У s95 причина живёт плашкой на странице
+    # площадки, у 5 вёрст — одной строкой в общем списке отмен.
+    cancel_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -137,6 +141,63 @@ def slug_from_href(href: str) -> str | None:
     return slug
 
 
+# Строка блока отмен на /events/: «<a>Пенза</a> отменён по причине: Проведение
+# регионального мероприятия в это время.<br>». Причина необязательна — бывает и
+# просто «отменён». Её мы и достаём: в списке площадок (li с пометкой «(отмена)»)
+# текста причины нет вовсе.
+CANCEL_REASON_RE = re.compile(r"по\s+причин[еы]\s*:?\s*(.+)", re.I | re.S)
+# Причина — свободный текст организатора; на странице локации это одна строка.
+CANCEL_REASON_MAX_LEN = 400
+
+
+def _cancel_reason_from_tail(text: str) -> str | None:
+    match = CANCEL_REASON_RE.search(text)
+    if not match:
+        return None
+    reason = re.sub(r"\s+", " ", match.group(1)).strip(" .;—-")
+    if not reason:
+        return None
+    return reason[:CANCEL_REASON_MAX_LEN].strip()
+
+
+def _parse_cancel_list(soup: BeautifulSoup) -> dict[str, tuple[str, str | None]]:
+    """Блок отмен ближайшей субботы: slug → (название, причина).
+
+    Разбираем по узлам, а не по тексту целиком: площадок в блоке бывает
+    несколько, они разделены <br>, и причина одной не должна утечь к соседней.
+    """
+    block = soup.select_one("div.cancel-list")
+    if block is None:
+        return {}
+
+    found: dict[str, tuple[str, str | None]] = {}
+    slug: str | None = None
+    name = ""
+    tail: list[str] = []
+
+    def flush() -> None:
+        nonlocal slug, tail
+        if slug is not None:
+            found[slug] = (name, _cancel_reason_from_tail(" ".join(tail)))
+        slug = None
+        tail = []
+
+    for node in block.children:
+        if isinstance(node, Tag) and node.name == "a" and node.get("href"):
+            flush()
+            slug = slug_from_href(node["href"])
+            name = node.get_text(strip=True)
+            continue
+        if isinstance(node, Tag) and node.name == "br":
+            flush()
+            continue
+        text = node.get_text(" ", strip=True) if isinstance(node, Tag) else str(node).strip()
+        if text and slug is not None:
+            tail.append(text)
+    flush()
+    return found
+
+
 def _registry_status_from_li_text(text: str) -> tuple[LocationRegistryStatus, str | None]:
     lowered = text.lower()
     if "(отмена)" in lowered:
@@ -159,6 +220,7 @@ def parse_events_page_html(html: str) -> ParsedEventsPage:
     soup = BeautifulSoup(html, "html.parser")
     entries_by_slug: dict[str, ParsedRegistryEntry] = {}
     saturday_cancellations: list[ParsedRegistryEntry] = []
+    cancel_list = _parse_cancel_list(soup)
 
     for block in soup.select("div.events-columns div.event-block"):
         city_group: str | None = None
@@ -182,25 +244,21 @@ def parse_events_page_html(html: str) -> ParsedEventsPage:
                 city_group=city_group,
                 status=status,
                 status_note=status_note,
+                cancel_reason=cancel_list.get(slug, (None, None))[1],
             )
 
-    cancel_list = soup.select_one("div.cancel-list")
-    if cancel_list is not None:
-        for link in cancel_list.find_all("a", href=True):
-            slug = slug_from_href(link["href"])
-            if slug is None:
-                continue
-            name = link.get_text(strip=True)
-            saturday_cancellations.append(
-                ParsedRegistryEntry(
-                    slug=slug,
-                    name=name,
-                    source_url=_location_url(slug),
-                    city_group=None,
-                    status=LocationRegistryStatus.cancelled,
-                    status_note="отмена на ближайшую субботу",
-                )
+    for slug, (name, reason) in cancel_list.items():
+        saturday_cancellations.append(
+            ParsedRegistryEntry(
+                slug=slug,
+                name=name,
+                source_url=_location_url(slug),
+                city_group=None,
+                status=LocationRegistryStatus.cancelled,
+                status_note="отмена на ближайшую субботу",
+                cancel_reason=reason,
             )
+        )
 
     entries = sorted(entries_by_slug.values(), key=lambda item: item.slug)
     return ParsedEventsPage(entries=entries, saturday_cancellations=saturday_cancellations)

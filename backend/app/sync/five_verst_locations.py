@@ -144,6 +144,10 @@ def _apply_registry_meta(db: Session, row: Location, entry: ParsedRegistryEntry)
         is_paused=registry_entry_is_paused(entry.status),
         is_cancelled=registry_entry_is_cancelled(entry.status),
         is_upcoming=registry_entry_is_upcoming(entry.status),
+        # Причина отмены у 5 вёрст лежит в блоке отмен на /events/ («отменён по
+        # причине: …») — раньше её никто не читал, и на странице локации 5 вёрст
+        # висела голая плашка «старт отменён», хотя у s95 причина была.
+        cancel_reason=entry.cancel_reason,
     )
     if row.name != entry.name:
         row.name = entry.name
@@ -295,6 +299,7 @@ def _record_cancel_change(
             slug=entry.slug,
             name=entry.name,
             cancelled=registry_entry_is_cancelled(entry.status),
+            reason=entry.cancel_reason,
         )
     )
 
