@@ -17126,16 +17126,18 @@ input.participant-name-search-input:focus {
 .loc-weather-share-pct {
   font-weight: 700;
 }
+/* Сетка общая на весь блок, строки — display: contents: иначе у каждой строки
+   своя сетка, колонка значения меряется по своему тексту («12 стартов» против
+   «189 стартов»), и полосы разъезжаются гармошкой. */
 .loc-weather-attendance-chart {
   display: grid;
-  gap: 0.35rem;
-}
-.loc-weather-attendance-bar-row {
-  display: grid;
-  grid-template-columns: minmax(120px, 180px) 1fr minmax(120px, auto);
-  gap: 0.6rem;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr) max-content;
+  gap: 0.35rem 0.6rem;
   align-items: center;
   font-size: 0.9rem;
+}
+.loc-weather-attendance-bar-row {
+  display: contents;
 }
 .loc-weather-attendance-bar-track {
   height: 0.9rem;
@@ -17154,10 +17156,24 @@ input.participant-name-search-input:focus {
 .loc-weather-attendance-bar-fill.loc-weather-attendance-warm { background: var(--weather-warm); }
 .loc-weather-attendance-bar-fill.loc-weather-attendance-rain { background: var(--weather-cold); }
 @media (max-width: 820px) {
-  .loc-weather-attendance-bar-row {
-    grid-template-columns: 1fr;
-    gap: 0.2rem;
+  /* На телефоне три колонки не помещаются — строка складывается в блок:
+     подпись, полоса, значение друг под другом. */
+  .loc-weather-attendance-chart {
+    display: block;
   }
+  .loc-weather-attendance-bar-row {
+    display: block;
+    margin-bottom: 0.7rem;
+  }
+  .loc-weather-attendance-bar-track {
+    margin: 0.2rem 0;
+  }
+}
+
+/* Знак подсказки в заголовках погоды не должен липнуть к последнему слову. */
+.loc-weather .loc-section-title-info,
+.uniprot-weather .loc-section-title-info {
+  margin-left: 0.3rem;
 }
 .uniprot-weather-card .loc-stat-sub a {
   text-decoration: none;
