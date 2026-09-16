@@ -45,6 +45,9 @@ _PROFILE_TAB_RE = re.compile(r"^/users/([^/]+)/[^/]+$")
 _SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
 _LOCATION_EVENTS_RE = re.compile(r"^/locations/([^/]+)/events$")
 _LOCATION_PARTICIPANTS_RE = re.compile(r"^/locations/([^/]+)/participants$")
+# Полные топы бегунов локации: /locations/{slug}/tops. entity_key — slug, как у
+# журнала и состава: просмотры копятся к локации.
+_LOCATION_TOPS_RE = re.compile(r"^/locations/([^/]+)/tops$")
 # Единый протокол недели: /protocol/{дата-субботы}. В entity_key едет дата —
 # по ней видно, какие недели открывают (свежая суббота или архив).
 _UNIFIED_PROTOCOL_RE = re.compile(r"^/protocol/(\d{4}-\d{2}-\d{2})$")
@@ -180,6 +183,9 @@ def classify_page(path: str) -> tuple[str, str]:
     if location_events:
         return "location_events", location_events.group(1)[:128]
 
+    location_tops = _LOCATION_TOPS_RE.match(normalized)
+    if location_tops:
+        return "location_tops", location_tops.group(1)[:128]
     location_participants = _LOCATION_PARTICIPANTS_RE.match(normalized)
     if location_participants:
         return "location_participants", location_participants.group(1)[:128]

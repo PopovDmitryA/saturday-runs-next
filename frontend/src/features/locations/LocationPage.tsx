@@ -45,6 +45,14 @@ import { LocationMiniMap } from "./LocationMiniMap";
 import { LocationRouteButton } from "./LocationRouteButton";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
 import { LocationRecordsModal, type RecordType } from "./LocationRecordsModal";
+import {
+  FastestRunnersCard,
+  RunnerName,
+  TopWinnersCard,
+  WINS_FEMALE_HINT,
+  WINS_OVERALL_HINT,
+  stripLeadingHours,
+} from "./LocationTopCards";
 
 function StatTile({
   value,
@@ -156,18 +164,6 @@ function runsAtLocationHref(user: { serial_id?: number | null; public_slug?: str
 }
 
 /** Имя участника: ссылкой на профиль сайта, если участник привязал систему. */
-function RunnerName({ name, handle }: { name: string | null; handle?: string | null }) {
-  const label = name?.trim() || "—";
-  if (!handle || label === "—") {
-    return <>{label}</>;
-  }
-  return (
-    <a className="loc-runner-link" href={`/users/${encodeURIComponent(handle)}`}>
-      {label}
-    </a>
-  );
-}
-
 function courseRecordSub(record: LocationCourseRecord): string {
   const parts: string[] = [];
   if (record.runner_name) {
@@ -501,10 +497,12 @@ function AgeGroupRecordsSection({
   );
 }
 
-// На странице локации показываем десятку, а не весь топ: страница и без того
-// длинная, а полный постоянный состав живёт на /locations/{slug}/participants
-// (там же — сколько у человека участий всего и с какого старта он здесь свой).
-const LEADERS_PREVIEW_LIMIT = 10;
+// На странице локации у каждого топа видна пятёрка, а не весь список: таблиц
+// на странице четыре пары, и десятками они превращали её в простыню (правка
+// Дмитрия 14.09.2026). Полные списки — по ссылке под таблицей: постоянный
+// состав на /locations/{slug}/participants, топы бегунов на
+// /locations/{slug}/tops.
+const LEADERS_PREVIEW_LIMIT = 5;
 
 function LocationLeadersSection({ slug }: { slug: string }) {
   const { data: leaders, error } = useCachedResource(
@@ -527,153 +525,195 @@ function LocationLeadersSection({ slug }: { slug: string }) {
       </section>
     );
   }
-  if (leaders.runners.length === 0 && leaders.volunteers.length === 0) {
+  const hasFastest = leaders.fastest_male.length > 0 || leaders.fastest_female.length > 0;
+  const hasWinners = leaders.winners_overall.length > 0 || leaders.winners_female.length > 0;
+  if (leaders.runners.length === 0 && leaders.volunteers.length === 0 && !hasFastest && !hasWinners) {
     return null;
   }
 
   const topRunners = leaders.runners.slice(0, LEADERS_PREVIEW_LIMIT);
   const topVolunteers = leaders.volunteers.slice(0, LEADERS_PREVIEW_LIMIT);
   const detailsHref = `/locations/${encodeURIComponent(slug)}/participants`;
+  // Ссылка ведёт сразу в нужную таблицу витрины топов, а не «куда-нибудь».
+  const topsHref = (board: "time" | "wins", division: "primary" | "female") =>
+    `/locations/${encodeURIComponent(slug)}/tops?board=${board}&division=${division}`;
 
   return (
-    <div className="loc-columns">
-      {leaders.runners.length > 0 && (
-        <section className="card loc-section">
-          <h2 className="section-title">
-            Топ по пробежкам
-            <StatHintTooltip text="Число пробежек и лучшее время считаются только на этой локации. Если у участника единый профиль на сайте (привязаны аккаунты нескольких систем), пробежки во всех системах суммируются в одну строку. Без привязки аккаунты разных систем объединить нельзя — они остаются отдельными строками.">
-              <span className="loc-section-title-info" aria-label="Как считается">
-                ⓘ
-              </span>
-            </StatHintTooltip>
-          </h2>
-          {narrowViewport ? (
-            <div className="rowcards loc-leaders-cards">
-              {topRunners.map((runner, index) => (
-                <div className="rowcard" key={`${runner.name}-${index}`}>
-                  <div className="rowcard-rank">{index + 1}</div>
-                  <div className="rowcard-mid">
-                    <div className="rowcard-title">
-                      <RunnerName name={runner.name} handle={runner.handle} />
-                    </div>
-                    <div className="rowcard-sub">
-                      {pluralizeRu(runner.runs_count, ["пробежка", "пробежки", "пробежек"])} здесь
-                    </div>
-                  </div>
-                  <div className="rowcard-right">
-                    <div className="rowcard-value">{stripLeadingHours(runner.best_time_display)}</div>
-                    <div className="rowcard-sub">лучшее</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <table className="data-table loc-leaders-table">
-              <colgroup>
-                <col className="loc-leaders-col-rank" />
-                <col />
-                <col className="loc-leaders-col-num" />
-                <col className="loc-leaders-col-time" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Участник</th>
-                  <th title="Пробежек на этой локации">Пробежек</th>
-                  <th title="Лучшее время участника здесь">Лучшее</th>
-                </tr>
-              </thead>
-              <tbody>
+    <>
+      <div className="loc-columns">
+        {leaders.runners.length > 0 && (
+          <section className="card loc-section">
+            <h2 className="section-title">
+              Топ по пробежкам
+              <StatHintTooltip text="Число пробежек и лучшее время считаются только на этой локации. Если у участника единый профиль на сайте (привязаны аккаунты нескольких систем), пробежки во всех системах суммируются в одну строку. Без привязки аккаунты разных систем объединить нельзя — они остаются отдельными строками.">
+                <span className="loc-section-title-info" aria-label="Как считается">
+                  ⓘ
+                </span>
+              </StatHintTooltip>
+            </h2>
+            {narrowViewport ? (
+              <div className="rowcards loc-leaders-cards">
                 {topRunners.map((runner, index) => (
-                  <tr key={`${runner.name}-${index}`}>
-                    <td className="loc-leaders-rank">{index + 1}</td>
-                    <td>
-                      <RunnerName name={runner.name} handle={runner.handle} />
-                    </td>
-                    <td>{formatInt(runner.runs_count)}</td>
-                    <td>{stripLeadingHours(runner.best_time_display)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          <p className="loc-leaders-more">
-            <a className="loc-events-link" href={detailsHref}>
-              Весь постоянный состав →
-            </a>
-          </p>
-        </section>
-      )}
-      {leaders.volunteers.length > 0 && (
-        <section className="card loc-section">
-          <h2 className="section-title">
-            Топ по волонтёрствам
-            <StatHintTooltip text="Число волонтёрств считается только на этой локации. Если у волонтёра единый профиль на сайте (привязаны аккаунты нескольких систем), волонтёрства во всех системах суммируются в одну строку. Без привязки аккаунты разных систем объединить нельзя — они остаются отдельными строками.">
-              <span className="loc-section-title-info" aria-label="Как считается">
-                ⓘ
-              </span>
-            </StatHintTooltip>
-          </h2>
-          {narrowViewport ? (
-            <div className="rowcards loc-leaders-cards">
-              {topVolunteers.map((volunteer, index) => (
-                <div className="rowcard" key={`${volunteer.name}-${index}`}>
-                  <div className="rowcard-rank">{index + 1}</div>
-                  <div className="rowcard-mid">
-                    <div className="rowcard-title">
-                      <RunnerName name={volunteer.name} handle={volunteer.handle} />
+                  <div className="rowcard" key={`${runner.name}-${index}`}>
+                    <div className="rowcard-rank">{index + 1}</div>
+                    <div className="rowcard-mid">
+                      <div className="rowcard-title">
+                        <RunnerName name={runner.name} handle={runner.handle} />
+                      </div>
+                      <div className="rowcard-sub">
+                        {pluralizeRu(runner.runs_count, ["пробежка", "пробежки", "пробежек"])} здесь
+                      </div>
                     </div>
-                    <div className="rowcard-sub">
-                      {pluralizeRu(volunteer.count, ["волонтёрство", "волонтёрства", "волонтёрств"])}{" "}
-                      здесь
+                    <div className="rowcard-right">
+                      <div className="rowcard-value">{stripLeadingHours(runner.best_time_display)}</div>
+                      <div className="rowcard-sub">лучшее</div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <table className="data-table loc-leaders-table">
-              <colgroup>
-                <col className="loc-leaders-col-rank" />
-                <col />
-                <col className="loc-leaders-col-num" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Волонтёр</th>
-                  <th title="Волонтёрств на этой локации">Волонтёрств</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topVolunteers.map((volunteer, index) => (
-                  <tr key={`${volunteer.name}-${index}`}>
-                    <td className="loc-leaders-rank">{index + 1}</td>
-                    <td>
-                      <RunnerName name={volunteer.name} handle={volunteer.handle} />
-                    </td>
-                    <td>{formatInt(volunteer.count)}</td>
-                  </tr>
                 ))}
-              </tbody>
-            </table>
-          )}
-          <p className="loc-leaders-more">
-            <a className="loc-events-link" href={`${detailsHref}?scope=volunteers`}>
-              Весь постоянный состав →
-            </a>
-          </p>
-        </section>
+              </div>
+            ) : (
+              <table className="data-table loc-leaders-table">
+                <colgroup>
+                  <col className="loc-leaders-col-rank" />
+                  <col />
+                  <col className="loc-leaders-col-num" />
+                  <col className="loc-leaders-col-time" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Участник</th>
+                    <th title="Пробежек на этой локации">Пробежек</th>
+                    <th title="Лучшее время участника здесь">Лучшее</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topRunners.map((runner, index) => (
+                    <tr key={`${runner.name}-${index}`}>
+                      <td className="loc-leaders-rank">{index + 1}</td>
+                      <td>
+                        <RunnerName name={runner.name} handle={runner.handle} />
+                      </td>
+                      <td>{formatInt(runner.runs_count)}</td>
+                      <td>{stripLeadingHours(runner.best_time_display)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <p className="loc-leaders-more">
+              <a className="loc-events-link" href={detailsHref}>
+                Весь постоянный состав →
+              </a>
+            </p>
+          </section>
+        )}
+        {leaders.volunteers.length > 0 && (
+          <section className="card loc-section">
+            <h2 className="section-title">
+              Топ по волонтёрствам
+              <StatHintTooltip text="Число волонтёрств считается только на этой локации. Если у волонтёра единый профиль на сайте (привязаны аккаунты нескольких систем), волонтёрства во всех системах суммируются в одну строку. Без привязки аккаунты разных систем объединить нельзя — они остаются отдельными строками.">
+                <span className="loc-section-title-info" aria-label="Как считается">
+                  ⓘ
+                </span>
+              </StatHintTooltip>
+            </h2>
+            {narrowViewport ? (
+              <div className="rowcards loc-leaders-cards">
+                {topVolunteers.map((volunteer, index) => (
+                  <div className="rowcard" key={`${volunteer.name}-${index}`}>
+                    <div className="rowcard-rank">{index + 1}</div>
+                    <div className="rowcard-mid">
+                      <div className="rowcard-title">
+                        <RunnerName name={volunteer.name} handle={volunteer.handle} />
+                      </div>
+                      <div className="rowcard-sub">
+                        {pluralizeRu(volunteer.count, ["волонтёрство", "волонтёрства", "волонтёрств"])}{" "}
+                        здесь
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <table className="data-table loc-leaders-table">
+                <colgroup>
+                  <col className="loc-leaders-col-rank" />
+                  <col />
+                  <col className="loc-leaders-col-num" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Волонтёр</th>
+                    <th title="Волонтёрств на этой локации">Волонтёрств</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topVolunteers.map((volunteer, index) => (
+                    <tr key={`${volunteer.name}-${index}`}>
+                      <td className="loc-leaders-rank">{index + 1}</td>
+                      <td>
+                        <RunnerName name={volunteer.name} handle={volunteer.handle} />
+                      </td>
+                      <td>{formatInt(volunteer.count)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <p className="loc-leaders-more">
+              <a className="loc-events-link" href={`${detailsHref}?scope=volunteers`}>
+                Весь постоянный состав →
+              </a>
+            </p>
+          </section>
+        )}
+      </div>
+      {hasFastest && (
+        <div className="loc-columns">
+          <FastestRunnersCard
+            title="Топ по времени: мужчины"
+            rows={leaders.fastest_male}
+            narrowViewport={narrowViewport}
+            limit={LEADERS_PREVIEW_LIMIT}
+            moreHref={topsHref("time", "primary")}
+            moreLabel="Весь топ по времени"
+          />
+          <FastestRunnersCard
+            title="Топ по времени: женщины"
+            rows={leaders.fastest_female}
+            narrowViewport={narrowViewport}
+            limit={LEADERS_PREVIEW_LIMIT}
+            moreHref={topsHref("time", "female")}
+            moreLabel="Весь топ по времени"
+          />
+        </div>
       )}
-    </div>
+      {hasWinners && (
+        <div className="loc-columns">
+          <TopWinnersCard
+            title="Топ по победам: абсолют"
+            hint={WINS_OVERALL_HINT}
+            rows={leaders.winners_overall}
+            narrowViewport={narrowViewport}
+            limit={LEADERS_PREVIEW_LIMIT}
+            moreHref={topsHref("wins", "primary")}
+            moreLabel="Весь топ по победам"
+          />
+          <TopWinnersCard
+            title="Топ по победам: женщины"
+            hint={WINS_FEMALE_HINT}
+            rows={leaders.winners_female}
+            narrowViewport={narrowViewport}
+            limit={LEADERS_PREVIEW_LIMIT}
+            moreHref={topsHref("wins", "female")}
+            moreLabel="Весь топ по победам"
+          />
+        </div>
+      )}
+    </>
   );
-}
-
-function stripLeadingHours(display: string | null): string {
-  if (!display) {
-    return "—";
-  }
-  return display.replace(/^00:/, "");
 }
 
 function paragraphsOf(text: string): string[] {
@@ -1053,24 +1093,21 @@ function LocationPersonalSection({
         {stats.avg_time_display && (
           <StatTile value={stripLeadingHours(stats.avg_time_display)} label="среднее время здесь" />
         )}
-        {/* Топ по пробежкам — только внутри своего пола. Общий топ убран:
-            сравнение мужчин и женщин одной строкой бегуну мало что говорит, а
-            в знаменатель попадали «неизвестные» из протоколов — у них пола нет,
-            поэтому срез по полу отсекает их сам. У всех привязанных
-            пользователей пол известен, так что плитка не пропадёт. */}
-        {stats.rank_by_runs_gender != null && stats.runs_count > 0 && (
+        {/* Топ по пробежкам — общий, без разбивки по полу (решение Дмитрия
+            17.09.2026). Знаменатель тот же, что у таблицы лидеров локации:
+            заглушки протокола («НЕИЗВЕСТНЫЙ») в него не идут. */}
+        {stats.rank_by_runs != null && stats.runs_count > 0 && (
           <StatTile
-            value={`#${stats.rank_by_runs_gender}`}
-            label={`в топе по пробежкам · ${stats.gender === "female" ? "Ж" : "М"}`}
-            hint={`Место по числу пробежек на этой площадке среди ${
-              stats.gender === "female" ? "женщин" : "мужчин"
-            } за всю её историю — во всех системах сразу, включая parkrun-эпоху. Привязанные профили считаются одним человеком, неопознанные финишёры протокола в счёт не идут.`}
+            value={`#${stats.rank_by_runs}`}
+            label="в топе по пробежкам"
+            hint="Место по числу пробежек на этой локации за всю её историю — во всех системах сразу, включая parkrun-эпоху. Привязанные профили считаются одним человеком, неопознанные финишёры протокола в счёт не идут."
             sub={
-              stats.runners_total_gender != null
-                ? `из ${formatInt(stats.runners_total_gender)} ${pluralFormRu(
-                    stats.runners_total_gender,
-                    ["бегуна", "бегунов", "бегунов"],
-                  )}`
+              stats.runners_total != null
+                ? `из ${formatInt(stats.runners_total)} ${pluralFormRu(stats.runners_total, [
+                    "бегуна",
+                    "бегунов",
+                    "бегунов",
+                  ])}`
                 : undefined
             }
           />
@@ -1206,6 +1243,10 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   const stats = page.stats;
   const records = stats.course_records;
+  // Серия — формат, а не место: «Старты сообществ», «С95 и друзья». Трасса
+  // каждый раз новая, поэтому рекорда трассы у неё нет — есть лучшее время
+  // за всю историю формата, и называть его рекордом было бы неправдой.
+  const seriesBestTimes = page.is_series ? stats.best_times ?? null : null;
 
   return (
     <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
@@ -1216,6 +1257,14 @@ function LocationPageContent({ slug }: { slug: string }) {
         <div className="loc-header-title">
           <h1>{page.name}</h1>
           <LocationStatusLabel isPaused={page.is_paused} isCancelled={page.is_cancelled} />
+          {page.is_series && (
+            <span
+              className="loc-series-chip"
+              title="Серия стартов, а не площадка: проходят нерегулярно и каждый раз в новом месте"
+            >
+              серия стартов
+            </span>
+          )}
           {shareSheet !== null && (
             <button
               type="button"
@@ -1285,7 +1334,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
       <section className="card loc-section">
         <div className="loc-section-head">
-          <h2 className="section-title">Локация в цифрах</h2>
+          <h2 className="section-title">{page.is_series ? "Серия в цифрах" : "Локация в цифрах"}</h2>
           {shareSheet !== null && (
             <button
               type="button"
@@ -1380,6 +1429,20 @@ function LocationPageContent({ slug }: { slug: string }) {
               sub={courseRecordSub(records.female)}
               badge={{ text: "🏆 Ж", title: "Рекорд трассы среди женщин" }}
               onDetails={() => setRecordsModalType("female")}
+            />
+          )}
+          {seriesBestTimes?.male && (
+            <StatTile
+              value={formatTime(seriesBestTimes.male.finish_time_sec)}
+              label="лучшее время · М"
+              sub={courseRecordSub(seriesBestTimes.male)}
+            />
+          )}
+          {seriesBestTimes?.female && (
+            <StatTile
+              value={formatTime(seriesBestTimes.female.finish_time_sec)}
+              label="лучшее время · Ж"
+              sub={courseRecordSub(seriesBestTimes.female)}
             />
           )}
           {stats.median_finish_time_sec !== null && (

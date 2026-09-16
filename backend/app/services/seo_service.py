@@ -146,7 +146,7 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
     ),
     "/ratings/volunteer-roles": _meta(
         "Рейтинг по волонтёрским ролям — run5k.run",
-        "Сколько разных волонтёрских ролей освоили участники субботних пробежек.",
+        "В скольких разных волонтёрских ролях побывали участники субботних пробежек.",
         indexable=True,
     ),
     "/ratings/locations": _meta(
@@ -700,7 +700,17 @@ def location_lead_sentences(payload: dict[str, Any]) -> list[str]:
     stats = payload.get("stats") or {}
 
     where = f"«{name}» ({city})" if city else f"«{name}»"
-    if platform:
+    # Серия — не площадка: старты проходят нерегулярно и каждый раз в новом
+    # месте. Назвать её «площадкой субботних пробежек» значило бы соврать и
+    # человеку, и роботу — предложение у них общее.
+    is_series = bool(payload.get("is_series"))
+    if is_series:
+        first = (
+            f"{where} — серия стартов {platform}, а не площадка."
+            if platform
+            else f"{where} — серия стартов, а не площадка."
+        )
+    elif platform:
         first = f"{where} — площадка субботних пробежек {platform}."
     else:
         first = f"{where} — площадка субботних пробежек."
@@ -709,8 +719,9 @@ def location_lead_sentences(payload: dict[str, Any]) -> list[str]:
     events_count = int(stats.get("events_count") or 0)
     finishers_total = int(stats.get("finishers_total") or 0)
     if events_count and finishers_total:
+        where_word = "В серии прошло" if is_series else "Здесь прошло"
         sentences.append(
-            f"Здесь прошло {_num(events_count)} "
+            f"{where_word} {_num(events_count)} "
             f"{_plural(events_count, 'старт', 'старта', 'стартов')}, "
             f"финишировали {_num(finishers_total)} "
             f"{_plural(finishers_total, 'участник', 'участника', 'участников')}."
@@ -849,7 +860,12 @@ def build_sitemap(db: Session) -> str:
         urls.append(_sitemap_url(base, f"/updates?page={page}", lastmod=None, priority="0.3"))
 
     index = build_locations_index(db)
-    items: list[dict[str, Any]] = cast("list[dict[str, Any]]", index.get("items") or [])
+    # Серии («Старты сообществ», «С95 и друзья») каталог отдаёт отдельным
+    # списком, но страницы у них настоящие — в карту сайта идут наравне.
+    items: list[dict[str, Any]] = [
+        *cast("list[dict[str, Any]]", index.get("items") or []),
+        *cast("list[dict[str, Any]]", index.get("series") or []),
+    ]
     for item in items:
         slug = item.get("slug")
         if not slug:

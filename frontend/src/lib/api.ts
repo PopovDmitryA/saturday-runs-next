@@ -295,6 +295,13 @@ export type DashboardAnalytics = {
   location_records?: LocationRecordsBlock;
   age_group_records?: LocationRecordsBlock;
   home_distance?: HomeDistance | null;
+  /** Ч9 «Луковица лояльности»: пробежки на домашней локации и их доля. */
+  home_runs_count?: number;
+  home_runs_share_pct?: number | null;
+  /** Ч25 «Стабильность»: СКО последних финишей, размер окна, серия метронома. */
+  finish_spread_sec?: number | null;
+  finish_spread_runs?: number;
+  metronome_streak?: number;
   last_saturday?: LastSaturday | null;
 };
 
@@ -356,6 +363,8 @@ export type RunItem = {
   event_date: string;
   event_number: number | null;
   location_name: string;
+  /** Имя старта — только у серий («Зелёные 5 км» в «Стартах сообществ»). */
+  event_title?: string | null;
   location_city: string | null;
   location_country: string | null;
   location_slug?: string | null;
@@ -363,6 +372,9 @@ export type RunItem = {
   location_is_cancelled?: boolean;
   position: number | null;
   gender_position?: number | null;
+  /** Место в своей возрастной категории на этом старте и размер категории. */
+  age_group_position?: number | null;
+  age_group_total?: number | null;
   // Всего человек в протоколе старта; null — протокол неполон, честного числа нет.
   participants_total?: number | null;
   finish_time_display: string | null;
@@ -443,6 +455,7 @@ export type VolunteeringItem = {
   event_date: string;
   event_number: number | null;
   location_name: string;
+  event_title?: string | null;
   location_city: string | null;
   location_country: string | null;
   location_slug?: string | null;
@@ -1112,6 +1125,11 @@ export type ChallengeCell = {
   count?: number | null;
   /** Готовая подпись к count, когда «финиш» не подходит («8 волонтёрств»). */
   count_label?: string | null;
+  /**
+   * Клетка входит в выделенную группу: «Индекс Уилсона» так показывает обе свои
+   * цепочки на одной ленте номеров — classic (от №1) и floating (самая длинная).
+   */
+  accent?: string | null;
 };
 
 export type ChallengeLetter = {
@@ -1136,6 +1154,8 @@ export type ChallengeDetailItem = {
   value?: string;
   location?: string;
   count?: number;
+  /** Система старта: номера забегов у систем свои, и на общей площадке «№30» без плашки не читается. */
+  platform_code?: string | null;
   occurrences?: Array<{ date: string; location: string }>;
 };
 
@@ -1147,6 +1167,12 @@ export type ChallengeDetail = {
   days?: ChallengeDay[];
   items?: ChallengeDetailItem[];
   example?: { value: string; location: string; note: string };
+  /**
+   * Строка-пояснение над деталями: «твой размах 24:xx — 38:xx», «дом — Россия»,
+   * «осталось: S95, RunPark». Нужна там, где само число карточки без словесной
+   * расшифровки читается неоднозначно.
+   */
+  note?: string | null;
 };
 
 export type ChallengeLevelDates = {
@@ -1262,8 +1288,16 @@ export type StartNumberPlan = {
   low: number;
   high: number;
   generated_for: string;
-  // Сколько колонок в строке; подписи строит фронт
+  // Сколько колонок в строке
   week_count: number;
+  /** Подписи колонок с бэка: «Ближайший забег (E)» / «E+1» либо «Где и когда». */
+  column_titles?: string[];
+  /** Горизонт прогноза словами: «ближайшие 3 недели» / «ближайшие полгода». */
+  horizon_label?: string;
+  /** Есть ли смысл в отметке «закрыто» — у челленджей-счётчиков её нет. */
+  tracks_done?: boolean;
+  /** Пояснение конкретного челленджа поверх общего текста про прогноз. */
+  intro?: string | null;
   rows: StartNumberPlanRow[];
 };
 
@@ -2538,6 +2572,8 @@ export type LocationPageStats = {
   avg_finishers: number | null;
   attendance_record: LocationAttendanceRecord | null;
   course_records: { male: LocationCourseRecord | null; female: LocationCourseRecord | null };
+  /** У серии рекорда трассы нет — те же цифры приезжают как лучшее время формата. */
+  best_times?: { male: LocationCourseRecord | null; female: LocationCourseRecord | null } | null;
   first_event_date: string | null;
   last_event_date: string | null;
   median_finish_time_sec: number | null;
@@ -2624,6 +2660,8 @@ export type LocationPage = {
   country: string | null;
   is_paused: boolean;
   is_cancelled: boolean;
+  /** Серия стартов, а не площадка: трасса каждый раз новая. */
+  is_series: boolean;
   /** Причина отмены ближайшего старта словами организатора (её пишет s95). */
   cancel_reason: string | null;
   latitude: number | null;
@@ -2664,17 +2702,23 @@ export type LocationIndexItem = {
   attendance_record_date: string | null;
   avg_finish_time_sec: number | null;
   avg_finish_time_display: string | null;
+  /** Серия стартов, а не площадка: «Старты сообществ», «С95 и друзья». */
+  is_series: boolean;
 };
 
 export type LocationsIndexResponse = {
   items: LocationIndexItem[];
   total: number;
+  /** Серии — отдельным блоком: в алфавите площадок им не место. */
+  series: LocationIndexItem[];
 };
 
 export type LocationEventRow = {
   event_date: string;
   platform_code: string;
   event_number: number | null;
+  /** Собственное имя старта — есть только у серий: «Зелёные 5 км». */
+  title: string | null;
   overall_number: number;
   finishers: number | null;
   volunteers: number | null;
@@ -2709,6 +2753,8 @@ export type LocationEventRow = {
 export type LocationEvents = {
   slug: string;
   name: string;
+  /** Журнал серии вместо номера старта показывает его имя. */
+  is_series: boolean;
   total: number;
   items: LocationEventRow[];
 };
@@ -2735,15 +2781,61 @@ export type LocationLeaderVolunteer = {
   count: number;
 };
 
+/** Строка топа по времени: лучший результат человека на этой локации. */
+export type LocationFastestRunner = {
+  place: number;
+  name: string | null;
+  handle?: string | null;
+  best_time_sec: number;
+  best_time_display: string | null;
+  event_date: string | null;
+  /** Системы, чьи протоколы участвуют в строке. Обычно одна. */
+  platform_codes: string[];
+  /** Сколько раз человек финишировал здесь — контекст к лучшему времени. */
+  finishes_count: number;
+};
+
+/** Строка топа по победам: сколько раз человек финишировал здесь первым. */
+export type LocationTopWinner = {
+  place: number;
+  name: string | null;
+  handle?: string | null;
+  wins_count: number;
+  first_win_date: string | null;
+  last_win_date: string | null;
+  /** Системы, в которых зафиксированы победы. Обычно одна. */
+  platform_codes: string[];
+};
+
 export type LocationLeaders = {
   slug: string;
   name: string;
   runners: LocationLeaderRunner[];
   volunteers: LocationLeaderVolunteer[];
+  fastest_male: LocationFastestRunner[];
+  fastest_female: LocationFastestRunner[];
+  winners_overall: LocationTopWinner[];
+  winners_female: LocationTopWinner[];
 };
 
 export function getLocationLeaders(slug: string) {
   return apiFetch<LocationLeaders>(`/locations/page/${encodeURIComponent(slug)}/leaders`);
+}
+
+/** Полные зачёты локации для витрины «Топы бегунов» — без лимита. */
+export type LocationTops = {
+  slug: string;
+  name: string;
+  /** Системы, в которых площадка работала, — для фильтра. */
+  platform_codes: string[];
+  fastest_male: LocationFastestRunner[];
+  fastest_female: LocationFastestRunner[];
+  winners_overall: LocationTopWinner[];
+  winners_female: LocationTopWinner[];
+};
+
+export function getLocationTops(slug: string) {
+  return apiFetch<LocationTops>(`/locations/page/${encodeURIComponent(slug)}/tops`);
 }
 
 /** Строка «постоянного состава» локации — и для бегунов, и для волонтёров. */
@@ -3149,10 +3241,9 @@ export type LocationPersonalStats = {
   organizer_access: boolean;
   /** Любимая роль на этой локации: чаще всего выходил. */
   top_volunteer_role: { role: string; count: number } | null;
-  // Место в топе по пробежкам — только внутри своего пола
-  gender: string | null;
-  rank_by_runs_gender: number | null;
-  runners_total_gender: number | null;
+  // Место в топе по пробежкам — среди всех бегунов локации
+  rank_by_runs: number | null;
+  runners_total: number | null;
   age_groups: LocationAgeGroupStanding[];
   /** null — домашняя локация не определилась (у пользователя нет пробежек). */
   home_distance: LocationHomeDistance | null;

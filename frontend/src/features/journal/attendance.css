@@ -158,30 +158,6 @@
   width: auto;
 }
 
-/* Первые/последние колонки: подсказка центрирована над клеткой съезжала бы
-   за край скролл-контейнера — прижимаем её к своему краю клетки. */
-.ajm-table td[data-edge="start"] .analytics-chart-tooltip {
-  left: 0;
-  transform: none;
-}
-
-.ajm-table td[data-edge="start"] .analytics-chart-tooltip::after {
-  left: 14px;
-  transform: none;
-}
-
-.ajm-table td[data-edge="end"] .analytics-chart-tooltip {
-  left: auto;
-  right: 0;
-  transform: none;
-}
-
-.ajm-table td[data-edge="end"] .analytics-chart-tooltip::after {
-  left: auto;
-  right: 14px;
-  transform: none;
-}
-
 .ajm-table th,
 .ajm-table td {
   padding: 0.28rem 0.4rem;

@@ -205,6 +205,28 @@ def s95_api_sync_updated_task() -> dict[str, object]:
     return run_reported_sync("s95 API: обновлённые протоколы", _run, batch_queue_name="s95")
 
 
+@celery_app.task(name="s95_sync.reconcile_events", queue="s95")
+def s95_reconcile_events_task(only_slug: str | None = None) -> dict[str, object]:
+    """Сверить состав и нумерацию событий со списками площадок S95.
+
+    Раз в неделю: оба обычных синка ходят по `updated_at` и не видят ни удалений
+    на стороне S95, ни съехавшей от них нумерации. Протоколы не качает — только
+    36 небольших списков (см. app/sync/s95_events_reconcile).
+    """
+    from app.sync.s95_events_reconcile import reconcile_s95_events
+
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            result = reconcile_s95_events(db, only_slug=only_slug)
+            db.commit()
+            return result.as_dict()
+        finally:
+            db.close()
+
+    return run_reported_sync("s95: сверка состава событий", _run, batch_queue_name="s95")
+
+
 @celery_app.task(name="s95_sync.api_reconcile_date", queue="s95")
 def s95_api_reconcile_date_task(weeks_ago: int = 0) -> dict[str, object]:
     """Re-fetch all protocols dated (most recent Saturday - weeks_ago weeks) to pick up

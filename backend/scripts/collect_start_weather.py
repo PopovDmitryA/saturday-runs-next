@@ -35,6 +35,9 @@ def main() -> None:
     parser.add_argument("--events-only", action="store_true", help="только даты стартов, без пустых суббот")
     parser.add_argument("--pause", type=float, default=0.3, help="пауза между вызовами API, сек")
     parser.add_argument("--no-resume", action="store_true", help="перезаписать и уже собранные даты")
+    parser.add_argument(
+        "--preliminary", action="store_true", help="предварительная погода из прогнозной модели за последние дни"
+    )
     parser.add_argument("--dry-run", action="store_true", help="показать периметр и выйти")
     args = parser.parse_args()
     if not args.location and not args.all:
@@ -66,6 +69,7 @@ def main() -> None:
             events_only=args.events_only,
             resume=not args.no_resume,
             pause_seconds=args.pause,
+            preliminary=args.preliminary,
             on_location=log_location,
         )
     print(format_run_report(summary, when=datetime.now()))

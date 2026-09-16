@@ -239,6 +239,14 @@ class DashboardAnalyticsResponse(BaseModel):
     location_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
     age_group_records: LocationRecordsBlockResponse = Field(default_factory=LocationRecordsBlockResponse)
     home_distance: HomeDistanceResponse | None = None
+    # Ч9 «Луковица лояльности»: пробежки на домашней локации и их доля.
+    home_runs_count: int = 0
+    home_runs_share_pct: float | None = None
+    # Ч25 «Стабильность»: разброс последних финишей (СКО в секундах), сколько
+    # финишей в окне и лучшая серия подряд в коридоре ±30 секунд.
+    finish_spread_sec: int | None = None
+    finish_spread_runs: int = 0
+    metronome_streak: int = 0
     last_saturday: LastSaturdayResponse | None = None
 
 
@@ -331,6 +339,9 @@ class RunItemResponse(BaseModel):
     event_date: date
     event_number: int | None = None
     location_name: str
+    # Имя самого старта — только у серий («Зелёные 5 км» в «Стартах
+    # сообществ»): у площадки локация и есть ответ на вопрос «где бежал».
+    event_title: str | None = None
     location_source_name: str | None = None
     location_city: str | None = None
     location_country: str | None = None
@@ -339,6 +350,10 @@ class RunItemResponse(BaseModel):
     location_is_cancelled: bool = False
     position: int | None = None
     gender_position: int | None = None
+    # Место внутри своей возрастной категории на этом старте и размер категории —
+    # считаются так же, как на странице протокола (_age_group_places).
+    age_group_position: int | None = None
+    age_group_total: int | None = None
     # Сколько всего человек было в протоколе старта; None — протокол неполон и
     # честное число неизвестно (см. _event_participant_totals).
     participants_total: int | None = None
@@ -453,6 +468,7 @@ class VolunteeringItemResponse(BaseModel):
     event_date: date
     event_number: int | None = None
     location_name: str
+    event_title: str | None = None
     location_source_name: str | None = None
     location_city: str | None = None
     location_country: str | None = None

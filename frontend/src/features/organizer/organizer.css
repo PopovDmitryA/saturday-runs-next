@@ -75,6 +75,40 @@
   vertical-align: top;
 }
 
+/* Свод по пробежке, таблица бегунов: при горизонтальном скролле липнет имя, а
+   не «Место» (репорт Дмитрия 16.09.2026). По номеру места строку не опознать,
+   а искали в своде всегда человека. Первая колонка при этом уезжает под имя —
+   у таблицы волонтёров (тот же .org-svod-table) имя и так первое, поэтому
+   переопределение живёт на отдельном классе. */
+.table-sticky-first .org-svod-runners th:first-child,
+.table-sticky-first .org-svod-runners td:first-child {
+  position: static;
+  background: none;
+}
+
+.table-sticky-first .org-svod-runners th:nth-child(2),
+.table-sticky-first .org-svod-runners td:nth-child(2) {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 2;
+}
+
+.table-sticky-first .org-svod-runners thead th:nth-child(2) {
+  z-index: 4;
+  background: var(--bg-muted);
+}
+
+.tshadow-left .table-sticky-first .org-svod-runners th:first-child,
+.tshadow-left .table-sticky-first .org-svod-runners td:first-child {
+  box-shadow: none;
+}
+
+.tshadow-left .table-sticky-first .org-svod-runners th:nth-child(2),
+.tshadow-left .table-sticky-first .org-svod-runners td:nth-child(2) {
+  box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.18);
+}
+
 /* Хаб локации: выбор инструмента карточками — как главная «Рейтингов». */
 .org-hub-grid {
   display: grid;

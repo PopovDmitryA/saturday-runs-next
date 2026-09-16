@@ -3,21 +3,32 @@ import { DetailModal } from "../../components/DetailModal";
 import { platformCodeLabel } from "../../lib/format";
 import { getStartNumbersPlan, type StartNumberPlan } from "../../lib/api";
 
-/** «01.08» — в таблице год не нужен, все три окна внутри трёх недель. */
-function shortDate(iso: string): string {
-  const [, month, day] = iso.split("-");
-  return day && month ? `${day}.${month}` : iso;
+/** «01.08» у короткого горизонта; на полугодовом без года дата двусмысленна. */
+function shortDate(iso: string, withYear: boolean): string {
+  const [year, month, day] = iso.split("-");
+  if (!day || !month) {
+    return iso;
+  }
+  return withYear ? `${day}.${month}.${year.slice(2)}` : `${day}.${month}`;
 }
 
-// Колонки считаем в забегах локации, а не в календарных неделях: E — ближайший
-// старт локации, E+1 — следующий за ним. Даты у каждой записи свои, поэтому
-// границы окна в шапке не пишем — они только сбивали.
-function columnTitle(index: number): string {
+// Подписи колонок приходят с бэка: у «Нумератора» это забеги локации (E —
+// ближайший старт площадки, E+1 — следующий за ним), у числовых челленджей —
+// одна колонка «Где и когда» на весь горизонт. Даты у каждой записи свои,
+// поэтому границы окна в шапке не пишем — они только сбивали.
+function columnTitle(plan: StartNumberPlan | null, index: number): string {
+  const fromApi = plan?.column_titles?.[index];
+  if (fromApi) {
+    return fromApi;
+  }
   return index === 0 ? "Ближайший забег (E)" : `E+${index}`;
 }
 
 /** Короткая подпись для мобильной раскладки, где шапки таблицы нет. */
-function columnShortTitle(index: number): string {
+function columnShortTitle(plan: StartNumberPlan | null, index: number): string {
+  if ((plan?.week_count ?? 0) <= 1) {
+    return "";
+  }
   return index === 0 ? "E" : `E+${index}`;
 }
 
@@ -86,6 +97,12 @@ export function StartNumbersPlanModal({
     });
   }, [plan, onlyOpen, onlyWithStarts]);
 
+  // Полугодовой горизонт — даты с годом: «14.02» без года там двусмысленно.
+  const longHorizon = (plan?.week_count ?? 3) <= 1;
+  // У челленджей-счётчиков (юбилеи, совпадение номеров) номер идёт в зачёт
+  // сколько угодно раз — отметки «закрыто» и фильтра по ней там нет.
+  const tracksDone = plan?.tracks_done !== false;
+
   const plannedCount = useMemo(
     () =>
       (plan?.rows ?? []).filter(
@@ -102,26 +119,31 @@ export function StartNumbersPlanModal({
           выбрано фильтром на странице достижений.
         </p>
       )}
+      {plan?.intro && <p className="muted plan-intro">{plan.intro}</p>}
       <p className="muted plan-intro">
         Прогноз строится по последнему известному старту каждой локации: номер и дата сдвигаются на
-        неделю вперёд. Локация может пропустить субботу — тогда старт уедет на неделю позже.
+        неделю вперёд. Локация может пропустить субботу — тогда старт уедет на неделю позже, и чем
+        дальше дата, тем сильнее накапливается сдвиг.
       </p>
 
       {plan && (
         <p className="plan-summary">
-          Незакрытых номеров, которые можно взять в ближайшие 3 недели: <strong>{plannedCount}</strong>
+          {tracksDone ? "Незакрытых номеров" : "Номеров"}, которые можно взять в{" "}
+          {plan.horizon_label || "ближайшие 3 недели"}: <strong>{plannedCount}</strong>
         </p>
       )}
 
       <div className="plan-filters">
-        <label className="plan-filter">
-          <input
-            type="checkbox"
-            checked={onlyOpen}
-            onChange={(event) => setOnlyOpen(event.target.checked)}
-          />
-          Только незакрытые мной
-        </label>
+        {tracksDone && (
+          <label className="plan-filter">
+            <input
+              type="checkbox"
+              checked={onlyOpen}
+              onChange={(event) => setOnlyOpen(event.target.checked)}
+            />
+            Только незакрытые мной
+          </label>
+        )}
         <label className="plan-filter">
           <input
             type="checkbox"
@@ -143,7 +165,7 @@ export function StartNumbersPlanModal({
                 <th scope="col">№</th>
                 {Array.from({ length: plan.week_count }, (_, index) => (
                   <th key={index} scope="col">
-                    {columnTitle(index)}
+                    {columnTitle(plan, index)}
                   </th>
                 ))}
               </tr>
@@ -160,17 +182,23 @@ export function StartNumbersPlanModal({
                   >
                     <th scope="row" className="plan-number">
                       <span className="plan-number-value">№{row.number}</span>
-                      <span className="plan-number-state" aria-hidden="true">
-                        {row.done ? "✓" : ""}
-                      </span>
-                      <span className="visually-hidden">{row.done ? "закрыт" : "не закрыт"}</span>
+                      {tracksDone && (
+                        <>
+                          <span className="plan-number-state" aria-hidden="true">
+                            {row.done ? "✓" : ""}
+                          </span>
+                          <span className="visually-hidden">
+                            {row.done ? "закрыт" : "не закрыт"}
+                          </span>
+                        </>
+                      )}
                       {/* Виден только в мобильной раскладке, где ячейки без стартов скрыты. */}
                       {empty && <span className="plan-number-note">нет стартов</span>}
                     </th>
                     {row.weeks.map((entries, index) => (
                       <td
                         key={index}
-                        data-label={columnShortTitle(index)}
+                        data-label={columnShortTitle(plan, index)}
                         className={entries.length === 0 ? "plan-cell-empty" : undefined}
                       >
                         {entries.length === 0 ? (
@@ -181,7 +209,8 @@ export function StartNumbersPlanModal({
                               <li key={`${entry.location_slug}-${entry.platform_code}-${entry.date}`}>
                                 <a href={`/locations/${entry.location_slug}`}>{entry.location}</a>
                                 <span className="plan-entry-meta">
-                                  {shortDate(entry.date)} · {platformCodeLabel(entry.platform_code)}
+                                  {shortDate(entry.date, longHorizon)} ·{" "}
+                                  {platformCodeLabel(entry.platform_code)}
                                 </span>
                               </li>
                             ))}

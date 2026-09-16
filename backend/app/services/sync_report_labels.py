@@ -60,6 +60,14 @@ FIELD_LABELS: dict[str, str] = {
     "protocols_unchanged": "протоколов без изменений",
     "events_total": "событий проверено",
     "events_upserted": "событий обновлено",
+    "events_unchanged": "событий без изменений",
+    # Наблюдатель за выгрузкой протоколов (five_verst_protocol_watch): в сводке
+    # эти ключи печатались сырыми, потому что field_label отдаёт сам ключ, когда
+    # подписи нет (Дмитрий 13.09.2026).
+    "checked": "протоколов проверено",
+    "new_facts": "моментов выгрузки записано",
+    "unconfirmed_facts": "моментов без подтверждения",
+    "unknown_slugs": "локаций вне каталога",
     "run_results_upserted": "результатов пробежек записано",
     "volunteer_results_upserted": "результатов волонтёров записано",
     "planned_protocols": "протоколов в плане",
@@ -83,6 +91,67 @@ FIELD_LABELS: dict[str, str] = {
     "protocols_refetched": "протоколов перезагружено",
     "mismatches_found": "расхождений найдено",
     "location_external_key": "локация",
+    # --- Клубы 5 вёрст (реестр и разбор состава) ---
+    "clubs_created": "клубов создано",
+    "clubs_updated": "клубов обновлено",
+    "clubs_unchanged": "клубов без изменений",
+    "clubs_deactivated": "клубов отключено",
+    "clubs_reactivated": "клубов возвращено",
+    "clubs_planned": "клубов в плане",
+    "clubs_synced": "клубов разобрано",
+    "clubs_not_found": "клубов не найдено",
+    "catalog_links_created": "связей с каталогом создано",
+    "marked_for_detail_sync": "клубов помечено на разбор",
+    "members_seen": "участников клубов просмотрено",
+    "members_added": "участников добавлено",
+    "members_deactivated": "участников отключено",
+    "members_skipped": "участников пропущено",
+    "participants_created": "профилей заведено",
+    "slug_change_alerts": "смен адреса клуба замечено",
+    # --- Погода на стартах ---
+    "rows_written": "строк погоды записано",
+    "api_calls": "запросов к погодному сервису",
+    "locations_complete": "локаций закрыто целиком",
+    "locations_touched": "локаций с новыми строками",
+    "scope_locations": "локаций в обходе",
+    "stopped_by_limit": "остановлено по лимиту",
+    "finished": "обход завершён",
+    # --- Отрисовка превью для соцсетей ---
+    "rendered": "превью отрисовано",
+    "failed": "превью не удалось",
+    "total": "превью в очереди",
+    # --- Уборка: висяки, старые журналы и токены ---
+    "closed": "висяков закрыто",
+    "changed": "имён обновлено",
+    "groups": "групп статистики",
+    "deleted_events": "событий аналитики удалено",
+    "deleted_login_events": "записей о входах удалено",
+    "deleted_email_login_requests": "заявок на вход по почте удалено",
+    "deleted_one_time_tokens": "одноразовых токенов удалено",
+    "deleted_logs": "старых записей журнала удалено",
+    # --- Сама сводка «Автообновление» ---
+    "day": "день",
+    "platforms": "систем в сводке",
+    "runs": "запусков всего",
+    "problems": "прогонов с ошибками",
+    # --- Общее для нескольких пайплайнов ---
+    "processed": "площадок обработано",
+    "crosslinks_backfilled": "кросслинков досвязано",
+    "barcode_rows_reassigned": "пробежек перевешено на аккаунт",
+    "locations_checked": "площадок сверено",
+    "stopped_reason": "прогон свёрнут",
+    "numbers_fixed": "номеров исправлено",
+    "phantoms_deleted": "удалённых у источника событий убрано",
+    "crosslinks_released": "кросслинков снято",
+    "missing_protocols": "протоколов не хватает",
+    "kept_with_results": "расхождений с результатами",
+    "job_id": "задание",
+    "status": "статус",
+    "error": "ошибка",
+    "error_message": "текст ошибки",
+    "event_date": "дата старта",
+    "since": "начиная с",
+    "ok": "успех",
 }
 
 DETAIL_SECTION_LABELS: dict[str, str] = {
@@ -95,6 +164,13 @@ DETAIL_SECTION_LABELS: dict[str, str] = {
     "fetched_protocols": "Загружены протоколы",
     "changed_protocols": "Изменены протоколы",
     "planned_protocols": "Протоколы в плане",
+    # Списки, а не счётчики: рядом с ними живут свои int-итоги
+    # (created_clubs ↔ clubs_created), и без этой пометки в сводку уезжали два
+    # одинаковых числа с разными подписями.
+    "created_clubs": "Клубы созданы",
+    "updated_clubs": "Клубы обновлены",
+    "deactivated_clubs": "Клубы отключены",
+    "synced_clubs": "Клубы разобраны",
 }
 
 DETAIL_LIST_KEYS = frozenset(DETAIL_SECTION_LABELS.keys())

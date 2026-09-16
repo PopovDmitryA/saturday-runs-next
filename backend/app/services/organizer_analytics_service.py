@@ -32,6 +32,7 @@ from app.models import (
     RunResult,
     VolunteerResult,
 )
+from app.services.location_freshness import write_organizer_cache
 from app.services.location_page_service import (
     LocationIdentity,
     _location_event_ids,
@@ -152,7 +153,7 @@ def build_team_load(
             return cached
     payload = _compute_team_load(db, identity, months=months)
     if use_cache:
-        _write_json_cache(cache_key, payload, ANALYTICS_CACHE_TTL_SECONDS)
+        write_organizer_cache(identity, cache_key, payload, ANALYTICS_CACHE_TTL_SECONDS)
     return payload
 
 
@@ -530,7 +531,7 @@ def build_attendance(
             return cached
     payload = _compute_attendance(db, identity)
     if use_cache:
-        _write_json_cache(cache_key, payload, ANALYTICS_CACHE_TTL_SECONDS)
+        write_organizer_cache(identity, cache_key, payload, ANALYTICS_CACHE_TTL_SECONDS)
     return payload
 
 
@@ -673,7 +674,7 @@ def build_audience(
             return cached
     payload = _compute_audience(db, identity, months=months)
     if use_cache:
-        _write_json_cache(cache_key, payload, ANALYTICS_CACHE_TTL_SECONDS)
+        write_organizer_cache(identity, cache_key, payload, ANALYTICS_CACHE_TTL_SECONDS)
     return payload
 
 
@@ -1061,7 +1062,7 @@ def build_benchmark(
             return cached
     payload = _compute_benchmark(db, identity, months=months, scope=scope, peer=peer)
     if use_cache:
-        _write_json_cache(cache_key, payload, ANALYTICS_CACHE_TTL_SECONDS)
+        write_organizer_cache(identity, cache_key, payload, ANALYTICS_CACHE_TTL_SECONDS)
     return payload
 
 

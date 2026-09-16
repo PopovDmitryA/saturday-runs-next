@@ -1739,65 +1739,6 @@ a.last-saturday-location:hover {
   min-height: 0;
 }
 
-/* display: none, а не только opacity: 0 — скрытый тултип у крайнего столбца
-   всё равно занимает место и тянет вправо scrollWidth страницы: на телефоне
-   от этого весь ЛК ездил вбок. Тот же приём был точечно применён в календаре
-   суббот, теперь он общий для графиков. */
-.analytics-chart-tooltip {
-  position: absolute;
-  bottom: calc(100% + 0.4rem);
-  left: 50%;
-  transform: translateX(-50%);
-  display: none;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.4rem 0.55rem;
-  border-radius: 6px;
-  background: var(--tooltip-bg);
-  color: #f8fafc;
-  font-size: 0.75rem;
-  line-height: 1.3;
-  white-space: nowrap;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-  z-index: 5;
-}
-
-.analytics-chart-tooltip::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-top-color: var(--tooltip-bg);
-}
-
-.analytics-chart-tooltip-title {
-  font-weight: 600;
-}
-
-.analytics-chart-tooltip-line {
-  color: var(--neutral-soft);
-}
-
-/* Только там, где мышь есть. На телефоне :hover прилипает после тапа, и рядом
-   с портальной подсказкой тач-режима (TapTooltipBubble) открывалась вторая,
-   та же самая — вжатая в свою клетку и обрезанная краем экрана. */
-@media (hover: hover) {
-  .analytics-chart-tooltip-wrap:hover .analytics-chart-tooltip {
-    display: flex;
-    opacity: 1;
-  }
-}
-
-.analytics-chart-tooltip-wrap:focus-within .analytics-chart-tooltip {
-  display: flex;
-  opacity: 1;
-}
-
 .analytics-chart-bar-stack {
   width: 100%;
   max-width: 28px;
@@ -2110,30 +2051,6 @@ a.last-saturday-location:hover {
 
 .activity-cal-cell-wrap .analytics-chart-tooltip-wrap {
   height: 100%;
-}
-
-/* У крайних колонок центрированный тултип выходит за границы скролл-контейнера
-   и обрезается — прижимаем его к ближнему краю ячейки вместе со стрелкой. */
-.activity-cal-cell-wrap:nth-child(-n + 8) .analytics-chart-tooltip {
-  left: 0;
-  transform: none;
-}
-
-.activity-cal-cell-wrap:nth-child(-n + 8) .analytics-chart-tooltip::after {
-  left: 0.9rem;
-  transform: none;
-}
-
-.activity-cal-cell-wrap:nth-child(n + 45) .analytics-chart-tooltip {
-  left: auto;
-  right: 0;
-  transform: none;
-}
-
-.activity-cal-cell-wrap:nth-child(n + 45) .analytics-chart-tooltip::after {
-  left: auto;
-  right: 0.9rem;
-  transform: none;
 }
 
 .activity-cal-cell {
@@ -2534,6 +2451,11 @@ input[type="search"]:focus,
 
 .runs-table .col-gender {
   width: 8.5rem;
+}
+
+/* «Место (группа)» — подпись длиннее «Места (пол)», режется без своей ширины. */
+.runs-table .col-age-group {
+  width: 10.5rem;
 }
 
 /* «Участников» и «Топ %» — под полные подписи с иконкой подсказки. */
@@ -3542,12 +3464,15 @@ button.badge-platform-btn:hover {
   color: var(--text);
 }
 
+/* Код читают вслух и вбивают руками, когда сканер не взял QR, — поэтому
+   он крупный и моноширинный, а не подписью под именем. */
 .qr-modal-code {
   margin: 0 0 0.9rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  color: var(--text-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
 }
 
 .qr-modal-image-wrap {
@@ -8836,7 +8761,6 @@ a.admin-system-chip:hover {
 
 /* Приглушённый текст тултипов лежит на тёмной подложке в обеих темах */
 :root[data-theme="dark"] .stat-hint-tooltip-note,
-:root[data-theme="dark"] .analytics-chart-tooltip-line,
 :root[data-theme="dark"] .profile-sync-tooltip-hint {
   color: var(--text-2);
 }
@@ -9297,6 +9221,13 @@ a.admin-system-chip:hover {
   font-size: 0.85rem;
 }
 
+/* Пояснение над деталями челленджа: «твой размах 24:xx — 38:xx», «дом — Россия». */
+.challenge-detail-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
 .challenge-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9312,6 +9243,32 @@ a.admin-system-chip:hover {
 .challenge-card {
   gap: 0.6rem;
   min-width: 0;
+  /* Свободную высоту ряда забирает ШАПКА (иконка + название + описание), а не
+     низ карточки: описания у челленджей разной длины, и если слак уходил бы
+     вниз, вкладки сложности и ленты прогресса стояли бы на разной высоте —
+     ровно то, что бросалось в глаза (правка Дмитрия 14.09.2026). Первый ряд
+     1fr, остальные — неявные auto. В колонке авто-высоты (телефон) 1fr
+     считается по содержимому, так что карточка не сжимается. */
+  grid-template-rows: 1fr;
+}
+
+/* Карточки одного ряда — одной высоты. Обёртку-якорь сетка растягивает сама
+   (align-items: stretch по умолчанию), оставалось передать эту высоту
+   карточке внутри неё. */
+.challenge-anchor {
+  display: flex;
+  flex-direction: column;
+}
+
+.challenge-anchor > .challenge-card {
+  flex: 1;
+}
+
+/* Раскрытые «Детали» делают карточку выше в разы: ряд подтянулся бы под неё, и
+   у соседки шапка раздулась бы пустотой на пол-экрана. Пока в группе есть
+   раскрытая карточка, выравнивание выключено — высоты снова по содержимому. */
+.challenge-grid:has(.challenge-card-expanded) > .challenge-anchor > .challenge-card {
+  flex: none;
 }
 
 /* Обёртка-цель ссылок из витрины медалей (#challenge-<code>). Отступ обязан
@@ -9963,28 +9920,6 @@ a.admin-system-chip:hover {
   flex: none;
 }
 
-.challenge-cells .analytics-chart-tooltip-wrap:first-child .analytics-chart-tooltip {
-  left: 0;
-  transform: none;
-}
-
-.challenge-cells .analytics-chart-tooltip-wrap:first-child .analytics-chart-tooltip::after {
-  left: 0.9rem;
-  transform: none;
-}
-
-.challenge-cells .analytics-chart-tooltip-wrap:last-child .analytics-chart-tooltip {
-  left: auto;
-  right: 0;
-  transform: none;
-}
-
-.challenge-cells .analytics-chart-tooltip-wrap:last-child .analytics-chart-tooltip::after {
-  left: auto;
-  right: 0.9rem;
-  transform: none;
-}
-
 .challenge-cell {
   min-width: 1.6rem;
   height: 1.6rem;
@@ -10030,6 +9965,41 @@ a.admin-system-chip:hover {
   background: var(--tint-orange-bg);
   border-color: var(--tint-orange-text);
   color: var(--tint-orange-text);
+}
+
+/* Две цепочки «Индекса Уилсона» на одной ленте номеров: заливка клетки уже
+   занята системой, поэтому принадлежность цепочке показываем полосой снизу.
+   Цепочка с начала и самая длинная могут совпадать — тогда клетка получает
+   класс classic, и это правильно: подпись у неё та же. */
+.challenge-cell-accent-classic {
+  box-shadow: inset 0 -3px 0 var(--link-strong);
+}
+
+.challenge-cell-accent-floating {
+  box-shadow: inset 0 -3px 0 var(--tint-orange-text);
+}
+
+.challenge-accent-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.challenge-accent-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.challenge-accent-swatch {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 3px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-soft);
 }
 
 /* Клетка, закрытая последней пробежкой (той самой, за которую на карточке стоит
@@ -10220,6 +10190,13 @@ a.admin-system-chip:hover {
 
 .challenge-item-count {
   color: var(--text-muted);
+  flex: none;
+}
+
+/* Плашка системы в строке совпадения: номер забега у каждой системы свой, и на
+   мультисистемной площадке без неё «№30» непонятно чей. Не растягивается и не
+   сжимает название локации. */
+.challenge-item .badge-platform {
   flex: none;
 }
 
@@ -11380,6 +11357,35 @@ a.admin-system-chip:hover {
   font-size: 0.85rem;
 }
 
+/* Серии стартов — отдельный блок под каталогом: «Старты сообществ», «С95 и
+   друзья». Формат, а не место, поэтому и стоят особняком, а не в алфавите
+   площадок. */
+.loc-series {
+  margin-top: 2rem;
+}
+
+.loc-series-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+}
+
+.loc-series-note {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  max-width: 46rem;
+}
+
+.loc-series-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border, #cbd5e1);
+  font-size: 0.75rem;
+  color: #475569;
+  white-space: nowrap;
+}
+
 .loc-index-table .col-city {
   width: 10rem;
 }
@@ -11749,6 +11755,20 @@ a.admin-system-chip:hover {
   width: 6.5rem;
 }
 
+/* Имя старта под названием локации в «Моих пробежках» и «Волонтёрстве»:
+   бывает только у серий, где локация одна на все старты. */
+.activity-event-title {
+  display: block;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+/* Журнал серии: в первой колонке имя старта («День физкультурника. Тула»),
+   а не номер — под номер она была бы обрезана. */
+.loc-events-table .col-series-start {
+  width: 15rem;
+}
+
 /* Ширины под полные подписи колонок: «ФИНИШЁРОВ», «ВОЛОНТЁРОВ», «НОВИЧКОВ»
    (col-compact), «ЛУЧШЕЕ ВРЕМЯ (М)», «СРЕДНЕЕ ВРЕМЯ», «ЛИЧНЫХ РЕКОРДОВ»
    (col-time и col-compact-wide). Всё, что не влезло, — в скролл обёртки. */
@@ -11817,6 +11837,38 @@ a.admin-system-chip:hover {
 
 .loc-leaders-table .loc-leaders-col-time {
   width: 5.5rem;
+}
+
+/* Дата и система в топах по времени и победам: колонки узкие, чтобы имя не
+   переносилось — на странице локации таблицы стоят парой в две колонки. */
+.loc-leaders-table .loc-leaders-col-date {
+  width: 5.75rem;
+}
+
+.loc-leaders-table .loc-leaders-col-system {
+  width: 5.25rem;
+}
+
+/* Число побед — две-три цифры, колонке хватает узкой: остаток отдаём имени,
+   иначе «Александр МЕДВЕДЕВ» переносится на две строки. */
+.loc-leaders-table .loc-leaders-col-count {
+  width: 4.25rem;
+}
+
+/* Систем у строки может быть две (профиль сайта со связанными аккаунтами) —
+   бейджи переносятся, а не растягивают колонку. */
+.loc-top-systems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+/* Подпись карточки на телефоне: бейдж системы и дата в одну строку. */
+.loc-top-card-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
 }
 
 .loc-leaders-rank {

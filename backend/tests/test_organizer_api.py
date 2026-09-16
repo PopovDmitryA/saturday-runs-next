@@ -160,6 +160,7 @@ def _run(
     *,
     finish_time_sec: int | None = 1200,
     position: int | None = None,
+    status: str | None = "finished",
 ) -> None:
     db_session.add(
         RunResult(
@@ -169,7 +170,7 @@ def _run(
             position=position,
             finish_time_sec=finish_time_sec,
             finish_time_display="00:20:00" if finish_time_sec else None,
-            status="finished",
+            status=status,
         )
     )
 
@@ -1347,6 +1348,123 @@ def test_health_endpoint_smoke(
     assert by_key["protocol"]["advice"].startswith("На что влияет")
     assert by_key["attendance"]["advice"] is None
     assert by_key["protocol_quality"]["advice"] is None
+
+
+def test_health_unknown_share_sees_s95_status(
+    client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """«Полнота протокола» считает безымянных s95, а не только 5 вёрст.
+
+    Каждая система метит безымянного финишёра по-своему: 5 вёрст статусом
+    «unknown», s95 — «unknown_runner», RunPark вообще никак (остаётся имя
+    «Неизвестный бегун»). Счётчик смотрел только на «unknown» и уверял
+    организаторов s95 и RunPark, что неизвестных у них ноль (Дмитрий
+    13.09.2026).
+    """
+    suffix = str(uuid4().int % 1_000_000)
+    platform = _platform(db_session, "s95", "S95")
+    location = _location(db_session, platform, f"org-unk-{suffix}")
+    event = _event(db_session, platform, location, date.today() - timedelta(days=7), 1)
+
+    # status=None — как в реальных данных s95 и parkrun у опознанных бегунов.
+    for index in range(6):
+        known = _participant(db_session, platform, f"{suffix}-known-{index}", f"Бегун {index}")
+        _run(db_session, event, known, status=None)
+    # Трое безымянных: один статусом s95, один именем (так метит RunPark),
+    # один — синтетическим участником без строки в participants.
+    by_status = _participant(db_session, platform, f"{suffix}-u1", "Кто-то Был")
+    _run(db_session, event, by_status, status="unknown_runner")
+    by_name = _participant(db_session, platform, f"{suffix}-u2", "НЕИЗВЕСТНЫЙ")
+    _run(db_session, event, by_name, status=None)
+    db_session.add(
+        RunResult(
+            event_id=event.id,
+            participant_id=None,
+            external_result_key=f"run-{uuid4()}",
+            finish_time_sec=1300,
+            status=None,
+        )
+    )
+
+    organizer = _participant(db_session, platform, f"{suffix}-org", "Организатор Неизвестных")
+    _volunteer(db_session, event, organizer, "Организатор")
+    user = User(telegram_id=int(uuid4().int % 10_000_000_000), telegram_username=f"u{suffix}")
+    db_session.add(user)
+    db_session.flush()
+    _link(db_session, user, platform, organizer)
+    db_session.commit()
+    fake_redis.delete(LOCATIONS_INDEX_CACHE_KEY)
+    _login(client, user.telegram_id or 0, "unknown-organizer")
+
+    response = client.get(f"/api/organizer/{location.external_key}/health")
+    assert response.status_code == 200
+    by_key = {indicator["key"]: indicator for indicator in response.json()["indicators"]}
+    quality = by_key["protocol_quality"]
+    # 3 из 9 — треть, и это красная зона, а не зелёный ноль.
+    assert quality["value_display"] == "33.3% неизвестных финишёров"
+    assert quality["level"] == "red"
+
+
+def test_newcomers_skip_unknown_runners(
+    client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Безымянная строка протокола — не дебютант и не потерянный новичок.
+
+    У каждой такой строки свой синтетический участник («unknown:slug:дата:место»
+    у s95), поэтому она навсегда остаётся новичком с одной пробежкой: дебюты
+    раздувались, удержание падало. Великий Новгород показывал 694 новичка, из
+    которых 604 были безымянными строками (Дмитрий 13.09.2026).
+    """
+    from datetime import date as date_type
+
+    suffix = str(uuid4().int % 1_000_000)
+    platform = _platform(db_session, "s95", "S95")
+    location = _location(db_session, platform, f"org-unknown-nc-{suffix}")
+    today = date_type.today()
+    e1 = _event(db_session, platform, location, today - timedelta(days=21), 1)
+    e2 = _event(db_session, platform, location, today - timedelta(days=14), 2)
+    e3 = _event(db_session, platform, location, today - timedelta(days=7), 3)
+
+    # status=None — так s95 и parkrun метят обычного финишёра. Под отрицанием
+    # «NULL IN (...)» давал NULL, и эти строки выпадали целиком: страница
+    # показывала «Новичков: 0» на локации со ста с лишним дебютантами.
+    returned = _participant(db_session, platform, f"{suffix}-ret", "Вернувшийся Новичок")
+    _run(db_session, e1, returned, status=None)
+    _run(db_session, e2, returned, status=None)
+    lost = _participant(db_session, platform, f"{suffix}-lost", "Потерянный Новичок")
+    _run(db_session, e1, lost, status=None)
+
+    # Безымянные: по строке на старт, каждая со своим участником — ровно так их
+    # раскладывает импорт s95.
+    for index, event in enumerate((e1, e2)):
+        ghost = _participant(
+            db_session, platform, f"{suffix}-ghost-{index}", "НЕИЗВЕСТНЫЙ"
+        )
+        _run(db_session, event, ghost, status="unknown_runner")
+
+    organizer = _participant(db_session, platform, f"{suffix}-org", "Организатор Дебютов")
+    _volunteer(db_session, e3, organizer, "Организатор")
+    user = User(telegram_id=int(uuid4().int % 10_000_000_000), telegram_username=f"u{suffix}")
+    db_session.add(user)
+    db_session.flush()
+    _link(db_session, user, platform, organizer)
+    db_session.commit()
+    fake_redis.delete(LOCATIONS_INDEX_CACHE_KEY)
+    _login(client, user.telegram_id or 0, "newcomer-organizer")
+
+    response = client.get(
+        f"/api/organizer/{location.external_key}/newcomers", params={"days": 90}
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert {item["name"] for item in payload["items"]} == {
+        "Вернувшийся Новичок",
+        "Потерянный Новичок",
+    }
+    assert payload["total"] == 2
+    # Без отсечки безымянных знаменатель был бы 4, а удержание — 25% вместо 50%.
+    assert payload["eligible_total"] == 2
+    assert payload["retention_pct"] == 50
 
 
 def test_protocol_watch_records_first_seen_once(

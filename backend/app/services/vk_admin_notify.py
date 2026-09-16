@@ -74,6 +74,31 @@ def _fmt_number(value: float) -> str:
 # полный разбор есть в админке.
 SUMMARY_METRIC_LIMIT = 5
 
+# Сколько РАЗНЫХ поломок показывать. Одна залипшая вещь повторяется в каждом
+# прогоне: Плотинка №225 дала 13.09.2026 пять одинаковых строк подряд и заняла
+# собой весь раздел. Схлопываем одинаковые в «× N» и режем список, чтобы вторая,
+# настоящая ошибка дня доезжала до сводки, а не упиралась в лимит длины.
+SUMMARY_PROBLEM_LIMIT = 5
+
+
+def _problem_lines(problems: list[dict[str, Any]]) -> list[str]:
+    """Строки раздела «Что болит»: одинаковые схлопнуты, порядок сохранён."""
+    counts: dict[str, int] = {}
+    for run in problems:
+        errors = run.get("errors") or []
+        first_error = errors[0] if errors else "без текста ошибки"
+        key = f"{run['pipeline_label']}: {first_error}"
+        counts[key] = counts.get(key, 0) + 1
+
+    lines = [
+        text if repeats == 1 else f"{text} (× {repeats})"
+        for text, repeats in list(counts.items())[:SUMMARY_PROBLEM_LIMIT]
+    ]
+    hidden = len(counts) - len(lines)
+    if hidden > 0:
+        lines.append(f"…и ещё {hidden} {_plural(hidden, 'поломка', 'поломки', 'поломок')}")
+    return lines
+
 
 def format_daily_summary(
     day_label: str,
@@ -112,9 +137,8 @@ def format_daily_summary(
     if problems:
         lines.append("")
         lines.append("Что болит:")
-        for run in problems:
-            first_error = run["errors"][0] if run.get("errors") else "без текста ошибки"
-            lines.append(f"• {run['pipeline_label']}: {first_error}")
+        for line in _problem_lines(problems):
+            lines.append(f"• {line}")
 
     if admin_url:
         lines.append("")

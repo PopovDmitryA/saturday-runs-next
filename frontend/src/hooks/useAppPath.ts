@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { onEntryChange } from "../lib/historyEntry";
 import { scrollForNavigation } from "../lib/scrollMemory";
 
 export function normalizeAppPath(pathname = window.location.pathname): string {
@@ -12,6 +13,16 @@ export function useAppPath(): string {
 
   useEffect(() => {
     const sync = () => setPath(normalizeAppPath());
+
+    // Адрес меняют не только ссылки: часть страниц зовёт history.pushState
+    // напрямую — вкладки чужого профиля, страницы «Обновлений». Такой вызов не
+    // порождает popstate, и раньше роутер о нём не узнавал: путь оставался
+    // прежним, а ключ записи истории уже сменился. На следующем же рендере
+    // App перерисовывал маршрут по СТАРОМУ пути и перемонтировал страницу —
+    // вкладка «Пробежки» на чужом профиле открывалась и тут же схлопывалась
+    // обратно в «Главную» (репорт Дмитрия 14.09.2026). Подписка на смену
+    // записи истории держит роутер и ключ в одном такте.
+    const offEntryChange = onEntryChange(sync);
 
     window.addEventListener("popstate", sync);
     window.addEventListener("pageshow", (event) => {
@@ -68,6 +79,7 @@ export function useAppPath(): string {
 
     document.addEventListener("click", onClick);
     return () => {
+      offEntryChange();
       window.removeEventListener("popstate", sync);
       document.removeEventListener("click", onClick);
     };

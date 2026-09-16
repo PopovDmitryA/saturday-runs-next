@@ -20,6 +20,7 @@ from app.services.location_catalog_cache import (
     flush_location_page_caches,
 )
 from app.services.location_geo_service import apply_reverse_geocode_to_location
+from app.services.series_locations import series_key_for_platform
 from app.services.sync_report_labels import location_detail_label
 from app.sync import upsert
 from app.sync.iteration_commit import commit_step, rollback_step
@@ -165,6 +166,7 @@ def _process_entry(
         row, _ = upsert.upsert_location(db, platform, canonical)
         if entry.latitude is not None:
             row.is_official_map = True
+        row.is_series = series_key_for_platform(PLATFORM_CODE, entry.slug)
         _apply_status(row, status, entry, result)
         if apply_reverse_geocode_to_location(row):
             result.regions_backfilled += 1
@@ -173,6 +175,15 @@ def _process_entry(
         return
 
     changed = False
+
+    # «С95 и друзья» и «S95 & Friends» — разъездные серии, а не площадки: у них
+    # нет ни координат, ни постоянной трассы. Признак ставим по закрытому
+    # списку слагов, а не по «нет координат»: без координат бывает и обычная
+    # площадка, которую реестр ещё не описал.
+    is_series = series_key_for_platform(PLATFORM_CODE, entry.slug)
+    if row.is_series != is_series:
+        row.is_series = is_series
+        changed = True
 
     # Update name / source_url if changed
     source_url = f"{entry.domain}/events/{entry.slug}"

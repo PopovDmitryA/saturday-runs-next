@@ -1904,6 +1904,116 @@ def test_list_user_runs_reports_event_participants_total(
     assert by_date["2098-05-22"]["participants_total"] is None
 
 
+def test_list_user_runs_reports_age_group_place(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Место в своей возрастной категории на этом старте.
+
+    Правило то же, что на странице протокола: партиционируем по сырой категории
+    («М35-39»), место считаем только у строк со временем, в «всего» идут все
+    строки категории — включая тех, кто не финишировал.
+    """
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    suffix = uuid4().hex[:8]
+    location = Location(
+        platform_id=platform.id,
+        external_key=f"age-group-place-{suffix}",
+        name="Age Group Park",
+        city="Москва",
+        country="Россия",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=f"age-group-{suffix}",
+        display_name="Group Tester",
+        profile_url=f"https://5verst.ru/userstats/{suffix}/",
+    )
+    rival = Participant(
+        platform_id=platform.id,
+        external_user_id=f"age-group-rival-{suffix}",
+        display_name="Rival",
+        profile_url=f"https://5verst.ru/userstats/rival-{suffix}/",
+    )
+    slower = Participant(
+        platform_id=platform.id,
+        external_user_id=f"age-group-slower-{suffix}",
+        display_name="Slower",
+        profile_url=f"https://5verst.ru/userstats/slower-{suffix}/",
+    )
+    dnf = Participant(
+        platform_id=platform.id,
+        external_user_id=f"age-group-dnf-{suffix}",
+        display_name="No Time",
+        profile_url=f"https://5verst.ru/userstats/dnf-{suffix}/",
+    )
+    other_group = Participant(
+        platform_id=platform.id,
+        external_user_id=f"age-group-other-{suffix}",
+        display_name="Other Group",
+        profile_url=f"https://5verst.ru/userstats/other-{suffix}/",
+    )
+    db_session.add_all([participant, rival, slower, dnf, other_group])
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=platform.id,
+            participant_id=participant.id,
+            external_user_id=participant.external_user_id,
+            external_url=participant.profile_url,
+        )
+    )
+
+    event = Event(
+        platform_id=platform.id,
+        location_id=location.id,
+        external_event_key=f"age-group-place-{suffix}",
+        event_date=date(2098, 6, 7),
+        event_number=910_001,
+        title="Age Group #1",
+    )
+    db_session.add(event)
+    db_session.flush()
+
+    def _result(who: Participant, position: int | None, time_sec: int | None, category: str, tag: str) -> RunResult:
+        return RunResult(
+            event_id=event.id,
+            participant_id=who.id,
+            external_result_key=f"age-group-{suffix}-{tag}",
+            position=position,
+            finish_time_sec=time_sec,
+            finish_time_display="00:20:00" if time_sec else None,
+            age_category=category,
+            status="finished" if time_sec else "unknown",
+        )
+
+    db_session.add_all(
+        [
+            _result(rival, 1, 19 * 60, "М35-39", "r1"),
+            _result(participant, 2, 20 * 60, "М35-39", "r2"),
+            _result(slower, 3, 21 * 60, "М35-39", "r3"),
+            # Без времени: места не получает, но в размере категории остаётся.
+            _result(dnf, None, None, "М35-39", "r4"),
+            # Соседняя категория на место в своей не влияет.
+            _result(other_group, 4, 18 * 60, "М40-44", "r5"),
+        ]
+    )
+    db_session.commit()
+
+    response = authenticated_client.get("/api/runs", params={"limit": 200})
+    assert response.status_code == 200
+    row = next(item for item in response.json() if item["event_date"] == "2098-06-07")
+    assert row["age_group_position"] == 2
+    assert row["age_group_total"] == 4
+
+
 @pytest.mark.parametrize(
     ("catalogued", "expected"),
     [(True, 4), (False, None)],

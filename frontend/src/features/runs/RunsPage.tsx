@@ -67,11 +67,24 @@ const RUNS_COLUMNS: AdaptiveColumn[] = [
   { key: "platform", width: 112 },
   { key: "participants", width: 132 },
   { key: "gender_position", width: 136 },
+  // «Место (группа)» — соседняя по смыслу колонка: тот же старт, другой зачёт.
+  { key: "age_group_position", width: 168 },
   // «Топ %» — после «Участников»: процент без размера старта не читается, а
   // набор колонок всегда префикс этого списка, так что порядок это и гарантирует.
   { key: "top_percent", width: 112 },
   { key: "pace", width: 120 },
 ];
+
+/** Подсказка к месту в группе: сама категория в таблице колонки не имеет. */
+function ageGroupTitle(run: RunItem): string | undefined {
+  if (run.age_group_position == null) {
+    return run.age_category ? `${run.age_category} — места нет: в протоколе нет времени` : undefined;
+  }
+  const group = run.age_category ?? "возрастная группа";
+  return run.age_group_total != null
+    ? `${group} — ${run.age_group_position}-е место из ${run.age_group_total}`
+    : `${group} — ${run.age_group_position}-е место`;
+}
 
 function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const { listRuns, mode, cacheScope } = useAppDataSource();
@@ -332,6 +345,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                 {show("participants") && <col className="col-participants" />}
                 {show("top_percent") && <col className="col-top-percent" />}
                 {show("gender_position") && <col className="col-gender" />}
+                {show("age_group_position") && <col className="col-age-group" />}
                 <col className="col-time" />
                 {show("pace") && <col className="col-pace" />}
                 {show("rating") && showRating && <col className="col-rating" />}
@@ -429,6 +443,13 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       hint="Место среди своего пола"
                     />
                   )}
+                  {show("age_group_position") && (
+                    <ColumnHeader
+                      label="Место (группа)"
+                      filterable={false}
+                      hint="Место в своей возрастной группе на этом старте — как в протоколе"
+                    />
+                  )}
                   <ColumnHeader
                     label="Время"
                     filterable={false}
@@ -503,6 +524,10 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       <td className="td-location">
                         <LocationPrLocationName isLocationPr={run.is_location_pr}>
                           <LocationNameLink name={run.location_name} slug={run.location_slug} />
+{/* У серии («Старты сообществ») локация одна на все старты, поэтому
+    имя самого старта подписываем второй строкой — иначе строка не
+    отвечает, что именно человек бежал. */}
+{run.event_title && <span className="activity-event-title">{run.event_title}</span>}
                         </LocationPrLocationName>
                       </td>
                       {show("position") && <td className="td-compact">{run.position ?? "—"}</td>}
@@ -521,6 +546,11 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       )}
                       {show("gender_position") && (
                         <td className="td-compact">{run.gender_position ?? "—"}</td>
+                      )}
+                      {show("age_group_position") && (
+                        <td className="td-compact" title={ageGroupTitle(run)}>
+                          {run.age_group_position ?? "—"}
+                        </td>
                       )}
                       <td className="td-time">
                         <GlobalPrFinishTime isGlobalPr={run.is_global_pr}>

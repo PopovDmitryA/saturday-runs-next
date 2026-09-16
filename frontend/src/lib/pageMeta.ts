@@ -104,7 +104,7 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
   },
   "/ratings/volunteer-roles": {
     title: "Рейтинг по волонтёрским ролям — run5k.run",
-    description: "Сколько разных волонтёрских ролей освоили участники субботних пробежек.",
+    description: "В скольких разных волонтёрских ролях побывали участники субботних пробежек.",
     indexable: true,
   },
   "/ratings/locations": {
@@ -231,6 +231,7 @@ const PROFILE_RE = /^\/users\/([^/]+)(?:\/([^/]+))?$/;
 const UNIFIED_PROTOCOL_RE = /^\/protocol\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_EVENTS_RE = /^\/locations\/([^/]+)\/events$/;
 const LOCATION_PARTICIPANTS_RE = /^\/locations\/([^/]+)\/participants$/;
+const LOCATION_TOPS_RE = /^\/locations\/([^/]+)\/tops$/;
 const LOCATION_PROTOCOL_RE = /^\/locations\/([^/]+)\/protocol\/([^/]+)\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_RE = /^\/locations\/([^/]+)$/;
 const SWEEP_HQ_RE = /^\/hq\/.+$/;
@@ -244,7 +245,8 @@ export function isLocationEntityPath(rawPath: string): boolean {
   return (
     LOCATION_RE.test(path) ||
     LOCATION_EVENTS_RE.test(path) ||
-    LOCATION_PARTICIPANTS_RE.test(path)
+    LOCATION_PARTICIPANTS_RE.test(path) ||
+    LOCATION_TOPS_RE.test(path)
   );
 }
 
@@ -337,6 +339,14 @@ export function resolvePageMeta(rawPath: string): PageMeta {
         "всех локациях, первый и последний старт.",
     };
   }
+  if (LOCATION_TOPS_RE.test(path)) {
+    return {
+      title: "Топы бегунов локации — run5k.run",
+      description:
+        "Кто на площадке бежал быстрее всех и кто чаще всех выигрывал: лучшее время " +
+        "каждого участника и число побед в абсолюте и среди женщин.",
+    };
+  }
   if (LOCATION_RE.test(path)) {
     return {
       title: "Локация — run5k.run",
@@ -406,6 +416,8 @@ type LocationMetaLastEvent = {
 type LocationMetaSource = {
   name: string;
   city?: string | null;
+  /** Серия стартов, а не площадка: «Старты сообществ», «С95 и друзья». */
+  is_series?: boolean;
   platforms?: LocationMetaPlatform[] | null;
   stats?: {
     events_count?: number;
@@ -501,7 +513,7 @@ function lastEventPhrase(stats: LocationMetaSource["stats"]): string | null {
  */
 export function locationPageMeta(
   payload: LocationMetaSource,
-  options: { eventsLog?: boolean; participants?: boolean } = {},
+  options: { eventsLog?: boolean; participants?: boolean; tops?: boolean } = {},
 ): PageMeta {
   const name = payload.name || "Локация";
   const city = payload.city ?? null;
@@ -526,6 +538,19 @@ export function locationPageMeta(
   const numbers = parts.join(", ");
 
   // Описание держим в 160 символах: длиннее поисковик обрежет многоточием.
+  if (options.tops) {
+    // indexable не выставляем сознательно — как и у постоянного состава:
+    // отдельной выдачи эта витрина не просит, робот идёт на саму локацию.
+    return {
+      title: fitTitle(`${where}: топы бегунов`),
+      description: describe(
+        `Кто быстрее всех бежал локацию «${name}» и кто чаще всех выигрывал`,
+        numbers,
+        ". Лучшее время каждого участника и число побед в абсолюте и среди женщин.",
+        ". Лучшее время каждого и число побед.",
+      ),
+    };
+  }
   if (options.participants) {
     // indexable не выставляем сознательно — см. resolvePageMeta.
     return {
@@ -711,17 +736,25 @@ export function locationLeadSentences(payload: LocationMetaSource): string[] {
   const stats = payload.stats ?? {};
 
   const where = city ? `«${name}» (${city})` : `«${name}»`;
+  // Серия — не площадка: старты проходят нерегулярно и каждый раз в новом
+  // месте. Зеркало серверного текста, менять оба разом.
+  const isSeries = payload.is_series === true;
   const sentences = [
-    platform
-      ? `${where} — площадка субботних пробежек ${platform}.`
-      : `${where} — площадка субботних пробежек.`,
+    isSeries
+      ? platform
+        ? `${where} — серия стартов ${platform}, а не площадка.`
+        : `${where} — серия стартов, а не площадка.`
+      : platform
+        ? `${where} — площадка субботних пробежек ${platform}.`
+        : `${where} — площадка субботних пробежек.`,
   ];
 
   const events = stats.events_count ?? 0;
   const finishers = stats.finishers_total ?? 0;
   if (events && finishers) {
     sentences.push(
-      `Здесь прошло ${num(events)} ${plural(events, "старт", "старта", "стартов")}, ` +
+      `${isSeries ? "В серии прошло" : "Здесь прошло"} ${num(events)} ` +
+        `${plural(events, "старт", "старта", "стартов")}, ` +
         `финишировали ${num(finishers)} ${plural(finishers, "участник", "участника", "участников")}.`,
     );
   }

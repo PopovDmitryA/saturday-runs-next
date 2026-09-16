@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.activity_date import has_real_activity_date
 from app.models import Event, Location, Platform, PlatformLink, RunResult, VolunteerResult
-from app.services.community_events import is_community_event
 from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.series_locations import is_series
 
 
 @dataclass(frozen=True)
@@ -137,7 +137,7 @@ def count_unique_locations_from_rows(
     for location, platform_code in rows:
         # Разовый старт сообщества — не посещённая площадка: финиш с него в
         # личный счёт идёт, а в «сколько локаций объехал» — нет.
-        if is_community_event(location):
+        if is_series(location):
             continue
         key = catalog_index.canonical_identity_key(location, platform_code)
         all_keys.add(key)

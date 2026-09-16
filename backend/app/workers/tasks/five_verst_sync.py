@@ -26,6 +26,7 @@ from app.sync.five_verst_reconcile import ReconcileProtocolsOptions, reconcile_s
 from app.sync.five_verst_week_sweep import WeekSweepOptions, sweep_week_protocols, week_window
 from app.sync.global_sync import LocationSyncOptions, sync_location, sync_location_summaries_only
 from app.workers.celery_app import celery_app
+from app.workers.queues import FIVE_VERST_BATCH_QUEUE, FIVE_VERST_FRESH_QUEUE
 from app.workers.tasks.sync_task_reporting import run_reported_sync
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ def _latest_update_limit(settings) -> int | None:
     return settings.five_verst_sync_latest_update_limit
 
 
-@celery_app.task(name="five_verst_sync.sync_location", queue="five_verst")
+@celery_app.task(name="five_verst_sync.sync_location", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def sync_location_task(
     location_slug: str,
     summaries_limit: int | None = None,
@@ -110,7 +111,7 @@ def sync_location_task(
     return run_reported_sync(name, _run, details=details, batch_queue_name="five_verst")
 
 
-@celery_app.task(name="five_verst_sync.sync_location_summaries", queue="five_verst")
+@celery_app.task(name="five_verst_sync.sync_location_summaries", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def sync_location_summaries_task(
     location_slug: str,
     summaries_limit: int | None = None,
@@ -134,7 +135,7 @@ def sync_location_summaries_task(
     return run_reported_sync(name, _run, batch_queue_name="five_verst")
 
 
-@celery_app.task(name="five_verst_sync.sync_locations_registry", queue="five_verst")
+@celery_app.task(name="five_verst_sync.sync_locations_registry", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def sync_locations_registry_task(limit: int | None = None, *, force: bool = False) -> dict[str, object]:
     name = "5v registry /events/"
     details = five_verst_registry_details(limit=limit)
@@ -174,7 +175,11 @@ def sync_locations_registry_task(limit: int | None = None, *, force: bool = Fals
     )
 
 
-@celery_app.task(name="five_verst_sync.sync_latest_results", queue="five_verst")
+@celery_app.task(
+    name="five_verst_sync.sync_latest_results",
+    queue=FIVE_VERST_FRESH_QUEUE,
+    acks_late=True,
+)
 def sync_latest_results_task(
     update_limit: int | None = None,
     protocol_fetch_limit: int | None = None,
@@ -235,11 +240,11 @@ def sync_latest_results_task(
         details=details,
         hour_slot_key="five_verst:latest",
         force=force,
-        batch_queue_name="five_verst",
+        batch_queue_name=FIVE_VERST_FRESH_QUEUE,
     )
 
 
-@celery_app.task(name="five_verst_sync.sync_location_rotation", queue="five_verst")
+@celery_app.task(name="five_verst_sync.sync_location_rotation", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def sync_location_rotation_task(*, force: bool = False) -> dict[str, object]:
     from app.config import get_settings
 
@@ -289,17 +294,17 @@ def sync_location_rotation_task(*, force: bool = False) -> dict[str, object]:
     )
 
 
-@celery_app.task(name="five_verst_sync.enqueue_all_location_summaries", queue="five_verst")
+@celery_app.task(name="five_verst_sync.enqueue_all_location_summaries", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def enqueue_all_location_summaries() -> dict[str, object]:
     from app.platform_adapters.five_verst import bulk_parser
 
     slugs = bulk_parser.list_location_slugs()
     for slug in slugs:
-        sync_location_summaries_task.apply_async(kwargs={"location_slug": slug}, queue="five_verst")
+        sync_location_summaries_task.apply_async(kwargs={"location_slug": slug}, queue=FIVE_VERST_BATCH_QUEUE)
     return {"enqueued": len(slugs)}
 
 
-@celery_app.task(name="five_verst_sync.enqueue_recent_protocols", queue="five_verst")
+@celery_app.task(name="five_verst_sync.enqueue_recent_protocols", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def enqueue_recent_protocols() -> dict[str, object]:
     from app.config import get_settings
     from app.platform_adapters.five_verst import bulk_parser
@@ -313,24 +318,24 @@ def enqueue_recent_protocols() -> dict[str, object]:
                 "summaries_limit": 5,
                 "protocol_fetch_limit": settings.five_verst_sync_protocol_limit,
             },
-            queue="five_verst",
+            queue=FIVE_VERST_BATCH_QUEUE,
         )
     return {"enqueued": len(slugs)}
 
 
-@celery_app.task(name="five_verst_sync.enqueue_locations_registry", queue="five_verst")
+@celery_app.task(name="five_verst_sync.enqueue_locations_registry", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def enqueue_locations_registry() -> dict[str, object]:
-    sync_locations_registry_task.apply_async(queue="five_verst")
+    sync_locations_registry_task.apply_async(queue=FIVE_VERST_BATCH_QUEUE)
     return {"enqueued": 1}
 
 
-@celery_app.task(name="five_verst_sync.enqueue_latest_results", queue="five_verst")
+@celery_app.task(name="five_verst_sync.enqueue_latest_results", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def enqueue_latest_results() -> dict[str, object]:
-    sync_latest_results_task.apply_async(kwargs={"force": True}, queue="five_verst")
+    sync_latest_results_task.apply_async(kwargs={"force": True}, queue=FIVE_VERST_FRESH_QUEUE)
     return {"enqueued": 1}
 
 
-@celery_app.task(name="five_verst_sync.reconcile_stale_protocols", queue="five_verst")
+@celery_app.task(name="five_verst_sync.reconcile_stale_protocols", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def reconcile_stale_protocols_task(
     limit: int | None = None,
     min_check_interval_days: int | None = None,
@@ -414,13 +419,13 @@ def reconcile_stale_protocols_task(
                 "chunks_left": chunks_left - 1,
                 "force": True,
             },
-            queue="five_verst",
+            queue=FIVE_VERST_BATCH_QUEUE,
         )
         payload = {**payload, "next_chunk_enqueued": True}
     return payload
 
 
-@celery_app.task(name="five_verst_sync.sweep_week_protocols", queue="five_verst")
+@celery_app.task(name="five_verst_sync.sweep_week_protocols", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def sweep_week_protocols_task(
     weeks_back: int = 0,
     limit: int | None = None,
@@ -498,13 +503,13 @@ def sweep_week_protocols_task(
                 "chunks_left": chunks_left - 1,
                 "force": True,
             },
-            queue="five_verst",
+            queue=FIVE_VERST_BATCH_QUEUE,
         )
         payload = {**payload, "next_chunk_enqueued": True}
     return payload
 
 
-@celery_app.task(name="five_verst_sync.sync_community_events", queue="five_verst")
+@celery_app.task(name="five_verst_sync.sync_community_events", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def sync_community_events_task(slug: str | None = None, *, force: bool = False) -> dict[str, object]:
     """Старты сообществ 5 вёрст (/starti-soobshchestv/).
 
@@ -539,13 +544,13 @@ def sync_community_events_task(slug: str | None = None, *, force: bool = False) 
     )
 
 
-@celery_app.task(name="five_verst_sync.enqueue_reconcile_protocols", queue="five_verst")
+@celery_app.task(name="five_verst_sync.enqueue_reconcile_protocols", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def enqueue_reconcile_protocols() -> dict[str, object]:
-    reconcile_stale_protocols_task.apply_async(queue="five_verst")
+    reconcile_stale_protocols_task.apply_async(queue=FIVE_VERST_BATCH_QUEUE)
     return {"enqueued": 1}
 
 
-@celery_app.task(name="five_verst_sync.sync_clubs_registry", queue="five_verst")
+@celery_app.task(name="five_verst_sync.sync_clubs_registry", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def sync_clubs_registry_task(limit: int | None = None, *, force: bool = False) -> dict[str, object]:
     name = "5v clubs registry /clubs/"
     details = five_verst_clubs_registry_details(limit=limit)
@@ -581,7 +586,7 @@ def sync_clubs_registry_task(limit: int | None = None, *, force: bool = False) -
     )
 
 
-@celery_app.task(name="five_verst_sync.sync_club_details", queue="five_verst")
+@celery_app.task(name="five_verst_sync.sync_club_details", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def sync_club_details_task(limit: int | None = None, *, force: bool = False) -> dict[str, object]:
     from app.config import get_settings
 
@@ -621,7 +626,7 @@ def sync_club_details_task(limit: int | None = None, *, force: bool = False) -> 
     )
 
 
-@celery_app.task(name="five_verst_sync.fetch_protocol_from_profile", queue="five_verst")
+@celery_app.task(name="five_verst_sync.fetch_protocol_from_profile", queue=FIVE_VERST_BATCH_QUEUE, acks_late=True)
 def fetch_protocol_from_profile_task(
     location_slug: str,
     event_date_iso: str,

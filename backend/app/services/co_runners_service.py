@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.activity_url import resolve_activity_url
 from app.models import Event, EventCrosslink, Location, Participant, Platform, PlatformLink, RunResult, User
+from app.runpark.mappings import runpark_profile_url
 from app.services.location_catalog_service import LocationCatalogIndex
 
 PARTICIPANT_KEY_PREFIX = "p:"
@@ -263,8 +264,12 @@ def list_co_runners(
                 site_serial_id=site.serial_id if site is not None else None,
             )
             stats_by_key[key] = stats
-        if platform_code == "runpark" and external_user_id:
-            stats.profile_urls[platform_code] = f"https://runpark.ru/Account/Karmas/{external_user_id}"
+        runpark_url = runpark_profile_url(external_user_id) if platform_code == "runpark" else None
+        if runpark_url:
+            stats.profile_urls[platform_code] = runpark_url
+        elif platform_code == "runpark":
+            # Аккаунта на RunPark нет — ссылки тоже нет, вести некуда.
+            pass
         elif profile_url:
             stats.profile_urls[platform_code] = profile_url
 

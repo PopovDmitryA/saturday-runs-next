@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User, VolunteerResult
 from app.parkrun.volunteer_credits import count_parkrun_volunteering
+from app.runpark.mappings import runpark_profile_url
 from app.services.co_runners_service import _is_unknown_participant_name
 from app.services.location_catalog_service import PARKRUN_PLATFORM_CODE
 
@@ -74,8 +75,9 @@ class ParticipantSearchPage:
 
 # Код участника: «A7035519» (штрихкод из QR любой системы) или просто цифры
 # (номер участника 5 вёрст / parkrun / С95). Минимум 3 цифры, чтобы не путать
-# с короткими именами.
-_IDENTIFIER_RE = re.compile(r"^[Aa]?\d{3,16}$")
+# с короткими именами. Кириллическую «А» принимаем наравне с латинской: на
+# русской раскладке её набирают, не глядя, а штрихкод от этого не меняется.
+_IDENTIFIER_RE = re.compile(r"^[AaАа]?(\d{3,16})$")
 
 
 def _escape_like(term: str) -> str:
@@ -88,13 +90,17 @@ def _query_words(raw_query: str) -> list[str]:
 
 def _apply_query_filters(query, words: list[str]):
     """Общие условия поиска: код участника (точно) или все слова имени (подстроки)."""
-    if len(words) == 1 and _IDENTIFIER_RE.match(words[0]):
+    identifier = _IDENTIFIER_RE.match(words[0]) if len(words) == 1 else None
+    if identifier:
         # Ввели код участника — точное совпадение во всех системах:
-        # и как штрихкод (A…), и как номер участника (цифры).
-        digits = words[0].lstrip("Aa")
+        # и как штрихкод (A…), и как номер участника (цифры). Штрихкод сверяем
+        # в обеих формах: часть кодов С95 лежит в базе без префикса «A»
+        # (приехали из легаси голыми цифрами), и без этого свой же QR —
+        # A770012057 — в поиске ничего не находил.
+        digits = identifier.group(1)
         return query.filter(
             or_(
-                func.upper(Participant.barcode_id) == f"A{digits}",
+                func.upper(Participant.barcode_id).in_((f"A{digits}", digits)),
                 Participant.external_user_id == digits,
             )
         )
@@ -183,10 +189,11 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
 
             age_category = normalize_parkrun_age_group(age_category)
         profile_url = participant.profile_url
-        if platform.code == "runpark" and not profile_url and participant.external_user_id:
-            # У RunPark в participants нет ссылки — публичная страница кармы
-            # собирается из external_user_id (как в platformProfileUrl на фронте).
-            profile_url = f"https://runpark.ru/Account/Karmas/{participant.external_user_id}"
+        if platform.code == "runpark" and not profile_url:
+            # Страница кармы открывается только по идентификатору аккаунта;
+            # у личности «barcode:A…» аккаунта нет и ссылки быть не должно
+            # (как в platformProfileUrl на фронте).
+            profile_url = runpark_profile_url(participant.external_user_id)
         results.append(
             ParticipantSearchResult(
                 participant_id=participant.id,

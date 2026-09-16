@@ -218,3 +218,21 @@ def fill_missing_geo(entry: RunparkMappingEntry, geo: dict[str, str | None]) -> 
             "country": country,
         }
     )
+
+
+# Идентификатор аккаунта RunPark — GUID; на него и открывается публичная
+# страница кармы. Ключи «barcode:A…» и «anon:…» мы придумали сами, чтобы
+# различать строки протокола без аккаунта: профиля на RunPark у таких людей нет,
+# и ссылка по такому ключу вела в никуда (Дмитрий 14.09.2026).
+_ACCOUNT_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+)
+
+RUNPARK_KARMAS_BASE = "https://runpark.ru/Account/Karmas"
+
+
+def runpark_profile_url(external_user_id: str | None) -> str | None:
+    """Публичная страница участника — только для настоящего аккаунта."""
+    if external_user_id and _ACCOUNT_ID_RE.match(external_user_id):
+        return f"{RUNPARK_KARMAS_BASE}/{external_user_id}"
+    return None

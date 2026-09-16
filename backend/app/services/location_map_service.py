@@ -33,7 +33,7 @@ def map_location_filter() -> ColumnElement[bool]:
     # Разовые старты сообществ отсекаются и так — им никто не ставит
     # is_official_map, — но условие тут явное: флаг ставится в четырёх местах
     # синка, и молчаливая зависимость от него рано или поздно протечёт.
-    return Location.is_community_event.is_(False) & or_(
+    return Location.is_series.is_(False) & or_(
         Platform.code.in_(MAP_LIVE_PLATFORMS) & Location.is_official_map.is_(True),
         Platform.code == MAP_HISTORIC_PLATFORM,
     )

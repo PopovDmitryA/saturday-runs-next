@@ -187,6 +187,9 @@ class LocationPageStatsResponse(BaseModel):
     avg_finishers: int | None = None
     attendance_record: LocationAttendanceRecordResponse | None = None
     course_records: LocationCourseRecordsResponse = Field(default_factory=LocationCourseRecordsResponse)
+    # У серии трасса каждый раз новая, поэтому рекорда трассы нет: те же цифры
+    # приезжают сюда под честным именем «лучшее время формата».
+    best_times: LocationCourseRecordsResponse | None = None
     first_event_date: date | None = None
     last_event_date: date | None = None
     median_finish_time_sec: int | None = None
@@ -289,6 +292,8 @@ class LocationPageResponse(BaseModel):
     country: str | None = None
     is_paused: bool = False
     is_cancelled: bool = False
+    # Серия стартов, а не площадка: нет координат, расписания и общей трассы.
+    is_series: bool = False
     # Причина отмены словами организатора — её пишет на своей странице s95.
     cancel_reason: str | None = None
     latitude: float | None = None
@@ -307,6 +312,8 @@ class LocationEventRowResponse(BaseModel):
     event_date: date
     platform_code: str
     event_number: int | None = None
+    # Собственное имя старта — есть только у серий: «Зелёные 5 км».
+    title: str | None = None
     overall_number: int
     finishers: int | None = None
     volunteers: int | None = None
@@ -341,6 +348,8 @@ class LocationEventRowResponse(BaseModel):
 class LocationEventsResponse(BaseModel):
     slug: str
     name: str
+    # Журнал серии («Старты сообществ») вместо номера показывает имя старта.
+    is_series: bool = False
     total: int = 0
     items: list[LocationEventRowResponse] = Field(default_factory=list)
 
@@ -359,11 +368,60 @@ class LocationLeaderVolunteerResponse(BaseModel):
     count: int
 
 
+class LocationFastestRunnerResponse(BaseModel):
+    """Строка топа по времени: лучший результат человека на этой локации."""
+
+    place: int
+    name: str | None = None
+    handle: str | None = None
+    best_time_sec: int
+    best_time_display: str | None = None
+    event_date: date | None = None
+    # Системы, чьи протоколы участвуют в строке. Обычно одна; у профиля сайта
+    # со связанными аккаунтами лучшее время выбрано из результатов обеих
+    # систем площадки, и в колонке стоят обе.
+    platform_codes: list[str] = Field(default_factory=list)
+    # Финишей человека здесь — контекст к лучшему времени: одно дело рекорд
+    # заезжего туриста с единственного старта, другое — местного завсегдатая.
+    finishes_count: int = 0
+
+
+class LocationTopWinnerResponse(BaseModel):
+    """Строка топа по победам: сколько раз человек финишировал здесь первым."""
+
+    place: int
+    name: str | None = None
+    handle: str | None = None
+    wins_count: int
+    first_win_date: date | None = None
+    last_win_date: date | None = None
+    # Системы, в которых зафиксированы победы. Обычно одна: непривязанный
+    # аккаунт живёт внутри платформы. У профиля сайта со связанными аккаунтами
+    # площадка могла успеть побывать и parkrun, и 5 вёрст — тогда их две.
+    platform_codes: list[str] = Field(default_factory=list)
+
+
 class LocationLeadersResponse(BaseModel):
     slug: str
     name: str
     runners: list[LocationLeaderRunnerResponse] = Field(default_factory=list)
     volunteers: list[LocationLeaderVolunteerResponse] = Field(default_factory=list)
+    fastest_male: list[LocationFastestRunnerResponse] = Field(default_factory=list)
+    fastest_female: list[LocationFastestRunnerResponse] = Field(default_factory=list)
+    winners_overall: list[LocationTopWinnerResponse] = Field(default_factory=list)
+    winners_female: list[LocationTopWinnerResponse] = Field(default_factory=list)
+
+
+class LocationTopsResponse(BaseModel):
+    """Полные зачёты локации для витрины «Топы бегунов» — без лимита."""
+
+    slug: str
+    name: str
+    platform_codes: list[str] = Field(default_factory=list)
+    fastest_male: list[LocationFastestRunnerResponse] = Field(default_factory=list)
+    fastest_female: list[LocationFastestRunnerResponse] = Field(default_factory=list)
+    winners_overall: list[LocationTopWinnerResponse] = Field(default_factory=list)
+    winners_female: list[LocationTopWinnerResponse] = Field(default_factory=list)
 
 
 class LocationAttendanceItemResponse(BaseModel):
@@ -480,11 +538,16 @@ class LocationIndexItemResponse(BaseModel):
     # Среднее время финишёра за всю историю площадки (по всем её системам).
     avg_finish_time_sec: int | None = None
     avg_finish_time_display: str | None = None
+    # Серия стартов, а не площадка: «Старты сообществ», «С95 и друзья».
+    is_series: bool = False
 
 
 class LocationsIndexResponse(BaseModel):
     items: list[LocationIndexItemResponse] = Field(default_factory=list)
     total: int = 0
+    # Серии идут отдельным блоком: в алфавите площадок им не место, но и
+    # прятать их незачем — финиши оттуда считаются людям в личные итоги.
+    series: list[LocationIndexItemResponse] = Field(default_factory=list)
 
 
 class LastResultsItemResponse(BaseModel):
@@ -656,12 +719,10 @@ class LocationPersonalStatsResponse(BaseModel):
     # Любимая роль на этой локации: чаще всего выходил (ярлыки систем схлопнуты
     # в канон, см. volunteer_role_taxonomy).
     top_volunteer_role: LocationTopRoleResponse | None = None
-    # Место в топе локации по числу пробежек (та же группировка, что у лидеров).
-    # Место в топе по пробежкам — внутри своего пола (пол материализован в
-    # participants.gender). Общего места нет: см. build_location_personal_stats.
-    gender: str | None = None
-    rank_by_runs_gender: int | None = None
-    runners_total_gender: int | None = None
+    # Место в топе локации по числу пробежек — среди всех бегунов площадки
+    # (та же группировка и та же отсечка безымянных, что у таблицы лидеров).
+    rank_by_runs: int | None = None
+    runners_total: int | None = None
     # Возрастные группы 5 вёрст, в которых пользователь здесь бегал.
     age_groups: list[LocationAgeGroupStandingResponse] = Field(default_factory=list)
     # Расстояние от домашней локации. None — дом не определился (нет пробежек),

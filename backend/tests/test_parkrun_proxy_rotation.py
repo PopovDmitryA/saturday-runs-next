@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
-from app.parkrun.errors import ParkrunBanDetected
+from app.parkrun.errors import ParkrunBanDetected, ParkrunExitUnavailable
 from app.parkrun.fetch import daemon_session as ds
 
 THREE = ["socks5://127.0.0.1:1", "socks5://127.0.0.1:2", "socks5://127.0.0.1:3"]
@@ -24,18 +25,29 @@ class _Response:
 
 
 class _Client:
-    """Отдаёт заранее заданный ответ; считает обращения."""
+    """Отдаёт заранее заданный ответ; считает обращения.
 
-    def __init__(self, text: str) -> None:
+    Вместо текста можно подсунуть исключение — так изображается мёртвый выход:
+    туннель локально слушает, а наружу не ходит.
+    """
+
+    def __init__(self, text: str | Exception) -> None:
         self.text = text
         self.calls = 0
 
     def get(self, url, cookies=None):  # noqa: ANN001, ARG002
         self.calls += 1
+        if isinstance(self.text, Exception):
+            raise self.text
         return _Response(self.text)
 
     def close(self) -> None:
         pass
+
+
+def _dead() -> httpx.ProxyError:
+    """Ровно то, что прилетало с мёртвых нод VPN на домашнем сервере."""
+    return httpx.ProxyError("Proxy Server could not connect: General SOCKS server failure")
 
 
 @pytest.fixture(autouse=True)
@@ -52,7 +64,7 @@ def _no_redis_no_sleep(monkeypatch):
         monkeypatch.setattr(ds, name, lambda *a, **k: None, raising=True)
 
 
-def _session(pages: list[str], proxies: list[str]) -> ds.ParkrunDaemonSession:
+def _session(pages: list, proxies: list[str]) -> ds.ParkrunDaemonSession:
     """Сессия, которая на каждом следующем выходе отдаёт следующую страницу."""
     s = ds.ParkrunDaemonSession(use_httpx=True, proxies=proxies)
     s.solve_captcha = False
@@ -89,3 +101,38 @@ def test_without_proxies_behaves_as_before() -> None:
     with pytest.raises(ParkrunBanDetected):
         s._fetch_httpx("https://www.parkrun.org.uk/parkrunner/620/")
     assert s._proxies.rotations == 0
+
+
+def test_dead_exit_rotates_instead_of_failing_the_row() -> None:
+    """Мёртвый выход — повод взять следующий, а не уронить строку.
+
+    Раньше транспортная ошибка летела мимо пула: выход не менялся, и весь
+    остаток пачки шёл через тот же мёртвый туннель («ошибки: 53» при нуле
+    обработанных за прогон).
+    """
+    s = _session([_dead(), GOOD], THREE)
+    assert s._fetch_httpx("https://www.parkrun.org.uk/parkrunner/620/") == GOOD
+    assert s._proxies.rotations == 1
+
+
+def test_all_exits_dead_is_not_a_parkrun_ban(monkeypatch) -> None:
+    """Молчат наши туннели — лестницу банов и капчу не трогаем."""
+    escalated: list[int] = []
+    monkeypatch.setattr(ds, "escalate_ban_cooldown", lambda: escalated.append(1))
+    monkeypatch.setattr(ds, "set_captcha_pending", lambda *a, **k: escalated.append(1))
+
+    s = _session([_dead(), _dead(), _dead()], THREE)
+    with pytest.raises(ParkrunExitUnavailable):
+        s._fetch_httpx("https://www.parkrun.org.uk/parkrunner/620/")
+    assert s._proxies.rotations == 2, "должен был перебрать все выходы"
+    assert s.httpx_aborted, "гонять остаток пачки по мёртвой сети незачем"
+    assert s.abort_reason == "exits"
+    assert not escalated, "parkrun этих запросов не видел — наказывать себя не за что"
+
+
+def test_live_protection_still_counts_as_ban() -> None:
+    """Если хоть один выход показал защиту — это по-прежнему бан, а не сеть."""
+    s = _session([_dead(), BLOCKED, _dead()], THREE)
+    with pytest.raises(ParkrunBanDetected):
+        s._fetch_httpx("https://www.parkrun.org.uk/parkrunner/620/")
+    assert s.abort_reason == "protection"
