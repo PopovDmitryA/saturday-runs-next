@@ -177,10 +177,10 @@ CHALLENGE_TIERS: dict[str, dict[str, tuple[int, int, int]]] = {
     "primes": {"easy": (2, 5, 10), "medium": (17, 23, 31), "hard": (38, 45, 57)},
     # Погодные челленджи (Дмитрий, 14.09.2026). «Морж» — старт при −20° и ниже:
     # в средней полосе такое случается раз в несколько зим, в Якутске — всю зиму,
-    # поэтому средний и сложный тиры — сибирские. «Саламандра» — от +28° в час
+    # поэтому средний и сложный тиры — сибирские. «Огнеупорный» — от +28° в час
     # старта, симметричная редкость. «Под дождём» — от 1 мм в окне старта.
     "walrus": {"easy": (1, 2, 3), "medium": (5, 8, 12), "hard": (20, 35, 50)},
-    "salamander": {"easy": (1, 2, 3), "medium": (5, 8, 12), "hard": (20, 35, 50)},
+    "heatproof": {"easy": (1, 2, 3), "medium": (5, 8, 12), "hard": (20, 35, 50)},
     "rain_runner": {"easy": (3, 7, 12), "medium": (20, 30, 45), "hard": (60, 80, 100)},
     # Коллекции без тиров: всё меню погоды (8 клеток) и все 12 месяцев.
     "all_weather": {"solo": (3, 5, 8)},
@@ -2221,7 +2221,7 @@ def _weather_counter_challenge(
             "location": row.location_name,
             "value": (
                 format_temperature(row.temperature_c)
-                if code in ("walrus", "salamander")
+                if code in ("walrus", "heatproof")
                 else f"{row.precipitation_run_mm:.1f} мм"
                 if row.precipitation_run_mm is not None
                 else ""
@@ -2257,11 +2257,11 @@ def _walrus_challenge(rows: list[RunRow]) -> dict[str, object]:
     )
 
 
-def _salamander_challenge(rows: list[RunRow]) -> dict[str, object]:
+def _heatproof_challenge(rows: list[RunRow]) -> dict[str, object]:
     return _weather_counter_challenge(
         rows,
-        code="salamander",
-        title="Саламандра",
+        code="heatproof",
+        title="Огнеупорный",
         icon="🔥",
         description="Финишируй при +28° и выше в час старта — жара в девять утра редкость даже на юге.",
         unit="жарких стартов",
@@ -2442,7 +2442,7 @@ def _build_challenge_list(
         _wilson_challenge(rows, planned or {}),
         _countries_challenge(rows, home_country),
         _walrus_challenge(rows),
-        _salamander_challenge(rows),
+        _heatproof_challenge(rows),
         _rain_runner_challenge(rows),
         _all_weather_challenge(rows),
         _seasons_challenge(rows),
