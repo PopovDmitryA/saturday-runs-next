@@ -30,7 +30,10 @@ from app.models import (
 from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunteerResult
 from app.runpark.mappings import runpark_protocol_base
 from app.runpark.mssql_client import fix_varchar_encoding, runpark_query
-from app.services.gender_position_service import recalculate_event_gender_positions
+from app.services.gender_position_service import (
+    normalize_source_gender,
+    recalculate_event_gender_positions,
+)
 from app.sync import upsert
 from app.sync.iteration_commit import commit_step, rollback_step
 
@@ -421,6 +424,10 @@ def _to_canonical_run(row: dict) -> CanonicalRunResult:
         age_category=row.get("age_category"),
         status=row.get("status"),
         is_pr=bool(row.get("is_pr")),
+        # Пол системы старше категории: у каждой третьей строки категории нет
+        # вовсе, а «M»/«W» в vw_run_results есть (появилась 17.09.2026 по нашей
+        # просьбе — до неё пол был неизвестен у 59% финишей).
+        gender=normalize_source_gender(row.get("gender")),
         barcode_id=row["barcode_id"] if row.get("barcode_id") and _BARCODE_RE.match(str(row["barcode_id"])) else None,
     )
 

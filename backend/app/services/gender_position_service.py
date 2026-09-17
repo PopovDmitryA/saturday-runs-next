@@ -5,9 +5,12 @@
 - s95: в протоколе категории нет, пол берётся из participants.profile_extra
   ["platform_codes"]["gender"] («male» / «female»), который сохраняет
   _store_athlete_codes при апсерте JSON-протокола;
-- runpark: вторая буква age_category («VM35-39» / «SW30-34» → M / W);
-  категория есть только у ~41% строк, так что метрика считается с
-  погрешностью — только среди финишёров с известным полом;
+- runpark: с 17.09.2026 пол приезжает отдельной колонкой vw_run_results.gender
+  («M» / «W») и ложится в participants.gender — именно он здесь и читается.
+  Запасной вариант — вторая буква age_category («VM35-39» / «SW30-34»): она
+  заполнена только у ~41% строк, и до появления колонки метрика считалась с
+  этой погрешностью. Источник и категория не расходятся ни в одной строке
+  (проверено на всей выгрузке: 20 857 M/M и 12 235 W/W, ни одной наоборот);
 - parkrun: в run_results.age_category лежит age-grade % (не категория!),
   своей категории протокол не даёт — пол берётся из participants.age_category
   («SM30-34» — вторая буква; см. location_page_service._gender_expression,
@@ -40,6 +43,28 @@ _FIVE_VERST_LETTERS = {"М": GENDER_MALE, "Ж": GENDER_FEMALE}
 _RUNPARK_LETTERS = {"M": GENDER_MALE, "W": GENDER_FEMALE}
 
 
+# Как пол называют системы. RunPark пишет те же буквы, что во второй позиции
+# возрастной категории: «M» и «W» (не «F»). Остальные написания держим на
+# случай, если формат поменяется, — но ничего не додумываем: что не в словаре,
+# то неизвестно.
+_SOURCE_GENDERS = {
+    "M": GENDER_MALE,
+    "W": GENDER_FEMALE,
+    "F": GENDER_FEMALE,
+    "М": GENDER_MALE,
+    "Ж": GENDER_FEMALE,
+    "MALE": GENDER_MALE,
+    "FEMALE": GENDER_FEMALE,
+}
+
+
+def normalize_source_gender(value: str | None) -> str | None:
+    """Пол, названный самой системой, к нашим «male»/«female»."""
+    if not value:
+        return None
+    return _SOURCE_GENDERS.get(str(value).strip().upper())
+
+
 def gender_from_age_category(platform_code: str, age_category: str | None) -> str | None:
     if not age_category:
         return None
@@ -56,6 +81,7 @@ def resolve_participant_gender(
     platform_code: str,
     age_category: str | None,
     profile_extra: dict | None = None,
+    source_gender: str | None = None,
 ) -> str | None:
     """Пол участника из тех же источников, что и выше, но по данным одной строки.
 
@@ -63,7 +89,13 @@ def resolve_participant_gender(
     вычислять его из строки категории на каждом чтении (агрегаты главной гоняли
     substr по 2.2 млн строк — выражение неиндексируемое, отсюда полный перебор
     и спилл сортировок на диск).
+
+    `source_gender` — пол, названный самой системой; он старше любых догадок по
+    категории.
     """
+    from_source = normalize_source_gender(source_gender)
+    if from_source is not None:
+        return from_source
     if platform_code == "s95":
         gender = ((profile_extra or {}).get("platform_codes") or {}).get("gender")
         return gender if gender in (GENDER_MALE, GENDER_FEMALE) else None
@@ -103,6 +135,30 @@ def _parkrun_participant_genders(db: Session, participant_ids: list[UUID]) -> di
         gender = gender_from_age_category("runpark", age_category)  # тот же формат: 2-я буква M/W
         if gender is not None:
             result[pid] = gender
+    return result
+
+
+def _runpark_participant_genders(db: Session, participant_ids: list[UUID]) -> dict[UUID, str]:
+    """Пол из participants.gender — его наполняет сам RunPark своей колонкой.
+
+    Категории у трети финишёров нет вовсе, и раньше они просто выпадали из
+    зачёта по полу. Если материализованного пола ещё нет (строка старше
+    бэкфилла), откатываемся на категорию участника.
+    """
+    if not participant_ids:
+        return {}
+    rows = (
+        db.query(Participant.id, Participant.gender, Participant.age_category)
+        .filter(Participant.id.in_(participant_ids))
+        .all()
+    )
+    result: dict[UUID, str] = {}
+    for pid, gender, age_category in rows:
+        value = gender if gender in (GENDER_MALE, GENDER_FEMALE) else None
+        if value is None:
+            value = gender_from_age_category("runpark", age_category)
+        if value is not None:
+            result[pid] = value
     return result
 
 
@@ -158,6 +214,14 @@ def recalculate_event_gender_positions(db: Session, event_id: UUID, platform_cod
         )
         for row in rows:
             genders[row.id] = participant_genders.get(row.participant_id) if row.participant_id else None
+    elif platform_code == "runpark":
+        participant_genders = _runpark_participant_genders(
+            db, [row.participant_id for row in rows if row.participant_id is not None]
+        )
+        for row in rows:
+            genders[row.id] = (
+                participant_genders.get(row.participant_id) if row.participant_id else None
+            ) or gender_from_age_category(platform_code, row.age_category)
     else:
         for row in rows:
             genders[row.id] = gender_from_age_category(platform_code, row.age_category)

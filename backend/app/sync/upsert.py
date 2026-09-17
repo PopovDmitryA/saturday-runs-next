@@ -507,6 +507,7 @@ def upsert_participant(
     club_name: str | None = None,
     age_category: str | None = None,
     barcode_id: str | None = None,
+    gender: str | None = None,
 ) -> Participant:
     # Кеш «платформа+внешний id → строка» на время сессии: профильный импорт
     # ищет одного и того же участника на каждой пробежке, и по SSH-туннелю к
@@ -544,7 +545,7 @@ def upsert_participant(
             profile_url=profile_url or default_profile_url,
             club_name=club_name,
             age_category=age_category,
-            gender=resolve_participant_gender(platform.code, age_category),
+            gender=resolve_participant_gender(platform.code, age_category, source_gender=gender),
             barcode_id=barcode_id,
             source_url=profile_url,
             parser_version=PARSER_VERSION,
@@ -581,9 +582,11 @@ def upsert_participant(
     # Пол пересчитываем всегда: у s95 он приезжает в profile_extra отдельным
     # апсертом профиля, у остальных — вместе с обновлённой категорией.
     # Известный пол не затираем на None (протокол без категории — не повод).
-    gender = resolve_participant_gender(platform.code, row.age_category, row.profile_extra)
-    if gender is not None and row.gender != gender:
-        row.gender = gender
+    resolved = resolve_participant_gender(
+        platform.code, row.age_category, row.profile_extra, source_gender=gender
+    )
+    if resolved is not None and row.gender != resolved:
+        row.gender = resolved
     db.flush()
     cache[cache_key] = row
     return row
@@ -609,6 +612,7 @@ def upsert_run_results(
             club_name=None if from_profile else item.club_name,
             age_category=None if from_profile else item.age_category,
             barcode_id=item.barcode_id if not from_profile else None,
+            gender=item.gender,
         )
         touched_participant_ids.add(participant.id)
         row = (

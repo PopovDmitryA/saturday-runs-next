@@ -150,6 +150,10 @@ class CanonicalRunResult:
     is_first_run_at_location: bool = False
     club_name: str | None = None
     barcode_id: str | None = None
+    # Пол, если система отдаёт его сама. У RunPark с 17.09.2026 это колонка
+    # vw_run_results.gender; она закрывает тех, у кого пустая возрастная
+    # категория, — вывести пол из неё там не из чего.
+    gender: str | None = None
     achievement_labels: list[str] = field(default_factory=list)
     location_external_key: str = ""
     location_name: str = ""
