@@ -1,0 +1,129 @@
+# Боевой стек на домашнем сервере saturday-run.
+#
+# Запуск:
+#   docker compose -f docker-compose.yml -f docker-compose.home-site.yml \
+#     --profile telegram up -d
+#
+# Отличия от VPS и почему они такие:
+#   * база и redis — контейнерами. На VPS Postgres жил на хосте (так исторически
+#     сложилось), здесь ставить его в систему незачем: том переживает
+#     пересоздание, настройки видны в этом файле, а root не нужен вовсе.
+#   * НЕТ tg-proxy. Прод не достаёт до api.telegram.org с российского адреса и
+#     ходит через xray; из дома Telegram открывается напрямую (проверено
+#     17.09.2026). TELEGRAM_PROXY_URL в домашнем .env оставляем пустым.
+#   * добавлен `edge` — TLS и домены (см. deploy/nginx/home/edge.conf).
+#   * воркеры 5 вёрст, s95 и RunPark уже живут здесь с 17.09.2026
+#     (docker-compose.home.yml), после переезда базы они переезжают в этот файл
+#     и ходят к ней по локальной docker-сети, без tailnet.
+
+x-home-env: &home-env
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
+  REDIS_URL: redis://redis:6379/0
+
+services:
+  postgres:
+    # Домашние 26.8 ГиБ против 7.8 на VPS: shared_buffers вчетверо больше
+    # (на проде 512 МБ), maintenance_work_mem — чтобы восстановление дампа и
+    # автовакуум по таблице в 2.3 млн строк не ползли.
+    command: >
+      postgres
+      -c shared_buffers=4GB
+      -c work_mem=64MB
+      -c maintenance_work_mem=1GB
+      -c effective_cache_size=12GB
+      -c max_connections=200
+      -c random_page_cost=1.1
+    ports: !override
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - home_pgdata:/var/lib/postgresql/data
+      # Каталог с дампами для переезда и восстановления (см. scripts/cutover_to_home.sh).
+      - ${HOME_DUMP_DIR:-/home/dmitry/srs-prod-db}:/dump
+    shm_size: "1g"
+
+  redis:
+    ports: !override []
+
+  api:
+    environment:
+      <<: *home-env
+      APP_BASE_URL: ${APP_BASE_URL}
+      ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID:-}
+      TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
+      DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-180s}
+    # 12 потоков против 4 на VPS — держим вчетверо больше рабочих процессов.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    ports: !override []
+    volumes:
+      - ./backend:/app
+      - ./data:/data
+      - ./.env:/app/.env:ro
+
+  nginx:
+    # Наружу не смотрит: перед ним стоит edge с сертификатами.
+    ports: !override []
+
+  edge:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/home/edge.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx:/maintenance:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - certbot_webroot:/var/www/certbot
+      - ./deploy/nginx/home/grafana-farewell:/var/www/grafana-farewell:ro
+    depends_on:
+      - nginx
+    restart: unless-stopped
+
+  # Продление сертификатов: раз в сутки пробуем, nginx перечитывает конфиг сам.
+  # Ходит через тот же /.well-known, что отдаёт edge.
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    entrypoint: /bin/sh
+    command: -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 24h; done"
+    restart: unless-stopped
+
+  worker:
+    environment: *home-env
+  worker-warm:
+    environment: *home-env
+  worker-s95:
+    environment: *home-env
+  worker-five-verst:
+    environment: *home-env
+  worker-five-verst-user:
+    environment: *home-env
+  worker-parkrun:
+    environment: *home-env
+  worker-runpark:
+    environment: *home-env
+  beat:
+    environment: *home-env
+
+  bot:
+    environment:
+      API_BASE_URL: http://api:8000
+      APP_BASE_URL: ${APP_BASE_URL}
+      ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID:-}
+      TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
+      REDIS_URL: redis://redis:6379/0
+      # Пусто = напрямую. Прокси нужен был только российскому адресу VPS.
+      TELEGRAM_PROXY_URL: ""
+    depends_on: !reset
+      api:
+        condition: service_started
+
+  # Прокси к Telegram дома не нужен — гасим профилем, чтобы `--profile telegram`
+  # поднимал бота, но не его.
+  tg-proxy:
+    profiles: !override ["never"]
+
+volumes:
+  home_pgdata:
+  certbot_webroot:
