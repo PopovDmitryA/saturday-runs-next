@@ -63,6 +63,9 @@ WIND_STRONG_MS = 8.0
 GUST_STRONG_MS = 12.0
 FROST_C = -10.0
 COLD_C = 0.0
+# Между нулём и семью градусами на старте зябко: люди приезжают в футболке
+# и мёрзнут в очереди, поэтому это отдельная ступень совета.
+COOL_C = 7.0
 HEAT_C = 25.0
 ICE_RANGE = (-3.0, 2.0)
 
@@ -252,6 +255,8 @@ def forecast_advice(row: StartWeatherForecast) -> list[str]:
             advice.append("Мороз: шапка, перчатки и закрытая шея обязательны.")
         elif temp <= COLD_C:
             advice.append("Ниже нуля — одевайтесь теплее, чем кажется по солнцу.")
+        elif temp <= COOL_C:
+            advice.append("Прохладно: длинный рукав и перчатки на старте не помешают.")
         elif temp >= HEAT_C:
             advice.append("Будет жарко: возьмите воду и не разгоняйтесь на первом круге.")
         if ICE_RANGE[0] <= temp <= ICE_RANGE[1] and (rain_mm > 0 or probability >= RAIN_PROBABILITY_MAYBE):
