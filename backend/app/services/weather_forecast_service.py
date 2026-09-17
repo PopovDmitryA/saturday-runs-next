@@ -81,6 +81,17 @@ def next_start_date(today: date) -> date:
     return today + timedelta(days=(5 - today.weekday()) % 7)
 
 
+# Воскресенье — единственный день, когда прогноз не собираем: до старта ещё
+# шесть суток, на таком горизонте это гадание. Показ начинается в понедельник
+# (решение Дмитрия 17.09.2026), а строки прошедшей субботы к этому моменту уже
+# удалены — блока на витрине просто нет.
+SUNDAY = 6
+
+
+def forecast_day(today: date) -> bool:
+    return today.weekday() != SUNDAY
+
+
 def _window_hours(start: time) -> range:
     hour = sample_hour(start)
     return range(hour, hour + 3)
@@ -175,6 +186,10 @@ def collect_forecasts(
     """Прогноз на ближайшую субботу по всем локациям периметра."""
 
     today = today or date.today()
+    if not forecast_day(today):
+        drop_past_forecasts(db, today)
+        db.commit()
+        return ForecastStats()
     target = next_start_date(today)
     stats = ForecastStats()
     locations = list_scope_locations(db, name_filters)

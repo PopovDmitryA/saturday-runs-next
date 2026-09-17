@@ -7,6 +7,10 @@
 
 Идёт перед архивным прогоном: тот выгребает остаток лимита на пересборку
 истории, и прогноз должен успеть взять своё.
+
+Расписание (Дмитрий, 17.09.2026): понедельник–четверг и суббота — ночью,
+пятница — трижды, утром, днём и вечером: в пятницу выбирают, куда ехать.
+В воскресенье не собираем: до старта шесть дней, это гадание.
 """
 
 from __future__ import annotations
@@ -40,9 +44,11 @@ def collect_forecast_task() -> dict[str, object]:
     finally:
         db.close()
 
-    target = next_start_date(date.today())
-    # Молчим в обычный день: отчёт нужен, только когда прогноз собрался не весь.
-    if error or stats.skipped or stats.rows_written < stats.locations:
+    today = date.today()
+    target = next_start_date(today)
+    # Молчим в обычный день и в воскресенье, когда прогноз намеренно не собираем:
+    # отчёт нужен, только когда что-то не сложилось.
+    if error or (stats.locations and (stats.skipped or stats.rows_written < stats.locations)):
         send_admin_report(
             f"🌤 Прогноз на {target.strftime('%d.%m')}: {stats.rows_written} из {stats.locations} локаций, "
             f"вызовов {stats.api_calls}" + (f"\n⚠️ {error}" if error else "")
