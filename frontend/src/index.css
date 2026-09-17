@@ -17199,8 +17199,16 @@ input.participant-name-search-input:focus {
   margin-bottom: 0.4rem;
 }
 .weather-forecast-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
   font-size: 0.82rem;
   color: var(--text-muted);
+}
+.weather-forecast-when {
+  min-width: 0;
 }
 .weather-forecast-title {
   font-weight: 600;
@@ -17225,8 +17233,8 @@ input.participant-name-search-input:focus {
   margin: 0.1rem 0;
 }
 .weather-forecast-note {
-  margin-top: 0.3rem;
   font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 /* Прогноз на субботу — первым блоком страницы локации, без лишних отступов. */
@@ -17286,12 +17294,14 @@ input.participant-name-search-input:focus {
   flex-direction: column;
   flex: 1;
 }
+/* Советы — последним блоком плитки: когда соседка выше, пустота остаётся над
+   ними, а не разрывает шапку с погодой. */
+.loc-forecast-tile .weather-forecast-advice {
+  margin-top: auto;
+}
 /* Когда плитка растянута соседкой, «обновлено…» уезжает к нижнему краю, а не
    висит посреди пустоты. */
-.loc-forecast-tile .weather-forecast-note {
-  margin-top: auto;
-  padding-top: 0.3rem;
-}
+
 @media (max-width: 900px) {
   .loc-top-row {
     grid-template-columns: minmax(0, 1fr);

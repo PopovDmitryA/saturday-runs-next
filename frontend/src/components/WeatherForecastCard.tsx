@@ -42,12 +42,16 @@ export function WeatherForecastCard({
   return (
     <div className={`weather-forecast${compact ? " weather-forecast-compact" : ""}`}>
       <div className="weather-forecast-head">
-        <span className="weather-forecast-title">Прогноз на старт</span>
-        <span className="muted">
-          {" "}
-          {formatDate(forecast.target_date)}
-          {forecast.start_time_local ? ` · ${forecast.start_time_local}` : ""}
+        <span className="weather-forecast-when">
+          <span className="weather-forecast-title">Прогноз на старт</span>{" "}
+          <span className="muted">
+            {formatDate(forecast.target_date)}
+            {forecast.start_time_local ? ` · ${forecast.start_time_local}` : ""}
+          </span>
         </span>
+        {/* Время обновления — правым краем той же строки: отдельная строка внизу
+            занимала место, а информация в ней второстепенная. */}
+        <span className="weather-forecast-note muted">{updatedNote(forecast.updated_at)}</span>
       </div>
       <div className={`weather-forecast-main temp-${tone}`}>
         <span aria-hidden>{forecast.icon}</span> {forecast.summary}
@@ -60,7 +64,6 @@ export function WeatherForecastCard({
           <li key={item}>{item}</li>
         ))}
       </ul>
-      <div className="weather-forecast-note muted">{updatedNote(forecast.updated_at)}</div>
     </div>
   );
 }
