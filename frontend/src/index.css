@@ -17280,6 +17280,14 @@ input.participant-name-search-input:focus {
 .loc-top-row-single > .card {
   grid-column: 1 !important;
 }
+/* Соседней плитки может не быть вовсе: оценку уже поставили или закрыли, а
+   личная статистика идёт отдельной строкой во всю ширину. Тогда прогноз не
+   жмётся в половину ряда с пустотой справа, а сам занимает всю ширину. */
+.loc-top-row:not(:has(> .loc-rate-prompt)):not(:has(> .loc-personal-cta)):not(
+    :has(> .promo-login-card)
+  ) {
+  grid-template-columns: minmax(0, 1fr);
+}
 .loc-forecast-tile {
   padding: 0.6rem 0.85rem;
   display: flex;
@@ -17312,4 +17320,22 @@ input.participant-name-search-input:focus {
 .loc-top-row > .loc-personal-cta {
   margin-bottom: 0;
   align-content: start;
+}
+
+/* В ряду плитка-призыв должна быть такой же низкой, как прогноз: в полную
+   ширину страницы дальность от дома вставала рядом с текстом, а в половину —
+   переносилась строкой ниже и тянула вниз соседний прогноз. Поэтому здесь
+   текст ужимаем сильнее, а саму плитку дальности делаем компактной. */
+.loc-top-row > .loc-personal-cta .loc-personal-cta-text {
+  flex: 1 1 170px;
+}
+.loc-top-row > .loc-personal-cta .loc-stats-grid-single {
+  margin-top: 0;
+  max-width: 180px;
+}
+.loc-top-row > .loc-personal-cta .loc-stat-card {
+  padding: 0.5rem 0.65rem;
+}
+.loc-top-row > .loc-personal-cta .loc-stat-value {
+  font-size: 1.15rem;
 }
