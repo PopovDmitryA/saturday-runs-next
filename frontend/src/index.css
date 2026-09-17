@@ -17248,7 +17248,9 @@ input.participant-name-search-input:focus {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
-  align-items: start;
+  /* stretch, а не start: соседние плитки ряда должны быть одной высоты —
+     иначе прогноз висит обрубком рядом с более высоким личным блоком. */
+  align-items: stretch;
   margin-bottom: 0.75rem;
 }
 .loc-top-row > * {
@@ -17271,12 +17273,23 @@ input.participant-name-search-input:focus {
 }
 .loc-forecast-tile {
   padding: 0.7rem 0.85rem;
+  display: flex;
+  flex-direction: column;
 }
 .loc-forecast-tile .weather-forecast {
   margin-bottom: 0;
   border: 0;
   background: transparent;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+/* Когда плитка растянута соседкой, «обновлено…» уезжает к нижнему краю, а не
+   висит посреди пустоты. */
+.loc-forecast-tile .weather-forecast-note {
+  margin-top: auto;
+  padding-top: 0.4rem;
 }
 @media (max-width: 900px) {
   .loc-top-row {
@@ -17285,4 +17298,11 @@ input.participant-name-search-input:focus {
   .loc-top-row > .card {
     grid-column: 1 !important;
   }
+}
+
+/* Личные плитки верхнего ряда растягиваются вместе с прогнозом. */
+.loc-top-row > .loc-rate-prompt,
+.loc-top-row > .loc-personal-cta {
+  margin-bottom: 0;
+  align-content: start;
 }
