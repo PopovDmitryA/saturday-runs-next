@@ -32,6 +32,10 @@ case "$step" in
 preflight)
   say "== готовность =="
   [ -f "$HOME_DIR/.env" ] && say "✓ .env на месте" || say "✗ нет .env"
+  # Конфиг прокси к Telegram в git не хранится (секреты) и едет отдельно.
+  # Без него бот дома молчит: api.telegram.org из домашней сети недоступен.
+  [ -f "$HOME_DIR/deploy/tg-proxy/config.json" ] && say "✓ конфиг tg-proxy на месте" ||
+    say "✗ нет deploy/tg-proxy/config.json — забрать с прода"
   sudo -n test -d /etc/letsencrypt/live/run5k.run &&
     say "✓ сертификаты run5k.run на месте" || say "✗ сертификатов нет — шаг certs"
   [ -d "$HOME_DIR/data/og" ] && say "✓ медиа: $(du -sh "$HOME_DIR/data" | cut -f1)" || say "✗ медиа не скопированы — шаг media"

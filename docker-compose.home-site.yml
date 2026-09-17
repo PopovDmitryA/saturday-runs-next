@@ -8,9 +8,11 @@
 #   * база и redis — контейнерами. На VPS Postgres жил на хосте (так исторически
 #     сложилось), здесь ставить его в систему незачем: том переживает
 #     пересоздание, настройки видны в этом файле, а root не нужен вовсе.
-#   * НЕТ tg-proxy. Прод не достаёт до api.telegram.org с российского адреса и
-#     ходит через xray; из дома Telegram открывается напрямую (проверено
-#     17.09.2026). TELEGRAM_PROXY_URL в домашнем .env оставляем пустым.
+#   * tg-proxy ОСТАЁТСЯ. 17.09.2026 я сгоряча решил, что дома Telegram открыт
+#     напрямую, — замер был сделан из шелла с HTTPS_PROXY на VPN-выход и
+#     ничего не доказывал. Из контейнера api.telegram.org недоступен так же,
+#     как с прода: «Network is unreachable». Конфиг прокси (deploy/tg-proxy/
+#     config.json) в git не хранится и едет рядом с .env.
 #   * добавлен `edge` — TLS и домены (см. deploy/nginx/home/edge.conf).
 #   * воркеры 5 вёрст, s95 и RunPark уже живут здесь с 17.09.2026
 #     (docker-compose.home.yml), после переезда базы они переезжают в этот файл
@@ -113,16 +115,7 @@ services:
       ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID:-}
       TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
       REDIS_URL: redis://redis:6379/0
-      # Пусто = напрямую. Прокси нужен был только российскому адресу VPS.
-      TELEGRAM_PROXY_URL: ""
-    depends_on: !reset
-      api:
-        condition: service_started
-
-  # Прокси к Telegram дома не нужен — гасим профилем, чтобы `--profile telegram`
-  # поднимал бота, но не его.
-  tg-proxy:
-    profiles: !override ["never"]
+      TELEGRAM_PROXY_URL: ${TELEGRAM_PROXY_URL}
 
 volumes:
   home_pgdata:
