@@ -43,8 +43,12 @@ preflight)
   ;;
 
 certs)
-  say "забираю сертификаты (нужен root на обеих сторонах)"
-  ssh -o BatchMode=yes "$VPS" 'sudo tar -czf /tmp/le.tgz -C /etc letsencrypt' || die "не собрался архив на проде"
+  say "забираю сертификаты"
+  # На проде sudo у viewer с паролем, поэтому архив собирает Дмитрий одной
+  # командой в своём root-шелле:
+  #   tar -czf /tmp/le.tgz -C /etc letsencrypt && chmod 644 /tmp/le.tgz
+  ssh -o BatchMode=yes "$VPS" 'test -r /tmp/le.tgz' ||
+    die "нет /tmp/le.tgz на проде — собери его root-ом: tar -czf /tmp/le.tgz -C /etc letsencrypt && chmod 644 /tmp/le.tgz"
   scp -o BatchMode=yes "$VPS:/tmp/le.tgz" /tmp/le.tgz || die "не скачался"
   sudo tar -xzf /tmp/le.tgz -C /etc || die "не распаковался"
   ssh -o BatchMode=yes "$VPS" 'rm -f /tmp/le.tgz'; rm -f /tmp/le.tgz
@@ -52,9 +56,13 @@ certs)
   ;;
 
 media)
+  # --no-o --no-g: принимающая сторона не root, и попытка сохранить владельца
+  # роняет весь прогон (код 23). Плюс сами каталоги дома могли достаться от
+  # контейнера, который ходит root-ом, — тогда rsync не сможет в них писать.
   say "синхронизирую data/ (первый прогон — минуты, повторный — секунды)"
-  rsync -a --info=stats2 -e "ssh -o BatchMode=yes" "$VPS:$REMOTE_DIR/data/" "$HOME_DIR/data/" |
-    tail -4
+  sudo -n chown -R "$(id -u):$(id -g)" "$HOME_DIR/data" 2>/dev/null
+  rsync -a --no-o --no-g --info=stats2 -e "ssh -o BatchMode=yes" \
+    "$VPS:$REMOTE_DIR/data/" "$HOME_DIR/data/" | tail -4
   ;;
 
 freeze)
