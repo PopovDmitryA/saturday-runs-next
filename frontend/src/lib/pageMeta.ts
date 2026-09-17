@@ -234,7 +234,6 @@ const LOCATION_PARTICIPANTS_RE = /^\/locations\/([^/]+)\/participants$/;
 const LOCATION_TOPS_RE = /^\/locations\/([^/]+)\/tops$/;
 const LOCATION_PROTOCOL_RE = /^\/locations\/([^/]+)\/protocol\/([^/]+)\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_RE = /^\/locations\/([^/]+)$/;
-const SWEEP_HQ_RE = /^\/hq\/.+$/;
 
 /**
  * Страницы, чей заголовок появляется только после загрузки данных (локация и
@@ -274,18 +273,6 @@ export function resolvePageMeta(rawPath: string): PageMeta {
     return {
       title: "Кабинет организатора локации — run5k.run",
       description: "Свод по пробежке для отчёта оргкоманды и участники на долгой паузе.",
-    };
-  }
-  if (SWEEP_HQ_RE.test(path)) {
-    return {
-      title: "Обход parkrun — run5k.run",
-      description: "Служебная витрина мирового обхода parkrun.",
-    };
-  }
-  if (path === "/world") {
-    return {
-      title: "Мировой parkrun — run5k.run",
-      description: "Сколько площадок parkrun в мире и как идёт их обход.",
     };
   }
   if (PROFILE_RE.test(path)) {

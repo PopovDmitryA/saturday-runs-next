@@ -13,7 +13,7 @@ index.html, содержимое дорисовывает JavaScript уже в �
 * пререндер отдаёт роботу настоящий HTML с заголовком и текстом. Человека он
   не касается: ветка по User-Agent живёт в nginx/conf.d/default.conf.
 
-Мировой обход parkrun (/world, /hq/*) и личные страницы участников
+Личные страницы участников
 (/users/*) в sitemap не попадают и помечены noindex — решение Дмитрия
 02.08.2026.
 """
@@ -271,7 +271,6 @@ def _iso_to_ru_date(value: str) -> str | None:
         return None
 _LOCATION_PROTOCOL_RE = re.compile(r"^/locations/([^/]+)/protocol/([^/]+)/(\d{4}-\d{2}-\d{2})$")
 _LOCATION_RE = re.compile(r"^/locations/([^/]+)$")
-_SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
 
 
 def normalize_path(raw_path: str) -> str:
@@ -301,15 +300,6 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
         return _meta(
             "Кабинет организатора локации — run5k.run",
             "Свод по пробежке для отчёта оргкоманды и участники на долгой паузе.",
-        )
-    if _SWEEP_HQ_RE.match(path):
-        return _meta("Обход parkrun — run5k.run", "Служебная витрина мирового обхода parkrun.")
-    if path == "/world":
-        # Публичное табло мирового обхода. В sitemap не идёт и закрыто от
-        # индексации по решению Дмитрия 02.08.2026.
-        return _meta(
-            "Мировой parkrun — run5k.run",
-            "Сколько площадок parkrun в мире и как идёт их обход.",
         )
     profile = _PROFILE_RE.match(path)
     if profile:
@@ -843,7 +833,7 @@ def build_sitemap(db: Session) -> str:
     """sitemap.xml: публичные разделы + страница и журнал каждой локации.
 
     Сознательно НЕ включаем (решение Дмитрия 02.08.2026): мировой обход
-    parkrun (/world, /hq/*) и личные страницы участников (/users/*). Плюс
+    личные страницы участников (/users/*). Плюс
     всё, что за логином, служебное и редиректы.
     """
     base = site_base_url()
@@ -903,8 +893,9 @@ def build_robots_txt() -> str:
     обхода ВКонтакте и Telegram показывают превью без картинки, а живое
     превью со статистикой — то, ради чего профилями делятся.
 
-    /world остаётся открытым для обхода: он один, бюджета не жжёт, а noindex
-    в самой странице сохраняет вес исходящих ссылок.
+    /world и /hq/* сняты 17.09.2026 (табло обхода погашено). Disallow: /hq/
+    в robots оставлен: по старым ссылкам ещё ходят, и пускать туда роботов
+    незачем.
     """
     base = site_base_url()
     lines = [
@@ -1711,13 +1702,13 @@ def is_known_path(raw_path: str) -> bool:
     path = normalize_path(raw_path)
     if path in STATIC_PAGE_META:
         return True
-    if path.startswith("/admin/") or path == "/world":
+    if path.startswith("/admin/"):
         return True
     unified = _UNIFIED_PROTOCOL_RE.match(path)
     if unified:
         # Только настоящая дата: «/protocol/2026-08-99» — не адрес сайта, а 404.
         return _iso_to_ru_date(unified.group(1)) is not None
-    for pattern in (_PROFILE_RE, _LOCATION_EVENTS_RE, _LOCATION_PARTICIPANTS_RE, _LOCATION_RE, _SWEEP_HQ_RE):
+    for pattern in (_PROFILE_RE, _LOCATION_EVENTS_RE, _LOCATION_PARTICIPANTS_RE, _LOCATION_RE):
         if pattern.match(path):
             return True
     return False

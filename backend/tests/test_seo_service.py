@@ -559,7 +559,8 @@ def test_catalog_body_lists_locations_with_links() -> None:
         ("/locations/kuzminki/participants", True),
         ("/users/ivan", True),
         ("/admin/users", True),
-        ("/world", True),
+        # Табло обхода погашено 17.09.2026 — адрес перестал быть страницей.
+        ("/world", False),
         ("/protocol", True),
         ("/protocol/2026-08-15", True),
         # Форму даты регулярка пропускает, а недели такой нет — это 404, а не 500.
