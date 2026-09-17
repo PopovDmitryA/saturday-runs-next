@@ -256,6 +256,16 @@ class TeamLoadPerson(BaseModel):
     pure_slots: int = 0
 
 
+class TeamOrganizer(BaseModel):
+    """Организатор площадки: сколько раз вёл старт за период."""
+
+    participant_id: str
+    name: str | None = None
+    slots: int
+    share_pct: int
+    runs_here: int = 0
+
+
 class DirectorRotation(BaseModel):
     """Светофор ротации организаторов: не держится ли старт на одном человеке."""
 
@@ -277,6 +287,7 @@ class TeamLoadResponse(BaseModel):
     avg_per_event: float | None = None
     top_load: list[TeamLoadPerson] = Field(default_factory=list)
     roles: list[TeamRoleLoad] = Field(default_factory=list)
+    organizers: list[TeamOrganizer] = Field(default_factory=list)
     director_rotation: DirectorRotation | None = None
 
 
@@ -310,10 +321,14 @@ class AttendanceResponse(BaseModel):
     record_date: str | None = None
 
 
-class AudienceAgeGroup(BaseModel):
-    group: str
-    finishes: int
-    share_pct: float
+class AudienceAgeRow(BaseModel):
+    """Строка возрастной пирамиды: диапазон лет и два столбца по полу."""
+
+    range: str
+    male_finishes: int
+    female_finishes: int
+    male_share_pct: float
+    female_share_pct: float
 
 
 class AudienceGender(BaseModel):
@@ -333,7 +348,7 @@ class AudienceResponse(BaseModel):
     months: int
     finishes_total: int
     people_total: int
-    age_groups: list[AudienceAgeGroup] = Field(default_factory=list)
+    age_pyramid: list[AudienceAgeRow] = Field(default_factory=list)
     genders: list[AudienceGender] = Field(default_factory=list)
     clubs: list[AudienceClub] = Field(default_factory=list)
 
@@ -341,12 +356,20 @@ class AudienceResponse(BaseModel):
 class BenchmarkMetric(BaseModel):
     key: str
     label: str
+    # Раздел таблицы: «Явка», «Поле», «Новые лица», «Команда».
+    group: str = ""
+    # None — метрика-профиль (доля женщин, доля гостей): лучше не бывает,
+    # место в выборке для неё не считается и цветом не красим.
+    higher_is_better: bool | None = None
     our_value: float
     median: float | None = None
     best: float | None = None
     rank: int | None = None
     peers: int
     delta_vs_median_pct: int | None = None
+    # Скоуп «одна локация»: значение выбранной площадки и разница с ней.
+    peer_value: float | None = None
+    delta_vs_peer_pct: int | None = None
 
 
 class BenchmarkPeer(BaseModel):
@@ -359,8 +382,17 @@ class BenchmarkPeer(BaseModel):
     avg_volunteers: float
     unique_runners: int
     unique_volunteers: int
+    avg_finish_time_sec: int | None = None
+    avg_debutants: float = 0
+    avg_first_here: float = 0
+    avg_guests: float = 0
+    guests_share_pct: float = 0
+    avg_prs: float = 0
     female_share_pct: float
     volunteer_rotation_pct: int
+    organizers_count: int = 0
+    organizer_rotation_pct: int = 0
+    protocol_delay_hours: float | None = None
     is_ours: bool = False
 
 
@@ -374,6 +406,9 @@ class BenchmarkResponse(BaseModel):
     scope_sizes: dict[str, int] = Field(default_factory=dict)
     metrics: list[BenchmarkMetric] = Field(default_factory=list)
     peers: list[BenchmarkPeer] = Field(default_factory=list)
+    # Скоуп «одна локация»: с кем сравниваем и почему сравнение не получилось.
+    peer_location: OrganizerLocationBrief | None = None
+    peer_note: str | None = None
 
 
 class ProtocolRevisionItem(BaseModel):

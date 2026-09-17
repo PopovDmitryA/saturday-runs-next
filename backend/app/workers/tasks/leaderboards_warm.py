@@ -20,6 +20,7 @@ from app.services.leaderboard_service import (
 )
 from app.services.location_records_rating_service import refresh_location_records_rating_cache
 from app.workers.celery_app import celery_app
+from app.workers.queues import WARM_QUEUE
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ def schedule_leaderboards_warm() -> bool:
     warm_leaderboards_cache.apply_async(
         # Очередь — явно, как везде в репозитории: маршрут задачи не должен
         # зависеть от того, дотянулся ли до вызова task_routes.
-        queue="runpark",
+        queue=WARM_QUEUE,
         countdown=settings.leaderboards_warm_delay_seconds,
         # Просроченный прогрев догонять незачем: следующий синк или расписание
         # всё равно пересчитают сетку целиком (тот же приём, что у portal_cache).
@@ -92,7 +93,7 @@ def _release_running_lock() -> None:
 
 # Очередь runpark: её воркер самый свободный (5 коротких синков в день) и не
 # обслуживает user-очереди, так что долгий пересчёт не задержит пользовательский sync.
-@celery_app.task(name="leaderboards.warm_cache", queue="runpark")
+@celery_app.task(name="leaderboards.warm_cache", queue=WARM_QUEUE)
 def warm_leaderboards_cache() -> dict[str, object]:
     """Пересчитывает и перезаписывает кэш всех рейтингов, не дожидаясь TTL.
 

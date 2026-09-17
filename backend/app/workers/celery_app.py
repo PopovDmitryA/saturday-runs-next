@@ -5,7 +5,7 @@ from celery.schedules import crontab
 
 from app.config import get_settings
 from app.platform_adapters.registry import ensure_adapters_registered
-from app.workers.queues import FIVE_VERST_BATCH_QUEUE, FIVE_VERST_FRESH_QUEUE
+from app.workers.queues import FIVE_VERST_BATCH_QUEUE, FIVE_VERST_FRESH_QUEUE, WARM_QUEUE
 
 settings = get_settings()
 
@@ -45,7 +45,6 @@ celery_app.conf.update(
         "app.workers.tasks.page_stats",
         "app.workers.tasks.admin_digest",
         "app.workers.tasks.og_render",
-        "app.workers.tasks.sweep_hq_snapshot",
         "app.workers.tasks.email_send",
         "app.workers.tasks.user_names",
         "app.workers.tasks.weather_collect",
@@ -65,6 +64,9 @@ celery_app.conf.update(
         "s95_sync.*": {"queue": "s95"},
         "parkrun_sync.*": {"queue": "parkrun"},
         "runpark_sync.*": {"queue": "runpark"},
+        # Прогревы кэша — своя очередь рядом с базой, см. app/workers/queues.py.
+        "leaderboards.warm_cache": {"queue": WARM_QUEUE},
+        "locations.warm_cache": {"queue": WARM_QUEUE},
         # OG-картинки рендерит Playwright — Chromium есть только в образе
         # worker-parkrun (Dockerfile.parkrun), поэтому очередь parkrun.
         "og_render.*": {"queue": "parkrun"},
@@ -76,13 +78,6 @@ celery_app.conf.update(
         "user-names-refresh": {
             "task": "user_names.refresh",
             "schedule": crontab(minute=10, hour=5),
-        },
-        # Табло обхода /hq и /world: пересчёт тяжёлых агрегатов раз в 3 минуты.
-        # Считать на каждый показ нельзя — один только count(*) по runs (124 млн
-        # строк) занимал 5.5 с из 6.7 с ответа.
-        "sweep-hq-snapshot": {
-            "task": "sweep_hq.refresh_snapshot",
-            "schedule": crontab(minute="*/3"),
         },
         # OG-картинки локаций (Л19): обновить после субботних/воскресных синков
         # протоколов + полный прогон в понедельник ночью (часы — Europe/Moscow).
@@ -381,8 +376,8 @@ celery_app.conf.update(
             "schedule": crontab(hour=3, minute=30),
             "options": {"queue": "runpark"},
         },
-        # Прогрев кэша рейтингов (TTL 6ч): каждые 2 часа, со сдвигом от :00,
-        # чтобы не толкаться с runpark-latest на том же воркере. Это страховка и
+        # Прогрев кэша рейтингов (TTL 6ч): каждые 2 часа, со сдвигом от :00.
+        # Очередь warm, её разбирает отдельный воркер рядом с базой. Это страховка и
         # обещанный витриной срок пересчёта (REFRESH_INTERVAL_HOURS в
         # app/services/leaderboard_service.py — парное место, менять вместе);
         # свежие протоколы доезжают быстрее: каждый синк, записавший результаты,
@@ -390,14 +385,14 @@ celery_app.conf.update(
         "leaderboards-warm-cache": {
             "task": "leaderboards.warm_cache",
             "schedule": crontab(minute=20, hour="*/2"),
-            "options": {"queue": "runpark"},
+            "options": {"queue": WARM_QUEUE},
         },
         # Прогрев кэша локаций (TTL 3ч): каждые 2 часа, со сдвигом от рейтингов
         # (:20) — чтобы два тяжёлых прогрева не шли одновременно на одном воркере.
         "locations-warm-cache": {
             "task": "locations.warm_cache",
             "schedule": crontab(minute=40, hour="*/2"),
-            "options": {"queue": "runpark"},
+            "options": {"queue": WARM_QUEUE},
         },
         # Прогрев Redis-кэша главной портала (TTL 24ч) — раз в час, чтобы ни один
         # запрос не попадал на холодный пересчёт (~2 мин на проде) и данные не

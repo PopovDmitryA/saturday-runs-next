@@ -19,7 +19,7 @@ import re
 from datetime import date, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -40,6 +40,7 @@ from app.services.location_page_service import (
     _read_json_cache,
     _write_json_cache,
 )
+from app.services.newcomer_counts import debutants_sum, first_at_location_sum
 from app.services.organizer_access_service import ORGANIZER_ROLE_KEY
 from app.volunteer_role_taxonomy import canonical_volunteer_role, strip_role_counters
 
@@ -82,12 +83,59 @@ def _clean_age_group(value: str | None) -> str | None:
     return cleaned or None
 
 
+# Возрастная категория в протоколах склеена с полом: «М35-39», «Ж10-14», у
+# parkrun-эпохи ещё и со ступенью — «VM40-44», «JW11-14», «SM25-29». Для
+# пирамиды нужен чистый диапазон лет, а пол берём из participants.gender —
+# он материализован и надёжнее разбора буквы.
+_AGE_PREFIX_RE = re.compile(r"^[A-Za-zА-Яа-яЁё]+")
+# Буквы пола в хвосте префикса: русское М/Ж и parkrun-овские M/W.
+_PREFIX_GENDER = {"М": "male", "M": "male", "Ж": "female", "W": "female"}
+# Всё, что начинается со 100 лет и старше, сливаем в одну строку: там и
+# честная parkrun-категория «100+», и мусор данных вроде «М120».
+_AGE_CENTENARIAN = "100+"
+
+
+def _age_range(value: str | None) -> str | None:
+    """«М35-39» → «35-39», «VM100+» → «100+», «М120» → «100+»."""
+    cleaned = _clean_age_group(value)
+    if not cleaned:
+        return None
+    stripped = _AGE_PREFIX_RE.sub("", cleaned).strip()
+    if not stripped:
+        return None
+    start = _age_range_start(stripped)
+    if start is not None and start >= 100:
+        return _AGE_CENTENARIAN
+    return stripped
+
+
+def _age_range_start(value: str) -> int | None:
+    digits = ""
+    for char in value:
+        if char.isdigit():
+            digits += char
+        else:
+            break
+    return int(digits) if digits else None
+
+
+def _gender_from_category(value: str | None) -> str | None:
+    """Запасной путь, когда пол участника не проставлен: буква из категории."""
+    cleaned = _clean_age_group(value)
+    if not cleaned:
+        return None
+    prefix = _AGE_PREFIX_RE.match(cleaned)
+    if prefix is None:
+        return None
+    return _PREFIX_GENDER.get(prefix.group(0)[-1].upper())
+
+
 # ===== Нагрузка на команду и bus-фактор =====
 
 
 def team_load_cache_key(identity_key: str, months: int) -> str:
-    # v2 — ярлыки ролей как в системе, ключевых ролей меньше.
-    return f"organizer:team:v2:{identity_key}:{months}"
+    # v3 — появился поимённый список организаторов.
+    return f"organizer:team:v3:{identity_key}:{months}"
 
 
 def build_team_load(
@@ -186,6 +234,7 @@ def _compute_team_load(
         "avg_per_event": None,
         "top_load": [],
         "roles": [],
+        "organizers": [],
         "director_rotation": None,
         "network_note": None,
     }
@@ -289,6 +338,25 @@ def _compute_team_load(
 
     director_rotation = _director_rotation(role_people, person_names, months)
 
+    # Поимённо, кто и сколько раз вёл старт: светофор ротации называет только
+    # самого частого, а организатору нужен весь список (просьба Дмитрия
+    # 17.09.2026) — по нему видно, кого пора звать обратно.
+    organizer_people = role_people.get(ORGANIZER_ROLE_KEY) or {}
+    organizer_slots = sum(organizer_people.values())
+    organizers = sorted(
+        (
+            {
+                "participant_id": str(pid),
+                "name": person_names.get(pid, (None, None))[0],
+                "slots": count,
+                "share_pct": round(count / organizer_slots * 100) if organizer_slots else 0,
+                "runs_here": runs_here.get(pid, 0),
+            }
+            for pid, count in organizer_people.items()
+        ),
+        key=lambda item: (-int(item["slots"]), str(item["name"] or "")),
+    )
+
     network = network_role_rotation(db, identity, months=months)
 
     roles: list[dict[str, Any]] = []
@@ -360,7 +428,8 @@ def _compute_team_load(
             "avg_per_event": round(slots_total / events_count, 1) if events_count else None,
             "top_load": top_load,
             "roles": roles,
-        "director_rotation": director_rotation,
+            "organizers": organizers,
+            "director_rotation": director_rotation,
         }
     )
     return base
@@ -586,7 +655,8 @@ def _compute_attendance(db: Session, identity: LocationIdentity) -> dict[str, An
 
 
 def audience_cache_key(identity_key: str, months: int) -> str:
-    return f"organizer:audience:v1:{identity_key}:{months}"
+    # v2 — возрастные группы поехали пирамидой «мужчины слева, женщины справа».
+    return f"organizer:audience:v2:{identity_key}:{months}"
 
 
 def build_audience(
@@ -621,7 +691,7 @@ def _compute_audience(
         "months": months,
         "finishes_total": 0,
         "people_total": 0,
-        "age_groups": [],
+        "age_pyramid": [],
         "genders": [],
         "clubs": [],
     }
@@ -643,17 +713,26 @@ def _compute_audience(
     if not rows:
         return base
 
-    age_counts: dict[str, int] = {}
+    # Возрастная пирамида: строка = диапазон лет, в ней два числа — мужчины и
+    # женщины. Раньше это был один общий список категорий, а они склеены с
+    # полом («Ж35-39», «М35-39») и по алфавиту вставали двумя блоками друг под
+    # другом — женский график над мужским. Читать это оказалось неудобно
+    # (заявка из бэклога сайта), поэтому пол ушёл на две стороны одной строки.
+    age_cells: dict[str, dict[str, int]] = {}
     gender_counts: dict[str, int] = {}
     club_people: dict[str, set[Any]] = {}
     club_finishes: dict[str, int] = {}
     people: set[Any] = set()
     for pid, age_category, gender, club_name in rows:
         people.add(pid)
-        group = _clean_age_group(age_category)
-        if group:
-            age_counts[group] = age_counts.get(group, 0) + 1
-        key = {"male": "Мужчины", "female": "Женщины"}.get((gender or "").lower())
+        resolved_gender = (gender or "").lower()
+        if resolved_gender not in ("male", "female"):
+            resolved_gender = _gender_from_category(age_category) or ""
+        age_range = _age_range(age_category)
+        if age_range and resolved_gender in ("male", "female"):
+            cell = age_cells.setdefault(age_range, {"male": 0, "female": 0})
+            cell[resolved_gender] += 1
+        key = {"male": "Мужчины", "female": "Женщины"}.get(resolved_gender)
         if key:
             gender_counts[key] = gender_counts.get(key, 0) + 1
         club = (club_name or "").strip()
@@ -662,13 +741,20 @@ def _compute_audience(
             club_finishes[club] = club_finishes.get(club, 0) + 1
 
     finishes_total = len(rows)
-    age_groups = [
+    age_pyramid = [
         {
-            "group": group,
-            "finishes": count,
-            "share_pct": round(count / finishes_total * 100, 1),
+            "range": age_range,
+            "male_finishes": cell["male"],
+            "female_finishes": cell["female"],
+            "male_share_pct": round(cell["male"] / finishes_total * 100, 1),
+            "female_share_pct": round(cell["female"] / finishes_total * 100, 1),
         }
-        for group, count in sorted(age_counts.items(), key=lambda item: item[0])
+        for age_range, cell in sorted(
+            age_cells.items(),
+            # Сортировка по началу диапазона, а не по строке: иначе «10-14»
+            # оказывается между «100+» и «15-19».
+            key=lambda item: (_age_range_start(item[0]) or 0, item[0]),
+        )
     ]
     genders = [
         {
@@ -690,7 +776,7 @@ def _compute_audience(
         {
             "finishes_total": finishes_total,
             "people_total": len(people),
-            "age_groups": age_groups,
+            "age_pyramid": age_pyramid,
             "genders": genders,
             "clubs": clubs,
         }
@@ -701,13 +787,85 @@ def _compute_audience(
 # ===== Сравнение с соседями =====
 
 
-def benchmark_cache_key(identity_key: str, months: int, scope: str) -> str:
-    return f"organizer:benchmark:v2:{identity_key}:{months}:{scope}"
+def benchmark_cache_key(identity_key: str, months: int, scope: str, peer_key: str = "") -> str:
+    # v3 — появился скоуп «одна локация»: в ключ уехал её identity.
+    return f"organizer:benchmark:v3:{identity_key}:{months}:{scope}:{peer_key}"
 
 
 def network_metrics_cache_key(platform_code: str, months: int) -> str:
-    # v2 — в метриках появились координаты (скоуп «3 ближайшие локации»).
-    return f"organizer:network-metrics:v2:{platform_code}:{months}"
+    # v3 — метрик стало вдвое больше: время, новички, гости, личные рекорды.
+    return f"organizer:network-metrics:v3:{platform_code}:{months}"
+
+
+def _network_guests_by_location(
+    db: Session, platform_code: str, *, since: date
+) -> dict[Any, int]:
+    """Гостей на каждой площадке системы за период: location_id → число.
+
+    Гость — финишёр, чей дом другая площадка ([[location_guests_service]]).
+    Для одной локации дом считает `participant_home_keys` (общесайтовая логика
+    с ручным выбором и волонтёрствами), но на всю систему такой проход по
+    участникам не годится — здесь один SQL: дом = площадка с наибольшим числом
+    финишей, при равенстве — где человек начал раньше. Участник заведён внутри
+    системы, поэтому его история целиком в этой же системе и ответы расходятся
+    лишь там, где одна физическая площадка заведена в системе двумя строками.
+
+    Разница с числом на странице локации ещё и в окне: там вся история, здесь
+    выбранный период. Обе цифры честные, но сравнивать их между собой нельзя.
+    """
+    hist = (
+        select(
+            RunResult.participant_id.label("participant_id"),
+            Event.location_id.label("location_id"),
+            func.count().label("runs"),
+            func.min(Event.event_date).label("first_date"),
+        )
+        .join(Event, Event.id == RunResult.event_id)
+        .join(Location, Location.id == Event.location_id)
+        .join(Platform, Platform.id == Location.platform_id)
+        .where(
+            Platform.code == platform_code,
+            RunResult.finish_time_sec.isnot(None),
+            Event.is_test_event.is_(False),
+            Event.id.notin_(select(EventCrosslink.secondary_event_id)),
+        )
+        .group_by(RunResult.participant_id, Event.location_id)
+        .cte("guest_history")
+    )
+    home = (
+        select(hist.c.participant_id, hist.c.location_id)
+        .distinct(hist.c.participant_id)
+        .order_by(
+            hist.c.participant_id,
+            hist.c.runs.desc(),
+            hist.c.first_date.asc(),
+            hist.c.location_id.asc(),
+        )
+        .cte("guest_home")
+    )
+    rows = (
+        db.query(
+            Event.location_id,
+            func.count().filter(home.c.location_id != Event.location_id),
+        )
+        # Явный select_from: первая колонка выборки — из Event, и без него
+        # SQLAlchemy не понимает, к чему присоединять сам Event.
+        .select_from(RunResult)
+        .join(Event, Event.id == RunResult.event_id)
+        .join(Location, Location.id == Event.location_id)
+        .join(Platform, Platform.id == Location.platform_id)
+        .join(home, home.c.participant_id == RunResult.participant_id)
+        .filter(
+            Platform.code == platform_code,
+            Event.event_date >= since,
+            Event.is_test_event.is_(False),
+            Event.id.notin_(select(EventCrosslink.secondary_event_id)),
+            RunResult.finish_time_sec.isnot(None),
+        )
+        .group_by(Event.location_id)
+        .all()
+    )
+    return {location_id: int(count or 0) for location_id, count in rows}
 
 
 def _network_location_metrics(
@@ -748,11 +906,16 @@ def _network_location_metrics(
         .group_by(Location.id, Location.name, Location.city, Location.region)
         .all()
     )
+    time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
     runs_rows = (
         db.query(
             Event.location_id,
             func.count(RunResult.id),
             func.count(func.distinct(RunResult.participant_id)),
+            func.avg(case((time_ok, RunResult.finish_time_sec))),
+            debutants_sum(),
+            first_at_location_sum(),
+            func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)),
         )
         .join(Event, RunResult.event_id == Event.id)
         .join(Location, Event.location_id == Location.id)
@@ -784,9 +947,51 @@ def _network_location_metrics(
         .group_by(Event.location_id)
         .all()
     )
-    runs = {row[0]: (int(row[1]), int(row[2])) for row in runs_rows}
+    # Организаторы отдельной выборкой: канонизировать роль в SQL нельзя, а
+    # знать, на скольких людях держится старт, организатор хочет не только у
+    # себя (просьба Дмитрия 17.09.2026).
+    organizer_rows = (
+        db.query(Event.location_id, VolunteerResult.role, VolunteerResult.participant_id)
+        .select_from(VolunteerResult)
+        .join(Event, Event.id == VolunteerResult.event_id)
+        .join(Location, Event.location_id == Location.id)
+        .join(Platform, Location.platform_id == Platform.id)
+        .filter(
+            *event_filter,
+            VolunteerResult.role.isnot(None),
+            VolunteerResult.participant_id.isnot(None),
+        )
+        .all()
+    )
+    organizer_slots: dict[Any, int] = {}
+    organizer_people: dict[Any, set[Any]] = {}
+    for location_id, role, participant_id in organizer_rows:
+        canonical = canonical_volunteer_role(role)
+        if canonical is None or canonical.key != ORGANIZER_ROLE_KEY:
+            continue
+        organizer_slots[location_id] = organizer_slots.get(location_id, 0) + 1
+        organizer_people.setdefault(location_id, set()).add(participant_id)
+
+    # Медианная задержка выгрузки протокола — уже считается для светофора
+    # скорости протоколов, наблюдение есть только у 5 вёрст.
+    from app.services.organizer_protocol_service import network_protocol_medians
+
+    protocol_delays = network_protocol_medians(db) if platform_code == "five_verst" else {}
+
+    runs = {
+        row[0]: {
+            "finishes": int(row[1]),
+            "unique_runners": int(row[2]),
+            "avg_time": int(row[3]) if row[3] is not None else None,
+            "debutants": int(row[4] or 0),
+            "first_here": int(row[5] or 0),
+            "prs": int(row[6] or 0),
+        }
+        for row in runs_rows
+    }
     vols = {row[0]: (int(row[1]), int(row[2])) for row in vols_rows}
     female = {row[0]: int(row[1]) for row in female_rows}
+    guests = _network_guests_by_location(db, platform_code, since=since)
 
     items: list[dict[str, Any]] = []
     for location_id, name, city, region, latitude, longitude, events_count in events_rows:
@@ -794,10 +999,12 @@ def _network_location_metrics(
         if events_count < 5:
             # Молодые и почти не стартовавшие локации искажают сравнение.
             continue
-        finishes, unique_runners = runs.get(location_id, (0, 0))
+        stats = runs.get(location_id)
         vol_slots, unique_vols = vols.get(location_id, (0, 0))
-        if finishes == 0:
+        if stats is None or stats["finishes"] == 0:
             continue
+        finishes = stats["finishes"]
+        location_guests = guests.get(location_id, 0)
         items.append(
             {
                 "location_id": str(location_id),
@@ -809,12 +1016,27 @@ def _network_location_metrics(
                 "events": events_count,
                 "avg_finishers": round(finishes / events_count, 1),
                 "avg_volunteers": round(vol_slots / events_count, 1),
-                "unique_runners": unique_runners,
+                "unique_runners": stats["unique_runners"],
                 "unique_volunteers": unique_vols,
+                "avg_finish_time_sec": stats["avg_time"],
+                "avg_debutants": round(stats["debutants"] / events_count, 1),
+                "avg_first_here": round(stats["first_here"] / events_count, 1),
+                "avg_guests": round(location_guests / events_count, 1),
+                "guests_share_pct": round(location_guests / finishes * 100, 1),
+                "avg_prs": round(stats["prs"] / events_count, 1),
                 "female_share_pct": round(female.get(location_id, 0) / finishes * 100, 1),
                 "volunteer_rotation_pct": (
                     round(unique_vols / vol_slots * 100) if vol_slots else 0
                 ),
+                "organizers_count": len(organizer_people.get(location_id) or ()),
+                "organizer_rotation_pct": (
+                    round(len(organizer_people[location_id]) / organizer_slots[location_id] * 100)
+                    if organizer_slots.get(location_id)
+                    else 0
+                ),
+                # None — за площадкой не наблюдаем (не 5 вёрст) либо фактов
+                # меньше пяти: строка сравнения тогда просто не показывается.
+                "protocol_delay_hours": protocol_delays.get(str(location_id)),
             }
         )
     _write_json_cache(cache_key, {"items": items}, NETWORK_CACHE_TTL_SECONDS)
@@ -827,28 +1049,50 @@ def build_benchmark(
     *,
     months: int = DEFAULT_MONTHS,
     scope: str = "city",
+    peer: LocationIdentity | None = None,
     use_cache: bool = True,
     refresh: bool = False,
 ) -> dict[str, Any]:
-    cache_key = benchmark_cache_key(identity.identity_key, months, scope)
+    cache_key = benchmark_cache_key(
+        identity.identity_key, months, scope, peer.identity_key if peer else ""
+    )
     if use_cache and not refresh:
         cached = _read_json_cache(cache_key)
         if cached is not None:
             return cached
-    payload = _compute_benchmark(db, identity, months=months, scope=scope)
+    payload = _compute_benchmark(db, identity, months=months, scope=scope, peer=peer)
     if use_cache:
         write_organizer_cache(identity, cache_key, payload, ANALYTICS_CACHE_TTL_SECONDS)
     return payload
 
 
-# Метрики, по которым считаем место локации. asc=True — «меньше значит лучше».
-BENCHMARK_METRICS: tuple[tuple[str, str], ...] = (
-    ("avg_finishers", "Финишёров на старте"),
-    ("avg_volunteers", "Волонтёров на старте"),
-    ("unique_runners", "Разных участников за период"),
-    ("unique_volunteers", "Разных волонтёров за период"),
-    ("female_share_pct", "Доля женщин, %"),
-    ("volunteer_rotation_pct", "Ротация волонтёров, %"),
+# Метрики бенчмарка: ключ, подпись, группа и «больше значит лучше».
+#
+# higher_is_better = None оставлено для метрик-профилей, где «лучше» не бывает
+# ни в какую сторону: место в выборке им не считается и процент не красится.
+# Сейчас такая одна — доля женщин.
+BENCHMARK_METRICS: tuple[tuple[str, str, str, bool | None], ...] = (
+    ("avg_finishers", "Финишёров на старте", "Явка", True),
+    ("unique_runners", "Разных участников за период", "Явка", True),
+    ("events", "Стартов за период", "Явка", True),
+    ("female_share_pct", "Доля женщин, %", "Явка", None),
+    # Время финиша здесь — про поле, а не про спортсмена: чем оно больше, тем
+    # больше на старте неспешных бегунов, семей и новичков, а это ровно то, за
+    # чем локация и существует (решение Дмитрия 14.09.2026).
+    ("avg_finish_time_sec", "Среднее время финиша", "Результаты", True),
+    ("avg_prs", "Личных рекордов на старте", "Результаты", True),
+    ("avg_debutants", "Новичков на старте", "Новые лица", True),
+    ("avg_first_here", "Впервые здесь, на старте", "Новые лица", True),
+    ("avg_guests", "Гостей на старте", "Новые лица", True),
+    ("guests_share_pct", "Доля гостей, %", "Новые лица", True),
+    ("avg_volunteers", "Волонтёров на старте", "Команда", True),
+    ("unique_volunteers", "Разных волонтёров за период", "Команда", True),
+    ("volunteer_rotation_pct", "Ротация волонтёров, %", "Команда", True),
+    ("organizers_count", "Разных организаторов за период", "Команда", True),
+    ("organizer_rotation_pct", "Ротация организаторов, %", "Команда", True),
+    # Наблюдение за выгрузкой есть только у 5 вёрст: у остальных систем строка
+    # не появится вовсе (метрика None → её пропускает _compute_benchmark).
+    ("protocol_delay_hours", "Протокол после финиша, часов", "Команда", False),
 )
 
 
@@ -882,10 +1126,27 @@ def _nearest_peers(
     return [ours] + [item for _dist, item in ranked[:count]]
 
 
+def _location_metrics_for(
+    db: Session, identity: LocationIdentity, *, months: int
+) -> dict[str, Any] | None:
+    """Строка метрик конкретной локации из среза её системы (или None)."""
+    platform_code = next((code for _loc, code in identity.locations), None)
+    if platform_code is None:
+        return None
+    ids = {str(location.id) for location, _code in identity.locations}
+    items = _network_location_metrics(db, platform_code, months=months)
+    return next((item for item in items if item["location_id"] in ids), None)
+
+
 def _compute_benchmark(
-    db: Session, identity: LocationIdentity, *, months: int, scope: str
+    db: Session,
+    identity: LocationIdentity,
+    *,
+    months: int,
+    scope: str,
+    peer: LocationIdentity | None = None,
 ) -> dict[str, Any]:
-    """Наша локация против соседей: город, регион или вся система."""
+    """Наша локация против соседей: город, регион, вся система или одна площадка."""
     platform_code = next((code for _loc, code in identity.locations), None)
     our_ids = {str(location.id) for location, _code in identity.locations}
     base: dict[str, Any] = {
@@ -897,6 +1158,8 @@ def _compute_benchmark(
         "scope_sizes": {},
         "metrics": [],
         "peers": [],
+        "peer_location": None,
+        "peer_note": None,
     }
     if platform_code is None:
         return base
@@ -926,6 +1189,45 @@ def _compute_benchmark(
         "network": len(items),
     }
 
+    # Сравнение с одной выбранной локацией — отдельная ветка: медиана и место в
+    # выборке из двух строк ничего не значат, показываем «мы против них».
+    # Локация может быть из другой системы, поэтому её метрики берём из среза
+    # ЕЁ системы (заявка из бэклога сайта).
+    if scope == "location":
+        if peer is None:
+            base["peer_note"] = "Выберите локацию для сравнения"
+            return base
+        base["peer_location"] = {"slug": peer.slug, "name": peer.name}
+        base["scope_label"] = peer.name
+        theirs = _location_metrics_for(db, peer, months=months)
+        if theirs is None:
+            base["peer_note"] = "За выбранный период у этой локации меньше пяти стартов"
+            return base
+        base["metrics"] = [
+            {
+                "key": key,
+                "label": label,
+                "group": group,
+                "higher_is_better": higher_is_better,
+                "our_value": float(ours[key]),
+                "peer_value": float(theirs[key]),
+                "peers": 1,
+                "delta_vs_peer_pct": (
+                    round((float(ours[key]) - float(theirs[key])) / float(theirs[key]) * 100)
+                    if float(theirs[key])
+                    else None
+                ),
+            }
+            for key, label, group, higher_is_better in BENCHMARK_METRICS
+            if ours.get(key) is not None and theirs.get(key) is not None
+        ]
+        base["peers_total"] = 1
+        base["peers"] = [
+            {**ours, "is_ours": True},
+            {**theirs, "is_ours": False},
+        ]
+        return base
+
     if scope == "city" and len(city_peers) >= 2:
         peers = city_peers
         scope_label = f"город {ours['city']}"
@@ -940,18 +1242,30 @@ def _compute_benchmark(
         scope_label = "вся система"
 
     metrics: list[dict[str, Any]] = []
-    for key, label in BENCHMARK_METRICS:
-        values = sorted((float(item[key]) for item in peers), reverse=True)
+    for key, label, group, higher_is_better in BENCHMARK_METRICS:
+        if ours.get(key) is None:
+            # У площадки нет такой цифры (например, ни одного времени финиша) —
+            # строку не показываем вовсе, чтобы не сравнивать с прочерком.
+            continue
+        # Сортируем так, чтобы values[0] всегда была «лучшая»: у времени финиша
+        # это минимум, у остальных — максимум.
+        values = sorted(
+            (float(item[key]) for item in peers if item.get(key) is not None),
+            reverse=higher_is_better is not False,
+        )
         our_value = float(ours[key])
-        rank = values.index(our_value) + 1 if our_value in values else None
-        median = values[len(values) // 2] if values else None
+        rank = values.index(our_value) + 1 if higher_is_better is not None and our_value in values else None
+        median = sorted(values)[len(values) // 2] if values else None
         metrics.append(
             {
                 "key": key,
                 "label": label,
+                "group": group,
+                "higher_is_better": higher_is_better,
                 "our_value": our_value,
                 "median": median,
-                "best": values[0] if values else None,
+                # «Лучшая» бессмысленна там, где лучше не бывает (доля женщин).
+                "best": values[0] if values and higher_is_better is not None else None,
                 "rank": rank,
                 "peers": len(values),
                 "delta_vs_median_pct": (

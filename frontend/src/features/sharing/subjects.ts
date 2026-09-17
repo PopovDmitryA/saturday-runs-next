@@ -218,7 +218,7 @@ export function runSubject(run: RunItem, user: User | null, options?: { yearsAgo
     pushMetric(metrics, "first_here", "впервые", "на этой локации");
   }
   if (run.is_first_run) {
-    pushMetric(metrics, "first_run", "дебют", "первая пробежка");
+    pushMetric(metrics, "first_run", "новичок", "первая пробежка");
   }
   for (const label of run.achievement_labels ?? []) {
     pushMetric(metrics, `achievement_${label}`, label, "достижение");
@@ -1221,9 +1221,8 @@ export function locationMeSubject(stats: LocationPersonalStats, user: User | nul
   pushMetric(metrics, "best_time", stripLeadingHours(stats.best_time_display), "лучшее время");
   pushMetric(metrics, "avg_time", stripLeadingHours(stats.avg_time_display), "среднее время");
   pushCountMetric(metrics, "volunteering", stats.volunteering_count, VOLUNTEERING_FORMS);
-  if (stats.rank_by_runs_gender != null) {
-    const scope = stats.gender === "female" ? "среди женщин" : stats.gender === "male" ? "среди мужчин" : "в топе";
-    pushMetric(metrics, "rank", `№${formatInt(stats.rank_by_runs_gender)}`, `${scope} площадки`);
+  if (stats.rank_by_runs != null) {
+    pushMetric(metrics, "rank", `№${formatInt(stats.rank_by_runs)}`, "в топе локации");
   }
   pushMetric(
     metrics,

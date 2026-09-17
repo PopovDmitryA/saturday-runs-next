@@ -1405,6 +1405,56 @@ def _event_participant_totals(
     return totals
 
 
+def _age_group_places(
+    db: Session, rows: list[tuple[UUID, UUID, str | None]]
+) -> dict[UUID, tuple[int | None, int | None]]:
+    """Место внутри своей возрастной категории на этом старте: run_result.id → (место, всего).
+
+    Правило ровно то же, что на странице протокола
+    (location_protocol_service._fill_age_group_places), иначе одна и та же
+    пробежка показывала бы разные места в двух разделах сайта: партиционируем
+    по СЫРОЙ категории протокола («М35-39»), место считаем только у строк со
+    временем, в «всего» идут все строки категории.
+
+    Считаем пачкой на всю страницу пробежек: одна выборка на её старты, дальше
+    группировка в Python. Пары (событие, категория) перечисляем явно — иначе
+    выборка тащила бы все категории каждого старта.
+    """
+    from sqlalchemy import tuple_
+
+    pairs = {(event_id, category) for _run_id, event_id, category in rows if category}
+    if not pairs:
+        return {}
+
+    protocol_rows = (
+        db.query(
+            RunResult.id,
+            RunResult.event_id,
+            RunResult.age_category,
+            RunResult.finish_time_sec,
+            RunResult.position,
+        )
+        .filter(tuple_(RunResult.event_id, RunResult.age_category).in_(sorted(pairs)))
+        .all()
+    )
+
+    by_category: dict[tuple[UUID, str], list[tuple[UUID, int | None, int | None]]] = defaultdict(list)
+    for run_id, event_id, category, finish_time_sec, position in protocol_rows:
+        by_category[(event_id, category)].append((run_id, finish_time_sec, position))
+
+    places: dict[UUID, tuple[int | None, int | None]] = {}
+    for category_rows in by_category.values():
+        total = len(category_rows)
+        ranked = sorted(
+            (item for item in category_rows if item[1]),
+            key=lambda item: (item[1], item[2] or 0),
+        )
+        place_by_run = {run_id: place for place, (run_id, _t, _p) in enumerate(ranked, start=1)}
+        for run_id, _time_sec, _position in category_rows:
+            places[run_id] = (place_by_run.get(run_id), total)
+    return places
+
+
 def _location_status_fields(
     catalog_index: LocationCatalogIndex,
     location: Location,
@@ -1496,6 +1546,9 @@ def list_user_runs(
         [(event, platform.code) for _run, event, _loc, platform, _link in rows],
         catalog_index,
     )
+    age_group_places = _age_group_places(
+        db, [(run.id, run.event_id, run.age_category) for run, _e, _l, _p, _link in rows]
+    )
     return [
         {
             "run_result_id": run.id,
@@ -1513,6 +1566,8 @@ def list_user_runs(
             "location_slug": location.external_key.strip().lower(),
             "position": run.position,
             "gender_position": run.gender_position,
+            "age_group_position": age_group_places.get(run.id, (None, None))[0],
+            "age_group_total": age_group_places.get(run.id, (None, None))[1],
             "participants_total": participant_totals.get(event.id),
             "finish_time_display": normalize_finish_time_display(
                 run.finish_time_sec,

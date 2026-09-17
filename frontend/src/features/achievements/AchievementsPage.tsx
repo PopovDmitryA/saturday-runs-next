@@ -453,6 +453,7 @@ function ChallengeItems({ challenge }: { challenge: Challenge }) {
             ) : (
               item.location && <span className="challenge-item-location">{item.location}</span>
             )}
+            {item.platform_code && <PlatformBadge code={item.platform_code} />}
             {item.date && <span className="challenge-item-date">{formatDate(item.date)}</span>}
           </li>
         );

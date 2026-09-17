@@ -354,6 +354,10 @@ class RunItemResponse(BaseModel):
     location_is_cancelled: bool = False
     position: int | None = None
     gender_position: int | None = None
+    # Место внутри своей возрастной категории на этом старте и размер категории —
+    # считаются так же, как на странице протокола (_age_group_places).
+    age_group_position: int | None = None
+    age_group_total: int | None = None
     # Сколько всего человек было в протоколе старта; None — протокол неполон и
     # честное число неизвестно (см. _event_participant_totals).
     participants_total: int | None = None

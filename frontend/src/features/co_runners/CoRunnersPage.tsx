@@ -38,6 +38,21 @@ function SiteProfileIcon() {
   );
 }
 
+function CompareIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+      <path
+        d="M10 3v14M4.5 6h11M4.5 6 2 12h5L4.5 6Zm11 0L13 12h5l-2.5-6Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function stopPropagation(event: MouseEvent) {
   event.stopPropagation();
 }
@@ -86,14 +101,30 @@ function ParticipantName({ item }: { item: CoRunnerItem }) {
           нативный title отдаёт его целиком (и озвучивается скринридером). */}
       <span title={name}>{name}</span>
       {item.site_serial_id != null && (
-        <StatHintTooltip
-          text="Откроется профиль участника на этом сайте"
-          className="co-runners-profile-icon co-runners-profile-icon-site"
-        >
-          <a href={`/users/${item.site_serial_id}`} onClick={stopPropagation} aria-label="Профиль на сайте">
-            <SiteProfileIcon />
-          </a>
-        </StatHintTooltip>
+        <>
+          <StatHintTooltip
+            text="Откроется профиль участника на этом сайте"
+            className="co-runners-profile-icon co-runners-profile-icon-site"
+          >
+            <a href={`/users/${item.site_serial_id}`} onClick={stopPropagation} aria-label="Профиль на сайте">
+              <SiteProfileIcon />
+            </a>
+          </StatHintTooltip>
+          {/* Вход в сравнение прямо из списка: ходить в чужой профиль и там
+              искать вкладку — неочевидный путь (правка Дмитрия 17.09.2026). */}
+          <StatHintTooltip
+            text="Сравнить его статистику с вашей"
+            className="co-runners-profile-icon co-runners-compare-icon"
+          >
+            <a
+              href={`/users/${item.site_serial_id}/co-runners?view=compare`}
+              onClick={stopPropagation}
+              aria-label="Сравнить со мной"
+            >
+              <CompareIcon />
+            </a>
+          </StatHintTooltip>
+        </>
       )}
     </span>
   );

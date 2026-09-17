@@ -27,6 +27,7 @@ import {
   COUNT_FORMS,
   formatDate,
   formatInt,
+  formatNumber,
   formatKm,
   formatStatValue,
   platformCodeLabel,
@@ -252,12 +253,12 @@ function LastEventSection({ lastEvent, page }: { lastEvent: LocationLastEvent; p
         {newcomers !== null && (
           <StatTile
             value={newcomers}
-            label={pluralFormRu(newcomers, COUNT_FORMS.newcomers)}
+            label={pluralFormRu(newcomers, COUNT_FORMS.newFaces)}
             sub={
               lastEvent.debutants || lastEvent.first_at_location
                 ? [
                     lastEvent.debutants
-                      ? `${pluralizeRu(lastEvent.debutants, COUNT_FORMS.debuts)} в системе`
+                      ? pluralizeRu(lastEvent.debutants, COUNT_FORMS.newcomers)
                       : null,
                     lastEvent.first_at_location
                       ? `${lastEvent.first_at_location} впервые здесь`
@@ -267,6 +268,13 @@ function LastEventSection({ lastEvent, page }: { lastEvent: LocationLastEvent; p
                     .join(" · ")
                 : undefined
             }
+          />
+        )}
+        {lastEvent.guests !== null && (
+          <StatTile
+            value={lastEvent.guests}
+            label={pluralFormRu(lastEvent.guests, COUNT_FORMS.guests)}
+            hint="Все приезжие: финишёры, чья домашняя локация другая. В отличие от «впервые здесь», гость мог приезжать сюда и раньше — поэтому гостей всегда больше."
           />
         )}
         {lastEvent.prs !== null && (
@@ -1090,24 +1098,21 @@ function LocationPersonalSection({
         {stats.avg_time_display && (
           <StatTile value={stripLeadingHours(stats.avg_time_display)} label="среднее время здесь" />
         )}
-        {/* Топ по пробежкам — только внутри своего пола. Общий топ убран:
-            сравнение мужчин и женщин одной строкой бегуну мало что говорит, а
-            в знаменатель попадали «неизвестные» из протоколов — у них пола нет,
-            поэтому срез по полу отсекает их сам. У всех привязанных
-            пользователей пол известен, так что плитка не пропадёт. */}
-        {stats.rank_by_runs_gender != null && stats.runs_count > 0 && (
+        {/* Топ по пробежкам — общий, без разбивки по полу (решение Дмитрия
+            17.09.2026). Знаменатель тот же, что у таблицы лидеров локации:
+            заглушки протокола («НЕИЗВЕСТНЫЙ») в него не идут. */}
+        {stats.rank_by_runs != null && stats.runs_count > 0 && (
           <StatTile
-            value={`#${stats.rank_by_runs_gender}`}
-            label={`в топе по пробежкам · ${stats.gender === "female" ? "Ж" : "М"}`}
-            hint={`Место по числу пробежек на этой площадке среди ${
-              stats.gender === "female" ? "женщин" : "мужчин"
-            } за всю её историю — во всех системах сразу, включая parkrun-эпоху. Привязанные профили считаются одним человеком, неопознанные финишёры протокола в счёт не идут.`}
+            value={`#${stats.rank_by_runs}`}
+            label="в топе по пробежкам"
+            hint="Место по числу пробежек на этой локации за всю её историю — во всех системах сразу, включая parkrun-эпоху. Привязанные профили считаются одним человеком, неопознанные финишёры протокола в счёт не идут."
             sub={
-              stats.runners_total_gender != null
-                ? `из ${formatInt(stats.runners_total_gender)} ${pluralFormRu(
-                    stats.runners_total_gender,
-                    ["бегуна", "бегунов", "бегунов"],
-                  )}`
+              stats.runners_total != null
+                ? `из ${formatInt(stats.runners_total)} ${pluralFormRu(stats.runners_total, [
+                    "бегуна",
+                    "бегунов",
+                    "бегунов",
+                  ])}`
                 : undefined
             }
           />
@@ -1377,6 +1382,25 @@ function LocationPageContent({ slug }: { slug: string }) {
             value={stats.unique_participants}
             label={pluralFormRu(stats.unique_participants, COUNT_FORMS.uniqueParticipants)}
           />
+          {/* «Туристическая привлекательность» площадки — заявка из бэклога
+              сайта: «сколько всего, в среднем и на последней пробежке». */}
+          {stats.guests && stats.guests.total > 0 && (
+            <StatTile
+              value={stats.guests.total}
+              label={pluralFormRu(stats.guests.total, COUNT_FORMS.guests)}
+              sub={[
+                stats.guests.share_pct !== null
+                  ? `${formatNumber(stats.guests.share_pct)}% всех финишей`
+                  : null,
+                stats.guests.avg_per_event !== null
+                  ? `в среднем ${formatNumber(stats.guests.avg_per_event)} на старте`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              hint="Все приезжие за историю локации: финишёры, чья домашняя локация другая. Приезжать гость может не в первый раз, поэтому их всегда больше, чем пришедших сюда впервые."
+            />
+          )}
           <StatTile
             value={stats.volunteers_total}
             label={pluralFormRu(stats.volunteers_total, COUNT_FORMS.volunteering)}

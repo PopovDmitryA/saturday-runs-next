@@ -47,7 +47,12 @@ from app.services.location_catalog_service import (
     normalize_platform_code,
     resolve_location_display_name,
 )
-from app.services.newcomer_counts import debutants_sum, location_guests_sum
+from app.services.location_guests_service import (
+    cached_guests_by_event,
+    location_guests_by_event,
+    location_guests_summary,
+)
+from app.services.newcomer_counts import debutants_sum, first_at_location_sum
 from app.services.series_locations import start_title as series_start_title
 from app.services.start_weather_service import weather_for_pairs
 from app.time_format import format_finish_time_display
@@ -1867,9 +1872,9 @@ def _last_event_stats(
             func.min(case((time_ok & (gender_expr == "male"), RunResult.finish_time_sec))).label("best_male"),
             func.min(case((time_ok & (gender_expr == "female"), RunResult.finish_time_sec))).label("best_female"),
             # Те же метрики, что в журнале протоколов: дебютанты платформы,
-            # гости площадки (впервые здесь, но в системе не впервые), ЛР.
+            # впервые на площадке (в системе не впервые), ЛР.
             debutants_sum().label("debutants"),
-            location_guests_sum().label("first_here"),
+            first_at_location_sum().label("first_here"),
             func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)).label("prs"),
             # Разбивка по полу: локации пишут её в постах «в цифрах»
             # («57 мужчин, 33 девушки, 4 неизвестных»).
@@ -2449,14 +2454,16 @@ def build_location_page(
         if cached is not None:
             return cached
 
-    payload = _compute_location_page(db, slug)
+    payload = _compute_location_page(db, slug, refresh=refresh)
 
     if use_cache and payload is not None:
         _write_json_cache(cache_key, payload, LOCATION_PAGE_CACHE_TTL_SECONDS)
     return payload
 
 
-def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
+def _compute_location_page(
+    db: Session, slug: str, *, refresh: bool = False
+) -> dict[str, object] | None:
     identity = resolve_location_identity(db, slug)
     if identity is None:
         return None
@@ -2666,6 +2673,13 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
     # формата. Отдаём его отдельным полем, чтобы страница не обещала лишнего.
     page_is_series = any(location.is_series for location, _code in identity.locations)
 
+    # Сколько сюда приезжает людей, для которых дом — другая площадка
+    # (заявка из бэклога сайта про «туристическую» статистику локации).
+    guests_by_event, guests_summary = location_guests_summary(db, identity, refresh=refresh)
+    if last_event_payload is not None:
+        last_event_id = max(events, key=lambda row: row[1])[0]
+        last_event_payload["guests"] = guests_by_event.get(last_event_id)
+
     return {
         "slug": identity.slug,
         "identity_key": identity.identity_key,
@@ -2708,6 +2722,7 @@ def _compute_location_page(db: Session, slug: str) -> dict[str, object] | None:
                 format_finish_time_display(median_finish_time_sec) if median_finish_time_sec is not None else None
             ),
             "last_event": last_event_payload,
+            "guests": guests_summary,
             "avg_finish_time_delta_sec": avg_delta,
             "median_finish_time_delta_sec": median_delta,
         },
@@ -2780,7 +2795,7 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
                 func.min(case((time_ok & (gender_expr == "female"), RunResult.finish_time_sec))).label("best_female"),
                 func.avg(case((time_ok, RunResult.finish_time_sec))).label("avg_time"),
                 debutants_sum().label("debutants"),
-                location_guests_sum().label("first_here"),
+                first_at_location_sum().label("first_here"),
                 func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)).label("prs"),
             )
             .join(Event, RunResult.event_id == Event.id)
@@ -2856,6 +2871,13 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
             if summary_row.event_id is not None:
                 summaries[summary_row.event_id] = summary_row
 
+    # Гости старта — те, чей дом другая площадка (см. location_guests_service).
+    # От колонки «Впервые здесь» отличаются тем, что человек мог приезжать сюда
+    # и раньше: это заявка из бэклога сайта.
+    # Здесь refresh НЕ передаём: прогрев идёт парой «страница + журнал», и
+    # страница ключ уже переписала — второй пересчёт был бы холостым.
+    guests_by_event = location_guests_by_event(db, identity)
+
     def fmt(value: int | None) -> str | None:
         return format_finish_time_display(value) if value is not None else None
 
@@ -2904,6 +2926,7 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
                 "avg_time_display": fmt(avg_time),  # type: ignore[arg-type]
                 "debutants": stats["debutants"] if stats else None,
                 "first_at_location": stats["first_here"] if stats else None,
+                "guests": guests_by_event.get(event.id) if has_protocol else None,
                 "prs": stats["prs"] if stats else None,
                 "has_protocol": has_protocol,
                 "protocol_url": resolve_activity_url(
@@ -3530,6 +3553,7 @@ def _compute_last_results(db: Session) -> dict[str, object]:
                 func.min(case((time_ok & (gender_expr == "female"), RunResult.finish_time_sec))).label("best_female"),
                 func.avg(case((time_ok, RunResult.finish_time_sec))).label("avg_time"),
                 func.sum(case((RunResult.is_first_run.is_(True), 1), else_=0)).label("debutants"),
+                first_at_location_sum().label("first_here"),
                 func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)).label("prs"),
             )
             .join(Event, RunResult.event_id == Event.id)
@@ -3546,6 +3570,7 @@ def _compute_last_results(db: Session) -> dict[str, object]:
                 "best_female": int(row.best_female) if row.best_female is not None else None,
                 "avg_time": int(row.avg_time) if row.avg_time is not None else None,
                 "debutants": int(row.debutants or 0),
+                "first_here": int(row.first_here or 0),
                 "prs": int(row.prs or 0),
             }
         volunteer_counts = {
@@ -3579,6 +3604,12 @@ def _compute_last_results(db: Session) -> dict[str, object]:
         finishers: int | None = None
         volunteers: int | None = None
         debutants: int | None = None
+        first_here: int | None = None
+        # Гости — единственное число страницы, которое нельзя посчитать на
+        # лету для всех 250 локаций сразу: берём готовое из кэша площадки,
+        # его наполняет прогрев. Холодный кэш = прочерк, а не задержка.
+        guests_cache = cached_guests_by_event(identity_key)
+        guests: int | None = None
         prs: int | None = None
         best_male: int | None = None
         best_female: int | None = None
@@ -3600,7 +3631,10 @@ def _compute_last_results(db: Session) -> dict[str, object]:
                 volunteers = (volunteers or 0) + event_volunteers
             if stats is not None:
                 debutants = (debutants or 0) + (stats["debutants"] or 0)
+                first_here = (first_here or 0) + (stats["first_here"] or 0)
                 prs = (prs or 0) + (stats["prs"] or 0)
+            if guests_cache is not None and event.id in guests_cache:
+                guests = (guests or 0) + guests_cache[event.id]
             event_best_male = stats["best_male"] if stats else (summary.best_male_time_sec if summary else None)
             if event_best_male is not None and (best_male is None or event_best_male < best_male):
                 best_male = event_best_male
@@ -3633,6 +3667,8 @@ def _compute_last_results(db: Session) -> dict[str, object]:
                 "finishers": finishers,
                 "volunteers": volunteers,
                 "debutants": debutants,
+                "first_at_location": first_here,
+                "guests": guests,
                 "prs": prs,
                 "best_male_time_sec": best_male,
                 "best_male_time_display": fmt(best_male),
@@ -3860,9 +3896,8 @@ def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[st
         "last_run_date": None,
         "volunteering_count": 0,
         "top_volunteer_role": None,
-        "gender": None,
-        "rank_by_runs_gender": None,
-        "runners_total_gender": None,
+        "rank_by_runs": None,
+        "runners_total": None,
         "age_groups": [],
         "home_distance": _location_home_distance(db, user, identity),
     }
@@ -3921,42 +3956,33 @@ def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[st
         payload["first_run_date"] = min(real_dates)
         payload["last_run_date"] = max(real_dates)
 
-    # Место в топе локации по числу пробежек — внутри своего пола. Группировка
-    # та же, что в build_location_leaders: привязанные аккаунты сливаются по
-    # user_id. Общего места (без разбивки) больше нет: сравнение мужчин и женщин
-    # одной строкой мало что говорит, а в знаменатель попадали неопознанные
-    # финишёры протокола — у них пол не заполнен, и срез по полу отсекает их сам.
-    #
-    # Пол берём из participants.gender — он
-    # материализован по всем системам (gender_position_service), поэтому срез
-    # работает и на parkrun-эпохе, где протокол категории не публикует.
-    my_gender = (
-        db.query(Participant.gender)
-        .join(PlatformLink, _platform_link_join())
-        .filter(PlatformLink.user_id == user_id, Participant.gender.isnot(None))
-        .limit(1)
-        .scalar()
+    # Место в топе локации по числу пробежек — среди всех бегунов площадки, без
+    # разбивки по полу (решение Дмитрия 17.09.2026). Группировка и отсечка
+    # безымянных — ровно те же, что в build_location_leaders: привязанные
+    # аккаунты сливаются по user_id, а заглушки протокола («НЕИЗВЕСТНЫЙ», у s95
+    # это к тому же один общий аккаунт на всех) в знаменатель не идут. Иначе
+    # плитка и таблица лидеров на одной странице показывали бы разные числа.
+    leader_name = func.max(func.coalesce(User.display_name, Participant.display_name))
+    runner_runs = (
+        db.query(func.count(func.distinct(RunResult.event_id)).label("runs"))
+        .join(Participant, RunResult.participant_id == Participant.id)
+        .outerjoin(PlatformLink, _platform_link_join())
+        .outerjoin(User, PlatformLink.user_id == User.id)
+        .filter(RunResult.event_id.in_(event_ids))
+        .group_by(func.coalesce(PlatformLink.user_id, RunResult.participant_id))
+        .having(_identified_name_clause(leader_name))
+        .subquery()
     )
-    if my_gender in ("male", "female"):
-        gender_runs = (
-            db.query(func.count(func.distinct(RunResult.event_id)).label("runs"))
-            .join(Participant, RunResult.participant_id == Participant.id)
-            .outerjoin(PlatformLink, _platform_link_join())
-            .filter(RunResult.event_id.in_(event_ids), Participant.gender == my_gender)
-            .group_by(func.coalesce(PlatformLink.user_id, RunResult.participant_id))
-            .subquery()
+    ahead, total = (
+        db.query(
+            func.count(case((runner_runs.c.runs > runs_count, 1))),
+            func.count(),
         )
-        ahead_gender, total_gender = (
-            db.query(
-                func.count(case((gender_runs.c.runs > runs_count, 1))),
-                func.count(),
-            )
-            .select_from(gender_runs)
-            .one()
-        )
-        payload["gender"] = my_gender
-        payload["rank_by_runs_gender"] = int(ahead_gender) + 1
-        payload["runners_total_gender"] = int(total_gender)
+        .select_from(runner_runs)
+        .one()
+    )
+    payload["rank_by_runs"] = int(ahead) + 1
+    payload["runners_total"] = int(total)
 
     payload["age_groups"] = build_location_age_group_standings(db, user_id, event_ids)
 

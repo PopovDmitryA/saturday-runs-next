@@ -64,6 +64,7 @@ import { OrganizerAttendancePage } from "./features/organizer/OrganizerAttendanc
 import { OrganizerProtocolsPage } from "./features/organizer/OrganizerProtocolsPage";
 import { OrganizerAudiencePage } from "./features/organizer/OrganizerAudiencePage";
 import { OrganizerBenchPage } from "./features/organizer/OrganizerBenchPage";
+import { OrganizerBenchmarkPage } from "./features/organizer/OrganizerBenchmarkPage";
 import { OrganizerIndexPage } from "./features/organizer/OrganizerIndexPage";
 import { OrganizerMilestonesPage } from "./features/organizer/OrganizerMilestonesPage";
 import { OrganizerNewcomersPage } from "./features/organizer/OrganizerNewcomersPage";
@@ -75,8 +76,6 @@ import { LocationRecordsRatingPage } from "./features/leaderboards/LocationRecor
 import { RegionsRatingPage } from "./features/leaderboards/RegionsRatingPage";
 import { LocationWeatherPage } from "./features/locations/LocationWeatherPage";
 import { QueuePage } from "./features/queue/QueuePage";
-import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
-import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { TapTooltipLayer } from "./components/TapTooltipLayer";
 import { useEntryKey } from "./hooks/useEntryKey";
@@ -349,14 +348,6 @@ function renderRoute(path: string): ReactElement {
   if (path.startsWith("/api/")) {
     return <ApiPathRedirect />;
   }
-  const sweepHqMatch = path.match(/^\/hq\/(.+)$/);
-  if (sweepHqMatch) {
-    return <SweepHqPage token={decodeURIComponent(sweepHqMatch[1])} />;
-  }
-  // Публичная витрина обхода — без имён, прокси и счётчиков капч (см. /hq).
-  if (path === "/world" || path === "/world/") {
-    return <SweepWorldPage />;
-  }
   // Публичный адрес участника = адрес его кабинета: свой хендл открывает
   // кабинет, чужой — гостевой профиль (см. ProfileRoute).
   const profileMatch = path.match(/^\/users\/([^/]+)(?:\/([^/]+))?$/);
@@ -399,6 +390,10 @@ function renderRoute(path: string): ReactElement {
   const organizerAttendanceMatch = path.match(/^\/organizer\/([^/]+)\/attendance$/);
   if (organizerAttendanceMatch) {
     return <OrganizerAttendancePage slug={decodeURIComponent(organizerAttendanceMatch[1])} />;
+  }
+  const organizerBenchmarkMatch = path.match(/^\/organizer\/([^/]+)\/benchmark$/);
+  if (organizerBenchmarkMatch) {
+    return <OrganizerBenchmarkPage slug={decodeURIComponent(organizerBenchmarkMatch[1])} />;
   }
   const organizerAudienceMatch = path.match(/^\/organizer\/([^/]+)\/audience$/);
   if (organizerAudienceMatch) {

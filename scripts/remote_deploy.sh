@@ -33,7 +33,7 @@ trap 'rm -f "$MAINT_CURRENT"' EXIT HUP INT TERM
 # (nginx:1.27-alpine), build-контекст есть только у python-сервисов.
 # tg-proxy (xray) — тоже готовый образ; без него бот не видит Telegram и ляжет,
 # поэтому он в списке и попадает в проверку «все ли running» ниже.
-SERVICES="worker worker-five-verst-user worker-parkrun api nginx beat tg-proxy bot"
+SERVICES="worker worker-warm worker-five-verst-user worker-parkrun api nginx beat tg-proxy bot"
 
 # Воркеры, уехавшие на домашний сервер (см. docker-compose.home.yml). База и
 # брокер остались здесь, поэтому прод обязан их НЕ поднимать: иначе задачи
