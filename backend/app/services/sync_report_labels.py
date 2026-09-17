@@ -114,6 +114,7 @@ FIELD_LABELS: dict[str, str] = {
     "locations_complete": "локаций закрыто целиком",
     "locations_touched": "локаций с новыми строками",
     "target_date": "прогноз на дату",
+    "closed_locations": "локаций не действует",
     "scope_locations": "локаций в обходе",
     "stopped_by_limit": "остановлено по лимиту",
     "finished": "обход завершён",

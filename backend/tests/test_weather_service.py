@@ -204,3 +204,34 @@ def test_preliminary_report_wording() -> None:
     summary = ScopeRunSummary(preliminary=True, rows_written=250, locations_touched=250, api_calls=250)
     text = format_run_report(summary, when=datetime(2026, 9, 12, 17, 5))
     assert "предварительно" in text and "архив заменит" in text
+
+
+def test_running_locations_drops_silent_venues() -> None:
+    """Прогноз собираем только там, где в субботу побегут.
+
+    Порог тот же, что у статуса «не действует» на всём сайте: иначе на закрытой
+    площадке висело бы «Прогноз на старт», а статус рядом говорил обратное.
+    """
+    from app.services.weather_forecast_service import running_locations
+
+    def loc(name: str) -> WeatherLocation:
+        return WeatherLocation(
+            id=uuid4(),
+            name=name,
+            platform_code="five_verst",
+            country="Россия",
+            latitude=55.0,
+            longitude=37.0,
+            schedule=None,
+        )
+
+    today = date(2026, 9, 17)
+    alive, seasonal, closed, never = loc("живая"), loc("сезонная"), loc("закрытая"), loc("без стартов")
+    last = {
+        alive.id: date(2026, 9, 12),
+        # Ровно на пороге (100 дней) — ещё в строю.
+        seasonal.id: date(2026, 6, 9),
+        closed.id: date(2025, 5, 10),
+    }
+    result = running_locations([alive, seasonal, closed, never], last, today)
+    assert [item.name for item in result] == ["живая", "сезонная"]

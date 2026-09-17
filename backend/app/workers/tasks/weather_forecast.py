@@ -55,9 +55,11 @@ def collect_forecast_task() -> dict[str, object]:
         )
     return {
         "target_date": target.isoformat(),
-        "locations": stats.locations,
+        # Ключ как у ночного сбора архива: у сводки синков одна подпись на оба.
+        "scope_locations": stats.locations,
         "rows_written": stats.rows_written,
         "api_calls": stats.api_calls,
         "skipped": stats.skipped,
+        "closed_locations": stats.closed,
         "error": error,
     }

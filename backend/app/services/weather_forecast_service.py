@@ -21,11 +21,12 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.models import StartWeatherForecast
+from app.models import Event, StartWeatherForecast
+from app.services.location_activity_status import INACTIVE_AFTER_DAYS
 from app.services.start_weather_service import format_temperature, weather_code_icon, weather_code_label
 from app.services.weather_service import (
     OPEN_METEO_FORECAST_URL,
@@ -77,6 +78,8 @@ class ForecastStats:
     rows_written: int = 0
     api_calls: int = 0
     skipped: int = 0
+    #: Локации периметра, которые не действуют, — прогноз им не собираем.
+    closed: int = 0
 
 
 def next_start_date(today: date) -> date:
@@ -178,6 +181,58 @@ def drop_past_forecasts(db: Session, today: date) -> int:
     return int(result.rowcount or 0)
 
 
+def running_locations(
+    locations: Sequence[WeatherLocation],
+    last_events: dict[UUID, date],
+    today: date,
+) -> list[WeatherLocation]:
+    """Локации, где в ближайшую субботу реально побегут.
+
+    Прогноз на закрытой площадке — прямой обман: человек видит бодрое «Прогноз
+    на старт 19.09», приезжает и не находит старта. Берём тот же порог
+    молчания, по которому весь сайт зовёт площадку недействующей
+    (INACTIVE_AFTER_DAYS), — статус и прогноз не должны расходиться. Заодно это
+    экономит вызовы: у закрытых площадок их примерно треть периметра.
+    """
+
+    cutoff = today - timedelta(days=INACTIVE_AFTER_DAYS)
+    alive = []
+    for location in locations:
+        last = last_events.get(location.id)
+        if last is not None and last >= cutoff:
+            alive.append(location)
+    return alive
+
+
+def last_event_dates(db: Session, location_ids: Sequence[UUID]) -> dict[UUID, date]:
+    """Последний непробный старт каждой локации — одним запросом."""
+
+    if not location_ids:
+        return {}
+    rows = db.execute(
+        select(Event.location_id, func.max(Event.event_date))
+        .where(Event.location_id.in_(list(location_ids)), Event.is_test_event.is_(False))
+        .group_by(Event.location_id)
+    ).all()
+    return {loc_id: last for loc_id, last in rows if last is not None}
+
+
+def drop_closed_forecasts(db: Session, keep_ids: Iterable[UUID], today: date) -> int:
+    """Убрать прогноз у локаций, выпавших из числа действующих.
+
+    Площадка могла закрыться уже после того, как прогноз ей собрали, — строка
+    осталась бы висеть до субботы и обещала бы старт, которого нет.
+    """
+
+    result = db.execute(
+        delete(StartWeatherForecast).where(
+            StartWeatherForecast.target_date >= today,
+            StartWeatherForecast.location_id.notin_(list(keep_ids)),
+        )
+    )
+    return int(result.rowcount or 0)
+
+
 def collect_forecasts(
     db: Session,
     client: httpx.Client,
@@ -196,8 +251,10 @@ def collect_forecasts(
         return ForecastStats()
     target = next_start_date(today)
     stats = ForecastStats()
-    locations = list_scope_locations(db, name_filters)
+    scope = list_scope_locations(db, name_filters)
+    locations = running_locations(scope, last_event_dates(db, [loc.id for loc in scope]), today)
     stats.locations = len(locations)
+    stats.closed = len(scope) - len(locations)
     db.rollback()
     for location in locations:
         payload = fetch_archive(
@@ -221,6 +278,10 @@ def collect_forecasts(
         if pause_seconds:
             _time.sleep(pause_seconds)
     drop_past_forecasts(db, today)
+    # Чистим только при полном обходе: в частичном прогоне «лишние» — это
+    # просто локации, которых не просили.
+    if not name_filters:
+        drop_closed_forecasts(db, [loc.id for loc in locations], today)
     db.commit()
     return stats
 
