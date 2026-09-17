@@ -75,8 +75,6 @@ import { OrganizerLocationPage } from "./features/organizer/OrganizerLocationPag
 import { LocationRecordsRatingPage } from "./features/leaderboards/LocationRecordsRatingPage";
 import { RegionsRatingPage } from "./features/leaderboards/RegionsRatingPage";
 import { QueuePage } from "./features/queue/QueuePage";
-import { SweepHqPage } from "./features/sweep_hq/SweepHqPage";
-import { SweepWorldPage } from "./features/sweep_hq/SweepWorldPage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { TapTooltipLayer } from "./components/TapTooltipLayer";
 import { useEntryKey } from "./hooks/useEntryKey";
@@ -348,14 +346,6 @@ function renderRoute(path: string): ReactElement {
   }
   if (path.startsWith("/api/")) {
     return <ApiPathRedirect />;
-  }
-  const sweepHqMatch = path.match(/^\/hq\/(.+)$/);
-  if (sweepHqMatch) {
-    return <SweepHqPage token={decodeURIComponent(sweepHqMatch[1])} />;
-  }
-  // Публичная витрина обхода — без имён, прокси и счётчиков капч (см. /hq).
-  if (path === "/world" || path === "/world/") {
-    return <SweepWorldPage />;
   }
   // Публичный адрес участника = адрес его кабинета: свой хендл открывает
   // кабинет, чужой — гостевой профиль (см. ProfileRoute).
