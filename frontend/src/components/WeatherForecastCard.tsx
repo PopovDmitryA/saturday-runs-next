@@ -42,24 +42,19 @@ export function WeatherForecastCard({
   return (
     <div className={`weather-forecast${compact ? " weather-forecast-compact" : ""}`}>
       <div className="weather-forecast-head">
-        <span className="weather-forecast-title">Прогноз на старт · {formatDate(forecast.target_date)}</span>
-        {forecast.start_time_local && (
-          <span className="muted"> · {forecast.start_time_local}</span>
-        )}
+        <span className="weather-forecast-title">Прогноз на старт</span>
+        <span className="muted">
+          {" "}
+          {formatDate(forecast.target_date)}
+          {forecast.start_time_local ? ` · ${forecast.start_time_local}` : ""}
+        </span>
       </div>
       <div className={`weather-forecast-main temp-${tone}`}>
         <span aria-hidden>{forecast.icon}</span> {forecast.summary}
       </div>
-      {chance > 0 && (
-        <div className="weather-forecast-chance muted">
-          Вероятность осадков {chance}%
-          {forecast.precipitation_mm != null && forecast.precipitation_mm > 0
-            ? ` · ${forecast.precipitation_mm.toFixed(1)} мм за час вокруг старта`
-            : ""}
-        </div>
-      )}
+      {chance > 0 && <div className="weather-forecast-chance muted">Осадки {chance}%</div>}
       <ul className="weather-forecast-advice">
-        {forecast.advice.map((item) => (
+        {(compact ? forecast.advice.slice(0, 2) : forecast.advice).map((item) => (
           <li key={item}>{item}</li>
         ))}
       </ul>

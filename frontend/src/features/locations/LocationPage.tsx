@@ -1246,7 +1246,8 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   return (
     <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
-      <header className="loc-header loc-wide-page">
+      <header className="loc-header loc-wide-page loc-header-split">
+        <div className="loc-header-main">
         <p className="muted loc-header-breadcrumb">
           <a href="/locations">← Все локации</a> / {page.name}
         </p>
@@ -1316,9 +1317,9 @@ function LocationPageContent({ slug }: { slug: string }) {
             </a>
           )}
         </nav>
+        </div>
+        <LocationForecastTop slug={page.slug} />
       </header>
-
-      <LocationForecastTop slug={page.slug} />
 
       <LocationRatingPrompt identityKey={page.identity_key} />
 

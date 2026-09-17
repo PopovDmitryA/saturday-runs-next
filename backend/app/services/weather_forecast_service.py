@@ -26,7 +26,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.models import StartWeatherForecast
-from app.services.start_weather_service import weather_code_icon, weather_code_label
+from app.services.start_weather_service import format_temperature, weather_code_icon, weather_code_label
 from app.services.weather_service import (
     OPEN_METEO_FORECAST_URL,
     WeatherLocation,
@@ -232,8 +232,11 @@ def _f(value: Any) -> float | None:
     return None if value is None else float(value)
 
 
+# Советы держим короткими: карточка стоит в шапке локации рядом с названием,
+# и абзац текста там читать никто не будет (Дмитрий, 17.09.2026). Порядок
+# важности — осадки, температура, ветер: компактный вид показывает первые два.
 def forecast_advice(row: StartWeatherForecast) -> list[str]:
-    """Человеческие советы к прогнозу: во что одеться и чего ждать на трассе."""
+    """Короткие советы к прогнозу: во что одеться и чего ждать на трассе."""
 
     temp = _f(row.temperature_c)
     apparent = _f(row.apparent_temperature_c)
@@ -245,33 +248,35 @@ def forecast_advice(row: StartWeatherForecast) -> list[str]:
     advice: list[str] = []
 
     if snow > 0:
-        advice.append("Ожидается снег — трасса будет скользкой, выбирайте обувь с зацепом.")
+        advice.append("Снег — трасса скользкая")
     elif probability >= RAIN_PROBABILITY_SURE or rain_mm >= RAIN_MM:
-        advice.append("Скорее всего будет дождь: куртка и сменная футболка на финиш лишними не будут.")
+        advice.append("Будет дождь — нужна ветровка")
     elif probability >= RAIN_PROBABILITY_MAYBE:
-        advice.append("Дождь возможен — на всякий случай возьмите ветровку.")
+        advice.append("Дождь возможен")
 
     if temp is not None:
         if temp <= FROST_C:
-            advice.append("Мороз: шапка, перчатки и закрытая шея обязательны.")
+            advice.append("Мороз: шапка и перчатки")
         elif temp <= COLD_C:
-            advice.append("Ниже нуля — одевайтесь теплее, чем кажется по солнцу.")
+            advice.append("Ниже нуля — одевайтесь теплее")
         elif temp <= COOL_C:
-            advice.append("Прохладно: длинный рукав и перчатки на старте не помешают.")
+            advice.append("Прохладно — длинный рукав")
         elif temp >= HEAT_C:
-            advice.append("Будет жарко: возьмите воду и не разгоняйтесь на первом круге.")
+            advice.append("Жарко — возьмите воду")
         if ICE_RANGE[0] <= temp <= ICE_RANGE[1] and (rain_mm > 0 or probability >= RAIN_PROBABILITY_MAYBE):
-            advice.append("Около нуля с осадками — возможен гололёд, аккуратнее на поворотах.")
+            advice.append("Возможен гололёд")
 
     if gusts >= GUST_STRONG_MS or wind >= WIND_STRONG_MS:
-        advice.append("Ветрено: на открытых участках будет сдувать, лучше добавить ветрозащитный слой.")
+        advice.append("Ветрено — нужен ветрозащитный слой")
 
-    if temp is not None and apparent is not None and temp - apparent >= 5:
-        advice.append(f"По ощущениям холоднее — как {int(round(apparent))}°.")
+    # «Ощущается» работает в обе стороны: ветер уводит вниз, влажная жара вверх.
+    if temp is not None and apparent is not None and abs(temp - apparent) >= 5:
+        advice.append(f"Ощущается как {format_temperature(apparent)}")
 
     if not advice:
-        advice.append("Погода обещает быть спокойной — обычной формы хватит.")
-    return advice
+        advice.append("Погода спокойная — обычной формы хватит")
+    # Больше трёх строк — это уже не подсказка, а инструкция.
+    return advice[:3]
 
 
 def forecast_payload(row: StartWeatherForecast | None) -> dict[str, Any] | None:

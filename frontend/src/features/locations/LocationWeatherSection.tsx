@@ -40,10 +40,11 @@ export function MonthStrip({ months, slug }: { months: LocationWeatherMonth[]; s
 }
 
 /**
- * Прогноз на ближайшую субботу — самым верхом страницы локации: человек
- * заходит выбрать, куда поехать, и до середины страницы не долистывает
- * (решение Дмитрия 17.09.2026). Данные те же, что у блока «Погода на
- * стартах» ниже, поэтому запрос общий — второй раз в сеть не ходим.
+ * Прогноз на ближайшую субботу — правой колонкой шапки локации, рядом с
+ * названием и описанием: человек заходит выбрать, куда поехать, и до середины
+ * страницы не долистывает (решения Дмитрия 17.09.2026). Данные те же, что у
+ * блока «Погода на стартах» ниже, поэтому запрос общий — в сеть второй раз
+ * не ходим.
  */
 export function LocationForecastTop({ slug }: { slug: string }) {
   const { data, error } = useCachedResource(
@@ -56,9 +57,9 @@ export function LocationForecastTop({ slug }: { slug: string }) {
     return null;
   }
   return (
-    <section className="card loc-section loc-forecast-top">
-      <WeatherForecastCard forecast={data.forecast} />
-    </section>
+    <aside className="loc-header-forecast">
+      <WeatherForecastCard forecast={data.forecast} compact />
+    </aside>
   );
 }
 

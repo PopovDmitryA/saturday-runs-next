@@ -17238,3 +17238,42 @@ input.participant-name-search-input:focus {
   background: transparent;
   padding: 0;
 }
+
+/* Шапка локации в две колонки: слева название и описание, справа прогноз на
+   ближайший старт. На узком экране прогноз становится обычной карточкой под
+   описанием — в столбик две колонки не имеют смысла. */
+.loc-header-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  gap: 1rem;
+  align-items: start;
+}
+.loc-header-main {
+  min-width: 0;
+}
+.loc-header-forecast {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 0.6rem 0.75rem;
+}
+.loc-header-forecast .weather-forecast {
+  margin-bottom: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+.loc-header-forecast .weather-forecast-main {
+  font-size: 1.05rem;
+}
+.loc-header-forecast .weather-forecast-advice {
+  font-size: 0.85rem;
+}
+@media (max-width: 900px) {
+  .loc-header-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .loc-header-forecast {
+    margin-top: 0.2rem;
+  }
+}
