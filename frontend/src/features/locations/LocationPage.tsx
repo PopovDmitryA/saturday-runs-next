@@ -43,7 +43,7 @@ import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
 import { LocationRouteButton } from "./LocationRouteButton";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
-import { LocationWeatherSection } from "./LocationWeatherSection";
+import { LocationForecastTop, LocationWeatherSection } from "./LocationWeatherSection";
 import { LocationRecordsModal, type RecordType } from "./LocationRecordsModal";
 import {
   FastestRunnersCard,
@@ -1317,6 +1317,8 @@ function LocationPageContent({ slug }: { slug: string }) {
           )}
         </nav>
       </header>
+
+      <LocationForecastTop slug={page.slug} />
 
       <LocationRatingPrompt identityKey={page.identity_key} />
 

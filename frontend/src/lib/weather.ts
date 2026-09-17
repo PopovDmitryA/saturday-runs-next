@@ -46,9 +46,8 @@ export type WeatherForecast = {
   cloud_cover_pct: number | null;
   wind_speed_ms: number | null;
   wind_gusts_ms: number | null;
-  /** За сколько суток до старта снят прогноз и как это читать. */
+  /** За сколько суток до старта снят прогноз. */
   horizon_days: number;
-  horizon_note: string;
   updated_at: string | null;
   summary: string;
   advice: string[];

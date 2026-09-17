@@ -93,9 +93,8 @@ class WeatherForecastResponse(BaseModel):
     cloud_cover_pct: int | None = None
     wind_speed_ms: float | None = None
     wind_gusts_ms: float | None = None
-    # За сколько суток до старта снят прогноз и как это читать человеку.
+    # За сколько суток до старта снят прогноз (витрине хватает времени обновления).
     horizon_days: int = 0
-    horizon_note: str = ""
     updated_at: str | None = None
     summary: str = ""
     advice: list[str] = Field(default_factory=list)

@@ -39,6 +39,29 @@ export function MonthStrip({ months, slug }: { months: LocationWeatherMonth[]; s
   );
 }
 
+/**
+ * Прогноз на ближайшую субботу — самым верхом страницы локации: человек
+ * заходит выбрать, куда поехать, и до середины страницы не долистывает
+ * (решение Дмитрия 17.09.2026). Данные те же, что у блока «Погода на
+ * стартах» ниже, поэтому запрос общий — второй раз в сеть не ходим.
+ */
+export function LocationForecastTop({ slug }: { slug: string }) {
+  const { data, error } = useCachedResource(
+    `locations:weather:${slug}`,
+    () => getLocationWeather(slug),
+    [slug],
+    { errorText: "Не удалось загрузить погоду" },
+  );
+  if (error || !data?.forecast) {
+    return null;
+  }
+  return (
+    <section className="card loc-section loc-forecast-top">
+      <WeatherForecastCard forecast={data.forecast} />
+    </section>
+  );
+}
+
 export function LocationWeatherSection({ slug }: { slug: string }) {
   const { data, error } = useCachedResource(
     `locations:weather:${slug}`,
@@ -59,13 +82,10 @@ export function LocationWeatherSection({ slug }: { slug: string }) {
     );
   }
   // Прогноз показываем, даже если архива нет: новой площадке он тоже полезен.
+  // Прогноз живёт наверху страницы (LocationForecastTop): если архива нет,
+  // блоку с историей показывать нечего.
   if (!data.has_data) {
-    return data.forecast ? (
-      <section className="card loc-section loc-weather loc-weather-compact">
-        <h2 className="section-title">Погода на стартах</h2>
-        <WeatherForecastCard forecast={data.forecast} />
-      </section>
-    ) : null;
+    return null;
   }
   const detailsHref = `/locations/${encodeURIComponent(slug)}/weather`;
   const yearAgo = data.years_ago[0] ?? null;
@@ -87,8 +107,6 @@ export function LocationWeatherSection({ slug }: { slug: string }) {
           Подробнее →
         </a>
       </div>
-
-      <WeatherForecastCard forecast={data.forecast} />
 
       <div className="loc-weather-now loc-weather-now-compact">
         {data.latest && (

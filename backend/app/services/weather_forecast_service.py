@@ -7,7 +7,8 @@ weather.collect_forecast спрашивает Open-Meteo прогноз по к�
 превращается в блок «Прогноз на старт» с человеческими советами.
 
 Честность прогноза: за неделю он гадание, накануне почти факт. Поэтому в
-строке хранится horizon_days, а витрина подписывает, когда прогноз снят.
+строке хранится horizon_days (для отчётов и будущих срезов), а на витрине
+стоит только время последнего обновления.
 """
 
 from __future__ import annotations
@@ -273,17 +274,6 @@ def forecast_advice(row: StartWeatherForecast) -> list[str]:
     return advice
 
 
-def _horizon_note(row: StartWeatherForecast) -> str:
-    """Насколько прогнозу верить: за неделю — гадание, накануне — почти факт."""
-
-    horizon = int(row.horizon_days or 0)
-    if horizon <= 1:
-        return "прогноз на завтра — уже точный"
-    if horizon <= 3:
-        return f"за {horizon} дня до старта — прогноз обычно сбывается"
-    return f"за {horizon} дней до старта — погода ещё может перемениться"
-
-
 def forecast_payload(row: StartWeatherForecast | None) -> dict[str, Any] | None:
     if row is None:
         return None
@@ -312,7 +302,6 @@ def forecast_payload(row: StartWeatherForecast | None) -> dict[str, Any] | None:
         "wind_speed_ms": wind,
         "wind_gusts_ms": _f(row.wind_gusts_ms),
         "horizon_days": row.horizon_days,
-        "horizon_note": _horizon_note(row),
         "updated_at": row.fetched_at.isoformat() if row.fetched_at else None,
         "summary": ", ".join(parts),
         "advice": forecast_advice(row),

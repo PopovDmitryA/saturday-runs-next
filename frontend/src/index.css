@@ -17227,3 +17227,14 @@ input.participant-name-search-input:focus {
   margin-top: 0.4rem;
   font-size: 0.78rem;
 }
+
+/* Прогноз на субботу — первым блоком страницы локации, без лишних отступов. */
+.loc-forecast-top {
+  padding: 0.6rem 0.75rem;
+}
+.loc-forecast-top .weather-forecast {
+  margin-bottom: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
