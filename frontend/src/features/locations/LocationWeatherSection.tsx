@@ -4,7 +4,7 @@ import { WeatherChip } from "../../components/WeatherChip";
 import { WeatherForecastCard } from "../../components/WeatherForecastCard";
 import { getLocationWeather, type LocationWeatherMonth } from "../../lib/api";
 import { formatDate } from "../../lib/format";
-import { formatTemp, temperatureTone } from "../../lib/weather";
+import { formatTemp, temperatureTone, type WeatherForecast } from "../../lib/weather";
 
 // Короткий блок «Погода на стартах» на странице локации: последняя суббота,
 // «год назад», лента двенадцати месяцев одной строкой — и приглашение на
@@ -40,13 +40,11 @@ export function MonthStrip({ months, slug }: { months: LocationWeatherMonth[]; s
 }
 
 /**
- * Прогноз на ближайшую субботу — правой колонкой шапки локации, рядом с
- * названием и описанием: человек заходит выбрать, куда поехать, и до середины
- * страницы не долистывает (решения Дмитрия 17.09.2026). Данные те же, что у
- * блока «Погода на стартах» ниже, поэтому запрос общий — в сеть второй раз
+ * Прогноз на ближайшую субботу для верхнего ряда страницы локации. Данные те
+ * же, что у блока «Погода на стартах» ниже: ключ кэша общий, второй раз в сеть
  * не ходим.
  */
-export function LocationForecastTop({ slug }: { slug: string }) {
+export function useLocationForecast(slug: string): WeatherForecast | null {
   const { data, error } = useCachedResource(
     `locations:weather:${slug}`,
     () => getLocationWeather(slug),
@@ -56,10 +54,18 @@ export function LocationForecastTop({ slug }: { slug: string }) {
   if (error || !data?.forecast) {
     return null;
   }
+  return data.forecast;
+}
+
+/** Левая плитка верхнего ряда: прогноз на ближайший старт. */
+export function LocationForecastTile({ forecast }: { forecast: WeatherForecast | null }) {
+  if (!forecast) {
+    return null;
+  }
   return (
-    <aside className="loc-header-forecast">
-      <WeatherForecastCard forecast={data.forecast} compact />
-    </aside>
+    <section className="card loc-section loc-forecast-tile">
+      <WeatherForecastCard forecast={forecast} compact />
+    </section>
   );
 }
 
@@ -83,7 +89,7 @@ export function LocationWeatherSection({ slug }: { slug: string }) {
     );
   }
   // Прогноз показываем, даже если архива нет: новой площадке он тоже полезен.
-  // Прогноз живёт наверху страницы (LocationForecastTop): если архива нет,
+  // Прогноз живёт в верхнем ряду страницы (LocationForecastTile): если архива нет,
   // блоку с историей показывать нечего.
   if (!data.has_data) {
     return null;

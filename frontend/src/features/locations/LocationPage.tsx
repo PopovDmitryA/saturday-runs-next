@@ -43,7 +43,11 @@ import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { LocationMiniMap } from "./LocationMiniMap";
 import { LocationRouteButton } from "./LocationRouteButton";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
-import { LocationForecastTop, LocationWeatherSection } from "./LocationWeatherSection";
+import {
+  LocationForecastTile,
+  LocationWeatherSection,
+  useLocationForecast,
+} from "./LocationWeatherSection";
 import { LocationRecordsModal, type RecordType } from "./LocationRecordsModal";
 import {
   FastestRunnersCard,
@@ -1205,6 +1209,9 @@ function LocationPageContent({ slug }: { slug: string }) {
   // Имя из подсказки, пока грузятся данные: иначе подпункт сайдбара с
   // названием площадки мигает при переходах внутри локации.
   const sidebarLocation = page ? { slug: page.slug, name: page.name } : locationHintFor(slug);
+  // Тот же запрос, что у блока «Погода на стартах» ниже: ключ общий, в сеть
+  // ходим один раз.
+  const forecast = useLocationForecast(page?.slug ?? slug);
 
   if (notFound) {
     return (
@@ -1246,8 +1253,7 @@ function LocationPageContent({ slug }: { slug: string }) {
 
   return (
     <PortalSectionShell sidebar={{ active: "locations", location: sidebarLocation }}>
-      <header className="loc-header loc-wide-page loc-header-split">
-        <div className="loc-header-main">
+      <header className="loc-header loc-wide-page">
         <p className="muted loc-header-breadcrumb">
           <a href="/locations">← Все локации</a> / {page.name}
         </p>
@@ -1317,17 +1323,22 @@ function LocationPageContent({ slug }: { slug: string }) {
             </a>
           )}
         </nav>
-        </div>
-        <LocationForecastTop slug={page.slug} />
       </header>
 
-      <LocationRatingPrompt identityKey={page.identity_key} />
-
-      <LocationPersonalSection
-        slug={page.slug}
-        onOpenAgeGroup={revealAgeGroup}
-        onOrganizerAccess={setOrganizerAccess}
-      />
+      {/* Ряд из двух плиток: слева прогноз на ближайший старт, справа личный
+          блок — «оцените пробежку» или «вы здесь не бегали» с дальностью от
+          дома (решение Дмитрия 17.09.2026). Если прогноза нет, ряд становится
+          одноколоночным, а большая личная статистика всегда идёт во всю
+          ширину следующей строкой. */}
+      <div className={`loc-top-row${forecast ? "" : " loc-top-row-single"}`}>
+        <LocationForecastTile forecast={forecast} />
+        <LocationRatingPrompt identityKey={page.identity_key} />
+        <LocationPersonalSection
+          slug={page.slug}
+          onOpenAgeGroup={revealAgeGroup}
+          onOrganizerAccess={setOrganizerAccess}
+        />
+      </div>
 
       {stats.last_event && <LastEventSection lastEvent={stats.last_event} page={page} />}
 

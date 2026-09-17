@@ -17239,41 +17239,50 @@ input.participant-name-search-input:focus {
   padding: 0;
 }
 
-/* Шапка локации в две колонки: слева название и описание, справа прогноз на
-   ближайший старт. На узком экране прогноз становится обычной карточкой под
-   описанием — в столбик две колонки не имеют смысла. */
-.loc-header-split {
+
+/* Верхний ряд страницы локации: слева прогноз на ближайший старт, справа
+   личная плитка («оцените пробежку» или «вы здесь не бегали» с дальностью от
+   дома). Большая личная статистика в этот ряд не помещается — она занимает
+   всю ширину следующей строкой. */
+.loc-top-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
-  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
   align-items: start;
+  margin-bottom: 0.75rem;
 }
-.loc-header-main {
-  min-width: 0;
+.loc-top-row > * {
+  margin-bottom: 0;
 }
-.loc-header-forecast {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  padding: 0.6rem 0.75rem;
+.loc-top-row > .loc-forecast-tile {
+  grid-column: 1;
 }
-.loc-header-forecast .weather-forecast {
+.loc-top-row > .card:not(.loc-forecast-tile):not(.loc-section-personal) {
+  grid-column: 2;
+}
+.loc-top-row > .loc-section-personal {
+  grid-column: 1 / -1;
+}
+.loc-top-row-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.loc-top-row-single > .card {
+  grid-column: 1 !important;
+}
+.loc-forecast-tile {
+  padding: 0.7rem 0.85rem;
+}
+.loc-forecast-tile .weather-forecast {
   margin-bottom: 0;
   border: 0;
   background: transparent;
   padding: 0;
 }
-.loc-header-forecast .weather-forecast-main {
-  font-size: 1.05rem;
-}
-.loc-header-forecast .weather-forecast-advice {
-  font-size: 0.85rem;
-}
 @media (max-width: 900px) {
-  .loc-header-split {
+  .loc-top-row {
     grid-template-columns: minmax(0, 1fr);
   }
-  .loc-header-forecast {
-    margin-top: 0.2rem;
+  .loc-top-row > .card {
+    grid-column: 1 !important;
   }
 }
