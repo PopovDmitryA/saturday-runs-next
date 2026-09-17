@@ -17186,3 +17186,44 @@ input.participant-name-search-input:focus {
 .loc-weather-share-pct {
   margin-bottom: 0.15rem;
 }
+
+/* ===== Прогноз на ближайший старт ===== */
+.weather-forecast {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--chip-bg);
+  margin-bottom: 0.6rem;
+}
+.weather-forecast-compact {
+  margin-bottom: 0.4rem;
+}
+.weather-forecast-head {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.weather-forecast-title {
+  font-weight: 600;
+  color: inherit;
+}
+.weather-forecast-main {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0.15rem 0 0.3rem;
+}
+.weather-forecast-chance {
+  font-size: 0.85rem;
+  margin-bottom: 0.3rem;
+}
+.weather-forecast-advice {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.9rem;
+}
+.weather-forecast-advice li {
+  margin: 0.15rem 0;
+}
+.weather-forecast-note {
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+}

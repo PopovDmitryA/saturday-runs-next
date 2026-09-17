@@ -49,6 +49,7 @@ celery_app.conf.update(
         "app.workers.tasks.email_send",
         "app.workers.tasks.user_names",
         "app.workers.tasks.weather_collect",
+        "app.workers.tasks.weather_forecast",
         "app.workers.tasks.sync_runs_maintenance",
     ),
     task_routes={
@@ -134,6 +135,14 @@ celery_app.conf.update(
         # (проверено на проде 27.08.2026: ни один статус пересчитан не был).
         # Погода на стартах: лимит Open-Meteo сбрасывается в полночь UTC (03:00
         # МСК); пока идёт бэкфил — по прогону в сутки, потом докачка суббот.
+        # Прогноз на ближайшую субботу — первым делом после сброса суточного
+        # лимита Open-Meteo (полночь UTC), чтобы архивная пересборка не съела
+        # его бюджет: прогнозу нужен один вызов на локацию.
+        "weather-forecast-daily": {
+            "task": "weather.collect_forecast",
+            "schedule": crontab(hour=3, minute=5),
+            "options": {"queue": "celery"},
+        },
         "weather-collect-daily": {
             "task": "weather.collect_start_weather",
             "schedule": crontab(hour=3, minute=20),

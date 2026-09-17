@@ -1845,3 +1845,31 @@ class StartWeather(Base):
     sunrise_local: Mapped[time | None] = mapped_column(Time)
     sunset_local: Mapped[time | None] = mapped_column(Time)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class StartWeatherForecast(Base):
+    """Прогноз погоды на ближайший старт локации (миграция 089).
+
+    Строка на локацию × дату старта, переписывается ежедневной задачей и
+    удаляется, когда суббота прошла: факт к тому моменту уже в start_weather.
+    """
+
+    __tablename__ = "start_weather_forecast"
+    __table_args__ = (Index("ix_start_weather_forecast_target_date", "target_date"),)
+
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), primary_key=True)
+    target_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    start_time_local: Mapped[time] = mapped_column(Time, nullable=False)
+    temperature_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    apparent_temperature_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    humidity_pct: Mapped[int | None] = mapped_column(SmallInteger)
+    precipitation_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    precipitation_probability_pct: Mapped[int | None] = mapped_column(SmallInteger)
+    snowfall_cm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    weather_code: Mapped[int | None] = mapped_column(SmallInteger)
+    cloud_cover_pct: Mapped[int | None] = mapped_column(SmallInteger)
+    wind_speed_ms: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    wind_gusts_ms: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    # За сколько суток до старта снят прогноз — этим подписывается его надёжность.
+    horizon_days: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

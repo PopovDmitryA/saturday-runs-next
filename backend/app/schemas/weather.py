@@ -76,9 +76,35 @@ class LocationWeatherYearAgoResponse(BaseModel):
     start: WeatherStartRefResponse | None = None
 
 
+class WeatherForecastResponse(BaseModel):
+    """Прогноз на ближайший старт: цифры, готовая строка и советы."""
+
+    target_date: str
+    start_time_local: str | None = None
+    temperature_c: float | None = None
+    apparent_temperature_c: float | None = None
+    humidity_pct: int | None = None
+    precipitation_mm: float | None = None
+    precipitation_probability_pct: int | None = None
+    snowfall_cm: float | None = None
+    weather_code: int | None = None
+    label: str = ""
+    icon: str = ""
+    cloud_cover_pct: int | None = None
+    wind_speed_ms: float | None = None
+    wind_gusts_ms: float | None = None
+    # За сколько суток до старта снят прогноз и как это читать человеку.
+    horizon_days: int = 0
+    horizon_note: str = ""
+    updated_at: str | None = None
+    summary: str = ""
+    advice: list[str] = Field(default_factory=list)
+
+
 class LocationWeatherResponse(BaseModel):
     slug: str
     name: str
+    forecast: WeatherForecastResponse | None = None
     has_data: bool
     months: list[LocationWeatherMonthResponse] = Field(default_factory=list)
     records: dict[str, WeatherRecordResponse | None] = Field(default_factory=dict)

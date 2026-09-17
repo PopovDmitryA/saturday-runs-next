@@ -1,4 +1,4 @@
-import type { WeatherBrief, WeatherRecord, WeatherStartRef } from "./weather";
+import type { WeatherBrief, WeatherForecast, WeatherRecord, WeatherStartRef } from "./weather";
 
 export const API_BASE = "/api";
 const DEFAULT_FETCH_TIMEOUT_MS = 20_000;
@@ -2884,6 +2884,8 @@ export type LocationWeatherYearAgo = {
 export type LocationWeather = {
   slug: string;
   name: string;
+  /** Прогноз на ближайшую субботу; null — локация вне периметра или прогноза ещё нет. */
+  forecast: WeatherForecast | null;
   has_data: boolean;
   months: LocationWeatherMonth[];
   records: Record<string, WeatherRecord | null>;

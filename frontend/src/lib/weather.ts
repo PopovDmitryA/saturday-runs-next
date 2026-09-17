@@ -30,6 +30,30 @@ export type WeatherBrief = {
   summary: string;
 };
 
+/** Прогноз на ближайший старт: цифры, готовая строка и советы. */
+export type WeatherForecast = {
+  target_date: string;
+  start_time_local: string | null;
+  temperature_c: number | null;
+  apparent_temperature_c: number | null;
+  humidity_pct: number | null;
+  precipitation_mm: number | null;
+  precipitation_probability_pct: number | null;
+  snowfall_cm: number | null;
+  weather_code: number | null;
+  label: string;
+  icon: string;
+  cloud_cover_pct: number | null;
+  wind_speed_ms: number | null;
+  wind_gusts_ms: number | null;
+  /** За сколько суток до старта снят прогноз и как это читать. */
+  horizon_days: number;
+  horizon_note: string;
+  updated_at: string | null;
+  summary: string;
+  advice: string[];
+};
+
 export type WeatherStartRef = {
   platform_code: string;
   event_number: number | null;

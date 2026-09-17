@@ -5,6 +5,7 @@ import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import { WeatherChip } from "../../components/WeatherChip";
+import { WeatherForecastCard } from "../../components/WeatherForecastCard";
 import { getLocationWeather, type LocationWeather, type LocationWeatherMonth } from "../../lib/api";
 import { formatDate, formatInt, pluralizeRu } from "../../lib/format";
 import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
@@ -228,6 +229,12 @@ export function LocationWeatherPage({ slug }: { slug: string }) {
           часа после».
         </p>
       </header>
+
+      {data.forecast && (
+        <section className="card loc-section loc-weather">
+          <WeatherForecastCard forecast={data.forecast} />
+        </section>
+      )}
 
       {!data.has_data ? (
         <section className="card loc-section">

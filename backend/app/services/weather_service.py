@@ -295,6 +295,7 @@ def fetch_archive(
     wait_hourly_reset: bool = True,
     endpoint: str = OPEN_METEO_ARCHIVE_URL,
     model: str = FINAL_MODEL,
+    extra_params: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Один вызов архива (или прогнозной модели, endpoint=OPEN_METEO_FORECAST_URL).
 
@@ -311,6 +312,8 @@ def fetch_archive(
         "wind_speed_unit": "ms",
         "models": model,
     }
+    if extra_params:
+        params.update(extra_params)
     delay = 2.0
     hourly_waits = 0
     attempt = 0

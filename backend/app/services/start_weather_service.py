@@ -262,7 +262,8 @@ LOCATION_WEATHER_CACHE_TTL_SECONDS = 3 * 60 * 60
 
 
 def location_weather_cache_key(slug: str) -> str:
-    return f"locations:weather:v1:{slug.strip().lower()}"
+    # v2 — в payload добавился прогноз на ближайшую субботу.
+    return f"locations:weather:v2:{slug.strip().lower()}"
 
 
 @dataclass(frozen=True)
@@ -373,12 +374,16 @@ def _compute_location_weather(db: Session, slug: str) -> dict[str, Any] | None:
     identity = resolve_location_identity(db, slug)
     if identity is None:
         return None
+    from app.services.weather_forecast_service import forecast_for_locations
+
     location_ids = [loc.id for loc, _code in identity.locations]
+    forecast = forecast_for_locations(db, location_ids)
     weather = _prefer_archive(db.query(StartWeather).filter(StartWeather.location_id.in_(location_ids)).all())
     if not weather:
         return {
             "slug": identity.slug,
             "name": identity.name,
+            "forecast": forecast,
             "has_data": False,
             "months": [],
             "records": {},
@@ -472,6 +477,7 @@ def _compute_location_weather(db: Session, slug: str) -> dict[str, Any] | None:
     return {
         "slug": identity.slug,
         "name": identity.name,
+        "forecast": forecast,
         "has_data": True,
         "months": months,
         "records": records,

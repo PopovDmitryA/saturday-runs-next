@@ -1,6 +1,7 @@
 import { useCachedResource } from "../../hooks/useCachedResource";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { WeatherChip } from "../../components/WeatherChip";
+import { WeatherForecastCard } from "../../components/WeatherForecastCard";
 import { getLocationWeather, type LocationWeatherMonth } from "../../lib/api";
 import { formatDate } from "../../lib/format";
 import { formatTemp, temperatureTone } from "../../lib/weather";
@@ -57,8 +58,14 @@ export function LocationWeatherSection({ slug }: { slug: string }) {
       </section>
     );
   }
+  // Прогноз показываем, даже если архива нет: новой площадке он тоже полезен.
   if (!data.has_data) {
-    return null;
+    return data.forecast ? (
+      <section className="card loc-section loc-weather loc-weather-compact">
+        <h2 className="section-title">Погода на стартах</h2>
+        <WeatherForecastCard forecast={data.forecast} />
+      </section>
+    ) : null;
   }
   const detailsHref = `/locations/${encodeURIComponent(slug)}/weather`;
   const yearAgo = data.years_ago[0] ?? null;
@@ -80,6 +87,8 @@ export function LocationWeatherSection({ slug }: { slug: string }) {
           Подробнее →
         </a>
       </div>
+
+      <WeatherForecastCard forecast={data.forecast} />
 
       <div className="loc-weather-now loc-weather-now-compact">
         {data.latest && (
