@@ -235,3 +235,18 @@ def test_running_locations_drops_silent_venues() -> None:
     }
     result = running_locations([alive, seasonal, closed, never], last, today)
     assert [item.name for item in result] == ["живая", "сезонная"]
+
+
+def test_call_weight_counts_two_week_blocks() -> None:
+    """Лимит Open-Meteo считается вызовами по две недели, а не запросами.
+
+    Пока это не учитывалось, ночной прогон «918 запросов» выглядел дешёвым, а
+    на деле выбирал все 10 000 суточных вызовов.
+    """
+    from app.services.weather_service import call_weight
+
+    assert call_weight(date(2026, 1, 1), date(2026, 1, 1)) == 1
+    assert call_weight(date(2026, 1, 1), date(2026, 1, 14)) == 1
+    assert call_weight(date(2026, 1, 1), date(2026, 1, 15)) == 2
+    # Год целиком — самый частый чанк пересборки.
+    assert call_weight(date(2025, 1, 1), date(2025, 12, 31)) == 27

@@ -30,6 +30,12 @@ from app.workers.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 REPORT_TIMEZONE = ZoneInfo("Europe/Moscow")
+# Суточный лимит Open-Meteo — 10 000 вызовов, и ночной прогон архива способен
+# выгрести его весь: пока идёт пересборка, каждая локация просит свою историю
+# целиком. Оставляем запас дню: прогноз на субботу стоит 253 вызова за заход, в
+# пятницу заходов три, плюс субботний предварительный прогон. Ночь подождёт до
+# завтра, а несобранный прогноз не подождёт — суббота придёт без него.
+NIGHTLY_WEIGHT_BUDGET = 8000
 # «Сбор завершён» объявляем один раз; потом те же прогоны — еженедельная докачка.
 BACKFILL_REPORTED_KEY = "weather:backfill_reported"
 
@@ -40,7 +46,9 @@ def collect_start_weather_task() -> dict[str, object]:
     summary = ScopeRunSummary()
     try:
         with httpx.Client(headers={"User-Agent": "run5k.run weather collector"}) as client:
-            summary = collect_scope(db, client, wait_hourly_reset=False)
+            summary = collect_scope(
+                db, client, wait_hourly_reset=False, max_weighted_calls=NIGHTLY_WEIGHT_BUDGET
+            )
     except Exception as exc:  # noqa: BLE001 — отчёт важнее трейсбека в логе воркера
         # Сюда попадает только то, что не поймал collect_scope (БД, сеть до первой локации).
         logger.exception("Сбор погоды на стартах упал")
@@ -60,9 +68,11 @@ def collect_start_weather_task() -> dict[str, object]:
     return {
         "rows_written": summary.rows_written,
         "api_calls": summary.api_calls,
+        "weighted_calls": summary.weighted_calls,
         "locations_complete": summary.locations_complete,
         "scope_locations": summary.scope_locations,
         "stopped_by_limit": summary.stopped_by_limit,
+        "stopped_by_budget": summary.stopped_by_budget,
         "finished": summary.finished,
         "error": summary.error,
     }

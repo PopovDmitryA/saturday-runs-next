@@ -117,6 +117,8 @@ FIELD_LABELS: dict[str, str] = {
     "closed_locations": "локаций не действует",
     "scope_locations": "локаций в обходе",
     "stopped_by_limit": "остановлено по лимиту",
+    "stopped_by_budget": "остановлено по дневному бюджету",
+    "weighted_calls": "вызовов по счёту Open-Meteo",
     "finished": "обход завершён",
     # --- Отрисовка превью для соцсетей ---
     "rendered": "превью отрисовано",

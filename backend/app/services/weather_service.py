@@ -110,10 +110,28 @@ class CollectStats:
     rows_written: int = 0
     api_calls: int = 0
     skipped_no_data: int = 0
+    #: Вес запросов в единицах Open-Meteo (см. call_weight) — по нему считается
+    #: суточный лимит, а не по числу HTTP-запросов.
+    weighted_calls: int = 0
+    #: Прогон упёрся не в лимит сервиса, а в наш собственный дневной бюджет.
+    stopped_by_budget: bool = False
 
 
 class RateLimitDaily(RuntimeError):
     """Суточный лимит Open-Meteo исчерпан — продолжать сегодня бессмысленно."""
+
+
+# Open-Meteo считает лимит не запросами, а «вызовами»: один вызов — это две
+# недели по десяти переменным. Запрос на год стоит 27 вызовов, поэтому счётчик
+# HTTP-запросов о расходе суточного лимита не говорит ничего.
+DAYS_PER_CALL = 14
+
+
+def call_weight(start: date, end: date) -> int:
+    """Во сколько вызовов Open-Meteo обойдётся запрос за этот диапазон дат."""
+
+    days = (end - start).days + 1
+    return max(1, -(-days // DAYS_PER_CALL))
 
 
 # --------------------------------------------------------------------------- scope
@@ -530,6 +548,7 @@ def collect_location_weather(
     pause_seconds: float = 0.3,
     wait_hourly_reset: bool = True,
     preliminary: bool = False,
+    weight_budget: int | None = None,
 ) -> CollectStats:
     """Собрать погоду одной локации: по вызову API на календарный год, upsert построчно.
 
@@ -577,6 +596,12 @@ def collect_location_weather(
             if fresh_dates:
                 groups.append((FALLBACK_MODEL, SOURCE_ARCHIVE, fresh_dates))
         for model, source, group_dates in groups:
+            weight = call_weight(group_dates[0], group_dates[-1])
+            if weight_budget is not None and stats.weighted_calls + weight > weight_budget:
+                # Бюджет кончился — уходим по-хорошему, недобранное доберём
+                # завтра: строки предыдущих групп уже закоммичены.
+                stats.stopped_by_budget = True
+                return stats
             payload = fetch_archive(
                 client,
                 location.latitude,
@@ -588,6 +613,7 @@ def collect_location_weather(
                 model=model,
             )
             stats.api_calls += 1
+            stats.weighted_calls += weight
             remember_timezone(db, location.id, payload.get("timezone"))
             rows, skipped = build_rows(payload, location, group_dates, fetched_at=datetime.now(UTC), source=source)
             stats.skipped_no_data += skipped
@@ -619,12 +645,20 @@ class ScopeRunSummary:
     limit_reason: str = ""
     error: str = ""
     preliminary: bool = False
+    weighted_calls: int = 0
+    #: Прогон остановлен нашим дневным бюджетом, а не лимитом сервиса.
+    stopped_by_budget: bool = False
 
     @property
     def finished(self) -> bool:
         """Все локации периметра собраны до границы архива и прогон не прерван."""
 
-        return not self.stopped_by_limit and not self.error and self.locations_complete == self.scope_locations
+        return (
+            not self.stopped_by_limit
+            and not self.stopped_by_budget
+            and not self.error
+            and self.locations_complete == self.scope_locations
+        )
 
 
 def collect_scope(
@@ -639,8 +673,15 @@ def collect_scope(
     wait_hourly_reset: bool = True,
     preliminary: bool = False,
     on_location: Any = None,
+    max_weighted_calls: int | None = None,
 ) -> ScopeRunSummary:
     """Прогон по всему периметру с остановкой на суточном лимите.
+
+    max_weighted_calls — наш собственный потолок расхода за прогон, в вызовах
+    Open-Meteo (см. call_weight). Нужен, пока идёт пересборка архива: без него
+    ночной прогон выгребает все 10 000 суточных вызовов до последнего, и
+    дневные обновления прогноза (в пятницу их три) упираются в лимит и не
+    собираются вовсе. Ночь ждёт до завтра спокойно, прогноз на субботу — нет.
 
     on_location(location, stats) — колбэк для построчного лога скрипта.
     """
@@ -649,6 +690,10 @@ def collect_scope(
     locations = list_scope_locations(db, name_filters)
     summary.scope_locations = len(locations)
     for location in locations:
+        budget = None if max_weighted_calls is None else max_weighted_calls - summary.weighted_calls
+        if budget is not None and budget <= 0:
+            summary.stopped_by_budget = True
+            break
         try:
             stats = collect_location_weather(
                 db,
@@ -660,6 +705,7 @@ def collect_scope(
                 pause_seconds=pause_seconds,
                 wait_hourly_reset=wait_hourly_reset,
                 preliminary=preliminary,
+                weight_budget=budget,
             )
         except RateLimitDaily as exc:
             db.rollback()
@@ -675,6 +721,7 @@ def collect_scope(
             break
         summary.rows_written += stats.rows_written
         summary.api_calls += stats.api_calls
+        summary.weighted_calls += stats.weighted_calls
         summary.skipped_no_data += stats.skipped_no_data
         if stats.api_calls:
             summary.locations_touched += 1
@@ -683,6 +730,9 @@ def collect_scope(
             summary.locations_complete += 1
         if on_location is not None:
             on_location(location, stats)
+        if stats.stopped_by_budget:
+            summary.stopped_by_budget = True
+            break
     summary.rows_total, summary.locations_total = coverage_summary(db)
     return summary
 
@@ -706,7 +756,7 @@ def format_run_report(summary: ScopeRunSummary, *, when: datetime, backfill_repo
     lines = [f"🌦 Погода на стартах — сбор {when.strftime('%d.%m.%Y %H:%M')}"]
     lines.append(
         f"За прогон: записано {summary.rows_written} строк по {summary.locations_touched} локациям, "
-        f"вызовов Open-Meteo {summary.api_calls}"
+        f"вызовов Open-Meteo {summary.weighted_calls or summary.api_calls}"
     )
     lines.append(
         f"Всего в таблице: {summary.rows_total} строк, {summary.locations_total} локаций; "
@@ -716,6 +766,8 @@ def format_run_report(summary: ScopeRunSummary, *, when: datetime, backfill_repo
         lines.append(f"⚠️ Прогон прерван ошибкой: {summary.error}")
     elif summary.stopped_by_limit:
         lines.append("Остановлено лимитом Open-Meteo, продолжу завтра")
+    elif summary.stopped_by_budget:
+        lines.append("Остановлено дневным бюджетом — остаток суток оставлен прогнозу, продолжу завтра")
     elif summary.finished and not backfill_reported:
         lines.append("✅ Сбор всего периметра завершён — можно обрабатывать данные")
         lines.append("Сессия Claude: «Погода на стартах» (ветка historical-weather-starts)")
