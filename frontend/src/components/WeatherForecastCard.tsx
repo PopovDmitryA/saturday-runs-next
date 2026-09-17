@@ -51,8 +51,10 @@ export function WeatherForecastCard({
       </div>
       <div className={`weather-forecast-main temp-${tone}`}>
         <span aria-hidden>{forecast.icon}</span> {forecast.summary}
+        {/* Вероятность осадков — хвостом той же строки, мелким: отдельная
+            строка ради пяти процентов растила плитку без пользы. */}
+        {chance > 0 && <span className="weather-forecast-chance muted"> · осадки {chance}%</span>}
       </div>
-      {chance > 0 && <div className="weather-forecast-chance muted">Осадки {chance}%</div>}
       <ul className="weather-forecast-advice">
         {(compact ? forecast.advice.slice(0, 2) : forecast.advice).map((item) => (
           <li key={item}>{item}</li>

@@ -17209,11 +17209,12 @@ input.participant-name-search-input:focus {
 .weather-forecast-main {
   font-size: 1.15rem;
   font-weight: 700;
-  margin: 0.15rem 0 0.3rem;
+  margin: 0.1rem 0 0.25rem;
 }
 .weather-forecast-chance {
-  font-size: 0.85rem;
-  margin-bottom: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 400;
+  white-space: nowrap;
 }
 .weather-forecast-advice {
   margin: 0;
@@ -17221,10 +17222,10 @@ input.participant-name-search-input:focus {
   font-size: 0.9rem;
 }
 .weather-forecast-advice li {
-  margin: 0.15rem 0;
+  margin: 0.1rem 0;
 }
 .weather-forecast-note {
-  margin-top: 0.4rem;
+  margin-top: 0.3rem;
   font-size: 0.78rem;
 }
 
@@ -17272,7 +17273,7 @@ input.participant-name-search-input:focus {
   grid-column: 1 !important;
 }
 .loc-forecast-tile {
-  padding: 0.7rem 0.85rem;
+  padding: 0.6rem 0.85rem;
   display: flex;
   flex-direction: column;
 }
@@ -17289,7 +17290,7 @@ input.participant-name-search-input:focus {
    висит посреди пустоты. */
 .loc-forecast-tile .weather-forecast-note {
   margin-top: auto;
-  padding-top: 0.4rem;
+  padding-top: 0.3rem;
 }
 @media (max-width: 900px) {
   .loc-top-row {
