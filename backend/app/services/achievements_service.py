@@ -27,7 +27,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func
@@ -54,11 +54,11 @@ from app.services.start_weather_service import (
     DOWNPOUR_MM,
     FROST_C,
     HEAT_C,
-    RAIN_MM,
     SNOW_CODES,
     SNOW_DEPTH_CM,
     WINDY_GUST_MS,
     format_temperature,
+    is_rain,
     weather_rows_for_pairs,
 )
 
@@ -315,6 +315,9 @@ class RunRow:
     snowfall_cm: float | None = None
     weather_code: int | None = None
     wind_gusts_ms: float | None = None
+    #: Когда посчитана строка погоды — по ней выбирается порог дождя на время
+    #: переходного периода (см. start_weather_service._thresholds).
+    weather_fetched_at: datetime | None = None
 
 
 @dataclass
@@ -343,6 +346,7 @@ class WeatherDay:
     snowfall_cm: float | None = None
     weather_code: int | None = None
     wind_gusts_ms: float | None = None
+    weather_fetched_at: datetime | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -394,6 +398,7 @@ def _collect_run_rows(db: Session, user_id: UUID) -> list[RunRow]:
                 snowfall_cm=_f(weather.snowfall_cm) if weather else None,
                 weather_code=int(weather.weather_code) if weather and weather.weather_code is not None else None,
                 wind_gusts_ms=_f(weather.wind_gusts_ms) if weather else None,
+                weather_fetched_at=weather.fetched_at if weather else None,
             )
         )
     rows.sort(key=lambda row: (row.event_date, row.location_key))
@@ -510,6 +515,7 @@ def _collect_weather_days(db: Session, user_id: UUID, rows: list[RunRow]) -> lis
             snowfall_cm=row.snowfall_cm,
             weather_code=row.weather_code,
             wind_gusts_ms=row.wind_gusts_ms,
+            weather_fetched_at=row.weather_fetched_at,
         )
 
     query = (
@@ -554,6 +560,7 @@ def _collect_weather_days(db: Session, user_id: UUID, rows: list[RunRow]) -> lis
             snowfall_cm=_f(weather.snowfall_cm) if weather else None,
             weather_code=int(weather.weather_code) if weather and weather.weather_code is not None else None,
             wind_gusts_ms=_f(weather.wind_gusts_ms) if weather else None,
+            weather_fetched_at=weather.fetched_at if weather else None,
         )
 
     days = list(by_day.values())
@@ -2379,7 +2386,7 @@ def _rain_runner_challenge(days: list[WeatherDay]) -> dict[str, object]:
             "Морось архив видит, но дождём не считает, а снегопад считает снегом, а не дождём."
         ),
         unit="дождливых стартов",
-        predicate=lambda day: day.precipitation_run_mm is not None and day.precipitation_run_mm >= RAIN_MM,
+        predicate=lambda day: is_rain(day.precipitation_run_mm, day.weather_fetched_at),
     )
 
 
@@ -2388,7 +2395,7 @@ _ALL_WEATHER_CELLS: tuple[tuple[str, str, Callable[[WeatherDay], bool], str], ..
     (
         "rain",
         "Дождь",
-        lambda r: r.precipitation_run_mm is not None and r.precipitation_run_mm >= RAIN_MM,
+        lambda r: is_rain(r.precipitation_run_mm, r.weather_fetched_at),
         "от 0.3 мм дождя за час забега",
     ),
     (

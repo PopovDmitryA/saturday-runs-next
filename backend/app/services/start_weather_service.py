@@ -21,7 +21,7 @@ import statistics
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, cast
 from uuid import UUID
 
@@ -135,20 +135,44 @@ def format_temperature(value: float | None) -> str:
     return f"{rounded}°"
 
 
-def is_rain(run_mm: float | None) -> bool:
-    return run_mm is not None and run_mm >= RAIN_MM
+# --- переходный период ------------------------------------------------------
+# 18.09.2026 окно дождя сузилось с четырёх часов до часа забега, и порог упал с
+# 1 мм до 0.3. Но в таблице лежат строки, посчитанные СТАРЫМ правилом: новый
+# порог применить к четырёхчасовой сумме — значит объявить дождливым каждый
+# второй мокрый старт (на выборке доля прыгала с 6.5% до 13%).
+#
+# Поэтому строку судим по тому правилу, по которому её посчитали: время расчёта
+# лежит в fetched_at. Ночная пересборка архива перечитывает каждую строку, и
+# через несколько ночей старых не останется — тогда весь этот блок и вызовы с
+# fetched_at можно удалить.
+LEGACY_RAIN_MM = 1.0
+LEGACY_DRIZZLE_MM = 0.3
+RAIN_RULE_SWITCHED_AT = datetime(2026, 9, 18, 9, 30, tzinfo=timezone(timedelta(hours=3)))
+
+
+def _thresholds(fetched_at: datetime | None) -> tuple[float, float]:
+    """(порог дождя, порог мороси) для строки, посчитанной в этот момент."""
+
+    if fetched_at is not None and fetched_at < RAIN_RULE_SWITCHED_AT:
+        return LEGACY_RAIN_MM, LEGACY_DRIZZLE_MM
+    return RAIN_MM, DRIZZLE_MM
+
+
+def is_rain(run_mm: float | None, fetched_at: datetime | None = None) -> bool:
+    return run_mm is not None and run_mm >= _thresholds(fetched_at)[0]
 
 
 def is_snow_cover(depth_cm: float | None) -> bool:
     return depth_cm is not None and depth_cm >= SNOW_DEPTH_CM
 
 
-def rain_kind(run_mm: float | None) -> str:
+def rain_kind(run_mm: float | None, fetched_at: datetime | None = None) -> str:
     """dry / drizzle / rain / downpour по жидкому дождю за час забега."""
 
-    if run_mm is None or run_mm < DRIZZLE_MM:
+    rain_mm, drizzle_mm = _thresholds(fetched_at)
+    if run_mm is None or run_mm < drizzle_mm:
         return "dry"
-    if run_mm < RAIN_MM:
+    if run_mm < rain_mm:
         return "drizzle"
     if run_mm < DOWNPOUR_MM:
         return "rain"
@@ -172,7 +196,7 @@ def weather_brief(row: StartWeather) -> dict[str, Any]:
         parts.append(label)
     if wind is not None:
         parts.append("штиль" if wind < 1 else f"ветер {int(round(wind))} м/с")
-    if is_rain(run_mm):
+    if is_rain(run_mm, row.fetched_at):
         parts.append(f"{run_mm:.1f} мм осадков")
     if is_snow_cover(depth):
         parts.append(f"снег {int(round(depth))} см")
@@ -204,8 +228,8 @@ def weather_brief(row: StartWeather) -> dict[str, Any]:
         "day_temperature_max_c": _f(row.day_temperature_max_c),
         "day_precipitation_mm": _f(row.day_precipitation_mm),
         "sunrise_local": row.sunrise_local.strftime("%H:%M") if row.sunrise_local else None,
-        "rain_kind": rain_kind(run_mm),
-        "is_rain": is_rain(run_mm),
+        "rain_kind": rain_kind(run_mm, row.fetched_at),
+        "is_rain": is_rain(run_mm, row.fetched_at),
         "is_snow_cover": is_snow_cover(depth),
         "is_preliminary": row.source == SOURCE_FORECAST,
         "summary": summary,
@@ -366,8 +390,8 @@ def _attendance_buckets(rows: list[StartWeather], starts: dict[date, _StartInfo]
         count, avg = avg_finishers(selected)
         if count:
             result.append({"key": key, "label": label, "starts": count, "avg_finishers": avg})
-    dry = [row for row in rows if rain_kind(_f(row.precipitation_run_mm)) == "dry"]
-    wet = [row for row in rows if is_rain(_f(row.precipitation_run_mm))]
+    dry = [row for row in rows if rain_kind(_f(row.precipitation_run_mm), row.fetched_at) == "dry"]
+    wet = [row for row in rows if is_rain(_f(row.precipitation_run_mm), row.fetched_at)]
     for key, label, selected in (("dry", "без дождя", dry), ("rain", "дождь на старте", wet)):
         count, avg = avg_finishers(selected)
         if count:
@@ -425,7 +449,7 @@ def _compute_location_weather(db: Session, slug: str) -> dict[str, Any] | None:
             )
             continue
         apparent = [float(row.apparent_temperature_c) for row in rows if row.apparent_temperature_c is not None]
-        rain = sum(1 for row in rows if is_rain(_f(row.precipitation_run_mm)))
+        rain = sum(1 for row in rows if is_rain(_f(row.precipitation_run_mm), row.fetched_at))
         snow = sum(
             1
             for row in rows
@@ -452,7 +476,7 @@ def _compute_location_weather(db: Session, slug: str) -> dict[str, Any] | None:
         "coldest": _record(start_rows, starts, key=lambda r: _f(r.temperature_c)),
         "hottest": _record(start_rows, starts, key=lambda r: _f(r.temperature_c), reverse=True),
         "wettest": _record(
-            [r for r in start_rows if is_rain(_f(r.precipitation_run_mm))],
+            [r for r in start_rows if is_rain(_f(r.precipitation_run_mm), r.fetched_at)],
             starts,
             key=lambda r: _f(r.precipitation_run_mm),
             reverse=True,
@@ -568,7 +592,7 @@ def week_weather_extremes(db: Session, saturday: date) -> dict[str, Any] | None:
         }
 
     with_temp = [item for item in items if item[0].temperature_c is not None]
-    wet = [item for item in items if is_rain(_f(item[0].precipitation_run_mm))]
+    wet = [item for item in items if is_rain(_f(item[0].precipitation_run_mm), item[0].fetched_at)]
     windy = [item for item in items if item[0].wind_gusts_ms is not None and float(item[0].wind_gusts_ms) >= 10]
     temps = [float(item[0].temperature_c) for item in with_temp]
     return {
@@ -665,7 +689,7 @@ def user_weather_stats(db: Session, user_id: UUID) -> dict[str, Any]:
             "snow_runs": 0,
         }
     with_temp = [row for row in rows if row.weather.temperature_c is not None]
-    wet = [row for row in rows if is_rain(_f(row.weather.precipitation_run_mm))]
+    wet = [row for row in rows if is_rain(_f(row.weather.precipitation_run_mm), row.weather.fetched_at)]
     windy = [row for row in rows if row.weather.wind_gusts_ms is not None]
     snowy = [row for row in rows if is_snow_cover(_f(row.weather.snow_depth_cm))]
     return {

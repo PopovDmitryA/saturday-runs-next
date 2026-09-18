@@ -305,3 +305,27 @@ def test_rain_thresholds_are_set_for_one_hour() -> None:
     assert rain_kind(0.7) == "rain"  # тот самый Нижний пруд
     assert rain_kind(3.0) == "downpour"
     assert is_rain(0.7) and not is_rain(0.2)
+
+
+def test_old_rows_keep_the_old_rain_threshold() -> None:
+    """Переходный период: строка судится по правилу, по которому посчитана.
+
+    До 18.09.2026 precipitation_run_mm был суммой за четыре часа. Новый порог
+    в 0.3 мм, применённый к такой строке, удваивал долю дождливых стартов —
+    на выборке из 200 она прыгала с 6.5% до 13%.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.services.start_weather_service import is_rain, rain_kind
+
+    msk = timezone(timedelta(hours=3))
+    old_row = datetime(2026, 9, 15, 3, 30, tzinfo=msk)
+    new_row = datetime(2026, 9, 19, 3, 30, tzinfo=msk)
+
+    # 0.5 мм: по старому правилу это морось, по новому — дождь.
+    assert not is_rain(0.5, old_row)
+    assert rain_kind(0.5, old_row) == "drizzle"
+    assert is_rain(0.5, new_row)
+    assert rain_kind(0.5, new_row) == "rain"
+    # Без отметки времени считаем строку новой — так ведут себя свежие данные.
+    assert is_rain(0.5)
