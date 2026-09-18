@@ -38,6 +38,7 @@ type SortKey =
   | "best_female"
   | "avg"
   | "debutants"
+  | "returned"
   | "first_here"
   | "guests"
   | "prs";
@@ -62,6 +63,8 @@ function sortValue(row: LocationEventRow, key: SortKey): number | string | null 
       return row.avg_time_sec;
     case "debutants":
       return row.debutants;
+    case "returned":
+      return row.debut_return_pct;
     case "first_here":
       return row.first_at_location;
     case "guests":
@@ -69,6 +72,17 @@ function sortValue(row: LocationEventRow, key: SortKey): number | string | null 
     case "prs":
       return row.prs;
   }
+}
+
+// Подсказка колонки «Вернулись»: числитель и знаменатель словами, потому что
+// в ячейке они сжаты до «13% · 4 из 30».
+function returnedTitle(row: LocationEventRow): string | undefined {
+  if (!row.has_protocol) return undefined;
+  if (row.debut_return_pct === null) {
+    if (!row.debutants) return "Новичков на этом старте не было";
+    return "Это последний старт локации: следующей субботы у его новичков ещё не было";
+  }
+  return `Новичков на старте: ${row.debutants}. Прибежали сюда ещё раз: ${row.debut_returned}`;
 }
 
 // Колонки журнала в порядке важности; ширины — из CSS .loc-events-table
@@ -83,6 +97,7 @@ const EVENTS_COLUMNS: AdaptiveColumn[] = [
   { key: "best_female", width: 184 },
   { key: "volunteers", width: 148 },
   { key: "debutants", width: 148 },
+  { key: "returned", width: 176 },
   { key: "first_here", width: 176 },
   { key: "guests", width: 148 },
   { key: "avg", width: 184 },
@@ -338,6 +353,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
               <col className="col-compact" />
               {show("volunteers") && <col className="col-compact" />}
               {show("debutants") && <col className="col-compact" />}
+              {show("returned") && <col className="col-compact-wide" />}
               {show("first_here") && <col className="col-compact-wide" />}
               {show("guests") && <col className="col-compact" />}
               {show("best_male") && <col className="col-time" />}
@@ -388,6 +404,13 @@ function LocationEventsContent({ slug }: { slug: string }) {
                     label="Новичков"
                     hint="Первый старт в системе: этих людей площадка привела в движение с нуля"
                     {...sortProps("debutants")}
+                  />
+                )}
+                {show("returned") && (
+                  <ColumnHeader
+                    label="Вернулись"
+                    hint="Сколько новичков этого старта потом прибежало сюда ещё раз. У последнего старта прочерк: следующей субботы у его новичков ещё не было"
+                    {...sortProps("returned")}
                   />
                 )}
                 {show("first_here") && (
@@ -493,6 +516,20 @@ function LocationEventsContent({ slug }: { slug: string }) {
                     <td className="td-compact">{row.finishers ?? "—"}</td>
                     {show("volunteers") && <td className="td-compact">{row.volunteers ?? "—"}</td>}
                     {show("debutants") && <td className="td-compact">{row.debutants ?? "—"}</td>}
+                    {show("returned") && (
+                      <td className="td-compact" title={returnedTitle(row)}>
+                        {row.debut_return_pct === null ? (
+                          "—"
+                        ) : (
+                          <span className="loc-events-number">
+                            {row.debut_return_pct}%
+                            <span className="loc-events-sub">
+                              {row.debut_returned} из {row.debutants}
+                            </span>
+                          </span>
+                        )}
+                      </td>
+                    )}
                     {show("first_here") && (
                       <td className="td-compact">{row.first_at_location ?? "—"}</td>
                     )}

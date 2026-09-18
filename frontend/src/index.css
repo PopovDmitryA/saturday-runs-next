@@ -11800,6 +11800,13 @@ a.admin-system-chip:hover {
   white-space: nowrap;
 }
 
+/* Второе число в ячейке «Вернулись»: доля крупно, «4 из 30» — приглушённо. */
+.loc-events-sub {
+  color: var(--muted);
+  font-size: 0.82em;
+  white-space: nowrap;
+}
+
 .loc-events-record-icon {
   display: inline-flex;
   align-items: center;

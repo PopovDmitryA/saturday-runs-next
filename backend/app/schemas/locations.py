@@ -334,6 +334,11 @@ class LocationEventRowResponse(BaseModel):
     # складывать, и показывать порознь. См. app/services/newcomer_counts.py.
     debutants: int | None = None
     first_at_location: int | None = None
+    # Удержание новичков этого старта: сколько из них потом ещё раз прибежало
+    # сюда и какая это доля. У последнего старта шанса вернуться ещё не было —
+    # там оба поля None. См. location_page_service._debut_returns.
+    debut_returned: int | None = None
+    debut_return_pct: int | None = None
     # Гости старта — см. LocationLastEventResponse.guests.
     guests: int | None = None
     prs: int | None = None

@@ -19,8 +19,8 @@ from typing import Any, cast
 from uuid import UUID
 
 import redis
-from sqlalchemy import String, and_, bindparam, case, func, or_, text
-from sqlalchemy.orm import Session
+from sqlalchemy import String, and_, bindparam, case, func, or_, select, text
+from sqlalchemy.orm import Session, aliased
 
 from app.activity_url import resolve_activity_url
 from app.core.redis_client import get_redis_client
@@ -2751,6 +2751,53 @@ def build_location_events(
     return payload
 
 
+def _debut_returns(db: Session, event_ids: list[UUID]) -> dict[UUID, int]:
+    """Сколько новичков каждого старта потом прибежало сюда ещё раз.
+
+    Запрос Егора (17.09.2026): на праздничный старт приходит толпа дебютантов,
+    и руками считать, кто из них вернулся, невозможно. «Удержание новичков» в
+    кабинете организатора даёт одну цифру на всю локацию — здесь та же величина,
+    но по каждому старту отдельно, и открыто всем.
+
+    Новичок старта — тот же, кого считает колонка «Новичков» (is_first_run, см.
+    app/services/newcomer_counts.py). Вернулся — прибежал на ЭТУ локацию (любую
+    её систему) в какую-то из следующих суббот.
+
+    Оговорка: человек узнаётся по личности своей системы. Тот, кто дебютировал
+    здесь во времена RunPark, а вернулся уже на С95, для этого счётчика — два
+    разных человека; связать их можно только через аккаунт на сайте. Ровно та же
+    оговорка у «Удержания новичков» в кабинете.
+    """
+    if not event_ids:
+        return {}
+
+    later_run = aliased(RunResult)
+    later_event = aliased(Event)
+    came_back = (
+        select(1)
+        .select_from(later_run)
+        .join(later_event, later_run.event_id == later_event.id)
+        .where(
+            later_run.participant_id == RunResult.participant_id,
+            later_run.event_id.in_(event_ids),
+            later_event.event_date > Event.event_date,
+        )
+        .exists()
+    )
+    rows = (
+        db.query(RunResult.event_id, func.count().filter(came_back))
+        .join(Event, RunResult.event_id == Event.id)
+        .filter(
+            RunResult.event_id.in_(event_ids),
+            RunResult.participant_id.isnot(None),
+            RunResult.is_first_run.is_(True),
+        )
+        .group_by(RunResult.event_id)
+        .all()
+    )
+    return {event_id: int(count or 0) for event_id, count in rows}
+
+
 def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None:
     """Журнал протоколов локации: все события сквозь все системы, новые сверху."""
     identity = resolve_location_identity(db, slug)
@@ -2871,6 +2918,9 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
     # страница ключ уже переписала — второй пересчёт был бы холостым.
     guests_by_event = location_guests_by_event(db, identity)
 
+    # Удержание новичков по каждому старту — запрос Егора (см. _debut_returns).
+    debut_returns = _debut_returns(db, event_ids)
+
     def fmt(value: int | None) -> str | None:
         return format_finish_time_display(value) if value is not None else None
 
@@ -2919,6 +2969,10 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
                 "avg_time_display": fmt(avg_time),  # type: ignore[arg-type]
                 "debutants": stats["debutants"] if stats else None,
                 "first_at_location": stats["first_here"] if stats else None,
+                # Доля дописывается ниже, когда известно, был ли у новичков
+                # этого старта шанс вернуться (то есть был ли следующий старт).
+                "debut_returned": debut_returns.get(event.id, 0) if stats else None,
+                "debut_return_pct": None,
                 "guests": guests_by_event.get(event.id) if has_protocol else None,
                 "prs": stats["prs"] if stats else None,
                 "has_protocol": has_protocol,
@@ -2948,8 +3002,19 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
     running_max_finishers_by_platform: dict[str, int] = {}
     running_best_male_by_platform: dict[str, int] = {}
     running_best_female_by_platform: dict[str, int] = {}
+    last_number = len(items)
     for overall_number, item in enumerate(items, start=1):
         platform_code = cast(str, item["platform_code"])
+
+        # Доля вернувшихся новичков. У последнего старта следующей субботы ещё
+        # не было — там прочерк, а не честный ноль (то же правило, что в
+        # «Удержании новичков» кабинета организатора).
+        debutants_here = cast("int | None", item["debutants"])
+        returned_here = cast("int | None", item["debut_returned"])
+        if overall_number == last_number:
+            item["debut_returned"] = None
+        elif debutants_here and returned_here is not None:
+            item["debut_return_pct"] = round(returned_here / debutants_here * 100)
 
         finishers = cast("int | None", item["finishers"])
         is_record = finishers is not None and (running_max_finishers is None or finishers > running_max_finishers)

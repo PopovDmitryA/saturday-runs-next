@@ -2767,6 +2767,12 @@ export type LocationEventRow = {
   // «новичков» считала бы его дважды).
   debutants: number | null;
   first_at_location: number | null;
+  /**
+   * Сколько новичков этого старта потом прибежало сюда ещё раз и какая это
+   * доля. У последнего старта шанса вернуться ещё не было — там оба null.
+   */
+  debut_returned: number | null;
+  debut_return_pct: number | null;
   /** Гости старта: дом у человека — другая площадка; «впервые здесь» — их часть. */
   guests: number | null;
   prs: number | null;
