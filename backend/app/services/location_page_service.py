@@ -39,6 +39,7 @@ from app.models import (
     User,
     VolunteerResult,
 )
+from app.participant_identity import UNKNOWN_DISPLAY_NAMES as _UNKNOWN_DISPLAY_NAMES
 from app.services.home_distance_service import location_distance_from_home
 from app.services.location_catalog_service import (
     LocationCatalogIndex,
@@ -207,18 +208,10 @@ LOCATION_ACTIVE_MIN_COUNT = 3
 # рейтинге Кузьминок он занимал пятое место со 124 пробежками, хотя за строкой
 # нет человека. Сравниваем имя ЦЕЛИКОМ, а не по подстроке: «Андрей НЕИЗВЕСТНЫХ»
 # — настоящая фамилия, и такие строки остаются.
-UNKNOWN_DISPLAY_NAMES = frozenset(
-    {
-        "неизвестный",
-        "неизвестная",
-        "неизвестный бегун",
-        "неизвестный участник",
-        "неизвестно",
-        "неизвестен",
-        "nepoznato",
-        "unknown",
-    }
-)
+# Имена-заглушки живут в app/participant_identity.py вместе с ключами
+# «unknown:…»/«anon:…»: одно правило «это не человек» на весь сайт — и для
+# страниц протокола, и для счётчиков дебютов.
+UNKNOWN_DISPLAY_NAMES = _UNKNOWN_DISPLAY_NAMES
 
 
 def _identified_name_clause(name_expr: Any) -> Any:

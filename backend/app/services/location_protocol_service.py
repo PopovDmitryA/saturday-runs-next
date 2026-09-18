@@ -51,6 +51,7 @@ from app.models import (
     User,
     VolunteerResult,
 )
+from app.participant_identity import is_anonymous_participant
 from app.services.gender_position_service import (
     GENDER_FEMALE,
     GENDER_MALE,
@@ -463,7 +464,11 @@ def _build_results(
         is_unknown = (
             result.participant_id is None
             or (result.status or "").strip().lower() in ("unknown", "unknown_runner")
-            or display_name.lower() in ("неизвестный", "unknown")
+            # Общий на весь сайт признак заглушки (ключ «unknown:…»/«anon:…» или
+            # имя-заглушка целиком): раньше здесь был свой куцый список из двух
+            # имён, и 138 строк RunPark с именем «Неизвестный бегун» проходили
+            # за живых людей.
+            or is_anonymous_participant(row.external_user_id, display_name)
         )
         age_group = normalize_age_group(raw_category)
         gender = _row_gender(platform_code, raw_category, row.gender, row.participant_age_category)
@@ -865,7 +870,11 @@ def _attach_run_numbers(db: Session, event: Event, results: list[dict[str, Any]]
     считается по своей системе. Тестовые события и вторичные события
     кросслинков исключены — иначе один старт RunPark считался бы дважды.
     """
-    participant_ids = [row["participant_id"] for row in results if row["participant_id"]]
+    # Безымянные строки из счёта выпадают: под каждую заведена одноразовая
+    # личность, и «1-й забег» у неё стоял бы всегда — ровно та же беда, что с
+    # дебютантами (см. app/participant_identity.py).
+    countable_results = [row for row in results if not row["is_unknown"]]
+    participant_ids = [row["participant_id"] for row in countable_results if row["participant_id"]]
     if not participant_ids:
         return
 
@@ -886,7 +895,7 @@ def _attach_run_numbers(db: Session, event: Event, results: list[dict[str, Any]]
         .group_by(RunResult.participant_id)
         .all()
     )
-    for row in results:
+    for row in countable_results:
         participant_id = row["participant_id"]
         if not participant_id:
             continue

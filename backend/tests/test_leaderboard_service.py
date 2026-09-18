@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -6,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Event,
+    EventCrosslink,
     Location,
     LocationCatalog,
     LocationCatalogLink,
@@ -1269,3 +1271,148 @@ def test_remaining_recounts_under_platform_filter() -> None:
     assert "Турист" not in _tourism_entities(platform="s95")
     # В общем зачёте остаётся вторая живая площадка.
     assert _tourism_entities()["Турист"].remaining_total == 1
+
+
+# ─── Дубли кросслинка в зачёте побед ─────────────────────────────────────────
+# Один и тот же старт бывает залит дважды: площадка перешла из RunPark в С95 /
+# 5 вёрст, но RunPark продолжает публиковать свой протокол. Вторичное событие
+# кросслинка — дубль, и обычно его строки в зачёт не идут. Исключение — когда в
+# основном протоколе человека нет вовсе (репорт Егора, 17.09.2026).
+
+
+def _seed_crosslinked_win(db_session: Session, *, runner_in_primary: bool) -> tuple[UUID, UUID]:
+    """Победа в RunPark-дубле старта 5 вёрст. Возвращает (participant_id, user_id)."""
+    from app.models import PlatformLink, User
+
+    suffix = str(uuid4().int % 1_000_000)
+    platforms = {}
+    for code, name in (("five_verst", "5 вёрст"), ("runpark", "RunPark")):
+        platform = db_session.query(Platform).filter(Platform.code == code).one_or_none()
+        if platform is None:
+            platform = Platform(code=code, name=name)
+            db_session.add(platform)
+            db_session.flush()
+        platforms[code] = platform
+
+    locations = {}
+    for code, platform in platforms.items():
+        location = Location(
+            platform_id=platform.id,
+            external_key=f"crosslink-{suffix}-{code}",
+            name=f"Дубль {suffix}",
+            country="Россия",
+        )
+        db_session.add(location)
+        db_session.flush()
+        locations[code] = location
+
+    events = {}
+    for code, platform in platforms.items():
+        event = Event(
+            platform_id=platform.id,
+            location_id=locations[code].id,
+            external_event_key=f"crosslink-event-{suffix}-{code}",
+            event_date=date(2023, 1, 1),
+            event_number=10,
+            title="Дубль",
+        )
+        db_session.add(event)
+        db_session.flush()
+        events[code] = event
+
+    db_session.add(
+        EventCrosslink(
+            primary_event_id=events["five_verst"].id,
+            secondary_event_id=events["runpark"].id,
+        )
+    )
+
+    runpark_participant = Participant(
+        platform_id=platforms["runpark"].id,
+        external_user_id=f"crosslink-rp-{suffix}",
+        display_name="Дубль Бегунов",
+    )
+    db_session.add(runpark_participant)
+    db_session.flush()
+
+    user = User(display_name="Дубль Бегунов", consent_accepted=True)
+    db_session.add(user)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=platforms["runpark"].id,
+            participant_id=runpark_participant.id,
+            external_user_id=runpark_participant.external_user_id,
+            external_url=f"https://runpark.ru/{runpark_participant.external_user_id}",
+        )
+    )
+
+    db_session.add(
+        RunResult(
+            event_id=events["runpark"].id,
+            participant_id=runpark_participant.id,
+            external_result_key=f"crosslink-rp-result-{suffix}",
+            position=1,
+            finish_time_sec=1193,
+        )
+    )
+
+    if runner_in_primary:
+        five_verst_participant = Participant(
+            platform_id=platforms["five_verst"].id,
+            external_user_id=f"crosslink-5v-{suffix}",
+            display_name="Дубль Бегунов",
+        )
+        db_session.add(five_verst_participant)
+        db_session.flush()
+        db_session.add(
+            PlatformLink(
+                user_id=user.id,
+                platform_id=platforms["five_verst"].id,
+                participant_id=five_verst_participant.id,
+                external_user_id=five_verst_participant.external_user_id,
+                external_url=f"https://5verst.ru/{five_verst_participant.external_user_id}",
+            )
+        )
+        db_session.add(
+            RunResult(
+                event_id=events["five_verst"].id,
+                participant_id=five_verst_participant.id,
+                external_result_key=f"crosslink-5v-result-{suffix}",
+                position=1,
+                finish_time_sec=1193,
+            )
+        )
+
+    db_session.flush()
+    return runpark_participant.id, user.id
+
+
+def _win_rows(db_session: Session, participant_id: UUID) -> list[Any]:
+    from sqlalchemy import text
+
+    from app.services.leaderboard_service import _WIN_ROWS_SQL, _row_params
+
+    sql = _WIN_ROWS_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
+    params = _row_params(db_session, date(2026, 9, 12), pids=[participant_id])
+    return db_session.execute(text(sql), params).all()
+
+
+def test_crosslink_duplicate_win_is_dropped_when_the_primary_protocol_has_the_runner(
+    db_session: Session,
+) -> None:
+    """Обычный дубль: тот же финиш уже посчитан по основному протоколу."""
+    participant_id, _user_id = _seed_crosslinked_win(db_session, runner_in_primary=True)
+    assert _win_rows(db_session, participant_id) == []
+
+
+def test_crosslink_duplicate_win_counts_when_the_primary_protocol_misses_the_runner(
+    db_session: Session,
+) -> None:
+    """Случай Горинова: в протоколе 5 вёрст он «НЕИЗВЕСТНЫЙ», и победа есть
+    только в копии RunPark. Выбросить её — потерять настоящую победу."""
+    participant_id, _user_id = _seed_crosslinked_win(db_session, runner_in_primary=False)
+    rows = _win_rows(db_session, participant_id)
+    assert len(rows) == 1
+    assert rows[0].wins == 1

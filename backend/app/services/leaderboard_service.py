@@ -561,8 +561,46 @@ parkrun_eligible AS (
         prs.russian::float / prs.total >= 0.5
         OR EXISTS (SELECT 1 FROM platform_links pl WHERE pl.participant_id = prs.participant_id)
       )
+),
+-- Вторичное событие кросслинка — тот же самый старт, залитый второй системой
+-- (RunPark на площадке, перешедшей в С95 или 5 вёрст). Обычно строку оттуда
+-- надо выкинуть: тот же финиш уже посчитан по основному протоколу. Но бывает,
+-- что в основном протоколе человека нет вовсе — его там не опознали
+-- («НЕИЗВЕСТНЫЙ» без штрихкода) или у него нет аккаунта в основной системе.
+-- Тогда вторичная строка — единственная запись об этом старте, и выбрасывать
+-- её нельзя: у Сергея Горинова так пропадала победа 01.01.2023 в Михалково,
+-- а у Максима Махно — вся его история Ангарских прудов (Егор, 17.09.2026).
+--
+-- Спасаем только строки привязанных аккаунтов: сопоставить человека в двух
+-- системах можно лишь через platform_links. У непривязанного участника
+-- личности RunPark (GUID) и 5 вёрст (номер) — разные сущности, и без жёсткого
+-- правила один и тот же человек посчитался бы дважды.
+crosslink_duplicate AS (
+    SELECT rr_sec.id
+    FROM run_results rr_sec
+    JOIN event_crosslinks ec_sec ON ec_sec.secondary_event_id = rr_sec.event_id
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM platform_links pl_sec
+        WHERE pl_sec.participant_id = rr_sec.participant_id
+          AND NOT EXISTS (
+            SELECT 1
+            FROM run_results rr_pri
+            JOIN platform_links pl_pri ON pl_pri.participant_id = rr_pri.participant_id
+            WHERE rr_pri.event_id = ec_sec.primary_event_id
+              AND pl_pri.user_id = pl_sec.user_id
+          )
+    )
 )
 """
+
+# Условие «эта строка идёт в зачёт»: всё, кроме настоящих дублей кросслинка
+# (см. crosslink_duplicate). Заменяет прежнее «ec.secondary_event_id IS NULL»,
+# поэтому беговым выборкам сам JOIN на event_crosslinks больше не нужен.
+# Требует run_results под алиасом rr.
+_COUNTED_RUN_ROW = (
+    "  AND NOT EXISTS (SELECT 1 FROM crosslink_duplicate cd WHERE cd.id = rr.id)"
+)
 
 _PARKRUN_ELIGIBLE_EXISTS = (
     "EXISTS (SELECT 1 FROM parkrun_eligible pe WHERE pe.participant_id = rr.participant_id)"
@@ -593,10 +631,9 @@ SELECT
 FROM run_results rr
 JOIN events e ON e.id = rr.event_id
 JOIN platforms p ON p.id = e.platform_id
-LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
 WHERE e.is_test_event = false
   AND rr.participant_id IS NOT NULL
-  AND ec.secondary_event_id IS NULL
+{_COUNTED_RUN_ROW}
   AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
   /*PIDS_FILTER*/
 GROUP BY rr.participant_id, p.code
@@ -733,10 +770,9 @@ SELECT
 FROM run_results rr
 JOIN events e ON e.id = rr.event_id
 JOIN platforms p ON p.id = e.platform_id
-LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
 WHERE e.is_test_event = false
   AND rr.participant_id IS NOT NULL
-  AND ec.secondary_event_id IS NULL
+{_COUNTED_RUN_ROW}
   AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
   {wins_filter}
   /*PIDS_FILTER*/
@@ -773,11 +809,10 @@ SELECT DISTINCT
 FROM run_results rr
 JOIN events e ON e.id = rr.event_id
 JOIN platforms p ON p.id = e.platform_id
-LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
 {OPENING_EVENT_JOIN}
 WHERE e.is_test_event = false
   AND rr.participant_id IS NOT NULL
-  AND ec.secondary_event_id IS NULL
+{_COUNTED_RUN_ROW}
   AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
   AND {OPENING_EVENT_CONDITION}
   -- Открытие у локации одно. Номер забега — не первичный ключ: на неполной
@@ -868,10 +903,9 @@ SELECT
 FROM run_results rr
 JOIN events e ON e.id = rr.event_id
 JOIN platforms p ON p.id = e.platform_id
-LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
 WHERE e.is_test_event = false
   AND rr.participant_id IS NOT NULL
-  AND ec.secondary_event_id IS NULL
+{_COUNTED_RUN_ROW}
   AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
   /*PIDS_FILTER*/
 GROUP BY rr.participant_id, p.code, e.location_id
@@ -933,10 +967,9 @@ SELECT
 FROM run_results rr
 JOIN events e ON e.id = rr.event_id
 JOIN platforms p ON p.id = e.platform_id
-LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
 WHERE e.is_test_event = false
   AND rr.participant_id IS NOT NULL
-  AND ec.secondary_event_id IS NULL
+{_COUNTED_RUN_ROW}
   AND e.event_date >= :week_start
   AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
   /*PIDS_FILTER*/
@@ -986,11 +1019,10 @@ SELECT
 FROM run_results rr
 JOIN events e ON e.id = rr.event_id
 JOIN platforms p ON p.id = e.platform_id
-LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
 WHERE e.is_test_event = false
   AND rr.participant_id IS NOT NULL
   AND rr.position = 1
-  AND ec.secondary_event_id IS NULL
+{_COUNTED_RUN_ROW}
   AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
   {_RUSSIAN_PARKRUN_ONLY}
   /*PIDS_FILTER*/
@@ -1045,12 +1077,11 @@ SELECT
 FROM run_results rr
 JOIN events e ON e.id = rr.event_id
 JOIN platforms p ON p.id = e.platform_id
-LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
 LEFT JOIN participants pt ON pt.id = rr.participant_id
 WHERE e.is_test_event = false
   AND rr.participant_id IS NOT NULL
   AND rr.gender_position = 1
-  AND ec.secondary_event_id IS NULL
+{_COUNTED_RUN_ROW}
   AND (p.code <> 'parkrun' OR {_PARKRUN_ELIGIBLE_EXISTS})
   {_RUSSIAN_PARKRUN_ONLY}
   /*PIDS_FILTER*/

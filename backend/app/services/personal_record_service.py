@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import String, and_, cast, func, or_, select
+from sqlalchemy import String, and_, cast, func, or_, select, text
 from sqlalchemy.orm import Session
 
-from app.models import Event, EventCrosslink, Location, Platform, PlatformLink, RunResult
+from app.models import Event, EventCrosslink, Location, Participant, Platform, PlatformLink, RunResult
+from app.participant_identity import anonymous_participant_sql, is_anonymous_participant
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.sync import upsert
 
@@ -210,11 +212,16 @@ def recalculate_first_run_flags(
     first run at each distinct location is is_first_run_at_location=True. Secondary
     crosslink duplicates and test events (is_test_event) never carry either flag and
     do not consume the "first" slot — дебютом считается первый официальный старт.
+
+    Безымянные строки протокола («НЕИЗВЕСТНЫЙ», «Неизвестный бегун») не несут
+    флагов вовсе: под каждую такую строку заводится одноразовая личность, и по
+    хронологии она всегда «впервые» (см. app/participant_identity.py).
     """
     platform = upsert.get_platform(db, platform_code)
     participant_query = (
-        db.query(RunResult.participant_id)
+        db.query(RunResult.participant_id, Participant.external_user_id, Participant.display_name)
         .join(Event, RunResult.event_id == Event.id)
+        .join(Participant, Participant.id == RunResult.participant_id)
         .filter(
             Event.platform_id == platform.id,
             RunResult.participant_id.isnot(None),
@@ -224,11 +231,13 @@ def recalculate_first_run_flags(
     if participant_id is not None:
         participant_query = participant_query.filter(RunResult.participant_id == participant_id)
 
-    participant_ids = [row[0] for row in participant_query.all()]
+    participant_rows = participant_query.all()
     participants_touched = 0
     updated = 0
 
-    for index, current_participant_id in enumerate(participant_ids, start=1):
+    for index, (current_participant_id, external_user_id, display_name) in enumerate(
+        participant_rows, start=1
+    ):
         rows = (
             db.query(RunResult, Event)
             .join(Event, RunResult.event_id == Event.id)
@@ -236,13 +245,23 @@ def recalculate_first_run_flags(
                 Event.platform_id == platform.id,
                 RunResult.participant_id == current_participant_id,
             )
-            .order_by(Event.event_date, Event.event_number, Event.location_id)
+            .order_by(Event.event_date, Event.event_number, Event.location_id, RunResult.id)
             .all()
         )
         if not rows:
             continue
 
         participants_touched += 1
+
+        if is_anonymous_participant(external_user_id, display_name):
+            for run, _event in rows:
+                if run.is_first_run or run.is_first_run_at_location:
+                    run.is_first_run = False
+                    run.is_first_run_at_location = False
+                    updated += 1
+            if commit_every > 0 and index % commit_every == 0:
+                db.commit()
+            continue
 
         row_event_ids = [event.id for _run, event in rows]
         secondary_event_ids: set[UUID] = set()
@@ -300,6 +319,148 @@ def recalculate_participants_first_run_flags(
         return
     for participant_id in set(participant_ids):
         recalculate_first_run_flags(db, platform_code, participant_id=participant_id)
+
+
+# Тот же инвариант, что и в recalculate_first_run_flags, но одним запросом:
+# «сохранённый флаг обязан совпадать с хронологией». Нужен сторожем, потому что
+# флаг живёт в таблице, а upsert протокола затирает его на False (адаптеры
+# s95/parkrun/runpark его не заполняют) — стоит какому-нибудь пути синка забыть
+# про пересчёт, и цифра «Новичков» тихо уезжает вниз. Ровно так на 17.09.2026
+# на проде потерялись 3004 строки s95 на 538 протоколах.
+_FIRST_RUN_MISMATCH_SQL = """
+WITH protocol_rows AS (
+    SELECT
+        rr.id,
+        rr.participant_id,
+        rr.is_first_run,
+        rr.is_first_run_at_location,
+        e.event_date,
+        e.event_number,
+        e.location_id,
+        (ec.secondary_event_id IS NOT NULL OR e.is_test_event) AS excluded,
+        {anonymous_sql} AS anonymous
+    FROM run_results rr
+    JOIN events e ON e.id = rr.event_id
+    JOIN platforms p ON p.id = e.platform_id
+    LEFT JOIN participants pt ON pt.id = rr.participant_id
+    LEFT JOIN event_crosslinks ec ON ec.secondary_event_id = e.id
+    WHERE p.code = :platform_code
+      AND rr.participant_id IS NOT NULL
+      -- Сужение на конкретных участников: тестам и точечному ремонту незачем
+      -- перебирать платформу целиком. NULL — «все».
+      AND (
+        CAST(:participant_ids AS uuid[]) IS NULL
+        OR rr.participant_id = ANY(CAST(:participant_ids AS uuid[]))
+      )
+), counted AS (
+    SELECT * FROM protocol_rows WHERE NOT excluded AND NOT anonymous
+), expected AS (
+    SELECT
+        id,
+        row_number() OVER (
+            PARTITION BY participant_id
+            ORDER BY event_date, event_number, location_id, id
+        ) = 1 AS want_first,
+        row_number() OVER (
+            PARTITION BY participant_id, location_id
+            ORDER BY event_date, event_number, location_id, id
+        ) = 1 AS want_first_at_location
+    FROM counted
+), mismatched AS (
+    SELECT
+        r.participant_id,
+        r.is_first_run IS DISTINCT FROM COALESCE(x.want_first, false) AS first_run_off,
+        r.is_first_run_at_location IS DISTINCT FROM COALESCE(x.want_first_at_location, false)
+            AS first_at_location_off,
+        r.is_first_run AND NOT COALESCE(x.want_first, false) AS extra_first_run,
+        COALESCE(x.want_first, false) AND NOT r.is_first_run AS missing_first_run
+    FROM protocol_rows r
+    LEFT JOIN expected x ON x.id = r.id
+)
+{tail}
+"""
+
+_FIRST_RUN_MISMATCH_COUNTS_TAIL = """
+SELECT
+    count(*) FILTER (WHERE first_run_off) AS first_run_mismatch,
+    count(*) FILTER (WHERE first_at_location_off) AS first_at_location_mismatch,
+    count(*) FILTER (WHERE extra_first_run) AS extra_first_run,
+    count(*) FILTER (WHERE missing_first_run) AS missing_first_run
+FROM mismatched
+"""
+
+_FIRST_RUN_MISMATCH_PARTICIPANTS_TAIL = """
+SELECT DISTINCT participant_id
+FROM mismatched
+WHERE first_run_off OR first_at_location_off
+"""
+
+
+def _first_run_mismatch_sql(tail: str) -> str:
+    return _FIRST_RUN_MISMATCH_SQL.format(
+        anonymous_sql=anonymous_participant_sql("pt.external_user_id", "pt.display_name"),
+        tail=tail,
+    )
+
+
+def first_run_flag_mismatches(
+    db: Session,
+    platform_code: str,
+    *,
+    participant_ids: Sequence[UUID] | None = None,
+) -> dict[str, int]:
+    """Сколько строк платформы разошлись с правилом дебюта (0 — всё сходится)."""
+    row = db.execute(
+        text(_first_run_mismatch_sql(_FIRST_RUN_MISMATCH_COUNTS_TAIL)),
+        {
+            "platform_code": platform_code,
+            "participant_ids": list(participant_ids) if participant_ids is not None else None,
+        },
+    ).one()
+    return {
+        "platform_code": platform_code,
+        "first_run_mismatch": int(row.first_run_mismatch),
+        "first_at_location_mismatch": int(row.first_at_location_mismatch),
+        "extra_first_run": int(row.extra_first_run),
+        "missing_first_run": int(row.missing_first_run),
+    }
+
+
+def repair_first_run_flags(
+    db: Session,
+    platform_code: str,
+    *,
+    participant_ids: Sequence[UUID] | None = None,
+) -> dict[str, int]:
+    """Пересчитать флаги только тем участникам, у кого они разъехались с правилом.
+
+    Дешёвая замена полному пересчёту платформы после массовой заливки: сам
+    поиск расхождений — один запрос, а участников с ними обычно единицы.
+    Полный проход по всем участникам стоил бы столько же, сколько пересчёт
+    личных рекордов, и ради десятка строк его гонять незачем.
+    """
+    if platform_code not in FIRST_RUN_DERIVED_PLATFORMS:
+        return {"platform_code": platform_code, "participants_repaired": 0, "runs_updated": 0}
+
+    drifted = [
+        row[0]
+        for row in db.execute(
+            text(_first_run_mismatch_sql(_FIRST_RUN_MISMATCH_PARTICIPANTS_TAIL)),
+            {
+                "platform_code": platform_code,
+                "participant_ids": list(participant_ids) if participant_ids is not None else None,
+            },
+        ).all()
+    ]
+    runs_updated = 0
+    for participant_id in drifted:
+        stats = recalculate_first_run_flags(db, platform_code, participant_id=participant_id)
+        runs_updated += stats["runs_updated"]
+    return {
+        "platform_code": platform_code,
+        "participants_repaired": len(drifted),
+        "runs_updated": runs_updated,
+    }
 
 
 def user_secondary_crosslinked_run_ids(
