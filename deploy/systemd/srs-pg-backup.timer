@@ -1,0 +1,10 @@
+[Unit]
+Description=Ежедневный бэкап базы в 23:30 МСК
+
+[Timer]
+# Время то же, что было на VPS, — чтобы история дампов шла ровным шагом.
+OnCalendar=*-*-* 23:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

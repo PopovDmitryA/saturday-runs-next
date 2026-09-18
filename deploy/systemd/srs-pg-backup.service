@@ -1,0 +1,10 @@
+[Unit]
+Description=Бэкап боевой базы run5k.run в S3 (домашний сервер)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=dmitry
+ExecStart=/bin/bash /home/dmitry/srs-prod/scripts/home_pg_backup.sh
+TimeoutStartSec=30min
