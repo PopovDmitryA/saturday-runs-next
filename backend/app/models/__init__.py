@@ -1824,7 +1824,7 @@ class StartWeather(Base):
     apparent_temperature_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
     humidity_pct: Mapped[int | None] = mapped_column(SmallInteger)
     precipitation_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
-    # Сумма за старт−1ч…старт+2ч (8–11 при старте в 9:00) и за старт−4ч…старт−1ч (5–8).
+    # Жидкий дождь за час забега (9–10 при старте в 9:00) и за три часа до старта (6–9).
     precipitation_run_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
     precipitation_before_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
     snowfall_cm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))

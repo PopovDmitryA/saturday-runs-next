@@ -18,7 +18,7 @@ class WeatherBriefResponse(BaseModel):
     icon: str = ""
     wind_speed_ms: float | None = None
     wind_gusts_ms: float | None = None
-    # Осадки в окне «старт−1ч…старт+2ч» и «старт−4ч…старт−1ч» (трасса мокрая).
+    # Жидкий дождь за час забега и за три часа до старта (трасса мокрая).
     precipitation_run_mm: float | None = None
     precipitation_before_mm: float | None = None
     snowfall_cm: float | None = None

@@ -15,8 +15,9 @@ API −47…−48°, станция −49.0° — сетке можно вери
   площадок субботы кончаются через INACTIVE_TAIL_DAYS после последнего старта;
 * час старта — по расписанию локации (schedule_parsed описания 5 вёрст),
   иначе 09:00 местного (S95 всегда 9:00, у parkrun РФ расписания нет);
-* окна осадков вокруг старта: «бежали под дождём» старт−1ч…старт+2ч,
-  «трасса мокрая» старт−4ч…старт−1ч.
+* окна осадков вокруг старта: «бежали под дождём» — час забега (старт…старт+1ч),
+  «трасса мокрая» — три часа до старта. В обоих считается ЖИДКИЙ дождь: снег
+  из суммы вычитается (см. liquid_window).
 
 Лимиты API считаются по весу: 1 вызов = 1 локация × 2 недели × 10 переменных,
 год с 23 переменными стоил ~60, и 10 000 в сутки кончались на 30 локациях.
@@ -390,6 +391,36 @@ def _int(value: Any) -> int | None:
     return int(round(float(value)))
 
 
+# Снегопад Open-Meteo отдаёт в сантиметрах, осадки — в миллиметрах воды, и в
+# сумму осадков снег входит наравне с дождём. Коэффициент перевода у сервиса
+# фиксированный: 1 мм воды = 0.7 см снега. Проверено на реальных строках —
+# Мещерский 17.12.2022: осадки 0.9 мм, снег 0.63 см, жидкого дождя ровно 0.
+SNOW_CM_PER_MM_OF_WATER = Decimal("0.7")
+
+
+def liquid_window(
+    precipitation: list[Any] | None,
+    snowfall: list[Any] | None,
+    hour_index: dict[str, int],
+    obs_date: date,
+    hours: range,
+) -> Decimal | None:
+    """Жидкий дождь за окно: осадки минус водный эквивалент снега.
+
+    Зимний старт под снегопадом не должен попадать в «дождливые» — вопрос
+    Наталии Тумковской 18.09.2026, и она права: в декабре на Мещерском «дождь
+    2.6 мм» был снегом при −5.7°.
+    """
+
+    total = window_sum(precipitation, hour_index, obs_date, hours)
+    if total is None:
+        return None
+    snow = window_sum(snowfall, hour_index, obs_date, hours)
+    if snow:
+        total -= snow / SNOW_CM_PER_MM_OF_WATER
+    return max(round(total, 2), Decimal("0"))
+
+
 def window_sum(values: list[Any] | None, hour_index: dict[str, int], obs_date: date, hours: range) -> Decimal | None:
     """Сумма часовых значений за окно. Значение с меткой HH:00 у Open-Meteo — за час (HH−1, HH].
 
@@ -447,9 +478,10 @@ def build_rows(
             continue
         snow_depth_m = h("snow_depth", hi)
         precipitation = hourly.get("precipitation")
+        snowfall = hourly.get("snowfall")
         day_temp = _day_values(hourly.get("temperature_2m"), hour_index, obs_date)
         day_precip = _day_values(precipitation, hour_index, obs_date)
-        day_snow = _day_values(hourly.get("snowfall"), hour_index, obs_date)
+        day_snow = _day_values(snowfall, hour_index, obs_date)
         day_wind = _day_values(hourly.get("wind_speed_10m"), hour_index, obs_date)
         day_gusts = _day_values(hourly.get("wind_gusts_10m"), hour_index, obs_date)
         day_codes = _day_values(hourly.get("weather_code"), hour_index, obs_date)
@@ -464,13 +496,18 @@ def build_rows(
                 "apparent_temperature_c": _dec(h("apparent_temperature", hi), 1),
                 "humidity_pct": _int(h("relative_humidity_2m", hi)),
                 "precipitation_mm": _dec(h("precipitation", hi), 2),
-                # Дождь между старт−1ч и старт+2ч: метки start..start+2.
-                "precipitation_run_mm": window_sum(
-                    precipitation, hour_index, obs_date, range(start_hour, start_hour + 3)
+                # Дождь на самой дистанции: час от старта, метка start+1.
+                # Раньше окно было вчетверо шире (старт−1ч…старт+2ч), и ливень,
+                # прошедший за час до сбора или через два часа после финиша,
+                # объявлял старт дождливым. Наталия Тумковская проверила восемь
+                # своих «дождливых» стартов по фотографиям — дождь был на одном
+                # (18.09.2026). Час забега — ровно то, что человек помнит.
+                "precipitation_run_mm": liquid_window(
+                    precipitation, snowfall, hour_index, obs_date, range(start_hour + 1, start_hour + 2)
                 ),
-                # Дождь между старт−4ч и старт−1ч: метки start−3..start−1.
-                "precipitation_before_mm": window_sum(
-                    precipitation, hour_index, obs_date, range(max(start_hour - 3, 0), start_hour)
+                # Мокрая трасса: три часа до старта, метки start−2..start.
+                "precipitation_before_mm": liquid_window(
+                    precipitation, snowfall, hour_index, obs_date, range(max(start_hour - 2, 0), start_hour + 1)
                 ),
                 "snowfall_cm": _dec(h("snowfall", hi), 2),
                 "snow_depth_cm": _dec(snow_depth_m * 100, 1) if snow_depth_m is not None else None,

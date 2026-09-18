@@ -3,7 +3,7 @@ import { DetailModal } from "./DetailModal";
 import { RAIN_KIND_LABELS, formatTemp, temperatureTone, type WeatherBrief } from "../lib/weather";
 
 // Погода одной строкой в таблице: значок и градусы, по клику — окно с
-// подробностями (ощущается, ветер, осадки в окне старта, снег, восход) и
+// подробностями (ощущается, ветер, дождь за час забега, снег, восход) и
 // ссылкой на страницу погоды локации. Одна и та же плитка во всех таблицах.
 
 type Props = {
@@ -87,14 +87,14 @@ export function WeatherChip({ weather, locationSlug, locationName, full = false,
           <Row label="Порывы" value={ms(weather.wind_gusts_ms)} />
           <Row label="Влажность" value={weather.humidity_pct != null ? `${weather.humidity_pct}%` : null} />
           <Row
-            label="Осадки во время старта"
+            label="Дождь за час забега"
             value={
               weather.precipitation_run_mm != null
                 ? `${mm(weather.precipitation_run_mm)} · ${RAIN_KIND_LABELS[weather.rain_kind]}`
                 : null
             }
           />
-          <Row label="Осадки утром до старта" value={mm(weather.precipitation_before_mm)} />
+          <Row label="Дождь за три часа до старта" value={mm(weather.precipitation_before_mm)} />
           <Row label="Осадки за сутки" value={mm(weather.day_precipitation_mm)} />
           <Row
             label="Снег на трассе"
@@ -103,8 +103,8 @@ export function WeatherChip({ weather, locationSlug, locationName, full = false,
           <Row label="Восход" value={weather.sunrise_local} />
           <p className="muted weather-detail-note">
             Данные из архива погоды Open-Meteo: координаты локации, время старта. Температура и ветер
-            надёжны, а осадки модель размазывает по времени и площади — дождь по ней иногда идёт на пару
-            часов раньше или позже настоящего.
+            надёжны, а осадки модель размазывает по площади — летний ливень из соседнего квартала она
+            может засчитать и вашему парку.
             {weather.is_preliminary && " Строка предварительная, архив уточнит её в понедельник."}
           </p>
           {locationSlug && (

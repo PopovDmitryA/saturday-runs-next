@@ -104,8 +104,11 @@ def test_build_rows_picks_start_hour_and_skips_missing() -> None:
     assert row["temperature_c"] == Decimal("-48.2")
     assert row["snow_depth_cm"] == Decimal("21.0")
     assert row["precipitation_mm"] == Decimal("0.3")
-    assert row["precipitation_run_mm"] == Decimal("0.5")  # метки 09, 10, 11
-    assert row["precipitation_before_mm"] == Decimal("4.4")  # метки 06, 07, 08
+    # Дождь на дистанции — только час забега: метка 10 (09:00–10:00). Ливень в
+    # 3.5 мм прошёл часом раньше и дождливым этот старт больше не делает.
+    assert row["precipitation_run_mm"] == Decimal("0")
+    # Мокрая трасса — три часа до старта: метки 07, 08, 09.
+    assert row["precipitation_before_mm"] == Decimal("4.5")
     # Суточные агрегаты считаются из 24 часовых значений.
     assert row["day_temperature_min_c"] == Decimal("-50.0")
     assert row["day_temperature_max_c"] == Decimal("-47.0")
@@ -250,3 +253,37 @@ def test_call_weight_counts_two_week_blocks() -> None:
     assert call_weight(date(2026, 1, 1), date(2026, 1, 15)) == 2
     # Год целиком — самый частый чанк пересборки.
     assert call_weight(date(2025, 1, 1), date(2025, 12, 31)) == 27
+
+
+def test_liquid_window_does_not_count_snow_as_rain() -> None:
+    """Зимний старт под снегопадом — не дождливый.
+
+    Вопрос Наталии Тумковской 18.09.2026: Мещерский 17.12.2022 показывал «дождь
+    2.6 мм» при −5.7°. В сумме осадков Open-Meteo снег идёт наравне с дождём,
+    поэтому водный эквивалент снега вычитаем.
+    """
+    from app.services.weather_service import liquid_window
+
+    hours = [f"2022-12-17T{h:02d}:00" for h in range(24)]
+    index = {stamp: i for i, stamp in enumerate(hours)}
+    precipitation = [0.0] * 24
+    snowfall = [0.0] * 24
+    precipitation[10] = 0.9
+    snowfall[10] = 0.63  # ровно водный эквивалент 0.9 мм
+    window = range(10, 11)
+    assert liquid_window(precipitation, snowfall, index, date(2022, 12, 17), window) == Decimal("0")
+    # Мокрый снег: часть выпала дождём — её и считаем.
+    snowfall[10] = 0.35
+    assert liquid_window(precipitation, snowfall, index, date(2022, 12, 17), window) == Decimal("0.40")
+    # Без снега окно ведёт себя как обычная сумма.
+    snowfall[10] = 0.0
+    assert liquid_window(precipitation, snowfall, index, date(2022, 12, 17), window) == Decimal("0.9")
+
+
+def test_liquid_window_needs_the_whole_window() -> None:
+    """Дыра в часах — это «не знаем», а не ноль: иначе пропуск выглядел бы сухим."""
+    from app.services.weather_service import liquid_window
+
+    hours = ["2022-12-17T09:00"]
+    index = {stamp: i for i, stamp in enumerate(hours)}
+    assert liquid_window([0.5], [0.0], index, date(2022, 12, 17), range(10, 11)) is None
