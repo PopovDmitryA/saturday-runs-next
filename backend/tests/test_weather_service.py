@@ -287,3 +287,21 @@ def test_liquid_window_needs_the_whole_window() -> None:
     hours = ["2022-12-17T09:00"]
     index = {stamp: i for i, stamp in enumerate(hours)}
     assert liquid_window([0.5], [0.0], index, date(2022, 12, 17), range(10, 11)) is None
+
+
+def test_rain_thresholds_are_set_for_one_hour() -> None:
+    """Пороги живут на часе забега, а не на четырёхчасовом окне.
+
+    Когда окно сузилось вчетверо, старый порог в 1 мм стал вчетверо строже:
+    «Нижний пруд 23.09.2023 — сильный дождь» (Наталья Волкова) при 0.7 мм за
+    час забега уезжал в сухие. На выборке из 199 стартов порог 0.3 мм/ч
+    сохраняет прежнюю долю дождливых стартов — 6.0% против 6.5%.
+    """
+    from app.services.start_weather_service import is_rain, rain_kind
+
+    assert rain_kind(0.0) == "dry"
+    assert rain_kind(0.05) == "dry"
+    assert rain_kind(0.2) == "drizzle"
+    assert rain_kind(0.7) == "rain"  # тот самый Нижний пруд
+    assert rain_kind(3.0) == "downpour"
+    assert is_rain(0.7) and not is_rain(0.2)

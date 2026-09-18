@@ -1191,7 +1191,7 @@ export function DashboardAnalytics({
       label: "пробежек под дождём",
       note: `из ${formatInt(weather.runs_with_weather)} с погодой`,
       category: "runs",
-      tooltipContent: "Дождём считаем от 1 мм за час забега. Снегопад — это снег, а не дождь.",
+      tooltipContent: "Дождём считаем от 0.3 мм за час забега. Снегопад — это снег, а не дождь.",
     });
     if (weather.frost_runs > 0) {
       cards.push({
