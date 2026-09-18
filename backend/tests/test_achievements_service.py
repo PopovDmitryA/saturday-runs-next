@@ -13,6 +13,8 @@ from app.services.achievements_service import (
     RatingRow,
     RunRow,
     VolunteerRoleRow,
+    WeatherDay,
+    _all_weather_challenge,
     _alphabet_challenge,
     _alphabet_tiers,
     _best_year_challenge,
@@ -57,6 +59,7 @@ from app.services.achievements_service import (
     _upcoming_hint,
     _v_index,
     _v_index_challenge,
+    _walrus_challenge,
     _weekdays_challenge,
     _wilson_chains,
     _wilson_challenge,
@@ -89,6 +92,26 @@ def _row(
         country=country,
         platform_code=platform_code,
         is_pr=is_pr,
+    )
+
+
+def _weather_day(
+    event_date: date = date(2026, 1, 3),
+    platform_code: str = "five_verst",
+    location_name: str = "Кузьминки",
+    location_key: str = "kuzminki",
+    volunteered: bool = False,
+    temperature_c: float | None = None,
+    precipitation_run_mm: float | None = None,
+) -> WeatherDay:
+    return WeatherDay(
+        event_date=event_date,
+        location_name=location_name,
+        location_key=location_key,
+        platform_code=platform_code,
+        volunteered=volunteered,
+        temperature_c=temperature_c,
+        precipitation_run_mm=precipitation_run_mm,
     )
 
 
@@ -252,25 +275,33 @@ def test_scope_by_platform_filters_rows_vol_rows_and_upcoming() -> None:
         _role_row(platform_code="s95", event_date=date(2026, 1, 10)),
     ]
 
+    weather_days = [
+        _weather_day(platform_code="five_verst", event_date=date(2026, 1, 3)),
+        _weather_day(platform_code="s95", event_date=date(2026, 1, 10)),
+    ]
+
     (
         scoped_rows,
         scoped_vol_rows,
         scoped_upcoming,
         scoped_rating_rows,
         scoped_role_rows,
-    ) = _scope_by_platform(rows, vol_rows, upcoming, rating_rows, role_rows, "s95")
+        scoped_weather_days,
+    ) = _scope_by_platform(rows, vol_rows, upcoming, rating_rows, role_rows, weather_days, "s95")
     assert [row.platform_code for row in scoped_rows] == ["s95"]
     assert set(scoped_vol_rows) == {"s95"}
     assert set(scoped_upcoming) == {("s95", 42)}
     assert [row.platform_code for row in scoped_rating_rows] == ["s95"]
     assert [row.platform_code for row in scoped_role_rows] == ["s95"]
+    assert [day.platform_code for day in scoped_weather_days] == ["s95"]
 
-    assert _scope_by_platform(rows, vol_rows, upcoming, rating_rows, role_rows, None) == (
+    assert _scope_by_platform(rows, vol_rows, upcoming, rating_rows, role_rows, weather_days, None) == (
         rows,
         vol_rows,
         upcoming,
         rating_rows,
         role_rows,
+        weather_days,
     )
 
 
@@ -1017,13 +1048,13 @@ def test_platform_slam_hidden_under_platform_filter() -> None:
     codes_all = {
         c["code"]
         for c in _build_challenge_list(
-            rows, {}, {}, [], [], alphabet_names={}, platform_code=None, home_country="Россия"
+            rows, {}, {}, [], [], [], alphabet_names={}, platform_code=None, home_country="Россия"
         )
     }
     codes_scoped = {
         c["code"]
         for c in _build_challenge_list(
-            rows, {}, {}, [], [], alphabet_names={}, platform_code="five_verst", home_country="Россия"
+            rows, {}, {}, [], [], [], alphabet_names={}, platform_code="five_verst", home_country="Россия"
         )
     }
     assert "platform_slam" in codes_all
@@ -1249,3 +1280,36 @@ def test_primes_ignores_numbers_above_the_strip() -> None:
 
 def test_is_prime_edge_cases() -> None:
     assert [n for n in range(1, 20) if _is_prime(n)] == [2, 3, 5, 7, 11, 13, 17, 19]
+
+
+def test_weather_challenge_counts_volunteering_days() -> None:
+    """Волонтёр мёрзнет в тот же мороз, что и бегуны, — «Морж» это засчитывает.
+
+    Просьба Киры Барановской (18.09.2026): «мои дождливые и морозные
+    организаторства хотелось бы тут учесть».
+    """
+    days = [
+        _weather_day(event_date=date(2026, 1, 3), temperature_c=-24.0),
+        _weather_day(event_date=date(2026, 1, 10), temperature_c=-27.0, volunteered=True, location_name="Битца"),
+    ]
+    challenge = _walrus_challenge(days)
+    assert challenge["current"] == 2
+    items = challenge["detail"]["items"]  # type: ignore[index]
+    # Свежие сверху: волонтёрский выход помечен, беговой — нет.
+    assert items[0]["note"] == "волонтёрство"
+    assert items[1]["note"] is None
+
+
+def test_all_weather_cell_counts_starts_not_finishes() -> None:
+    """Клетку коллекции может закрыть волонтёрство — подпись «финиш» там врала бы."""
+    days = [
+        _weather_day(event_date=date(2026, 1, 3), temperature_c=-25.0, volunteered=True),
+        _weather_day(event_date=date(2026, 1, 10), temperature_c=-22.0),
+    ]
+    cells = {cell["label"]: cell for cell in _all_weather_challenge(days)["detail"]["cells"]}  # type: ignore[index]
+    deep_frost = cells["Лютый мороз"]
+    assert deep_frost["done"] is True
+    assert deep_frost["count"] == 2
+    assert deep_frost["count_label"] == "2 старта"
+    # Клетка закрыта первым по дате выходом — волонтёрским.
+    assert deep_frost["date"] == "2026-01-03"

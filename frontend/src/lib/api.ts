@@ -1183,6 +1183,8 @@ export type ChallengeDetailItem = {
   value?: string;
   location?: string;
   count?: number;
+  /** Чем закрыта строка, когда это не пробежка: «волонтёрство» у погодных челленджей. */
+  note?: string | null;
   /** Система старта: номера забегов у систем свои, и на общей площадке «№30» без плашки не читается. */
   platform_code?: string | null;
   occurrences?: Array<{ date: string; location: string }>;

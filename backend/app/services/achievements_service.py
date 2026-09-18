@@ -74,6 +74,7 @@ from app.time_format import normalize_finish_time_display
 from app.volunteer_role_taxonomy import (
     CANONICAL_ROLE_LABELS,
     canonical_volunteer_role,
+    role_is_on_site,
     role_occasions,
 )
 from app.volunteering_occasions import count_volunteering_for_platform, is_inventory_day, volunteer_occasion_dates
@@ -316,6 +317,34 @@ class RunRow:
     wind_gusts_ms: float | None = None
 
 
+@dataclass
+class WeatherDay:
+    """День, когда человек был на площадке, с погодой того часа старта.
+
+    Погодные челленджи считают не финиши, а присутствие: волонтёр мокнет под
+    тем же ливнем и мёрзнет в тот же мороз, что и бегуны (просьба Киры
+    Барановской, 18.09.2026). Поэтому к пробежкам добавляются волонтёрства —
+    но только в ролях, требующих быть на площадке (role_is_on_site): за пост в
+    канале или обработку результатов из дома «Морж» начисляться не должен.
+
+    Один день на одной площадке — одна строка: пробежал и отработал в ту же
+    субботу — это по-прежнему один выход, а не два.
+    """
+
+    event_date: date
+    location_name: str
+    location_key: str
+    platform_code: str
+    #: День закрыт волонтёрством, а не финишем — показываем это в деталях.
+    volunteered: bool
+    temperature_c: float | None = None
+    precipitation_run_mm: float | None = None
+    snow_depth_cm: float | None = None
+    snowfall_cm: float | None = None
+    weather_code: int | None = None
+    wind_gusts_ms: float | None = None
+
+
 # ---------------------------------------------------------------------------
 # Сбор данных
 
@@ -456,6 +485,80 @@ def _collect_volunteer_role_rows(db: Session, user_id: UUID) -> list[VolunteerRo
     # 2014–2022, то есть в основном ДО появления 5 вёрст и С95.
     rows.sort(key=lambda row: (row.event_date is not None, row.event_date or date.min, row.role_key))
     return rows
+
+
+def _collect_weather_days(db: Session, user_id: UUID, rows: list[RunRow]) -> list[WeatherDay]:
+    """Дни на площадке с погодой: финиши плюс волонтёрства «с присутствием».
+
+    Пробежки уже несут погоду (её подтянул _collect_run_rows), волонтёрским
+    строкам она добирается отдельным батчем. Удалённые роли отсекаются
+    таксономией, недатированная сводка parkrun — тоже: без даты неизвестно,
+    какая тогда была погода.
+    """
+
+    by_day: dict[tuple[str, date], WeatherDay] = {}
+    for row in rows:
+        by_day[(row.location_key, row.event_date)] = WeatherDay(
+            event_date=row.event_date,
+            location_name=row.location_name,
+            location_key=row.location_key,
+            platform_code=row.platform_code,
+            volunteered=False,
+            temperature_c=row.temperature_c,
+            precipitation_run_mm=row.precipitation_run_mm,
+            snow_depth_cm=row.snow_depth_cm,
+            snowfall_cm=row.snowfall_cm,
+            weather_code=row.weather_code,
+            wind_gusts_ms=row.wind_gusts_ms,
+        )
+
+    query = (
+        db.query(Event.event_date, Event.location_id, VolunteerResult.role, Platform.code, Location)
+        .select_from(VolunteerResult)
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(PlatformLink, PlatformLink.participant_id == VolunteerResult.participant_id)
+        .filter(
+            PlatformLink.user_id == user_id,
+            PlatformLink.platform_id == Platform.id,
+            Event.is_test_event.is_(False),
+            Event.event_date > _EPOCH_GUARD,
+        )
+    )
+    catalog_index = LocationCatalogIndex(db)
+    pending: dict[tuple[str, date], tuple[UUID, date, str, str]] = {}
+    for event_date, location_id, role, platform_code, location in query.all():
+        canonical = canonical_volunteer_role(role)
+        if canonical is None or not role_is_on_site(canonical.key):
+            continue
+        location_key = catalog_index.canonical_identity_key(location, platform_code)
+        day = (location_key, event_date)
+        if day in by_day or day in pending:
+            # Несколько ролей в одну субботу — это один выход на площадку.
+            continue
+        pending[day] = (location_id, event_date, catalog_index.display_name(location, platform_code), platform_code)
+
+    weather_rows = weather_rows_for_pairs(db, [(loc_id, when) for loc_id, when, _n, _p in pending.values()])
+    for (location_key, event_date), (location_id, _when, location_name, platform_code) in pending.items():
+        weather = weather_rows.get((location_id, event_date))
+        by_day[(location_key, event_date)] = WeatherDay(
+            event_date=event_date,
+            location_name=location_name,
+            location_key=location_key,
+            platform_code=platform_code,
+            volunteered=True,
+            temperature_c=_f(weather.temperature_c) if weather else None,
+            precipitation_run_mm=_f(weather.precipitation_run_mm) if weather else None,
+            snow_depth_cm=_f(weather.snow_depth_cm) if weather else None,
+            snowfall_cm=_f(weather.snowfall_cm) if weather else None,
+            weather_code=int(weather.weather_code) if weather and weather.weather_code is not None else None,
+            wind_gusts_ms=_f(weather.wind_gusts_ms) if weather else None,
+        )
+
+    days = list(by_day.values())
+    days.sort(key=lambda day: (day.event_date, day.location_key))
+    return days
 
 
 def _collect_volunteer_rows(db: Session, user_id: UUID) -> dict[str, list[tuple[date, str]]]:
@@ -678,11 +781,12 @@ def _first_letter(name: str) -> str | None:
 
 def _cell(
     label: str,
-    row: RunRow | None,
+    row: RunRow | WeatherDay | None,
     *,
     hint: str | None = None,
     count: int | None = None,
     accent: str | None = None,
+    count_label: str | None = None,
 ) -> dict[str, object]:
     """Клетка коллекции: закрыта первой пробежкой row; hint — подсказка для
     незакрытых. accent помечает клетку как часть выделенной группы — сегодня
@@ -695,6 +799,7 @@ def _cell(
         "hint": hint,
         "platform_code": row.platform_code if row else None,
         "count": count,
+        "count_label": count_label,
         "accent": accent,
     }
 
@@ -2191,31 +2296,34 @@ def _compute_clubs(
 
 
 def _weather_counter_challenge(
-    rows: list[RunRow],
+    days: list[WeatherDay],
     *,
     code: str,
     title: str,
     icon: str,
     description: str,
     unit: str,
-    predicate: Callable[[RunRow], bool],
+    predicate: Callable[[WeatherDay], bool],
 ) -> dict[str, object]:
-    """Счётчик пробежек, подходящих под погодное условие, с датами уровней."""
-    matched = sorted((row for row in rows if predicate(row)), key=lambda row: row.event_date)
-    sorted_dates = [row.event_date for row in matched]
+    """Счётчик выходов на площадку в такую погоду, с датами уровней."""
+    matched = sorted((day for day in days if predicate(day)), key=lambda day: day.event_date)
+    sorted_dates = [day.event_date for day in matched]
     items = [
         {
-            "date": row.event_date.isoformat(),
-            "location": row.location_name,
+            "date": day.event_date.isoformat(),
+            "location": day.location_name,
             "value": (
-                format_temperature(row.temperature_c)
+                format_temperature(day.temperature_c)
                 if code in ("walrus", "heatproof")
-                else f"{row.precipitation_run_mm:.1f} мм"
-                if row.precipitation_run_mm is not None
+                else f"{day.precipitation_run_mm:.1f} мм"
+                if day.precipitation_run_mm is not None
                 else ""
             ),
+            # Волонтёрский выход помечаем: человек должен видеть, за что именно
+            # ему засчитали тот мороз.
+            "note": "волонтёрство" if day.volunteered else None,
         }
-        for row in reversed(matched)
+        for day in reversed(matched)
     ][:30]
     return _challenge(
         code=code,
@@ -2230,50 +2338,53 @@ def _weather_counter_challenge(
     )
 
 
-def _walrus_challenge(rows: list[RunRow]) -> dict[str, object]:
+def _walrus_challenge(days: list[WeatherDay]) -> dict[str, object]:
     return _weather_counter_challenge(
-        rows,
+        days,
         code="walrus",
         title="Морж",
         icon="🥶",
         description=(
-            "Финишируй при −20° и ниже в час старта. Температура — по архиву погоды в точке "
-            "старта; ощущаемая с ветром бывает ещё ниже, но считаем воздух."
+            "Будь на старте при −20° и ниже — финишёром или волонтёром на площадке. Температура — "
+            "по архиву погоды в точке старта; ощущаемая с ветром бывает ещё ниже, но считаем воздух."
         ),
         unit="морозных стартов",
-        predicate=lambda row: row.temperature_c is not None and row.temperature_c <= DEEP_FROST_C,
+        predicate=lambda day: day.temperature_c is not None and day.temperature_c <= DEEP_FROST_C,
     )
 
 
-def _heatproof_challenge(rows: list[RunRow]) -> dict[str, object]:
+def _heatproof_challenge(days: list[WeatherDay]) -> dict[str, object]:
     return _weather_counter_challenge(
-        rows,
+        days,
         code="heatproof",
         title="Огнеупорный",
         icon="🔥",
-        description="Финишируй при +25° и выше в час старта — жара в девять утра редкость даже на юге.",
+        description=(
+            "Будь на старте при +25° и выше — финишёром или волонтёром на площадке. "
+            "Жара в девять утра редкость даже на юге."
+        ),
         unit="жарких стартов",
-        predicate=lambda row: row.temperature_c is not None and row.temperature_c >= HEAT_C,
+        predicate=lambda day: day.temperature_c is not None and day.temperature_c >= HEAT_C,
     )
 
 
-def _rain_runner_challenge(rows: list[RunRow]) -> dict[str, object]:
+def _rain_runner_challenge(days: list[WeatherDay]) -> dict[str, object]:
     return _weather_counter_challenge(
-        rows,
+        days,
         code="rain_runner",
         title="Под дождём",
         icon="🌧️",
         description=(
-            "Старты, на которых шёл дождь: от 1 мм осадков в окне «час до старта — два часа после». "
-            "Морось в 0.3 мм архив видит, но дождём не считает."
+            "Старты, на которых шёл дождь, — свои и отработанные волонтёром: от 1 мм осадков в окне "
+            "«час до старта — два часа после». Морось в 0.3 мм архив видит, но дождём не считает."
         ),
         unit="дождливых стартов",
-        predicate=lambda row: row.precipitation_run_mm is not None and row.precipitation_run_mm >= RAIN_MM,
+        predicate=lambda day: day.precipitation_run_mm is not None and day.precipitation_run_mm >= RAIN_MM,
     )
 
 
 # Меню погоды «Всепогодного»: ключ → (подпись, условие, подсказка).
-_ALL_WEATHER_CELLS: tuple[tuple[str, str, Callable[[RunRow], bool], str], ...] = (
+_ALL_WEATHER_CELLS: tuple[tuple[str, str, Callable[[WeatherDay], bool], str], ...] = (
     (
         "rain",
         "Дождь",
@@ -2310,27 +2421,41 @@ _ALL_WEATHER_CELLS: tuple[tuple[str, str, Callable[[RunRow], bool], str], ...] =
 )
 
 
-def _all_weather_challenge(rows: list[RunRow]) -> dict[str, object]:
-    """Коллекция погод: клетка закрывается первой пробежкой в такую погоду."""
-    first_by_key: dict[str, RunRow] = {}
+def _all_weather_challenge(days: list[WeatherDay]) -> dict[str, object]:
+    """Коллекция погод: клетка закрывается первым выходом на площадку в такую погоду."""
+    first_by_key: dict[str, WeatherDay] = {}
     counts: Counter[str] = Counter()
-    for row in sorted(rows, key=lambda r: r.event_date):
+    for day in sorted(days, key=lambda d: d.event_date):
         for key, _label, predicate, _hint in _ALL_WEATHER_CELLS:
-            if predicate(row):
+            if predicate(day):
                 counts[key] += 1
-                first_by_key.setdefault(key, row)
-    cells = [
-        _cell(label, first_by_key.get(key), hint=None if key in first_by_key else hint, count=counts.get(key) or None)
-        for key, label, _predicate, hint in _ALL_WEATHER_CELLS
-    ]
-    sorted_dates = sorted(row.event_date for row in first_by_key.values())
+                first_by_key.setdefault(key, day)
+    cells = []
+    for key, label, _predicate, hint in _ALL_WEATHER_CELLS:
+        first = first_by_key.get(key)
+        count = counts.get(key) or None
+        cells.append(
+            _cell(
+                label,
+                first,
+                hint=None if first else hint,
+                count=count,
+                # «Финиш» здесь больше не подходит: клетку мог закрыть и
+                # волонтёрский выход.
+                count_label=(
+                    None if count is None else f"{count} {_plural_ru(count, ('старт', 'старта', 'стартов'))}"
+                ),
+            )
+        )
+    sorted_dates = sorted(day.event_date for day in first_by_key.values())
     return _challenge(
         code="all_weather",
         title="Всепогодный",
         icon="🌦️",
         description=(
             "Собери все погоды: дождь и ливень, снегопад и трасса под снегом, мороз и лютый мороз, "
-            "жара и шквалистый ветер. Погода берётся из архива по точке старта."
+            "жара и шквалистый ветер. Клетку закрывает и пробежка, и волонтёрство на площадке. "
+            "Погода берётся из архива по точке старта."
         ),
         category="weather",
         current=len(first_by_key),
@@ -2379,6 +2504,7 @@ def _build_challenge_list(
     upcoming: dict[tuple[str, int], list[tuple[date, str]]],
     rating_rows: list[RatingRow],
     vol_role_rows: list[VolunteerRoleRow],
+    weather_days: list[WeatherDay],
     *,
     alphabet_names: dict[str, set[str]],
     platform_code: str | None,
@@ -2429,10 +2555,10 @@ def _build_challenge_list(
         _primes_challenge(rows, planned or {}),
         _wilson_challenge(rows, planned or {}),
         _countries_challenge(rows, home_country),
-        _walrus_challenge(rows),
-        _heatproof_challenge(rows),
-        _rain_runner_challenge(rows),
-        _all_weather_challenge(rows),
+        _walrus_challenge(weather_days),
+        _heatproof_challenge(weather_days),
+        _rain_runner_challenge(weather_days),
+        _all_weather_challenge(weather_days),
         _seasons_challenge(rows),
     ]
     if platform_code is None:
@@ -2458,6 +2584,7 @@ def _scope_by_platform(
     upcoming: dict[tuple[str, int], list[tuple[date, str]]],
     rating_rows: list[RatingRow],
     vol_role_rows: list[VolunteerRoleRow],
+    weather_days: list[WeatherDay],
     platform_code: str | None,
 ) -> tuple[
     list[RunRow],
@@ -2465,17 +2592,26 @@ def _scope_by_platform(
     dict[tuple[str, int], list[tuple[date, str]]],
     list[RatingRow],
     list[VolunteerRoleRow],
+    list[WeatherDay],
 ]:
-    """Сужает пробежки/волонтёрства/прогноз номеров/оценки/роли до одной системы —
-    для челленджей в разрезе платформы. None — без сужения (сквозной вид)."""
+    """Сужает пробежки/волонтёрства/прогноз номеров/оценки/роли/погодные дни до
+    одной системы — для челленджей в разрезе платформы. None — без сужения."""
     if platform_code is None:
-        return rows, vol_rows, upcoming, rating_rows, vol_role_rows
+        return rows, vol_rows, upcoming, rating_rows, vol_role_rows, weather_days
     scoped_rows = [row for row in rows if row.platform_code == platform_code]
     scoped_vol_rows = {code: v for code, v in vol_rows.items() if code == platform_code}
     scoped_upcoming = {key: v for key, v in upcoming.items() if key[0] == platform_code}
     scoped_rating_rows = [row for row in rating_rows if row.platform_code == platform_code]
     scoped_role_rows = [row for row in vol_role_rows if row.platform_code == platform_code]
-    return scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows, scoped_role_rows
+    scoped_weather_days = [day for day in weather_days if day.platform_code == platform_code]
+    return (
+        scoped_rows,
+        scoped_vol_rows,
+        scoped_upcoming,
+        scoped_rating_rows,
+        scoped_role_rows,
+        scoped_weather_days,
+    )
 
 
 class StartNumberPlanError(ValueError):
@@ -2762,6 +2898,7 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
     planned = _numbers_from_predictions(predictions, weeks=PLANNING_WEEKS, max_number=PLANNING_MAX_NUMBER)
     rating_rows = _collect_rating_rows(db, user_id)
     vol_role_rows = _collect_volunteer_role_rows(db, user_id)
+    weather_days = _collect_weather_days(db, user_id, rows)
 
     (
         scoped_rows,
@@ -2769,7 +2906,8 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
         scoped_upcoming,
         scoped_rating_rows,
         scoped_role_rows,
-    ) = _scope_by_platform(rows, vol_rows, upcoming, rating_rows, vol_role_rows, platform_code)
+        scoped_weather_days,
+    ) = _scope_by_platform(rows, vol_rows, upcoming, rating_rows, vol_role_rows, weather_days, platform_code)
     # Прогноз для числовых челленджей сужается тем же фильтром систем: под
     # «только 5 вёрст» подсказка не должна звать на старт S95.
     scoped_planned = (
@@ -2789,6 +2927,7 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
         scoped_upcoming,
         scoped_rating_rows,
         scoped_role_rows,
+        scoped_weather_days,
         alphabet_names=alphabet_names,
         platform_code=platform_code,
         home_country=home_country,
@@ -2800,6 +2939,10 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
         # Тот самый последний день активности, относительно которого считается
         # recent_delta: «Детали» подсветят по нему свежие клетки.
         recent_date = scoped_rows[-1].event_date.isoformat()
+        # Тем же днём отсекаем и погодные выходы: иначе «+1 за последний старт»
+        # считался бы против списка, в котором этот старт уже учтён.
+        cutoff = scoped_rows[-1].event_date
+        weather_days_before = [day for day in scoped_weather_days if day.event_date < cutoff]
         previous: dict[str, int] = {
             str(c["code"]): int(c["current"])  # type: ignore[call-overload]
             for c in _build_challenge_list(
@@ -2808,6 +2951,7 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
                 scoped_upcoming,
                 scoped_rating_rows,
                 scoped_role_rows,
+                weather_days_before,
                 alphabet_names=alphabet_names,
                 platform_code=platform_code,
                 home_country=home_country,
