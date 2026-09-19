@@ -30,6 +30,11 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
 if [ ! -f "$HOME_DIR/deploy/tg-proxy/config.json" ]; then
     log "нет deploy/tg-proxy/config.json — поднимаю без прокси, Telegram-уведомления уйдут в ВК"
     SERVICES="worker-s95 worker-five-verst worker-runpark"
+# Контейнер xray ходит под uid 65532, а не под хозяином файла: конфиг с правами
+# 600 он не прочитает и уйдёт в крэш-луп. На VPS файл лежит с 664.
+elif [ "$(stat -c '%A' "$HOME_DIR/deploy/tg-proxy/config.json" | cut -c8)" != "r" ]; then
+    log "deploy/tg-proxy/config.json не читается чужим uid — выставляю 644"
+    chmod 644 "$HOME_DIR/deploy/tg-proxy/config.json"
 fi
 
 remote_sha=$(ssh -o BatchMode=yes -o ConnectTimeout=20 "$VPS" "cat $REMOTE_DIR/.deployed_sha 2>/dev/null" | tr -d '\r\n')
