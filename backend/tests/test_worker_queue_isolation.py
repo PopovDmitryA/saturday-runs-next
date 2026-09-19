@@ -24,7 +24,11 @@ from app.workers.celery_app import celery_app
 COMPOSE_PATH = Path(__file__).resolve().parents[2] / "docker-compose.yml"
 
 # Очереди, у которых есть ждущий: свежие протоколы субботы и запросы из кабинета.
-PRIORITY_QUEUES = {"five_verst_fresh", "five_verst_user", "s95_user"}
+# s95_user сюда не входит намеренно: S95 требует одного фетчера, и уступка там
+# сделана иначе — батч сам смотрит на LLEN(s95_user) и притормаживает
+# (app/s95/fetch/priority.py). Развести их по контейнерам значило бы удвоить
+# число запросов к s95.ru, который уже блокировал нас по IP.
+PRIORITY_QUEUES = {"five_verst_fresh", "five_verst_user"}
 
 _COMMAND_RE = re.compile(r"^\s*command:\s*celery\s+.*?worker\b(?P<rest>.*)$", re.MULTILINE)
 _QUEUES_RE = re.compile(r"-Q\s+(?P<queues>[\w,]+)")
