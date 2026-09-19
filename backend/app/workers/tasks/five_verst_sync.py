@@ -6,6 +6,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.db.session import get_session_factory
+from app.services.scheduled_sync_guard import (
+    chain_link_expires,
+    finish_background_chain,
+    is_freshness_window,
+    keep_background_chain_alive,
+    try_start_background_chain,
+)
 from app.services.sync_run_params import (
     five_verst_clubs_details_details,
     five_verst_clubs_registry_details,
@@ -30,6 +37,11 @@ from app.workers.queues import FIVE_VERST_BATCH_QUEUE, FIVE_VERST_FRESH_QUEUE
 from app.workers.tasks.sync_task_reporting import run_reported_sync
 
 logger = logging.getLogger(__name__)
+
+# Метки живых фоновых цепочек: пока метка стоит, новый запуск по расписанию
+# не начинает вторую цепочку поверх первой.
+RECONCILE_CHAIN_KEY = "five_verst:reconcile"
+WEEK_SWEEP_CHAIN_KEY = "five_verst:week_sweep"
 
 
 def _schedule_dashboard_warm(started_at: datetime) -> None:
@@ -356,12 +368,18 @@ def reconcile_stale_protocols_task(
     from app.config import get_settings
 
     settings = get_settings()
+    # Цепочку начинает только запуск по расписанию или из админки; звено
+    # приходит с уже посчитанным chunks_left и продолжает чужую.
+    starts_chain = chunks_left is None
     if limit is None:
         limit = settings.five_verst_reconcile_batch_limit
     if min_check_interval_days is None:
         min_check_interval_days = settings.five_verst_reconcile_min_check_interval_days
     if chunks_left is None:
         chunks_left = settings.five_verst_reconcile_chunks_per_run
+    if starts_chain and not try_start_background_chain(RECONCILE_CHAIN_KEY, force=force):
+        return {"skipped": True, "reason": "chain_already_running", "errors": []}
+    keep_background_chain_alive(RECONCILE_CHAIN_KEY)
     mismatch_retry_hours = settings.five_verst_reconcile_mismatch_retry_hours
     name = "5v reconcile protocols"
     details = five_verst_reconcile_details(
@@ -406,11 +424,18 @@ def reconcile_stale_protocols_task(
     # полный батч кандидатов: на скипе (кулдаун, занятая очередь) или на
     # недоборе продолжать нечего. force=True — часовой слот уже занят этим же
     # прогоном, иначе звено отвалится как duplicate_hour_slot.
-    if (
+    chain_continues = (
         chunks_left > 1
         and not payload.get("skipped")
         and int(payload.get("candidates_total") or 0) >= limit
-    ):
+    )
+    # Выходные цепочка не переезжает: в субботу воркер нужен субботним
+    # протоколам, а недоеденный хвост сверки подождёт понедельника.
+    if chain_continues and is_freshness_window():
+        chain_continues = False
+        payload = {**payload, "next_chunk_skipped": "freshness_window"}
+
+    if chain_continues:
         reconcile_stale_protocols_task.apply_async(
             kwargs={
                 "limit": limit,
@@ -420,8 +445,12 @@ def reconcile_stale_protocols_task(
                 "force": True,
             },
             queue=FIVE_VERST_BATCH_QUEUE,
+            expires=chain_link_expires(),
         )
+        keep_background_chain_alive(RECONCILE_CHAIN_KEY)
         payload = {**payload, "next_chunk_enqueued": True}
+    else:
+        finish_background_chain(RECONCILE_CHAIN_KEY)
     return payload
 
 
@@ -446,10 +475,15 @@ def sweep_week_protocols_task(
     from app.config import get_settings
 
     settings = get_settings()
+    starts_chain = chunks_left is None
+    chain_key = f"{WEEK_SWEEP_CHAIN_KEY}:{weeks_back}"
     if limit is None:
         limit = settings.five_verst_week_sweep_batch_limit
     if chunks_left is None:
         chunks_left = settings.five_verst_week_sweep_chunks_per_run
+    if starts_chain and not try_start_background_chain(chain_key, force=force):
+        return {"skipped": True, "reason": "chain_already_running", "errors": []}
+    keep_background_chain_alive(chain_key)
     name = f"5v week sweep W-{weeks_back}"
     start, end = week_window(weeks_back)
     details = five_verst_week_sweep_details(
@@ -491,11 +525,16 @@ def sweep_week_protocols_task(
 
     # Следующее звено — только если пачка набралась полностью: недобор значит,
     # что неделя разобрана и качать больше нечего.
-    if (
+    chain_continues = (
         chunks_left > 1
         and not payload.get("skipped")
         and int(payload.get("candidates_total") or 0) >= limit
-    ):
+    )
+    if chain_continues and is_freshness_window():
+        chain_continues = False
+        payload = {**payload, "next_chunk_skipped": "freshness_window"}
+
+    if chain_continues:
         sweep_week_protocols_task.apply_async(
             kwargs={
                 "weeks_back": weeks_back,
@@ -504,8 +543,12 @@ def sweep_week_protocols_task(
                 "force": True,
             },
             queue=FIVE_VERST_BATCH_QUEUE,
+            expires=chain_link_expires(),
         )
+        keep_background_chain_alive(chain_key)
         payload = {**payload, "next_chunk_enqueued": True}
+    else:
+        finish_background_chain(chain_key)
     return payload
 
 
