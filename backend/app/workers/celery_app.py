@@ -30,7 +30,6 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     imports=(
-        "app.workers.tasks.global_sync",
         "app.workers.tasks.five_verst_sync",
         "app.workers.tasks.user_sync",
         "app.workers.tasks.admin_resync",
@@ -57,7 +56,6 @@ celery_app.conf.update(
         # приоритетной очереди, всё остальное по 5 вёрст — фон.
         "five_verst_sync.sync_latest_results": {"queue": FIVE_VERST_FRESH_QUEUE},
         "five_verst_sync.*": {"queue": FIVE_VERST_BATCH_QUEUE},
-        "global_sync.*": {"queue": FIVE_VERST_BATCH_QUEUE},
         "user_sync.*": {"queue": "five_verst_user"},
         "s95_sync.run_user_sync": {"queue": "s95_user"},
         "s95_sync.run_admin_resync": {"queue": "s95_user"},

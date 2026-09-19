@@ -20,8 +20,6 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://saturday_runs:saturday_runs@localhost:5433/saturday_runs_lk"
     redis_url: str = "redis://localhost:6379/0"
 
-    api_host: str = "0.0.0.0"
-    api_port: int = 8000
 
     # Хранилище аватарок пользователей (том ./data:/data в docker-compose).
     # В БД лежит только имя файла (users.avatar_path), файлы — здесь.
@@ -109,7 +107,6 @@ class Settings(BaseSettings):
     auth_rate_limit_magic_window_seconds: int = 3600
 
     vk_oauth_client_id: str = ""
-    vk_oauth_client_secret: str = ""
     vk_oauth_redirect_uri: str = ""
 
     yandex_oauth_client_id: str = ""
@@ -249,8 +246,6 @@ class Settings(BaseSettings):
     s95_parkrun_barcode_max_length: int = 8
     parkrun_participant_discovery_enabled: bool = True
     parkrun_participant_discovery_min_refetch_days: int = 7
-    s95_global_sync_locations: str = ""
-    s95_global_sync_protocol_limit: int = 3
 
     five_verst_fetch_min_interval_seconds: float = 20.0
     five_verst_fetch_max_interval_seconds: float = 30.0
@@ -318,12 +313,6 @@ class Settings(BaseSettings):
     # (имя, координаты), а не только таблицу результатов. Между этими проходами
     # хватает ежедневного реестра /events/, который следит за именем и статусом.
     five_verst_location_refresh_interval_days: int = 7
-    s95_sync_protocol_limit: int = 3
-    s95_sync_latest_update_limit: int = 20
-    s95_fetch_all_protocols_on_change: bool = True
-    s95_reconcile_batch_limit: int = 10
-    s95_reconcile_min_check_interval_days: int = 7
-    s95_location_batch_summaries_limit: int = 20
     s95_athlete_mismatch_check_runs: int = 10
     # Протоколов за один заход воркера. Размер куска — это ПОТОЛОК ОЖИДАНИЯ для
     # приоритетной очереди: задачу с concurrency=1 прервать нельзя, и свежий
