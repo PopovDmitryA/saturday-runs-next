@@ -316,7 +316,7 @@ async def on_cmd_stats(message: Message, command: CommandObject) -> None:
             await _send_admin_reply(message.chat.id, "Использование: /stats [дней]")
             return
     try:
-        text = admin_ops.fetch_stats(settings, period_days)
+        text = await admin_ops.fetch_stats(settings, period_days)
     except Exception as exc:
         text = f"Не удалось получить статистику: {exc}"
     await _send_admin_reply(message.chat.id, text)
@@ -326,7 +326,7 @@ async def on_cmd_status(message: Message) -> None:
     if not await _admin_only(message) or message.chat is None:
         return
     try:
-        text = admin_ops.fetch_pipeline_status(settings)
+        text = await admin_ops.fetch_pipeline_status(settings)
     except Exception as exc:
         text = f"Не удалось получить статус: {exc}"
     await _send_admin_reply(message.chat.id, text)
@@ -339,7 +339,7 @@ async def on_cmd_sync(message: Message, command: CommandObject) -> None:
 
     if not args:
         try:
-            pipelines = admin_ops.list_pipelines(settings)
+            pipelines = await admin_ops.list_pipelines(settings)
         except Exception as exc:
             await _send_admin_reply(message.chat.id, f"Не удалось получить список пайплайнов: {exc}")
             return
@@ -361,7 +361,7 @@ async def on_cmd_sync(message: Message, command: CommandObject) -> None:
             )
             return
         try:
-            text = admin_ops.sync_protocol_url(settings, args[1])
+            text = await admin_ops.sync_protocol_url(settings, args[1])
         except Exception as exc:
             text = f"Не удалось обновить протокол: {exc}"
         await _send_admin_reply(message.chat.id, text)
@@ -369,7 +369,7 @@ async def on_cmd_sync(message: Message, command: CommandObject) -> None:
 
     try:
         location_slug = args[1] if args[0].lower() == "location" and len(args) > 1 else None
-        reply = admin_ops.enqueue_pipeline(settings, args[0], location_slug=location_slug)
+        reply = await admin_ops.enqueue_pipeline(settings, args[0], location_slug=location_slug)
     except ValueError as exc:
         reply = str(exc)
     except Exception as exc:
