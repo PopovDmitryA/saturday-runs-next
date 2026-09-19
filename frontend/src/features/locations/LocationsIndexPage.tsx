@@ -152,6 +152,9 @@ function LocationsTable({
     key: "events_count",
     asc: false,
   });
+  // Пока человек не трогал столбцы, «моя» локация приколота сверху. Как только
+  // он сортирует сам — открепляем: он смотрит на порядок, а не на свою строку.
+  const [homePinned, setHomePinned] = useRestorableState<boolean>("locations.homePinned", true);
   const showFull = tableColumns.showFull;
   const show = tableColumns.show;
 
@@ -177,20 +180,23 @@ function LocationsTable({
             : 1;
       return sort.asc ? compare : -compare;
     });
-    // «Моя» локация всегда сверху и на виду — как своя строка в рейтингах
+    // «Моя» локация поднята наверх и на виду — как своя строка в рейтингах
     // (просьба из бэклога сайта). Только если она проходит текущие фильтры:
     // при поиске по другому названию поднимать её наверх было бы враньём.
-    const homeIndex = homeIdentityKey
-      ? copy.findIndex((item) => item.identity_key === homeIdentityKey)
-      : -1;
+    // И только пока порядок наш: сортировку человек задал сам — не мешаем.
+    const homeIndex =
+      homeIdentityKey && homePinned
+        ? copy.findIndex((item) => item.identity_key === homeIdentityKey)
+        : -1;
     if (homeIndex > 0) {
       const [home] = copy.splice(homeIndex, 1);
       copy.unshift(home);
     }
     return copy;
-  }, [items, sort, homeIdentityKey]);
+  }, [items, sort, homeIdentityKey, homePinned]);
 
   const toggleSort = (key: SortKey) => {
+    setHomePinned(false);
     setSort((current) =>
       current.key === key ? { key, asc: !current.asc } : { key, asc: ASC_FIRST_KEYS.includes(key) },
     );
