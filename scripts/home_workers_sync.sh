@@ -18,7 +18,7 @@ REMOTE_DIR="${VPS_DIR:-/opt/saturday-runs-next}"
 HOME_DIR="${HOME_PROD_DIR:-$HOME/srs-prod}"
 # tg-proxy — не воркер, но без неё домашние воркеры не достучатся до
 # api.telegram.org, и уведомления об отмене старта уйдут в ВК-фолбэк.
-SERVICES="worker-s95 worker-five-verst worker-runpark tg-proxy"
+SERVICES="worker-s95 worker-five-verst worker-five-verst-fresh worker-runpark tg-proxy"
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.home.yml)
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
@@ -29,7 +29,7 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
 # подсунул бы вместо файла пустой каталог, и xray не поднялся бы.
 if [ ! -f "$HOME_DIR/deploy/tg-proxy/config.json" ]; then
     log "нет deploy/tg-proxy/config.json — поднимаю без прокси, Telegram-уведомления уйдут в ВК"
-    SERVICES="worker-s95 worker-five-verst worker-runpark"
+    SERVICES="worker-s95 worker-five-verst worker-five-verst-fresh worker-runpark"
 # Контейнер xray ходит под uid 65532, а не под хозяином файла: конфиг с правами
 # 600 он не прочитает и уйдёт в крэш-луп. На VPS файл лежит с 664.
 elif [ "$(stat -c '%A' "$HOME_DIR/deploy/tg-proxy/config.json" | cut -c8)" != "r" ]; then

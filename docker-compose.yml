@@ -179,21 +179,23 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Две группы задач 5 вёрст на одном воркере, строго по приоритету:
+  # Две группы задач 5 вёрст — и у каждой свой воркер:
   #   five_verst_fresh — свежесть: latest (сегодняшние протоколы) и точечная
   #                      перечитка локации по команде админа;
   #   five_verst       — фон: сверка истории, обход недели, ротация, реестр,
   #                      клубы, доборка протоколов из профилей.
-  # Порядок в -Q и есть приоритет (queue_order_strategy: priority в
-  # celery_app.py): фоновая задача берётся, только когда в five_verst_fresh
-  # пусто. Второй воркер под свежесть не заводим намеренно — к 5verst.ru должен
-  # ходить один запрос за раз.
-  # --prefetch-multiplier=1 вместе с acks_late=True у фоновых задач не даёт
-  # воркеру резервировать фоновую задачу «про запас»: пока он занят, очередь
-  # никто не разбирает, и подоспевший latest берётся сразу после текущего куска.
-  # Потолок ожидания = длина куска (~9 минут, см. five_verst_reconcile_batch_limit).
-  # Пользовательская очередь — в отдельном воркере ниже: там человек ждёт ответа
-  # у экрана, и ждать даже одного куска он не должен.
+  # До 19.09.2026 обе группы жили в одном воркере (-Q five_verst_fresh,five_verst)
+  # и полагались на queue_order_strategy: priority из celery_app.py. Так делать
+  # нельзя: kombu держит очереди воркера в set (transport/redis.py,
+  # active_queues), и «фиксированный порядок» на деле определяется хешем строки
+  # — своим на каждый запуск процесса. Воркер, поднятый 17.09.2026, вытянул
+  # порядок «сначала фон» и двое суток не заглядывал в свежесть.
+  # За 5verst.ru можно не переживать: общий Redis-лок на фетч берут все воркеры
+  # (app/five_verst/fetch/priority.py), так что к сайту по-прежнему идёт один
+  # запрос за раз, сколько бы контейнеров ни стояло.
+  # --prefetch-multiplier=1 вместе с acks_late=True не даёт воркеру резервировать
+  # фоновую задачу «про запас»: остановленный на перезапуске кусок вернётся в
+  # очередь, а не пропадёт.
   worker-five-verst:
     build:
       context: ./backend
@@ -204,7 +206,33 @@ services:
     volumes:
       - ./backend:/app
       - ./.env:/app/.env:ro
-    command: celery -A app.workers.celery_app worker -Q five_verst_fresh,five_verst --concurrency=1 --prefetch-multiplier=1 --loglevel=info
+    command: celery -A app.workers.celery_app worker -Q five_verst --concurrency=1 --prefetch-multiplier=1 --loglevel=info
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Свежесть 5 вёрст отдельным воркером — и это не роскошь, а единственный
+  # надёжный способ. `queue_order_strategy: priority` обещает строгий порядок
+  # очередей из -Q, но kombu складывает их в set (redis.py, active_queues), и
+  # фактический порядок задаёт хеш строки — то есть он свой на каждый запуск
+  # процесса. 17.09.2026 воркер поднялся с порядком «сначала фон» и двое суток
+  # не забирал latest: 21 протухший запуск в очереди, суббота на сайте с одним
+  # участником на локацию.
+  worker-five-verst-fresh:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD:-saturday_runs}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./.env:/app/.env:ro
+    command: celery -A app.workers.celery_app worker -Q five_verst_fresh --concurrency=1 --prefetch-multiplier=1 --loglevel=info
     logging: *default-logging
     depends_on:
       postgres:

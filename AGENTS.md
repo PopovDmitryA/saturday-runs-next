@@ -90,8 +90,9 @@ GitHub: `PopovDmitryA/saturday-runs-next`, branch `main`.
 | `redis` | Sessions, Celery, locks, cooldown — **не публиковать :6379** |
 | `beat` | Celery Beat (Europe/Moscow) |
 | `worker-five-verst` | `-Q five_verst --concurrency=1` (батчи) |
+| `worker-five-verst-fresh` | `-Q five_verst_fresh --concurrency=1` (свежесть: latest) |
 | `worker-five-verst-user` | `-Q five_verst_user --concurrency=1` (синки по кнопке) |
-| `worker-s95` | `-Q s95_user,s95 --concurrency=1` |
+| `worker-s95` | `-Q s95_user,s95 --concurrency=1 --prefetch-multiplier=1 -O fair` |
 | `worker-parkrun` | `-Q parkrun` |
 | `bot` | Telegram long poll (вход + admin: /stats /status /sweep /sync) |
 | `worker` | default очередь: прогрев главной, агрегаты популярности, admin-дайджест |
@@ -187,8 +188,9 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 | Очередь | Worker | Задачи |
 |---------|--------|--------|
 | `five_verst_user` | worker-five-verst-user | user profile sync (приоритетная) |
-| `five_verst` | worker-five-verst | registry, latest, rotation, reconcile |
-| `s95_user` | worker-s95 | user profile sync (приоритетная) |
+| `five_verst_fresh` | worker-five-verst-fresh | latest: сегодняшние протоколы (приоритетная) |
+| `five_verst` | worker-five-verst | registry, rotation, reconcile, обход недели, клубы |
+| `s95_user` | worker-s95 | user profile sync (приоритетная, уступка через LLEN) |
 | `s95` | worker-s95 | batch S95 + athletes_registry |
 | `parkrun` | worker-parkrun | parkrun user sync |
 

@@ -34,7 +34,12 @@ services:
   worker-s95:
     <<: *home-worker
 
+  # Свежесть 5 вёрст — своим контейнером: приоритет между очередями внутри
+  # одного воркера ненадёжен (см. docker-compose.yml, worker-five-verst-fresh).
   worker-five-verst:
+    <<: *home-worker
+
+  worker-five-verst-fresh:
     <<: *home-worker
 
   worker-runpark:
