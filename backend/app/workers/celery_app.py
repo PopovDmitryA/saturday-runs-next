@@ -49,6 +49,7 @@ celery_app.conf.update(
         "app.workers.tasks.weather_collect",
         "app.workers.tasks.weather_forecast",
         "app.workers.tasks.sync_runs_maintenance",
+        "app.workers.tasks.queue_watch",
     ),
     task_routes={
         # Точные имена идут до шаблона `five_verst_sync.*` — первое совпадение
@@ -161,6 +162,15 @@ celery_app.conf.update(
         },
         # Зависшие sync_runs: раньше их гасило только открытие админской
         # страницы, и висяки жили неделями. Задача внутри базы, сети нет.
+        # Сторож приоритетных очередей: 17–19.09.2026 очередь свежести стояла
+        # двое суток, и заметил это человек глазами на сайте, а не мониторинг.
+        # Общая очередь обязательна: сторож не может стоять в той очереди, за
+        # которой следит.
+        "priority-queues-watch": {
+            "task": "queues.watch_priority",
+            "schedule": crontab(minute="*/15"),
+            "options": {"queue": "celery", "expires": 14 * 60},
+        },
         "sync-runs-close-stale": {
             "task": "sync_runs.close_stale",
             "schedule": crontab(minute=5),
