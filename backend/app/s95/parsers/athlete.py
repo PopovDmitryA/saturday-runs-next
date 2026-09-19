@@ -414,10 +414,15 @@ def parse_athlete_runs_html(
             if len(cells) < 2:
                 continue
 
+            # Колонка «#» в профиле S95 — порядковый номер ПРОБЕЖКИ самого
+            # человека, а не номер старта локации. По репорту 19.09.2026: в
+            # профиле с четырьмя пробежками стоят 1–4, тогда как настоящие
+            # номера тех стартов — 177 (Троицк), 60 (ЗИЛ), 124 (Щёлково) и 2
+            # (Малаховка). Мы писали это число в events.event_number, и по нему
+            # считались числовые челленджи: «Нумератор» закрывал клетку №4
+            # вместо №2. Номер старта у S95 приезжает только с реестра локации
+            # (ранг в /events/{slug}.json), в профиле его нет вовсе.
             event_number = None
-            event_num_text = _cell_text(cells, cols["event_num"])
-            if event_num_text.isdigit():
-                event_number = int(event_num_text)
 
             position = None
             place_text = _cell_text(cells, cols["place"])
