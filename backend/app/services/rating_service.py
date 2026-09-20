@@ -49,6 +49,8 @@ _PLATFORM_ORDER = {"five_verst": 0, "s95": 1, "parkrun": 2, "runpark": 3}
 # Тип участия на старте.
 PARTICIPATION_RUN = "run"
 PARTICIPATION_VOLUNTEER = "volunteer"
+# Префикс entry_id для оценки, потерявшей строку результата (см. _rating_entry_id).
+ENTRY_KIND_RATING = "rate"
 
 
 class RatingError(Exception):
@@ -74,19 +76,95 @@ def _entry_id(participation_type: str, source_id: UUID) -> str:
     return f"{prefix}:{source_id}"
 
 
+def _rating_entry_id(rating: LocationRating) -> str:
+    """Адрес оценки для фронта.
+
+    Обычно это старт ('run:<uuid>' / 'vol:<uuid>'). Но строку результата синк
+    мог удалить (перечитка протокола, дедуп) — с миграции 091 отзыв это
+    переживает, ссылка просто обнуляется. Тогда адресуем саму оценку
+    ('rate:<uuid>'), иначе её нельзя было бы ни показать, ни исправить.
+    """
+    source_id = rating.run_result_id or rating.volunteer_result_id
+    if source_id is None:
+        return f"{ENTRY_KIND_RATING}:{rating.id}"
+    return _entry_id(rating.participation_type, source_id)
+
+
 def _parse_entry_id(entry_id: str) -> tuple[str, UUID]:
-    """('run'|'volunteer', uuid) из опакового entry_id. Кидает RatingError."""
+    """('run'|'volunteer'|'rate', uuid) из опакового entry_id.
+
+    'rate' — id самой оценки (у неё больше нет живой строки результата).
+    Кидает RatingError.
+    """
     prefix, _, raw = entry_id.partition(":")
     if prefix == "run":
-        participation = PARTICIPATION_RUN
+        kind = PARTICIPATION_RUN
     elif prefix == "vol":
-        participation = PARTICIPATION_VOLUNTEER
+        kind = PARTICIPATION_VOLUNTEER
+    elif prefix == ENTRY_KIND_RATING:
+        kind = ENTRY_KIND_RATING
     else:
         raise RatingError("Некорректный идентификатор старта")
     try:
-        return participation, UUID(raw)
+        return kind, UUID(raw)
     except ValueError as exc:
         raise RatingError("Некорректный идентификатор старта") from exc
+
+
+def _find_rating(db: Session, user_id: UUID, entry_id: str) -> LocationRating | None:
+    """Своя оценка по опаковому entry_id (или None).
+
+    Ищем сначала по строке результата, а если её уже нет — по естественному
+    ключу (человек, локация, дата, тип участия): именно он уникален с
+    миграции 091 и переживает пересинк, который меняет id строки результата.
+    """
+    kind, ident = _parse_entry_id(entry_id)
+    query = db.query(LocationRating).filter(LocationRating.user_id == user_id)
+    if kind == ENTRY_KIND_RATING:
+        return query.filter(LocationRating.id == ident).one_or_none()
+    filter_col = (
+        LocationRating.volunteer_result_id
+        if kind == PARTICIPATION_VOLUNTEER
+        else LocationRating.run_result_id
+    )
+    rating = query.filter(filter_col == ident).one_or_none()
+    if rating is not None:
+        return rating
+    try:
+        if kind == PARTICIPATION_VOLUNTEER:
+            _vol, event, _location, _code = _load_user_volunteer(db, user_id, ident)
+        else:
+            _run, event, _location, _code = _load_user_run(db, user_id, ident)
+    except RatingError:
+        return None
+    return _rating_by_natural_key(
+        db,
+        user_id,
+        location_id=event.location_id,
+        event_date=event.event_date,
+        participation=kind,
+    )
+
+
+def _rating_by_natural_key(
+    db: Session,
+    user_id: UUID,
+    *,
+    location_id: UUID,
+    event_date: date,
+    participation: str,
+) -> LocationRating | None:
+    """Оценка по естественному ключу — тому же, что и уникалка в БД."""
+    return (
+        db.query(LocationRating)
+        .filter(
+            LocationRating.user_id == user_id,
+            LocationRating.location_id == location_id,
+            LocationRating.event_date == event_date,
+            LocationRating.participation_type == participation,
+        )
+        .one_or_none()
+    )
 
 
 def count_user_total_runs(db: Session, user_id: UUID, *, include_test_events: bool = False) -> int:
@@ -128,14 +206,13 @@ def _rating_to_dict(
     today: date | None = None,
     photos: list[PhotoPayload] | None = None,
 ) -> dict[str, object]:
-    source_id = rating.run_result_id or rating.volunteer_result_id
     return {
         "id": rating.id,
         "photos": [
             {"id": photo.id, "url": photo.url, "width": photo.width, "height": photo.height}
             for photo in (photos or [])
         ],
-        "entry_id": _entry_id(rating.participation_type, cast(UUID, source_id)),
+        "entry_id": _rating_entry_id(rating),
         "participation_type": rating.participation_type,
         "run_result_id": rating.run_result_id,
         "score_overall": rating.score_overall,
@@ -236,6 +313,7 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
             ),
             "_platform_order": _PLATFORM_ORDER.get(platform_code, 9),
             "_identity": identity,
+            "_location_id": location.id,
         }
         existing = by_key.get(key)
         if existing is None or cast(int, entry["_platform_order"]) < cast(
@@ -305,6 +383,7 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
             ),
             "_platform_order": _PLATFORM_ORDER.get(platform_code, 9),
             "_identity": key[1],
+            "_location_id": location.id,
         }
 
     # Свежие старты (окно создания) доступны все; из остальных добираем по одному
@@ -343,14 +422,37 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
             source_id = rating.run_result_id or rating.volunteer_result_id
             ratings_by_entry[_entry_id(rating.participation_type, cast(UUID, source_id))] = rating
 
-    photos_by_rating = list_rating_photos(db, [r.id for r in ratings_by_entry.values()])
+    # Оценка, у которой синк унёс строку результата, привязана к старту только
+    # своим естественным ключом — иначе карточка показала бы «не оценено» и
+    # предложила поставить оценку заново.
+    orphan_by_key: dict[tuple[UUID, date, str], LocationRating] = {
+        (rating.location_id, rating.event_date, rating.participation_type): rating
+        for rating in db.query(LocationRating)
+        .filter(
+            LocationRating.user_id == user_id,
+            LocationRating.run_result_id.is_(None),
+            LocationRating.volunteer_result_id.is_(None),
+        )
+        .all()
+    }
+
+    photos_by_rating = list_rating_photos(
+        db, [r.id for r in (*ratings_by_entry.values(), *orphan_by_key.values())]
+    )
 
     for entry in entries:
         entry.pop("_platform_order", None)
+        location_id = cast(UUID, entry.pop("_location_id", None))
         # Канонический ключ площадки отдаём наружу: по нему страница локации
         # понимает, что этот старт — про неё (slug у разных платформ свой).
         entry["location_identity_key"] = entry.pop("_identity", None)
-        existing_rating = ratings_by_entry.get(cast(str, entry["entry_id"]))
+        existing_rating = ratings_by_entry.get(cast(str, entry["entry_id"])) or orphan_by_key.get(
+            (
+                location_id,
+                cast(date, entry["event_date"]),
+                cast(str, entry["participation_type"]),
+            )
+        )
         entry["my_rating"] = (
             _rating_to_dict(existing_rating, photos=photos_by_rating.get(existing_rating.id))
             if existing_rating
@@ -409,6 +511,64 @@ def _load_user_volunteer(
     return row  # type: ignore[return-value]
 
 
+def _apply_scores(
+    rating: LocationRating,
+    *,
+    score_overall: int,
+    score_organization: int | None,
+    score_route: int | None,
+    score_community: int | None,
+    comment: str | None,
+    is_public: bool,
+) -> None:
+    rating.score_overall = score_overall
+    rating.score_organization = score_organization
+    rating.score_route = score_route
+    rating.score_community = score_community
+    rating.comment = comment
+    rating.is_public = is_public
+
+
+def _update_orphan_rating(
+    db: Session,
+    user_id: UUID,
+    rating_id: UUID,
+    *,
+    score_overall: int,
+    score_organization: int | None,
+    score_route: int | None,
+    score_community: int | None,
+    comment: str | None,
+    is_public: bool,
+) -> dict[str, object]:
+    """Правка оценки, у которой синк унёс строку результата (entry_id 'rate:…').
+
+    Старта, на который можно сослаться, уже нет, поэтому дату и площадку берём
+    из самой оценки — она их хранит с самого начала.
+    """
+    rating = (
+        db.query(LocationRating)
+        .filter(LocationRating.user_id == user_id, LocationRating.id == rating_id)
+        .one_or_none()
+    )
+    if rating is None:
+        raise RatingError("Оценка не найдена")
+    if not _is_editable(rating.event_date, None, rating.created_at):
+        raise RatingError("Оценка зафиксирована: прошло больше 3 месяцев, изменить нельзя")
+    _apply_scores(
+        rating,
+        score_overall=score_overall,
+        score_organization=score_organization,
+        score_route=score_route,
+        score_community=score_community,
+        comment=comment,
+        is_public=is_public,
+    )
+    db.flush()
+    db.refresh(rating)
+    return _rating_to_dict(rating, photos=list_rating_photos(db, [rating.id]).get(rating.id))
+
+
 def upsert_rating(
     db: Session,
     user: User,
@@ -427,6 +587,20 @@ def upsert_rating(
         )
 
     participation, source_id = _parse_entry_id(entry_id)
+    if participation == ENTRY_KIND_RATING:
+        # Оценка без живой строки результата: старт пересобрали, но отзыв цел.
+        # Править и снимать его человек вправе — по тем же правилам окна.
+        return _update_orphan_rating(
+            db,
+            user.id,
+            source_id,
+            score_overall=score_overall,
+            score_organization=score_organization,
+            score_route=score_route,
+            score_community=score_community,
+            comment=comment,
+            is_public=is_public,
+        )
     if participation == PARTICIPATION_VOLUNTEER:
         _vol, event, location, platform_code = _load_user_volunteer(db, user.id, source_id)
     else:
@@ -436,24 +610,15 @@ def upsert_rating(
     if event.event_date > today:
         raise RatingError("Нельзя оценить старт из будущего")
 
-    if participation == PARTICIPATION_VOLUNTEER:
-        rating = (
-            db.query(LocationRating)
-            .filter(
-                LocationRating.user_id == user.id,
-                LocationRating.volunteer_result_id == source_id,
-            )
-            .one_or_none()
-        )
-    else:
-        rating = (
-            db.query(LocationRating)
-            .filter(
-                LocationRating.user_id == user.id,
-                LocationRating.run_result_id == source_id,
-            )
-            .one_or_none()
-        )
+    # Ищем по естественному ключу, а не по строке результата: после пересинка
+    # id строки другой, а отзыв на этот старт по-прежнему один (уникалка 091).
+    rating = _rating_by_natural_key(
+        db,
+        user.id,
+        location_id=location.id,
+        event_date=event.event_date,
+        participation=participation,
+    )
 
     if rating is None:
         # Новая оценка — только на старт, который сейчас доступен к оценке.
@@ -493,13 +658,21 @@ def upsert_rating(
             platform_code=platform_code,
         )
         db.add(rating)
+    elif participation == PARTICIPATION_VOLUNTEER:
+        # Строку результата могли пересобрать — привязываем отзыв к живой.
+        rating.volunteer_result_id = source_id
+    else:
+        rating.run_result_id = source_id
 
-    rating.score_overall = score_overall
-    rating.score_organization = score_organization
-    rating.score_route = score_route
-    rating.score_community = score_community
-    rating.comment = comment
-    rating.is_public = is_public
+    _apply_scores(
+        rating,
+        score_overall=score_overall,
+        score_organization=score_organization,
+        score_route=score_route,
+        score_community=score_community,
+        comment=comment,
+        is_public=is_public,
+    )
     # location_key/event_date/platform могли обновиться (пересинк) — держим свежими
     rating.location_id = location.id
     rating.location_key = location_key
@@ -513,17 +686,7 @@ def upsert_rating(
 
 def load_editable_rating(db: Session, user_id: UUID, entry_id: str) -> LocationRating:
     """Своя оценка, которую ещё можно менять — общая проверка для фото-роутов."""
-    participation, source_id = _parse_entry_id(entry_id)
-    filter_col = (
-        LocationRating.volunteer_result_id
-        if participation == PARTICIPATION_VOLUNTEER
-        else LocationRating.run_result_id
-    )
-    rating = (
-        db.query(LocationRating)
-        .filter(LocationRating.user_id == user_id, filter_col == source_id)
-        .one_or_none()
-    )
+    rating = _find_rating(db, user_id, entry_id)
     if rating is None:
         raise RatingError("Сначала сохраните оценку, потом добавляйте фото")
     if not _is_editable(rating.event_date, None, rating.created_at):
@@ -532,17 +695,7 @@ def load_editable_rating(db: Session, user_id: UUID, entry_id: str) -> LocationR
 
 
 def delete_rating(db: Session, user_id: UUID, entry_id: str) -> bool:
-    participation, source_id = _parse_entry_id(entry_id)
-    filter_col = (
-        LocationRating.volunteer_result_id
-        if participation == PARTICIPATION_VOLUNTEER
-        else LocationRating.run_result_id
-    )
-    rating = (
-        db.query(LocationRating)
-        .filter(LocationRating.user_id == user_id, filter_col == source_id)
-        .one_or_none()
-    )
+    rating = _find_rating(db, user_id, entry_id)
     if rating is None:
         return False
     if not _is_editable(rating.event_date, None, rating.created_at):
@@ -658,6 +811,43 @@ def list_my_ratings(db: Session, user_id: UUID) -> dict[str, object]:
                 photos=vol_photos.get(rating.id),
             )
         )
+
+    # Оценки, потерявшие строку результата (синк пересобрал протокол): раньше
+    # они уезжали вместе с ней по CASCADE, теперь остаются с обнулённой ссылкой
+    # — и «Мои оценки» обязаны их показать. Всё нужное для карточки есть в самой
+    # оценке: дата, платформа и локация.
+    orphan_rows = (
+        db.query(LocationRating, Location)
+        .join(Location, LocationRating.location_id == Location.id)
+        .filter(
+            LocationRating.user_id == user_id,
+            LocationRating.run_result_id.is_(None),
+            LocationRating.volunteer_result_id.is_(None),
+        )
+        .all()
+    )
+    orphan_photos = list_rating_photos(db, [row[0].id for row in orphan_rows])
+    for rating, location in orphan_rows:
+        entry = _rating_to_dict(rating, today=today, photos=orphan_photos.get(rating.id))
+        entry.update(
+            {
+                "event_date": rating.event_date,
+                "platform_code": rating.platform_code,
+                "location_name": catalog_index.display_name(location, rating.platform_code),
+                "location_city": location.city,
+                "finish_time_display": None,
+                "position": None,
+                "is_pr": False,
+                "event_url": resolve_activity_url(
+                    platform_code=rating.platform_code,
+                    event_date=rating.event_date,
+                    event_number=None,
+                    event_source_url=None,
+                    location_external_key=location.external_key,
+                ),
+            }
+        )
+        ratings.append(entry)
 
     ratings.sort(key=lambda e: cast(date, e["event_date"]), reverse=True)
 

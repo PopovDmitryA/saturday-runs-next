@@ -7,12 +7,18 @@ dev — см. core/media_storage.py) в отдельной папке `s3_prefix
 С каждой загрузки сохраняется ДВА объекта:
 - превью — квадрат 256×256 JPEG (обычно 10–30 КБ): это то, что рисуется в
   интерфейсе, где аватарок на экране бывает много;
-- оригинал — байт-в-байт как прислал пользователь, без перекодирования
-  (решение Дмитрия 28.07.2026: «не будем их сжимать, а по клику раскрывать»).
+- оригинал — без ресайза и пережатия (решение Дмитрия 28.07.2026: «не будем
+  их сжимать, а по клику раскрывать»), но БЕЗ метаданных: бакет публичный, а
+  EXIF снимка с телефона несёт координаты съёмки (обычно дом), модель аппарата
+  и время (аудит 09.2026, SEC-04). Сами теги при этом не пропадают — они
+  уезжают в приватную колонку users.avatar_exif (решение Дмитрия 21.09.2026:
+  «теги хранить у себя, файл в бакет класть чистым»). HEIC при очистке
+  становится JPEG, расширение ключа берётся по факту.
   Он открывается по клику на аватарку.
 
-В БД лежат только ключи (users.avatar_path / avatar_full_path). При замене и
-удалении старые объекты стираются из хранилища, чтобы не копить сирот.
+В БД лежат ключи (users.avatar_path / avatar_full_path) и EXIF (avatar_exif).
+При замене и удалении старые объекты стираются из хранилища, чтобы не копить
+сирот.
 
 Роут GET /avatars/{filename} оставлен для аватарок, загруженных ДО переезда на
 S3: тогда в avatar_path лежало имя файла в settings.avatars_dir.
@@ -34,6 +40,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.config import Settings, get_settings
 from app.core.admin import user_response
+from app.core.image_processing import ImageProcessingError, extract_image_metadata, strip_image_metadata
 from app.core.media_storage import MediaStorageError, build_key, content_type_for, get_media_storage
 from app.db.session import get_db
 from app.models import User
@@ -122,8 +129,15 @@ async def upload_avatar(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пустой файл")
 
     image = _read_image(raw)
-    extension = _EXTENSION_BY_FORMAT.get(image.format or "", "jpg")
     preview = _make_preview(image)
+    # Теги — себе, файл — чистым (см. докстринг модуля). Расширение берём по
+    # формату ПОСЛЕ очистки: HEIC превращается в JPEG.
+    avatar_exif = extract_image_metadata(raw)
+    try:
+        full_bytes, full_format = strip_image_metadata(raw)
+    except ImageProcessingError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    extension = _EXTENSION_BY_FORMAT.get(full_format, "jpg")
 
     prefix = settings.s3_prefix_avatars
     preview_key = build_key(prefix)
@@ -131,8 +145,7 @@ async def upload_avatar(
     storage = get_media_storage()
     try:
         storage.put(preview_key, preview)
-        # Оригинал кладём как пришёл — без ресайза и перекодирования.
-        storage.put(full_key, raw, content_type_for(full_key))
+        storage.put(full_key, full_bytes, content_type_for(full_key))
     except MediaStorageError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -142,6 +155,7 @@ async def upload_avatar(
     old_preview, old_full = user.avatar_path, user.avatar_full_path
     user.avatar_path = preview_key
     user.avatar_full_path = full_key
+    user.avatar_exif = avatar_exif or None
     db.commit()
     # Старые файлы стираем ПОСЛЕ коммита: если коммит упал, аватарка не потеряна.
     if old_preview != preview_key:
@@ -162,6 +176,7 @@ def delete_avatar(
     old_preview, old_full = user.avatar_path, user.avatar_full_path
     user.avatar_path = None
     user.avatar_full_path = None
+    user.avatar_exif = None
     db.commit()
     _delete_stored(old_preview, settings)
     _delete_stored(old_full, settings)

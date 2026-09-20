@@ -39,6 +39,7 @@ from app.services import series_locations
 from app.services.gender_position_service import resolve_participant_gender
 from app.services.location_catalog_service import backfill_city_from_catalog, backfill_region_from_catalog
 from app.services.location_freshness import mark_location_results_changed
+from app.sync.rating_relink import relink_ratings_before_delete
 
 PARSER_VERSION = "0.3.2"
 logger = logging.getLogger(__name__)
@@ -1010,11 +1011,22 @@ def replace_event_volunteer_results(
         )
     incoming_keys = {item.external_result_key for item in results}
     upserted = upsert_volunteer_results(db, event, platform, results)
-    deleted = 0
-    for row in db.query(VolunteerResult).filter(VolunteerResult.event_id == event.id).all():
-        if row.external_result_key not in incoming_keys:
+    rows = db.query(VolunteerResult).filter(VolunteerResult.event_id == event.id).all()
+    doomed = [row for row in rows if row.external_result_key not in incoming_keys]
+    if doomed:
+        # Отзыв с удаляемой строки — на строку того же участника, что уцелела
+        # в протоколе (ключ сменился, участник — нет); см. sync/rating_relink.py.
+        survivor_by_participant = {
+            row.participant_id: row.id for row in rows if row.external_result_key in incoming_keys
+        }
+        relink_ratings_before_delete(
+            db,
+            is_run=False,
+            moves={row.id: survivor_by_participant.get(row.participant_id) for row in doomed},
+        )
+        for row in doomed:
             db.delete(row)
-            deleted += 1
+    deleted = len(doomed)
     if deleted:
         mark_location_results_changed(
             db,
@@ -1061,11 +1073,22 @@ def replace_event_run_results(
         from_profile=from_profile,
         recalculate_pr=recalculate_pr,
     )
-    deleted = 0
-    for row in db.query(RunResult).filter(RunResult.event_id == event.id).all():
-        if row.external_result_key not in incoming_keys:
+    rows = db.query(RunResult).filter(RunResult.event_id == event.id).all()
+    doomed = [row for row in rows if row.external_result_key not in incoming_keys]
+    if doomed:
+        # Отзыв с удаляемой строки — на строку того же участника, что уцелела
+        # в протоколе (ключ сменился, участник — нет); см. sync/rating_relink.py.
+        survivor_by_participant = {
+            row.participant_id: row.id for row in rows if row.external_result_key in incoming_keys
+        }
+        relink_ratings_before_delete(
+            db,
+            is_run=True,
+            moves={row.id: survivor_by_participant.get(row.participant_id) for row in doomed},
+        )
+        for row in doomed:
             db.delete(row)
-            deleted += 1
+    deleted = len(doomed)
     if deleted:
         mark_location_results_changed(
             db,
@@ -1586,6 +1609,12 @@ def dedupe_participant_volunteer_results(
                 canonical_role = prefer_s95_volunteer_role(canonical_role, vol.role)
             if canonical_role:
                 keeper.role = canonical_s95_volunteer_role(canonical_role) or canonical_role
+        # Отзывы с удаляемых дублей — на keeper (sync/rating_relink.py).
+        relink_ratings_before_delete(
+            db,
+            is_run=False,
+            moves={vol.id: keeper.id for vol, _event in group[1:]},
+        )
         for vol, event in group[1:]:
             touched_event_ids.add(event.id)
             db.delete(vol)
@@ -1633,6 +1662,12 @@ def dedupe_five_verst_run_results_in_db(
                 pair[0].finish_time_sec is None,
                 pair[0].fetched_at is None,
             ),
+        )
+        # Отзывы с удаляемых дублей — на keeper (sync/rating_relink.py).
+        relink_ratings_before_delete(
+            db,
+            is_run=True,
+            moves={run.id: group[0][0].id for run, _event in group[1:]},
         )
         for run, event in group[1:]:
             touched_event_ids.add(event.id)

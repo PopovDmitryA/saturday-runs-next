@@ -1090,6 +1090,12 @@ class User(Base):
     # Дмитрия 28.07.2026: «не будем их сжимать, а по клику раскрывать»).
     # NULL — аватарка загружена до появления оригиналов либо её нет.
     avatar_full_path: Mapped[str | None] = mapped_column(String(512))
+    # EXIF исходного снимка аватарки: {datetime_original, make, model, software,
+    # orientation, gps: {lat, lon, alt}} — только те теги, что были. Файл в
+    # публичном бакете кладётся БЕЗ метаданных (SEC-04, миграция 092), а теги
+    # остаются здесь, приватно: наружу через API поле не отдаётся — ни в
+    # UserResponse, ни в публичном профиле. NULL — аватарки нет или EXIF не было.
+    avatar_exif: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     # unique=True здесь не ставим: в БД уникальность даёт именованный индекс
     # ix_users_serial_id (миграция 031), он объявлен в __table_args__.
     serial_id: Mapped[int] = mapped_column(
@@ -1386,23 +1392,19 @@ class ScheduledRunLog(Base):
 class LocationRating(Base):
     __tablename__ = "location_ratings"
     __table_args__ = (
-        # Уникальность по типу участия: два частичных индекса (см. миграцию 039).
+        # Уникальность — по естественному ключу отзыва, а не по строке
+        # результата (миграция 091): строку синк может удалить и завести заново
+        # с другим id, отзыв при этом должен остаться один.
         Index(
-            "uq_location_ratings_user_run",
+            "uq_location_ratings_user_location_date_type",
             "user_id",
-            "run_result_id",
+            "location_id",
+            "event_date",
+            "participation_type",
             unique=True,
-            postgresql_where=text("run_result_id IS NOT NULL"),
-        ),
-        Index(
-            "uq_location_ratings_user_volunteer",
-            "user_id",
-            "volunteer_result_id",
-            unique=True,
-            postgresql_where=text("volunteer_result_id IS NOT NULL"),
         ),
         CheckConstraint(
-            "(run_result_id IS NOT NULL) <> (volunteer_result_id IS NOT NULL)",
+            "NOT (run_result_id IS NOT NULL AND volunteer_result_id IS NOT NULL)",
             name="ck_location_ratings_one_source",
         ),
         CheckConstraint("score_overall BETWEEN 1 AND 5", name="ck_location_ratings_overall"),
@@ -1424,11 +1426,16 @@ class LocationRating(Base):
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    # Оценка привязана либо к пробежке (бегун), либо к волонтёрству — ровно одно
-    # из двух заполнено (CHECK ck_location_ratings_one_source).
-    run_result_id: Mapped[UUID | None] = mapped_column(ForeignKey("run_results.id", ondelete="CASCADE"), nullable=True)
+    # Оценка привязана либо к пробежке (бегун), либо к волонтёрству — не больше
+    # одного из двух (CHECK ck_location_ratings_one_source). Ссылка
+    # необязательная: синк удаляет строки результата штатно (перечитка протокола,
+    # дедуп, смена формата ключа, пересборка старта RunPark), и раньше CASCADE
+    # молча уносил отзыв вместе с ними. Теперь ON DELETE SET NULL — отзыв живёт
+    # на своих location_id/event_date/platform_code (миграция 091), а писатель
+    # по возможности перевешивает его на выжившую строку (sync/rating_relink.py).
+    run_result_id: Mapped[UUID | None] = mapped_column(ForeignKey("run_results.id", ondelete="SET NULL"), nullable=True)
     volunteer_result_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("volunteer_results.id", ondelete="CASCADE"), nullable=True
+        ForeignKey("volunteer_results.id", ondelete="SET NULL"), nullable=True
     )
     # 'run' | 'volunteer' — как участник был на старте.
     participation_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="run")
