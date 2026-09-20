@@ -40,6 +40,7 @@ from app.models import (
     User,
     VolunteerResult,
 )
+from app.participant_identity import ANONYMOUS_EXTERNAL_ID_PREFIXES
 from app.participant_identity import UNKNOWN_DISPLAY_NAMES as _UNKNOWN_DISPLAY_NAMES
 from app.services.home_distance_service import location_distance_from_home
 from app.services.location_catalog_service import (
@@ -213,6 +214,23 @@ LOCATION_ACTIVE_MIN_COUNT = 3
 # «unknown:…»/«anon:…»: одно правило «это не человек» на весь сайт — и для
 # страниц протокола, и для счётчиков дебютов.
 UNKNOWN_DISPLAY_NAMES = _UNKNOWN_DISPLAY_NAMES
+
+
+def _identified_participant_clause() -> Any:
+    """Участник-человек, а не одноразовая заглушка под безымянную строку.
+
+    Каждой строке «НЕИЗВЕСТНЫЙ» заводится своя личность с ключом
+    ``unknown:<локация>:<дата>:<место>`` (см. app/participant_identity.py), и в
+    счётчике уникальных участников она выглядела отдельным человеком: в
+    Шадринске 183 такие строки превращались в 183 «участника» — 1104 вместо
+    921, тогда как 5 вёрст показывают 922 (репорт 20.09.2026).
+    """
+
+    anonymous_key = or_(
+        Participant.external_user_id.is_(None),
+        *[Participant.external_user_id.like(f"{prefix}%") for prefix in ANONYMOUS_EXTERNAL_ID_PREFIXES],
+    )
+    return and_(~anonymous_key, _identified_name_clause(Participant.display_name))
 
 
 def _identified_name_clause(name_expr: Any) -> Any:
@@ -2513,7 +2531,12 @@ def _compute_location_page(
         )
         unique_participants = (
             db.query(func.count(func.distinct(RunResult.participant_id)))
-            .filter(RunResult.event_id.in_(event_ids), RunResult.participant_id.isnot(None))
+            .join(Participant, Participant.id == RunResult.participant_id)
+            .filter(
+                RunResult.event_id.in_(event_ids),
+                RunResult.participant_id.isnot(None),
+                _identified_participant_clause(),
+            )
             .scalar()
             or 0
         )
