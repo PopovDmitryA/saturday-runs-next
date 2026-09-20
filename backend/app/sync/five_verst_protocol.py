@@ -20,6 +20,7 @@ from app.platform_adapters.canonical import CanonicalEventSummary
 from app.platform_adapters.five_verst import bulk_parser
 from app.services.gender_position_service import recalculate_event_gender_positions
 from app.sync import upsert
+from app.sync.protocol_content_hash import protocol_content_hash
 
 
 @dataclass
@@ -158,6 +159,54 @@ def record_protocol_revision(db: Session, event_id, before: dict[str, tuple], af
     db.flush()
 
 
+def _stored_counts_match(db: Session, state: ProtocolSyncState, event_id) -> bool:
+    """Совпадает ли то, что лежит в базе, с тем, что записано при прошлом фетче.
+
+    Хеш говорит лишь, что источник не изменился; строки же могли уехать мимо
+    протокола — дедупом, ручной чисткой, откатом. Тогда «неизменный» протокол
+    всё равно надо переписать. Два COUNT по индексу event_id — копейки против
+    N UPDATE, которых мы избегаем.
+    """
+    if state.run_results_count is None or state.volunteer_results_count is None:
+        return False
+    run_count = db.query(RunResult).filter(RunResult.event_id == event_id).count()
+    if run_count != state.run_results_count:
+        return False
+    volunteer_count = db.query(VolunteerResult).filter(VolunteerResult.event_id == event_id).count()
+    return volunteer_count == state.volunteer_results_count
+
+
+def _touch_unchanged_protocol(
+    db: Session,
+    state: ProtocolSyncState,
+    summary: CanonicalEventSummary,
+    summary_row: EventSummary,
+    *,
+    event_id,
+) -> ProtocolUpsertResult:
+    """Протокол перечитан и не изменился: отметить проверку, ничего не переписывать."""
+    now = datetime.now(timezone.utc)
+    state.last_protocol_fetched_at = now
+    state.last_protocol_check_at = now
+    state.finishers_at_fetch = summary.finishers_count
+    # Расписка «протокол соответствует этому саммари» — та же, что на полном
+    # пути: иначе перечитка по долгу (summary_hash изменился, строки — нет)
+    # оставляла бы долг висеть и тянула протокол в каждый следующий прогон.
+    state.summary_hash_at_fetch = summary.summary_hash
+    summary_row.sync_status = SyncStatus.ok
+    summary_row.error_message = None
+    db.flush()
+    return ProtocolUpsertResult(
+        event_id=str(event_id),
+        run_results_upserted=0,
+        volunteer_results_upserted=0,
+        run_results_count=int(state.run_results_count or 0),
+        volunteer_results_count=int(state.volunteer_results_count or 0),
+        protocol_source_hash=state.protocol_source_hash or "",
+        protocol_changed=False,
+    )
+
+
 def fetch_and_upsert_event_protocol(
     db: Session,
     platform: Platform,
@@ -173,12 +222,17 @@ def fetch_and_upsert_event_protocol(
     # transaction». На проде стоит idle_in_transaction_session_timeout=15min,
     # и он регулярно рвал прогоны latest и reconcile на середине очереди.
     db.commit()
-    run_results, volunteer_results, protocol_html = bulk_parser.fetch_event_protocol(
+    run_results, volunteer_results, _protocol_html = bulk_parser.fetch_event_protocol(
         slug,
         summary.event_date,
         summary.event_number,
     )
-    protocol_source_hash = bulk_parser.source_hash(protocol_html)
+    # Хеш — по разобранным строкам, а не по HTML: страница 5verst.ru от
+    # запроса к запросу разная (nonce, метки времени), и хеш HTML «менялся»
+    # в 37 014 перечитках из 37 030, превращая каждую в полную перезапись
+    # (см. protocol_content_hash.py). HTML парсер уже разобрал — дальше он
+    # не нужен.
+    protocol_source_hash = protocol_content_hash(run_results, volunteer_results)
     event_row = upsert.upsert_event_for_summary(db, platform, location, summary, summary_row)
     state = _get_or_create_protocol_sync_state(
         db,
@@ -186,6 +240,17 @@ def fetch_and_upsert_event_protocol(
         event_summary_id=summary_row.id,
     )
     previous_hash = state.protocol_source_hash
+    if previous_hash == protocol_source_hash and run_results and _stored_counts_match(db, state, event_row.id):
+        # Источник отдал ровно то, что у нас уже лежит: строки не переписываем
+        # (ноль UPDATE по run_results), кэши локации не подрезаем, прогревы
+        # дашбордов не планируем (вызывающие смотрят на upserted > 0).
+        # Двигаем только отметки проверки и расписку по саммари — долг
+        # протокола (protocol_debt.py) этим и закрывается.
+        #
+        # Первая перечитка после выката 21.09.2026 сюда не попадёт: в базе
+        # лежит хеш старого формата (по HTML), он заведомо не совпадёт, и
+        # протокол один раз пройдёт по полному пути — это ожидаемо.
+        return _touch_unchanged_protocol(db, state, summary, summary_row, event_id=event_row.id)
     # Журнал правок: если протокол у источника изменился, сравниваем слепки
     # до и после перезаписи (см. record_protocol_revision).
     before_snapshot: dict[str, tuple] | None = None

@@ -105,6 +105,14 @@ def unified_protocol_weeks_cache_key() -> str:
 
 
 def invalidate_unified_protocol_cache(saturday: date) -> None:
+    """Снести неделю руками — для разовых прогревов из админки и с сервера.
+
+    В синках её не зовут и звать не нужно: после перезаписи протокола TTL
+    ключей недели и списка недель подрезает mark_location_results_changed
+    (app/services/location_freshness.py, с 21.09.2026). Подрезка до двух минут,
+    а не delete — субботний синк переписывает сотни протоколов подряд, и
+    каждый delete стоил бы холодного пересчёта всей страны.
+    """
     try:
         client = get_redis_client()
         client.delete(unified_protocol_cache_key(saturday))

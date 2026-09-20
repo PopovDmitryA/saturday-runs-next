@@ -198,6 +198,64 @@ def _classify_reconcile_reason(
     return ReconcileReason.check_due
 
 
+def _volunteer_person_key() -> Any:
+    """Ключ «человек», по которому волонтёрские строки схлопываются в людей.
+
+    Вынесен отдельно, чтобы одна и та же формула работала и в подзапросе по
+    всей таблице (приоритетный проход), и в точечном пересчёте по десятку
+    выбранных протоколов.
+    """
+    return func.coalesce(
+        # Человек, а не строка «человек × роль». Волонтёр без профиля
+        # склеивается по имени из протокола: у одного и того же может быть две
+        # роли. Совсем безымянный («НЕИЗВЕСТНЫЙ») склеиванию не поддаётся —
+        # отличить двух таких друг от друга нечем, и каждая строка считается
+        # отдельным человеком, как это делает и сама 5 вёрст.
+        func.cast(VolunteerResult.participant_id, String),
+        "name:" + VolunteerResult.display_name,
+        "row:" + VolunteerResult.external_result_key,
+    )
+
+
+def _aggregates_for_events(db: Session, event_ids: list[Any]) -> dict[Any, tuple[int, int | None, int]]:
+    """Строки, лучшее время и число волонтёров-людей — по конкретным забегам.
+
+    Раньше эти же величины приезжали подзапросами с GROUP BY по ВСЕЙ таблице
+    (см. _protocol_aggregates ниже): планировщику нужно было отобрать десяток
+    кандидатов, а Postgres честно агрегировал 2,3 млн строк результатов и
+    600 тыс. волонтёрских — 1,9 с и полмиллиона буферов на каждый вызов, по
+    два вызова на кусок и по девять кусков за прогон. Здесь агрегаты считаются
+    ПОСЛЕ отбора и только по выбранным event_id — это обычный индексный проход.
+    """
+    if not event_ids:
+        return {}
+    runs = {
+        row.event_id: (int(row.run_count or 0), int(row.fastest_sec) if row.fastest_sec is not None else None)
+        for row in db.query(
+            RunResult.event_id.label("event_id"),
+            func.count(RunResult.id).label("run_count"),
+            func.min(func.nullif(RunResult.finish_time_sec, 0)).label("fastest_sec"),
+        )
+        .filter(RunResult.event_id.in_(event_ids))
+        .group_by(RunResult.event_id)
+        .all()
+    }
+    people = {
+        row.event_id: int(row.people or 0)
+        for row in db.query(
+            VolunteerResult.event_id.label("event_id"),
+            func.count(func.distinct(_volunteer_person_key())).label("people"),
+        )
+        .filter(VolunteerResult.event_id.in_(event_ids))
+        .group_by(VolunteerResult.event_id)
+        .all()
+    }
+    return {
+        event_id: (runs.get(event_id, (0, None))[0], runs.get(event_id, (0, None))[1], people.get(event_id, 0))
+        for event_id in event_ids
+    }
+
+
 def _volunteer_people(db: Session) -> Subquery:
     """Сколько ЧЕЛОВЕК у нас в протоколе — так же, как считает сводка 5 вёрст.
 
@@ -211,21 +269,7 @@ def _volunteer_people(db: Session) -> Subquery:
     return (
         db.query(
             VolunteerResult.event_id.label("event_id"),
-            func.count(
-                func.distinct(
-                    # Человек, а не строка «человек × роль». Волонтёр без
-                    # профиля склеивается по имени из протокола: у одного и
-                    # того же может быть две роли. Совсем безымянный
-                    # («НЕИЗВЕСТНЫЙ») склеиванию не поддаётся — отличить двух
-                    # таких друг от друга нечем, и каждая строка считается
-                    # отдельным человеком, как это делает и сама 5 вёрст.
-                    func.coalesce(
-                        func.cast(VolunteerResult.participant_id, String),
-                        "name:" + VolunteerResult.display_name,
-                        "row:" + VolunteerResult.external_result_key,
-                    )
-                )
-            ).label("people"),
+            func.count(func.distinct(_volunteer_person_key())).label("people"),
         )
         .group_by(VolunteerResult.event_id)
         .subquery()
@@ -250,22 +294,36 @@ def _candidates_query(
     platform: Platform,
     location_slug: str | None,
 ) -> tuple[Query[Any], Subquery, Subquery]:
+    """Кандидаты ВМЕСТЕ с агрегатами протокола — для приоритетного прохода.
+
+    Подзапросы с GROUP BY по всей таблице тут остаются намеренно: этому
+    проходу расхождения нужны в самом WHERE (лучшее время и число волонтёров
+    не из чего взять, кроме как из строк). Обычной ротации они в фильтре не
+    нужны — она берёт лёгкий вариант ниже и досчитывает агрегаты по отобранным
+    забегам (_aggregates_for_events).
+    """
     aggregates = _protocol_aggregates(db)
     volunteers = _volunteer_people(db)
     query = (
-        db.query(
-            EventSummary,
-            Location,
-            ProtocolSyncState,
-            aggregates.c.run_count,
-            aggregates.c.fastest_sec,
-            volunteers.c.people,
-        )
+        _plain_candidates_query(db, platform, location_slug)
+        .add_columns(aggregates.c.run_count, aggregates.c.fastest_sec, volunteers.c.people)
+        .outerjoin(aggregates, aggregates.c.event_id == Event.id)
+        .outerjoin(volunteers, volunteers.c.event_id == Event.id)
+    )
+    return query, aggregates, volunteers
+
+
+def _plain_candidates_query(
+    db: Session,
+    platform: Platform,
+    location_slug: str | None,
+) -> Query[Any]:
+    """Тот же отбор, но без агрегатов: саммари, локация и состояние протокола."""
+    query = (
+        db.query(EventSummary, Location, ProtocolSyncState)
         .join(Event, EventSummary.event_id == Event.id)
         .join(Location, EventSummary.location_id == Location.id)
         .outerjoin(ProtocolSyncState, ProtocolSyncState.event_id == Event.id)
-        .outerjoin(aggregates, aggregates.c.event_id == Event.id)
-        .outerjoin(volunteers, volunteers.c.event_id == Event.id)
         .filter(
             EventSummary.platform_id == platform.id,
             EventSummary.event_id.isnot(None),
@@ -273,7 +331,7 @@ def _candidates_query(
     )
     if location_slug:
         query = query.filter(Location.external_key == location_slug)
-    return query, aggregates, volunteers
+    return query
 
 
 def _to_candidate(summary_row: EventSummary, location: Location, reason: ReconcileReason) -> ReconcileCandidate:
@@ -388,7 +446,10 @@ def plan_stale_protocol_reconcile(
         return priority[:limit]
 
     already_planned = {item.external_event_key for item in priority}
-    query, _aggregates, _volunteers = _candidates_query(db, platform, location_slug)
+    # Ротации агрегаты в фильтре не нужны — только для подписи причины у уже
+    # отобранных строк. Поэтому берём лёгкий запрос, а счётчики досчитываем
+    # после LIMIT по конкретным забегам (см. _aggregates_for_events).
+    query = _plain_candidates_query(db, platform, location_slug)
     if min_check_interval_days > 0:
         # Протокол, проверенный недавно, не перечитываем: без этого фильтра
         # reconcile гонял всю историю (~2900 протоколов) по кругу каждые
@@ -407,15 +468,17 @@ def plan_stale_protocol_reconcile(
 
     rest_limit = limit - len(priority)
     rows = query.order_by(ProtocolSyncState.last_protocol_check_at.asc().nullsfirst()).limit(rest_limit).all()
+    aggregates_by_event = _aggregates_for_events(db, [summary_row.event_id for summary_row, _, _ in rows])
     candidates = list(priority)
-    for summary_row, location, state, run_count, fastest_sec, volunteer_people in rows:
+    for summary_row, location, state in rows:
+        run_count, fastest_sec, volunteer_people = aggregates_by_event.get(summary_row.event_id, (0, None, 0))
         reason = _classify_reconcile_reason(
             summary_row,
             state,
-            int(run_count or 0),
+            run_count,
             check_cutoff=datetime.now(timezone.utc),
-            fastest_stored_sec=int(fastest_sec) if fastest_sec is not None else None,
-            volunteer_people=int(volunteer_people or 0),
+            fastest_stored_sec=fastest_sec,
+            volunteer_people=volunteer_people,
         )
         candidates.append(_to_candidate(summary_row, location, reason or ReconcileReason.check_due))
     return candidates

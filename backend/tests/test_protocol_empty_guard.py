@@ -193,8 +193,8 @@ def test_replace_volunteers_trusts_caller_when_allowed(db_session: Session) -> N
 
 def test_five_verst_empty_page_keeps_protocol_and_hash(db_session: Session) -> None:
     """Страница техработ: 50+5 → 0/0 больше не случается, хэш не двигается."""
-    from app.platform_adapters.five_verst import bulk_parser
     from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
+    from app.sync.protocol_content_hash import protocol_content_hash
 
     platform = _platform(db_session, "five_verst")
     location = _location(db_session, platform, "guard5v")
@@ -225,7 +225,8 @@ def test_five_verst_empty_page_keeps_protocol_and_hash(db_session: Session) -> N
 
     assert _counts(db_session, event.id) == (4, 2)
     state = db_session.query(ProtocolSyncState).filter(ProtocolSyncState.event_id == event.id).one()
-    assert state.protocol_source_hash == bulk_parser.source_hash(good_html)
+    # Хеш — по разобранным строкам, а не по HTML (SYNC-5V-02, 21.09.2026).
+    assert state.protocol_source_hash == protocol_content_hash(_runs(slug, 4), _vols(slug, 2))
     assert state.run_results_count == 4
 
 

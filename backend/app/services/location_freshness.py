@@ -289,13 +289,35 @@ def mark_location_results_changed(
         keys.add(location_page_cache_key(slug))
         keys.add(location_events_cache_key(slug))
         keys.add(location_leaders_cache_key(slug))
+    # Рейтинг рекордов локаций считается по тем же протоколам и держит снимок
+    # 6 часов. Функция сброса у него была, но её никто не звал (DEAD-01):
+    # рекорд субботы доезжал до рейтинга только к протуханию. Кладём в
+    # «витринные» ключи — пересчёт общий на всю страну, минутного окна ему мало.
+    from app.services.location_records_rating_service import (
+        RATING_CACHE_KEY as LOCATION_RECORDS_RATING_CACHE_KEY,
+    )
+
+    showcase.add(LOCATION_RECORDS_RATING_CACHE_KEY)
+
     protocol_pairs = list(protocols)
     if protocol_pairs:
         from app.services.location_protocol_service import location_protocol_cache_key
+        from app.services.unified_protocol_service import (
+            saturday_of,
+            unified_protocol_cache_key,
+            unified_protocol_weeks_cache_key,
+        )
 
         for slug in slugs:
             for platform_code, event_date in protocol_pairs:
                 keys.add(location_protocol_cache_key(slug, platform_code, event_date))
+        # Единый протокол недели (/protocol) — та же история, что у рейтинга
+        # рекордов: исправленный субботний протокол ждал бы читателя до трёх
+        # часов. Неделя определяется субботой события, список недель гасим
+        # заодно — в нём цифры этой же недели.
+        for _platform_code, event_date in protocol_pairs:
+            showcase.add(unified_protocol_cache_key(saturday_of(event_date)))
+        showcase.add(unified_protocol_weeks_cache_key())
 
 
 @sa_event.listens_for(Session, "after_commit")
