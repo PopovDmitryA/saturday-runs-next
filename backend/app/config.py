@@ -20,6 +20,24 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://saturday_runs:saturday_runs@localhost:5433/saturday_runs_lk"
     redis_url: str = "redis://localhost:6379/0"
 
+    # Соседние базы и каталоги. Читаются ТОЛЬКО отсюда, а не через os.getenv:
+    # Settings берёт значения и из смонтированного в контейнер .env, а
+    # os.getenv видит лишь окружение процесса. На этой разнице табло /hq
+    # месяц считалось пустым — PM_WORLD_DSN лежал в .env, а воркер его не
+    # видел, пока переменную не продублировали в docker-compose (21.09.2026
+    # остальные такие чтения переведены сюда).
+    #
+    # legacy_database_url — read-only доступ к базе легаси «5 вёрст
+    # статистика» (five_verst_stats): разовые переносы, посев очереди parkrun.
+    # Пусто — берём database_url с заменой имени базы (локальный дамп/туннель).
+    legacy_database_url: str = ""
+    # parkrun_monitoring_dir — каталог соседнего проекта parkrun-monitoring
+    # (решатель капчи WAF, недельная статистика стран). Пусто — на этой машине
+    # его нет, и всё, что на него опирается, мягко выключается.
+    parkrun_monitoring_dir: str = ""
+    # parkrun_fetch_proxies — исходящие прокси фетча parkrun через запятую (на
+    # домашнем сервере — пул VPN-выходов). Пусто — ходим со своего адреса.
+    parkrun_fetch_proxies: str = ""
 
     # Хранилище аватарок пользователей (том ./data:/data в docker-compose).
     # В БД лежит только имя файла (users.avatar_path), файлы — здесь.

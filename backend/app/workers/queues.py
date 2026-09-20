@@ -39,5 +39,7 @@ RUNPARK_SYNC_QUEUE = "runpark"
 # Теперь у прогревов своя очередь и свой воркер — он живёт рядом с базой.
 WARM_QUEUE = "warm"
 
-# Порядок = приоритет: воркер five_verst стартует с этим списком в -Q.
+# Очереди 5 вёрст, у каждой СВОЙ воркер (см. докстринг выше): fresh —
+# worker-five-verst-fresh, batch — worker-five-verst. Порядок в кортеже — по
+# важности, для читателя; в один -Q их больше не складывают (17.09.2026).
 FIVE_VERST_WORKER_QUEUES: tuple[str, ...] = (FIVE_VERST_FRESH_QUEUE, FIVE_VERST_BATCH_QUEUE)

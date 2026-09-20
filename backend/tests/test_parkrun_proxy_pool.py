@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from app.parkrun.fetch.proxy_pool import ENV_VAR, ProxyPool, load_proxies
+from app.config import get_settings
+from app.parkrun.fetch.proxy_pool import ProxyPool, load_proxies
 
 THREE = [
     "socks5://127.0.0.1:10865",
@@ -46,8 +47,12 @@ def test_parsing_ignores_blanks_and_spaces() -> None:
     assert load_proxies("   ") == []
 
 
-def test_parsing_falls_back_to_env(monkeypatch) -> None:
-    monkeypatch.setenv(ENV_VAR, "socks5://x:1,socks5://y:2")
+def test_parsing_falls_back_to_settings(monkeypatch) -> None:
+    """Без аргумента список берётся из Settings (PARKRUN_FETCH_PROXIES), а не
+    из os.environ: настройки видят и смонтированный .env, окружение процесса —
+    нет."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "parkrun_fetch_proxies", "socks5://x:1,socks5://y:2")
     assert load_proxies() == ["socks5://x:1", "socks5://y:2"]
-    monkeypatch.delenv(ENV_VAR)
+    monkeypatch.setattr(settings, "parkrun_fetch_proxies", "")
     assert load_proxies() == []

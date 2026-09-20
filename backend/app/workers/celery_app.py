@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from celery import Celery
 from celery.schedules import crontab
 
@@ -450,3 +452,81 @@ celery_app.conf.update(
         },
     },
 )
+
+
+# --------------------------------------------------------------- срок годности
+#
+# `expires` — прививка от долгов очереди: не взяли вовремя — задача умирает, а
+# не копится. 12.09.2026 в очереди five_verst лежало 26 просроченных latest и
+# 30 сверок, и субботние протоколы ждали своей минуты полутора суток; 18.07.2026
+# так же накопился 41 прогрев главной. До 21.09.2026 срок стоял у половины
+# записей, остальные (sweep-hq, наблюдатель протоколов, og-render, s95-*,
+# runpark-*, реестры) копились молча.
+#
+# Считаем его из самого расписания, а не пишем руками: правило «expires ≈
+# интервал запуска» тогда держится само, даже если кто-то поменяет крон. Явно
+# заданный в записи срок не трогаем — там, где выбрано короче интервала (прогрев
+# главной, агрегаты страниц), это осознанное решение.
+
+MAX_EXPIRES_SECONDS = 6 * 3600
+"""Потолок срока годности.
+
+Задача, опоздавшая больше чем на шесть часов, не догоняет ничего: свежие данные
+принесёт следующий запуск. Столько же выбрано руками у суточных записей
+(реестр 5 вёрст, сводка в ВК) — держим одну планку.
+"""
+
+
+def schedule_interval_seconds(schedule: crontab, *, window_days: int = 70) -> int | None:
+    """Наименьший промежуток между двумя срабатываниями crontab-записи.
+
+    Именно наименьший: у записи вроде «часы 0,5,10,15,20 по будням» промежутки
+    разные (5 часов внутри дня, 4 часа через полночь, 76 часов через выходные),
+    и срок годности надо мерить по самому короткому — иначе две соседние задачи
+    успеют встретиться в очереди.
+
+    Считаем по разобранным множествам crontab, а не гоняем
+    `crontab.remaining_estimate` вперёд по времени: он считает относительно
+    «сейчас» и на датах дальше сегодняшней начинает возвращать прошлое.
+    Окно в 70 дней покрывает и day_of_month="*/3", и месячные записи.
+    """
+    minutes = sorted(schedule.minute)
+    hours = sorted(schedule.hour)
+    if not minutes or not hours:
+        return None
+
+    today = date.today()
+    days = [
+        day
+        for day in (today + timedelta(days=shift) for shift in range(window_days))
+        if day.month in schedule.month_of_year
+        and day.day in schedule.day_of_month
+        and day.isoweekday() % 7 in schedule.day_of_week
+    ]
+
+    first = hours[0] * 60 + minutes[0]  # первое срабатывание внутри суток
+    last = hours[-1] * 60 + minutes[-1]  # последнее срабатывание внутри суток
+    gaps_minutes: list[int] = []
+    gaps_minutes += [b - a for a, b in zip(minutes, minutes[1:], strict=False)]
+    if len(hours) > 1:
+        step = min(b - a for a, b in zip(hours, hours[1:], strict=False))
+        gaps_minutes.append(step * 60 - (minutes[-1] - minutes[0]))
+    if len(days) > 1:
+        step_days = min((b - a).days for a, b in zip(days, days[1:], strict=False))
+        gaps_minutes.append(step_days * 24 * 60 - last + first)
+    if not gaps_minutes:
+        return None
+    return min(gaps_minutes) * 60
+
+
+def _fill_missing_expires(app: Celery) -> None:
+    for entry in app.conf.beat_schedule.values():
+        options = entry.setdefault("options", {})
+        if "expires" in options:
+            continue
+        interval = schedule_interval_seconds(entry["schedule"])
+        if interval:
+            options["expires"] = min(interval, MAX_EXPIRES_SECONDS)
+
+
+_fill_missing_expires(celery_app)

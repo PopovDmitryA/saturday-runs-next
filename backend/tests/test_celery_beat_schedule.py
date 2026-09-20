@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from app.workers.celery_app import celery_app
+from app.workers.celery_app import celery_app, schedule_interval_seconds
 from app.workers.queues import (
     FIVE_VERST_BATCH_QUEUE,
     FIVE_VERST_FRESH_QUEUE,
@@ -247,19 +247,25 @@ def test_background_five_verst_entries_stay_in_the_batch_queue() -> None:
         assert schedule[key]["options"]["expires"] > 0, key
 
 
-def test_worker_takes_the_fresh_queue_before_the_batch_one() -> None:
-    """Порядок очередей в -Q и есть приоритет.
+def test_fresh_and_batch_queues_have_their_own_workers() -> None:
+    """У свежести и у фона 5 вёрст — по своему контейнеру, и ни один не слушает чужое.
 
-    Работает он только вместе с queue_order_strategy=priority: по умолчанию
-    redis-транспорт обходит очереди по кругу, и фон получал бы слот даже с
-    непустой приоритетной очередью.
+    До 17.09.2026 оба сидели в одном воркере с `-Q five_verst_fresh,five_verst`
+    и надеялись на queue_order_strategy=priority. Обещанный порядок kombu не
+    держит: очереди лежат в set, порядок задаёт хеш строки — свой на каждый
+    запуск. Воркер поднялся «сначала фон» и двое суток не брал latest.
     """
-    command = _worker_command("worker-five-verst")
-    assert f"-Q {','.join(FIVE_VERST_WORKER_QUEUES)}" in command, command
-    # Без этого воркер резервирует фоновую задачу «про запас», и приоритетная
-    # ждёт ещё один кусок сверх текущего.
-    assert "--prefetch-multiplier=1" in command, command
-    assert celery_app.conf.broker_transport_options["queue_order_strategy"] == "priority"
+    fresh = _worker_command("worker-five-verst-fresh")
+    batch = _worker_command("worker-five-verst")
+    def queues_of(command: str) -> set[str]:
+        return set(command.split("-Q ")[1].split(" ")[0].split(","))
+
+    assert queues_of(fresh) == {FIVE_VERST_FRESH_QUEUE}, fresh
+    assert queues_of(batch) == {FIVE_VERST_BATCH_QUEUE}, batch
+    # Без этого воркер резервирует фоновую задачу «про запас» при acks_late,
+    # и после рестарта брокер вернёт её вторым экземпляром.
+    assert "--prefetch-multiplier=1" in batch, batch
+    assert set(FIVE_VERST_WORKER_QUEUES) == {FIVE_VERST_FRESH_QUEUE, FIVE_VERST_BATCH_QUEUE}
 
 
 def test_cache_warmups_do_not_share_a_queue_with_syncs() -> None:
@@ -283,3 +289,40 @@ def test_user_sync_keeps_its_own_worker() -> None:
     человек у экрана не ждал даже одного фонового куска."""
     command = _worker_command("worker-five-verst-user")
     assert "-Q five_verst_user" in command, command
+
+
+# ------------------------------------------------------------------ expires
+
+
+def test_every_beat_entry_has_expires() -> None:
+    """CEL-04: без expires простой воркера превращается в долг очереди.
+
+    12.09.2026 в очереди five_verst лежало 26 просроченных latest и 30 сверок,
+    и субботние протоколы ждали своей минуты полутора суток.
+    """
+    for key, entry in celery_app.conf.beat_schedule.items():
+        expires = (entry.get("options") or {}).get("expires")
+        assert expires and expires > 0, f"{key}: нет expires"
+
+
+def test_expires_never_outlives_the_interval() -> None:
+    """Срок годности не длиннее промежутка между запусками.
+
+    Иначе к моменту, когда задачу наконец возьмут, beat уже поставил следующую
+    такую же — а это и есть долг очереди, от которого expires спасает.
+    """
+    for key, entry in celery_app.conf.beat_schedule.items():
+        interval = schedule_interval_seconds(entry["schedule"])
+        assert interval, f"{key}: не удалось вычислить интервал"
+        expires = entry["options"]["expires"]
+        assert expires <= interval, f"{key}: expires {expires} длиннее интервала {interval}"
+
+
+def test_schedule_interval_takes_the_shortest_gap() -> None:
+    """Интервал считается по самому короткому промежутку, а не по среднему."""
+    from celery.schedules import crontab
+
+    assert schedule_interval_seconds(crontab(minute="*/3")) == 180
+    assert schedule_interval_seconds(crontab(minute="7,37")) == 30 * 60
+    # 20:00 → 00:00 следующего дня — четыре часа, а не пять.
+    assert schedule_interval_seconds(crontab(hour="0,5,10,15,20", minute=0)) == 4 * 3600
