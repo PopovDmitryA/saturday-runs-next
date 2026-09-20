@@ -135,13 +135,6 @@ class PortalGeoResponse(BaseModel):
     points: list[PortalGeoPointResponse]
 
 
-class PortalRecordFactResponse(BaseModel):
-    location_name: str
-    event_date: date
-    value_display: str
-    runner_name: str | None = None
-
-
 class PortalBusiestDayResponse(BaseModel):
     event_date: date
     finishers: int

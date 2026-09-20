@@ -214,11 +214,6 @@ def available_age_groups(db: Session) -> list[str]:
     return list(_load_options(db)["age_groups"])
 
 
-def available_years(db: Session, platform: str = ALL_PLATFORMS) -> list[int]:
-    years: dict[str, list[int]] = _load_options(db)["years_by_platform"]
-    return list(years.get(platform, ()))
-
-
 # --------------------------------------------------------------------------- #
 # Выборки
 # --------------------------------------------------------------------------- #

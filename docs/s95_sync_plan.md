@@ -1,7 +1,7 @@
 # План конвейеров синхронизации S95
 
 Документ фиксирует целевую архитектуру сбора данных с [s95.ru](https://s95.ru) (и зеркал `.by` / `.rs`).  
-**Наполнение dev БД парсингом не делаем** — после завершения конвейеров данные переносим из legacy `five_verst_stats` (см. [deploy_and_migration_plan.md](./deploy_and_migration_plan.md)).
+**Наполнение dev БД парсингом не делаем** — после завершения конвейеров данные переносим из legacy `five_verst_stats` (см. [archive/deploy_and_migration_plan.md](./archive/deploy_and_migration_plan.md)).
 
 Образец структуры: [five_verst_sync_plan.md](./five_verst_sync_plan.md).
 

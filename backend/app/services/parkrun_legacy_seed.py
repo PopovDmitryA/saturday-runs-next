@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.models import ProfileFetchPendingOperation
 from app.services.profile_fetch_pending_service import ensure_parkrun_pending_queue_row
 
@@ -48,11 +48,12 @@ LIMIT :limit
 
 
 def legacy_database_url() -> str:
-    url = os.environ.get("LEGACY_DATABASE_URL", "").strip()
+    settings = get_settings()
+    url = settings.legacy_database_url.strip()
     if url:
         return url
     # Same Postgres host, legacy DB name (local dump / tunnel).
-    main = os.environ.get("DATABASE_URL", "").strip()
+    main = settings.database_url.strip()
     if main and "saturday_runs_lk" in main:
         return main.replace("saturday_runs_lk", "five_verst_stats")
     return ""

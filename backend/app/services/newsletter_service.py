@@ -72,11 +72,6 @@ def subscribe_url(settings: Settings, normalized_email: str) -> str:
     return f"{settings.app_base_url.rstrip('/')}/api/news/subscribe?token={token}"
 
 
-def unsubscribe_url(settings: Settings, normalized_email: str) -> str:
-    token = make_token(normalized_email, ACTION_UNSUBSCRIBE, settings.app_secret_key)
-    return f"{settings.app_base_url.rstrip('/')}/api/news/unsubscribe?token={token}"
-
-
 def find_user_by_mailbox(db: Session, normalized_email: str) -> User | None:
     # Локальный импорт: email_auth_service тянет мейлер, а сюда ходят и роуты.
     from app.services.email_auth_service import find_identity_by_mailbox

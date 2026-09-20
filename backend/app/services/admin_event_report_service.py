@@ -137,31 +137,6 @@ def fmt_date_ru(value: date) -> str:
 # ===== Списки для формы =====
 
 
-def list_report_locations(db: Session) -> list[dict[str, Any]]:
-    """Локации с хотя бы одним не-тестовым событием, для выпадающего списка."""
-    rows = db.execute(
-        text(
-            f"""
-            SELECT l.id AS location_id,
-                   l.name AS location_name,
-                   l.city AS city,
-                   p.code AS platform_code,
-                   p.name AS platform_name,
-                   count(e.id) AS events_count,
-                   max(e.event_date) AS last_event_date
-            FROM locations l
-            JOIN platforms p ON p.id = l.platform_id
-            JOIN events e ON e.location_id = l.id
-            WHERE NOT e.is_test_event
-              AND e.{NOT_SECONDARY_SQL}
-            GROUP BY l.id, l.name, l.city, p.code, p.name
-            ORDER BY l.name, p.code
-            """
-        )
-    ).mappings()
-    return [dict(row) for row in rows]
-
-
 def list_report_event_dates(db: Session, location_id: UUID) -> list[dict[str, Any]]:
     """Даты событий локации (новые сверху) для выпадающего списка."""
     rows = db.execute(

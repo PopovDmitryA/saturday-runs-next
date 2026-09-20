@@ -75,11 +75,6 @@ def _record_unique_visitor(visitor_key: str, *, day: date | None = None) -> None
         redis.expire(key, _STATS_TTL_SECONDS)
 
 
-def count_unique_visitors(day: date) -> int:
-    redis = get_redis()
-    return int(redis.pfcount(_day_key(day, "uv")))
-
-
 def record_pageview(path: str, *, authenticated: bool, visitor_key: str | None = None) -> None:
     category = classify_page_path(path)
     _incr_day("pv:total")
@@ -99,17 +94,6 @@ def record_login() -> None:
 
 def record_login_request() -> None:
     _incr_day("login_request")
-
-
-def read_daily_series(metric: str, *, days: int) -> list[dict[str, object]]:
-    redis = get_redis()
-    today = _today()
-    series: list[dict[str, object]] = []
-    for offset in range(days - 1, -1, -1):
-        day = today - timedelta(days=offset)
-        raw = redis.get(_day_key(day, metric))
-        series.append({"date": day.isoformat(), "value": int(raw) if raw else 0})
-    return series
 
 
 def read_pageviews_by_day(*, days: int) -> list[dict[str, object]]:

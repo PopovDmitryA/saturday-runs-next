@@ -292,7 +292,7 @@ _AGE_PLUS_RE = re.compile(r"^[A-Za-zА-Яа-я]{0,3}(\d{2,3})\s*\+$")
 # Всё остальное двузначное («М11», «М12») категорией НЕ является: группы идут
 # пятилетками, такой ступени не существует. Это обрезки старой регулярки
 # парсера («М110-114» → «М11»), их чинит
-# scripts/backfill_truncated_age_categories.py, а не витрина.
+# scripts/archive/backfill_truncated_age_categories.py, а не витрина.
 _AGE_UNDER_RE = re.compile(r"^[A-Za-zА-Яа-я]{1,3}(10|\d{3})$")
 
 

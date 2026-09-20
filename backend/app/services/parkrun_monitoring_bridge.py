@@ -11,15 +11,16 @@ Mac-демон чередует очередь сайта с задачами м
 from __future__ import annotations
 
 import logging
-import os
 import subprocess
 from pathlib import Path
+
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
 def _monitoring_binary() -> Path | None:
-    root = os.environ.get("PARKRUN_MONITORING_DIR", "").strip()
+    root = get_settings().parkrun_monitoring_dir.strip()
     if not root:
         return None
     binary = Path(root) / ".venv" / "bin" / "parkrun-monitoring"

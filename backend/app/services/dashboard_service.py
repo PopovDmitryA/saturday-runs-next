@@ -51,11 +51,6 @@ from app.volunteering_occasions import (
     volunteering_by_month_for_platform,
 )
 
-
-class SyncRefreshRateLimitedError(Exception):
-    pass
-
-
 # 26: pr_count считает по run_displayed_personal_record_sql_filter (вкл. дебюты
 # и глобальные рекорды) — без бампа старый кэш отдаёт счётчик, расходящийся со
 # списком PR-пробежек.

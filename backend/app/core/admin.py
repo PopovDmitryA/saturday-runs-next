@@ -56,39 +56,6 @@ def is_admin_telegram_id(telegram_id: int, settings: Settings) -> bool:
     return admin_id > 0 and telegram_id == admin_id
 
 
-def is_admin_vk_user_id(vk_user_id: int, settings: Settings) -> bool:
-    return settings.vk_admin_user_id > 0 and vk_user_id == settings.vk_admin_user_id
-
-
-def find_admin_user(db: Session, settings: Settings) -> User | None:
-    """Resolve the configured admin account in DB (telegram id, telegram identity, or admin email)."""
-    allowed_emails = admin_email_set(settings)
-    if allowed_emails:
-        identities = db.query(AuthIdentity).all()
-        for identity in identities:
-            if allowed_emails.intersection(identity_emails(identity)):
-                user = db.query(User).filter(User.id == identity.user_id).one_or_none()
-                if user is not None:
-                    return user
-
-    admin_id = effective_admin_telegram_id(settings)
-    if admin_id > 0:
-        user = db.query(User).filter(User.telegram_id == admin_id).one_or_none()
-        if user is not None:
-            return user
-        identity = (
-            db.query(AuthIdentity)
-            .filter(
-                AuthIdentity.provider == AuthProvider.telegram,
-                AuthIdentity.external_id == str(admin_id),
-            )
-            .one_or_none()
-        )
-        if identity is not None:
-            return db.query(User).filter(User.id == identity.user_id).one_or_none()
-    return None
-
-
 # Поля ответа, которых нет в модели User: их передают отдельно.
 _COMPUTED_USER_FIELDS = {"is_admin", "is_organizer", "auth_identities", "display_name_suggestion"}
 

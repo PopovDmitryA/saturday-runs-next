@@ -10,11 +10,6 @@ from app.services.vk_client import VK_MESSAGE_LIMIT, send_vk_message
 logger = logging.getLogger(__name__)
 
 
-def vk_admin_configured() -> bool:
-    settings = get_settings()
-    return bool(settings.vk_bot_group_token and settings.vk_admin_user_id)
-
-
 def send_vk_admin_message(text: str, *, reply_to: int | None = None) -> int | None:
     # Тесты гоняются на стеке с боевым .env, поэтому глушим отправку здесь, а не
     # надеемся на моки в каждом тесте: иначе прогон уходит сообщениями админу.
@@ -40,16 +35,6 @@ def send_vk_admin_message(text: str, *, reply_to: int | None = None) -> int | No
     except Exception:
         logger.exception("Failed to send VK admin message")
         return None
-
-
-def _fmt_errors(errors: list[str] | None, *, limit: int = 5) -> str:
-    if not errors:
-        return "нет"
-    shown = errors[:limit]
-    lines = "\n".join(f"• {item}" for item in shown)
-    if len(errors) > limit:
-        lines += f"\n… и ещё {len(errors) - limit}"
-    return lines
 
 
 def _plural(count: int, one: str, few: str, many: str) -> str:

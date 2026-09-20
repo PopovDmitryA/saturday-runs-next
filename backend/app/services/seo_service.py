@@ -964,12 +964,6 @@ def location_og_image_url(payload: dict[str, Any]) -> str | None:
     return f"{site_base_url()}/og/locations/{slug}.png{suffix}"
 
 
-def profile_handle(user: Any) -> str:
-    """Хэндл для адресов профиля: vanity-slug, иначе номер участника."""
-    slug = (getattr(user, "public_slug", None) or "").strip()
-    return slug or str(getattr(user, "serial_id", "") or "")
-
-
 def profile_og_image_url(user: Any) -> str | None:
     """Адрес прегенерированной OG-картинки участника, если файл отрендерен.
 

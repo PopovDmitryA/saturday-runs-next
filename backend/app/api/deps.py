@@ -18,7 +18,6 @@ from app.core.client_ip import get_client_ip as get_client_ip
 from app.core.session import get_session_user_id
 from app.db.session import get_db
 from app.models import User
-from app.schemas.auth import UserResponse
 
 
 def get_optional_session_user_id(
@@ -52,10 +51,6 @@ def get_current_user(
         if is_telegram_banned(user.telegram_id) and not is_admin_user(user, settings):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account temporarily suspended")
     return user
-
-
-def get_current_user_response(user: Annotated[User, Depends(get_current_user)]) -> UserResponse:
-    return UserResponse.model_validate(user)
 
 
 def get_optional_user(

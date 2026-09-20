@@ -50,11 +50,6 @@ def _drop_conn() -> None:
             pass
 
 
-def close_runpark_connection() -> None:
-    """Close this thread's cached RunPark connection, if any. Optional cleanup hook."""
-    _drop_conn()
-
-
 def fix_varchar_encoding(s: str | None) -> str | None:
     """Fix VARCHAR columns stored as CP1251 but decoded as latin-1 by pymssql."""
     if s is None:

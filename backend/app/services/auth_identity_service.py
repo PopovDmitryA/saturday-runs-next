@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -42,15 +41,6 @@ def list_user_identities(db: Session, user_id: UUID) -> list[AuthIdentity]:
         .filter(AuthIdentity.user_id == user_id)
         .order_by(AuthIdentity.linked_at.asc())
         .all()
-    )
-
-
-def user_has_provider(db: Session, user_id: UUID, provider: AuthProvider) -> bool:
-    return (
-        db.query(AuthIdentity.id)
-        .filter(AuthIdentity.user_id == user_id, AuthIdentity.provider == provider)
-        .first()
-        is not None
     )
 
 
@@ -258,7 +248,3 @@ def merge_preview_payload(db: Session, survivor: User, merged: User) -> dict[str
             "Отвязанные учётки систем не пропадают из общей базы, их можно привязать заново."
         ),
     }
-
-
-def serialize_merge_preview(preview: dict[str, object]) -> str:
-    return json.dumps(preview, ensure_ascii=False, default=str)

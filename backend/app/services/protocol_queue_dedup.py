@@ -26,14 +26,6 @@ BATCH_QUEUE_BY_PLATFORM: dict[str, str] = {
 _TASK_ID_SAFE = re.compile(r"[^a-zA-Z0-9._-]+")
 
 
-def protocol_fetch_event_key(
-    platform_code: str,
-    location_slug: str,
-    event_date: date,
-) -> tuple[str, str, str]:
-    return platform_code, location_slug, event_date.isoformat()
-
-
 def protocol_fetch_task_id(
     platform_code: str,
     location_slug: str,

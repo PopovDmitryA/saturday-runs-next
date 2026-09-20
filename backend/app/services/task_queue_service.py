@@ -17,7 +17,6 @@ from app.services.celery_queue_inspector import (
 from app.services.sync_error_format import present_sync_error
 
 ACTIVE_JOB_STATUSES = frozenset({SyncJobStatus.queued, SyncJobStatus.running})
-RECENT_JOBS_LIMIT = 30
 ADMIN_RECENT_JOBS_LIMIT = 100
 
 
@@ -199,31 +198,6 @@ def _serialize_job(
             "display_name": user.display_name,
         }
     return item
-
-
-def get_user_task_queue_payload(db: Session, user_id: UUID) -> dict[str, object]:
-    from app.services.sync_job_service import reconcile_user_sync_jobs
-
-    reconcile_user_sync_jobs(db, user_id)
-
-    jobs = (
-        db.query(SyncJob)
-        .filter(SyncJob.user_id == user_id)
-        .order_by(SyncJob.created_at.desc())
-        .limit(RECENT_JOBS_LIMIT)
-        .all()
-    )
-    user_platforms = _platform_codes_for_user(db, user_id)
-
-    job_items = [_serialize_job(db, job, user_id, user_platforms) for job in jobs]
-    active_count = sum(1 for job in jobs if job.status in ACTIVE_JOB_STATUSES)
-
-    return {
-        "jobs": job_items,
-        "queues": _queue_summaries(),
-        "active_jobs_count": active_count,
-        "task_queue_by_suffix": TASK_QUEUE_BY_SUFFIX,
-    }
 
 
 def get_admin_task_queue_payload(db: Session) -> dict[str, object]:
