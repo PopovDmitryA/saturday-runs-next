@@ -36,6 +36,7 @@ from app.models import (
     User,
     VolunteerResult,
 )
+from app.participant_identity import identified_participant_clause
 from app.schemas.portal import PortalHomeResponse
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.platform_titles import PLATFORM_TITLES
@@ -238,13 +239,22 @@ def _load_events(db: Session) -> list[_EventRow]:
 
 def _participants_total(db: Session) -> int:
     """Участники: профили систем; связанные на сайте профили одного
-    человека (platform_links одного user) считаются одним участником."""
+    человека (platform_links одного user) считаются одним участником.
+
+    Безымянные строки протокола («НЕИЗВЕСТНЫЙ») в счёт не идут: под каждую
+    заводится одноразовая личность, и в счётчике уникальных они выглядели бы
+    сотней тысяч человек. Финиши при этом считаются со всеми — безымянный
+    бежал так же, как остальные (решение Дмитрия 20.09.2026)."""
     runners = select(RunResult.participant_id).where(
         RunResult.participant_id.isnot(None)
     )
     total = int(
         db.query(func.count(func.distinct(RunResult.participant_id)))
-        .filter(RunResult.participant_id.isnot(None))
+        .join(Participant, Participant.id == RunResult.participant_id)
+        .filter(
+            RunResult.participant_id.isnot(None),
+            identified_participant_clause(Participant.external_user_id, Participant.display_name),
+        )
         .scalar()
         or 0
     )
@@ -280,8 +290,10 @@ def _participants_in_window(
                 db.query(func.count(func.distinct(RunResult.participant_id)))
                 .select_from(RunResult)
                 .join(Event, Event.id == RunResult.event_id)
+                .join(Participant, Participant.id == RunResult.participant_id)
             ).filter(
                 RunResult.participant_id.isnot(None),
+                identified_participant_clause(Participant.external_user_id, Participant.display_name),
                 Event.event_date >= window_start,
                 Event.event_date <= window_end,
             ),

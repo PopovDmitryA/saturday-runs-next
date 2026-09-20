@@ -40,8 +40,8 @@ from app.models import (
     User,
     VolunteerResult,
 )
-from app.participant_identity import ANONYMOUS_EXTERNAL_ID_PREFIXES
 from app.participant_identity import UNKNOWN_DISPLAY_NAMES as _UNKNOWN_DISPLAY_NAMES
+from app.participant_identity import identified_participant_clause
 from app.services.home_distance_service import location_distance_from_home
 from app.services.location_catalog_service import (
     LocationCatalogIndex,
@@ -226,11 +226,7 @@ def _identified_participant_clause() -> Any:
     921, тогда как 5 вёрст показывают 922 (репорт 20.09.2026).
     """
 
-    anonymous_key = or_(
-        Participant.external_user_id.is_(None),
-        *[Participant.external_user_id.like(f"{prefix}%") for prefix in ANONYMOUS_EXTERNAL_ID_PREFIXES],
-    )
-    return and_(~anonymous_key, _identified_name_clause(Participant.display_name))
+    return identified_participant_clause(Participant.external_user_id, Participant.display_name)
 
 
 def _identified_name_clause(name_expr: Any) -> Any:

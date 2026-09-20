@@ -32,6 +32,7 @@ from app.models import (
     RunResult,
     VolunteerResult,
 )
+from app.participant_identity import identified_participant_clause
 from app.services.location_freshness import write_organizer_cache
 from app.services.location_page_service import (
     LocationIdentity,
@@ -911,7 +912,18 @@ def _network_location_metrics(
         db.query(
             Event.location_id,
             func.count(RunResult.id),
-            func.count(func.distinct(RunResult.participant_id)),
+            func.count(
+                func.distinct(
+                    case(
+                        (
+                            identified_participant_clause(
+                                Participant.external_user_id, Participant.display_name
+                            ),
+                            RunResult.participant_id,
+                        )
+                    )
+                )
+            ),
             func.avg(case((time_ok, RunResult.finish_time_sec))),
             debutants_sum(),
             first_at_location_sum(),
@@ -920,6 +932,10 @@ def _network_location_metrics(
         .join(Event, RunResult.event_id == Event.id)
         .join(Location, Event.location_id == Location.id)
         .join(Platform, Location.platform_id == Platform.id)
+        # Безымянные строки протокола не люди: в счётчике уникальных участников
+        # каждая выглядела бы отдельным человеком (см. participant_identity).
+        # На число финишей и средние это не влияет — там считаются все строки.
+        .outerjoin(Participant, Participant.id == RunResult.participant_id)
         .filter(*event_filter)
         .group_by(Event.location_id)
         .all()

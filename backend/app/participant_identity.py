@@ -20,6 +20,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from sqlalchemy import and_, func, not_, or_
+
 ANONYMOUS_EXTERNAL_ID_PREFIXES: tuple[str, ...] = ("unknown:", "anon:")
 
 # Имена-заглушки: у RunPark 138 личностей приехали с настоящим GUID, но под
@@ -58,3 +62,23 @@ def anonymous_participant_sql(external_id_column: str, display_name_column: str)
         f"({external_id_column} IS NULL OR {prefixes}"
         f" OR lower(btrim({display_name_column})) IN ({names}))"
     )
+
+
+def identified_participant_clause(external_id_column: Any, display_name_column: Any) -> Any:
+    """То же правило для запросов SQLAlchemy: строка про человека, а не заглушку.
+
+    Нужно всюду, где считаются УНИКАЛЬНЫЕ участники: у каждой безымянной строки
+    своя одноразовая личность, и в таком счётчике она выглядит отдельным
+    человеком. Число финишей, наоборот, считается со всеми — безымянный бежал
+    так же, как остальные (решение Дмитрия 20.09.2026).
+    """
+
+    normalized_name = func.lower(func.btrim(display_name_column))
+    anonymous = or_(
+        external_id_column.is_(None),
+        *[external_id_column.like(f"{prefix}%") for prefix in ANONYMOUS_EXTERNAL_ID_PREFIXES],
+        normalized_name.in_(sorted(UNKNOWN_DISPLAY_NAMES)),
+        # «Unknown #67» — строка со штрихкодом, но без имени.
+        normalized_name.like("unknown #%"),
+    )
+    return and_(display_name_column.isnot(None), normalized_name != "", not_(anonymous))
