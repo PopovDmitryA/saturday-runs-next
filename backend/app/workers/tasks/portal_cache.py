@@ -5,11 +5,12 @@ import logging
 from app.db.session import get_session_factory
 from app.services.portal_home_service import warm_portal_home_cache
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_WARM_DASHBOARDS
 
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="portal_cache.warm_home")
+@celery_app.task(name="portal_cache.warm_home", **LIMITS_WARM_DASHBOARDS)
 def warm_home_task() -> dict[str, object]:
     """Плановый прогрев Redis-кэша главной портала — держит TTL живым, чтобы
     ни один запрос не попадал на холодный пересчёт (~2 мин на проде)."""

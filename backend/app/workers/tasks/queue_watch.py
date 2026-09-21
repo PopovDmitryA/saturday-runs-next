@@ -10,11 +10,12 @@ import logging
 
 from app.services.priority_queue_watch import watch_priority_queues
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_SHORT
 
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="queues.watch_priority")
+@celery_app.task(name="queues.watch_priority", **LIMITS_SHORT)
 def watch_priority_queues_task() -> dict[str, object]:
     result = watch_priority_queues()
     if result.get("stalled"):

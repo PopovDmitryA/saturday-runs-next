@@ -9,9 +9,10 @@ from app.models import SyncJobTrigger
 from app.services.sync_job_service import fail_sync_job
 from app.sync.user_sync import run_user_sync
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_MEDIUM
 
 
-@celery_app.task(name="user_sync.run", queue="five_verst_user")
+@celery_app.task(name="user_sync.run", queue="five_verst_user", **LIMITS_MEDIUM)
 def user_sync_task(
     user_id: str,
     trigger: str,

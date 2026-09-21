@@ -5,11 +5,12 @@ import logging
 from app.db.session import get_session_factory
 from app.services.user_display_name_service import refresh_all_display_names
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_MEDIUM
 
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="user_names.refresh")
+@celery_app.task(name="user_names.refresh", **LIMITS_MEDIUM)
 def refresh_display_names_task() -> dict[str, object]:
     """Пересчёт имён пользователей из профилей беговых систем.
 

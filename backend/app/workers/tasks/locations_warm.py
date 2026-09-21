@@ -23,6 +23,7 @@ from app.services.unified_protocol_service import (
 from app.workers.celery_app import celery_app
 from app.workers.queues import WARM_QUEUE
 from app.workers.tasks.sync_task_reporting import run_reported_sync
+from app.workers.time_limits import LIMITS_WARM_LOCATIONS
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 # Очередь warm — общая с leaderboards.warm_cache: оба прогрева тяжёлые по базе,
 # и живут они рядом с ней, на том же хосте. Держать их на очереди синка нельзя —
 # пользовательский sync вставал за ними в хвост (см. app/workers/queues.py).
-@celery_app.task(name="locations.warm_cache", queue=WARM_QUEUE)
+@celery_app.task(name="locations.warm_cache", queue=WARM_QUEUE, **LIMITS_WARM_LOCATIONS)
 def warm_locations_cache() -> dict[str, object]:
     """Прогрев с записью в журнал прогонов.
 

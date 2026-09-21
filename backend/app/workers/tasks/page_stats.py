@@ -9,11 +9,12 @@ from app.services.email_login_journal_service import purge_old_requests as purge
 from app.services.login_journal_service import purge_old_login_events
 from app.services.page_analytics_service import cleanup_old_events, rollup_recent_days
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_MEDIUM
 
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="page_stats.rollup")
+@celery_app.task(name="page_stats.rollup", **LIMITS_MEDIUM)
 def rollup_task() -> dict[str, object]:
     """Пересборка дневных агрегатов page_stats_daily за сегодня и вчера (МСК)
     + удаление сырых событий старше retention. Идемпотентна, ходит каждый час:

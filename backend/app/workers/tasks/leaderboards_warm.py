@@ -22,6 +22,7 @@ from app.services.location_records_rating_service import refresh_location_record
 from app.workers.celery_app import celery_app
 from app.workers.queues import WARM_QUEUE
 from app.workers.tasks.sync_task_reporting import run_reported_sync
+from app.workers.time_limits import LIMITS_WARM_LEADERBOARDS
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ def _release_running_lock() -> None:
 
 # Очередь runpark: её воркер самый свободный (5 коротких синков в день) и не
 # обслуживает user-очереди, так что долгий пересчёт не задержит пользовательский sync.
-@celery_app.task(name="leaderboards.warm_cache", queue=WARM_QUEUE)
+@celery_app.task(name="leaderboards.warm_cache", queue=WARM_QUEUE, **LIMITS_WARM_LEADERBOARDS)
 def warm_leaderboards_cache() -> dict[str, object]:
     """Прогрев с записью в журнал прогонов.
 

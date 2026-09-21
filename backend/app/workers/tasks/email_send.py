@@ -15,6 +15,7 @@ import logging
 from app.config import get_settings
 from app.core.mailer import MailerError, send_email
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_SHORT
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
     retry_backoff=5,
     retry_kwargs={"max_retries": 3},
     retry_jitter=True,
+    **LIMITS_SHORT,
 )
 def deliver(to: str, subject: str, text_body: str, html_body: str | None = None) -> str:
     settings = get_settings()

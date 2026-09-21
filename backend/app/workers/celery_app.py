@@ -8,6 +8,11 @@ from celery.schedules import crontab
 from app.config import get_settings
 from app.platform_adapters.registry import ensure_adapters_registered
 from app.workers.queues import FIVE_VERST_BATCH_QUEUE, FIVE_VERST_FRESH_QUEUE, WARM_QUEUE
+from app.workers.time_limits import (
+    BROKER_VISIBILITY_TIMEOUT,
+    DEFAULT_SOFT_TIME_LIMIT,
+    DEFAULT_TIME_LIMIT,
+)
 
 settings = get_settings()
 
@@ -18,13 +23,22 @@ celery_app.conf.update(
     # round-robin: очередь b получает слот, даже когда в a есть работа. Нам
     # нужен строгий приоритет — five_verst_fresh перед five_verst, s95_user
     # перед s95, — поэтому просим redis-транспорт уважать порядок из -Q.
-    # visibility_timeout поднят выше самой долгой задачи: у фоновых задач
+    # visibility_timeout поднят выше самого долгого жёсткого лимита: у задач
     # 5 вёрст acks_late=True (см. app/workers/tasks/five_verst_sync.py), и
-    # при часовом дефолте брокер вернул бы в очередь ещё работающую задачу.
+    # если брокер перестанет ждать раньше, чем воркер убьёт задачу по лимиту,
+    # он вернёт в очередь ещё живую задачу вторым экземпляром. Два часа
+    # перестали хватать 21.09.2026, когда latest получил лимит 180/185 минут
+    # (тяжёлая суббота на проде — 153 минуты); теперь четыре. Сторож
+    # «hard-лимит acks_late-задачи < visibility_timeout» — в тестах.
     broker_transport_options={
         "queue_order_strategy": "priority",
-        "visibility_timeout": 7200,
+        "visibility_timeout": BROKER_VISIBILITY_TIMEOUT,
     },
+    # Потолок для задачи без явного лимита (CEL-01, app/workers/time_limits.py):
+    # воркеры однопоточные, зависший сокет без лимита держит очередь вечно.
+    # У всех существующих задач лимит задан в декораторе; это — на случай новой.
+    task_soft_time_limit=DEFAULT_SOFT_TIME_LIMIT,
+    task_time_limit=DEFAULT_TIME_LIMIT,
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",

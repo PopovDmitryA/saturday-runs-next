@@ -18,11 +18,12 @@ import logging
 from app.db.session import get_session_factory
 from app.services.sync_run_maintenance import close_stale_sync_runs
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_SHORT
 
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="sync_runs.close_stale")
+@celery_app.task(name="sync_runs.close_stale", **LIMITS_SHORT)
 def close_stale_sync_runs_task() -> dict[str, object]:
     db = get_session_factory()()
     try:

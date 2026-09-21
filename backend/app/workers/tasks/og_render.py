@@ -21,6 +21,7 @@ from typing import Any, cast
 from app.config import get_settings
 from app.db.session import get_session_factory
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_OG_RENDER
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ def _render_batch(keys: list[str], *, kind: str, out_dir: Path) -> dict[str, obj
     return {"rendered": rendered, "failed": failed, "total": len(keys)}
 
 
-@celery_app.task(name="og_render.render_user_images", queue="parkrun")
+@celery_app.task(name="og_render.render_user_images", queue="parkrun", **LIMITS_OG_RENDER)
 def og_render_user_images_task(handles: list[str] | None = None) -> dict[str, object]:
     """Рендерит OG-картинки участников; handles=None — все публичные профили.
 
@@ -112,7 +113,7 @@ def og_render_user_images_task(handles: list[str] | None = None) -> dict[str, ob
     return _render_batch(handles, kind="user", out_dir=Path(get_settings().og_image_dir) / "users")
 
 
-@celery_app.task(name="og_render.render_location_images", queue="parkrun")
+@celery_app.task(name="og_render.render_location_images", queue="parkrun", **LIMITS_OG_RENDER)
 def og_render_location_images_task(slugs: list[str] | None = None) -> dict[str, object]:
     """Рендерит OG-картинки локаций; slugs=None — все локации каталога."""
     if slugs is None:
