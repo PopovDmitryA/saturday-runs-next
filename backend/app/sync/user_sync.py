@@ -27,6 +27,7 @@ from app.platform_adapters.five_verst.url import normalize_profile_url, userstat
 from app.platform_adapters.registry import ensure_adapters_registered, get_adapter
 from app.services.dashboard_service import recompute_dashboard_cache
 from app.sync import upsert as sync_upsert
+from app.sync.iteration_commit import release_before_fetch
 
 
 class UserSyncError(Exception):
@@ -85,12 +86,19 @@ def sync_platform_link(
 
         return sync_s95_platform_link(db, link, platform, trigger=trigger)
 
+    # Идентификатор — в локальную переменную ДО отпускания транзакции: после
+    # коммита поля ORM-строки протухают, и link.external_user_id открыл бы
+    # новую транзакцию ровно перед походом в сеть. Сам фетч профиля ждёт
+    # общий лок и повторы по 30 с, а прод рвёт сессии «idle in transaction»
+    # через 60 с (см. iteration_commit.release_before_fetch).
+    external_user_id = link.external_user_id
     if platform.code != "five_verst":
         ensure_adapters_registered()
         adapter = get_adapter(platform.code)
         if not adapter.capabilities.fetch_user_profile:
             raise UserSyncError(f"User sync not supported for platform {platform.code}")
-        profile = adapter.fetch_user_profile(link.external_user_id)
+        release_before_fetch(db)
+        profile = adapter.fetch_user_profile(external_user_id)
         participant = _apply_participant_profile(db, platform, profile)
         link.participant_id = participant.id
         link.sync_status = PlatformLinkSyncStatus.ok
@@ -111,7 +119,8 @@ def sync_platform_link(
             "volunteering_imported": 0,
         }
 
-    profile_url = userstats_url(link.external_user_id)
+    profile_url = userstats_url(external_user_id)
+    release_before_fetch(db)
     html = fetch_userstats_html(profile_url)
     parsed_url = normalize_profile_url(profile_url)
     profile = parse_userstats_html(html, parsed_url)

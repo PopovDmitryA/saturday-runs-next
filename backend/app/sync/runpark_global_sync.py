@@ -572,6 +572,13 @@ def reconcile_barcode_identity(db: Session, platform: Platform, barcode_id: str)
     if not stale_runs:
         return 0
 
+    # Сюда приходим из _sync_event_rows уже с грязной сессией (событие,
+    # finishers_count, строка состояния) — и дальше запрос к MSSQL: на
+    # зависшем источнике это 3 попытки по 30 с плюс логин, а прод рвёт сессии
+    # «idle in transaction» через 60 с. Коммитим накопленное: всё это
+    # штатные записи, а хэш протокола ставится только в самом конце, так что
+    # обрыв после коммита просто отдаст событие следующему прогону.
+    commit_step(db)
     try:
         rows = runpark_query(
             "SELECT result_id, participant_id FROM api.vw_run_results WHERE barcode_id = %s",

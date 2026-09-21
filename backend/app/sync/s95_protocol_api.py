@@ -24,6 +24,7 @@ from app.services.gender_position_service import (
     resolve_participant_gender,
 )
 from app.sync import upsert
+from app.sync.iteration_commit import commit_step
 
 
 @dataclass
@@ -142,7 +143,19 @@ def upsert_activity_protocol_api(
     activity's chronological rank in the location's /events/{slug}.json list (matches the
     '#' column on the site's location page).
     """
-    activity = activity_json if activity_json is not None else fetch_activity(activity_ref.url)
+    if activity_json is None:
+        # Перед походом за протоколом — коммит того, что накопилось в сессии:
+        # у профильного пути это только что созданные локация и саммари, у
+        # sync_updated — засев source_updated_at по соседним протоколам.
+        # Терять это незачем, а держать открытой транзакцию нельзя: фетч ждёт
+        # паузу и очередь (минуты), прод рвёт сессии «idle in transaction»
+        # через 60 с, и падал первый SELECT после ответа. Своих записей по
+        # этому протоколу до фетча нет — атомарность «протокол целиком или
+        # ничего» (коммит/откат у вызывающего) не страдает.
+        commit_step(db)
+        activity = fetch_activity(activity_ref.url)
+    else:
+        activity = activity_json
     parsed = parse_s95_activity(
         activity,
         location_external_key=location.external_key,

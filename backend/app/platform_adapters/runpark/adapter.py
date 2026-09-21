@@ -37,12 +37,18 @@ def _try_import_from_runpark(db: Session, platform: object, barcode_id: str) -> 
     """
     import logging
 
+    from app.db.session import release_db_connection_for_network_io
     from app.models import Participant
     from app.runpark.mssql_client import runpark_query
     from app.sync.runpark_global_sync import sync_runpark_for_participant
 
     log = logging.getLogger(__name__)
 
+    # В сессии пока только SELECT'ы — отдаём коннект в пул на время походов в
+    # MSSQL: это HTTP-запрос предпросмотра, и пока он ждёт зависший источник,
+    # слот пула api занят (инцидент 16.07.2026), а сама транзакция висит
+    # «idle in transaction» под 60-секундным таймаутом прода.
+    release_db_connection_for_network_io(db)
     try:
         run_rows = runpark_query(
             "SELECT TOP 1 participant_id FROM api.vw_run_results WHERE barcode_id = %s",
@@ -113,7 +119,12 @@ def lookup_profile_preview_from_db(db: Session, barcode_id: str) -> ProfilePrevi
     if participant is None:
         # barcode might belong to a participant stored under a different barcode — resolve via RunPark
         try:
+            from app.db.session import release_db_connection_for_network_io
             from app.runpark.mssql_client import runpark_query as _rq
+
+            # Только SELECT'ы позади — коннект в пул до похода в MSSQL (см.
+            # _try_import_from_runpark).
+            release_db_connection_for_network_io(db)
             rows = _rq(
                 "SELECT TOP 1 participant_id FROM api.vw_run_results WHERE barcode_id = %s",
                 (normalized,),
