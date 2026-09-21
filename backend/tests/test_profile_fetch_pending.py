@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -403,3 +404,46 @@ def test_count_pending_rows_ignores_limit_of_list_pending_rows(
 
     assert count_pending_rows(db_session, platform_code) == 7
     assert len(list_pending_rows(db_session, platform_code=platform_code, limit=3)) == 3
+
+
+def test_database_failure_rolls_back_before_marking_row(
+    db_session: Session, monkeypatch
+) -> None:
+    """Сбой в самой БД не должен оставлять соединение сломанным.
+
+    Ночь на 21.09.2026: профиль 7188375 дважды за ночь падал с «Can't reconnect
+    until invalid transaction is rolled back». В обработчике исключения не было
+    отката, поэтому первая же запись в сломанной транзакции валилась, строка
+    оставалась в processing, и следом по этому соединению падало всё подряд.
+    """
+    import app.services.profile_fetch_pending_service as svc
+
+    row = ProfileFetchPending(
+        platform_code="parkrun",
+        profile_input="7188375",
+        external_user_id="7188375",
+        operation=ProfileFetchPendingOperation.activity_import,
+        reason=ProfileFetchPendingReason.error,
+    )
+    db_session.add(row)
+    db_session.commit()
+    row_id = row.id
+
+    def _break_transaction(*_args, **_kwargs):
+        try:
+            db_session.execute(text("select 1 / 0"))
+        except Exception as exc:  # noqa: BLE001 — ровно то, что прилетает из БД
+            raise RuntimeError("сбой запроса в базе") from exc
+
+    monkeypatch.setattr(svc, "_import_parkrun_activity", _break_transaction)
+
+    outcome = process_pending_row(db_session, row)
+
+    assert outcome == "error"
+    fresh = db_session.get(ProfileFetchPending, row_id)
+    assert fresh is not None
+    # Строка не зависла в processing и получила попытку.
+    assert fresh.status == ProfileFetchPendingStatus.pending
+    assert fresh.attempts == 1
+    # Соединение живое: следующий профиль в том же прогоне уже не падает.
+    assert db_session.execute(text("select 1")).scalar() == 1

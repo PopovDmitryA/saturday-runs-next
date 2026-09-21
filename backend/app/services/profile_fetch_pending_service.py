@@ -387,6 +387,7 @@ def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
     row.updated_at = datetime.now(timezone.utc)
     db.commit()
 
+    row_id = row.id
     platform = _get_platform(db, row.platform_code)
     profile_input = row.canonical_profile_url or row.profile_input
     try:
@@ -417,6 +418,20 @@ def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
         db.commit()
         return "done"
     except Exception as exc:
+        # Сбой мог прийти из самой БД — тогда транзакция помечена сломанной, и
+        # следующая же запись падает «Can't reconnect until invalid transaction
+        # is rolled back». Строка навсегда зависала в processing, а по тому же
+        # соединению валилось всё, что шло следом (12 таких ошибок за трое
+        # суток, профиль 7188375 — дважды за ночь). Откат возвращает сессию в
+        # рабочее состояние; строку перечитываем, потому что после отката её
+        # версия в памяти протухла.
+        db.rollback()
+        refreshed = db.get(ProfileFetchPending, row_id)
+        if refreshed is None:
+            logger.warning("pending profile fetch: строка %s исчезла после отката", row_id)
+            return "error"
+        row = refreshed
+
         if _is_exit_unavailable_error(exc):
             # Наши выходы молчат — parkrun этого запроса не видел. Строка ни в
             # чём не виновата: возвращаем её в очередь БЕЗ попытки, иначе за
