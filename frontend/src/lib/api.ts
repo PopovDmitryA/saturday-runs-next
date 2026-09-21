@@ -3913,6 +3913,8 @@ export type OrganizerPostTemplate =
   | "vacancies"
   | "travelers";
 
+export type OrganizerPostNamesLayout = "inline" | "lines";
+
 export function getOrganizerEventPost(
   slug: string,
   eventId: string | null,
@@ -3923,6 +3925,8 @@ export function getOrganizerEventPost(
     minVolMilestone?: number;
     travelersMinRuns?: number;
     absenceWeeks?: number;
+    /** Списки имён: в строку через запятую или каждое имя своей строкой. */
+    namesLayout?: OrganizerPostNamesLayout;
   },
 ) {
   const params = new URLSearchParams();
@@ -3931,6 +3935,9 @@ export function getOrganizerEventPost(
     params.set("event_id", eventId);
   }
   params.set("template", template);
+  if (options?.namesLayout) {
+    params.set("names_layout", options.namesLayout);
+  }
   if (options?.minRunMilestone) {
     params.set("min_run_milestone", String(options.minRunMilestone));
   }

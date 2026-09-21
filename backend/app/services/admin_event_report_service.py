@@ -365,7 +365,13 @@ def _event_context(db: Session, event_id: UUID) -> tuple[Event, dict[str, Any], 
     return event, params, canonical_name
 
 
-def build_event_report(db: Session, event_id: UUID, *, post_signature: str = POST_SIGNATURE) -> dict[str, Any] | None:
+def build_event_report(
+    db: Session,
+    event_id: UUID,
+    *,
+    post_signature: str = POST_SIGNATURE,
+    names_layout: str = "inline",
+) -> dict[str, Any] | None:
     context = _event_context(db, event_id)
     if context is None:
         return None
@@ -754,7 +760,9 @@ def build_event_report(db: Session, event_id: UUID, *, post_signature: str = POS
         "clubs": {"runs": run_clubs, "volunteering": vol_clubs},
         "global_run_jubilees": global_run_jubilees,
     }
-    report["post_text"] = _build_post_text(report, location_title, signature=post_signature)
+    report["post_text"] = _build_post_text(
+        report, location_title, signature=post_signature, names_layout=names_layout
+    )
     return report
 
 
@@ -765,8 +773,22 @@ def _join_names(items: list[dict[str, Any]]) -> str:
     return ", ".join(item["name"] or "Неизвестный участник" for item in items)
 
 
-def _build_post_text(report: dict[str, Any], location_title: str, *, signature: str = POST_SIGNATURE) -> str:
+def _build_post_text(
+    report: dict[str, Any],
+    location_title: str,
+    *,
+    signature: str = POST_SIGNATURE,
+    names_layout: str = "inline",
+) -> str:
+    """Текст поста. names_layout: «inline» — имена в строку через запятую
+    («Клуб 50: А, Б»), «lines» — заголовок и каждое имя своей строкой
+    («Клуб 50:» / «• А» / «• Б») — переключатель кабинета организатора."""
     event = report["event"]
+
+    def _named(title: str, people: list[dict[str, Any]]) -> list[str]:
+        if names_layout == "lines":
+            return [f"{title}:", *(f"• {item['name'] or 'Неизвестный участник'}" for item in people)]
+        return [f"{title}: {_join_names(people)}"]
     header_stats = report["header"]
     platform_label = event["platform_name"]
 
@@ -874,8 +896,9 @@ def _build_post_text(report: dict[str, Any], location_title: str, *, signature: 
         for item in items:
             by_count.setdefault(item["count"], []).append(item)
         return [
-            f"{count} {word} в локации: {_join_names(people)}"
+            line
             for count, people in sorted(by_count.items(), reverse=True)
+            for line in _named(f"{count} {word} в локации", people)
         ]
 
     jub_lines = _milestone_lines(report["location_milestones"]["runs"], "пробежек")
@@ -888,8 +911,9 @@ def _build_post_text(report: dict[str, Any], location_title: str, *, signature: 
         for item in items:
             by_next.setdefault(item["next_milestone"], []).append(item)
         return [
-            f"1 {word} до {next_n} в локации: {_join_names(people)}"
+            line
             for next_n, people in sorted(by_next.items(), reverse=True)
+            for line in _named(f"1 {word} до {next_n} в локации", people)
         ]
 
     one_step_lines = _one_step_lines(report["one_step"]["runs"], "пробежка")
@@ -903,7 +927,9 @@ def _build_post_text(report: dict[str, Any], location_title: str, *, signature: 
         by_level: dict[int, list[dict[str, Any]]] = {}
         for item in items:
             by_level.setdefault(item["count"], []).append(item)
-        return [f"🌟Клуб {level} {label}: {_join_names(people)}" for level, people in sorted(by_level.items())]
+        return [
+            line for level, people in sorted(by_level.items()) for line in _named(f"🌟Клуб {level} {label}", people)
+        ]
 
     club_lines = _club_lines(report["clubs"]["runs"], f"пробежек в системе {platform_label}")
     club_lines += _club_lines(report["clubs"]["volunteering"], f"волонтёрств в системе {platform_label}")
@@ -911,7 +937,10 @@ def _build_post_text(report: dict[str, Any], location_title: str, *, signature: 
 
     # Глобальные юбилейные пробежки (кратные 25, кроме клубных уровней)
     jubilee_items = [f"{item['name']} ({item['count']} пробежек)" for item in report["global_run_jubilees"]]
-    jub_extra_block = "🎖️**Юбилейные пробежки:**\n" + ", ".join(jubilee_items) if jubilee_items else ""
+    jubilee_body = (
+        "\n".join(f"• {item}" for item in jubilee_items) if names_layout == "lines" else ", ".join(jubilee_items)
+    )
+    jub_extra_block = "🎖️**Юбилейные пробежки:**\n" + jubilee_body if jubilee_items else ""
 
     blocks = [
         header,

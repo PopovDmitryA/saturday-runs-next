@@ -666,6 +666,28 @@ def test_event_post_uses_site_signature(
     assert "Статистика пробежки" in post
 
 
+def test_event_post_names_layout(
+    client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Переключатель «имена построчно»: lines — по имени на строку, inline —
+    через запятую, чужое значение — 422."""
+    location, today, user = _svod_fixture(db_session)
+    fake_redis.delete(LOCATIONS_INDEX_CACHE_KEY)
+    _login(client, user.telegram_id or 0, "organizer")
+
+    base = {"event_id": str(today.id), "template": "stats"}
+    lines = client.get(f"/api/organizer/{location.external_key}/event-post", params={**base, "names_layout": "lines"})
+    assert lines.status_code == 200
+    assert "👑 Первый раз на старте (1):\n• Новичок Иванов\n" in lines.json()["post_text"]
+
+    inline = client.get(f"/api/organizer/{location.external_key}/event-post", params={**base, "names_layout": "inline"})
+    assert inline.status_code == 200
+    assert "👑 Первый раз на старте (1): Новичок Иванов." in inline.json()["post_text"]
+
+    bad = client.get(f"/api/organizer/{location.external_key}/event-post", params={**base, "names_layout": "columns"})
+    assert bad.status_code == 422
+
+
 def test_milestones_shows_upcoming_jubilee(
     client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
 ) -> None:

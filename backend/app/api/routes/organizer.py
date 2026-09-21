@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -200,12 +200,16 @@ def organizer_event_post(
         int, Query(ge=1, le=MILESTONE_ABSENCE_WEEKS_MAX)
     ] = MILESTONE_ABSENCE_WEEKS_DEFAULT,
     travelers_min_runs: Annotated[int, Query(ge=1, le=100)] = 5,
+    # Списки имён: в строку через запятую или каждое имя своей строкой.
+    # Без параметра — исторический вид шаблона.
+    names_layout: Annotated[Literal["inline", "lines"] | None, Query()] = None,
 ) -> OrganizerPostResponse:
     """Пост для Telegram по выбранному шаблону.
 
     Шаблоны собраны по анализу каналов локаций (см. organizer_post_service).
     «Юбилеи завтра» (upcoming) строится по локации — событие ему не нужно,
-    остальным шаблонам event_id обязателен.
+    остальным шаблонам event_id обязателен. names_layout действует на
+    сводный пост, «Героев старта», «Привет новичкам» и «Юбилеи дня».
     """
     if template not in POST_TEMPLATES:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Неизвестный шаблон")
@@ -243,7 +247,7 @@ def organizer_event_post(
             post_text=build_travelers_post(db, identity, event, min_runs=travelers_min_runs),
             template=template,
         )
-    payload = build_event_post(db, event_id, template)
+    payload = build_event_post(db, event_id, template, names_layout=names_layout)
     location_ids = {location.id for location, _code in identity.locations}
     if payload is None or payload["location_id"] not in location_ids:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Событие не найдено")

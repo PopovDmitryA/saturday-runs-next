@@ -6,6 +6,7 @@ import {
   getOrganizerEventDates,
   getOrganizerEventPost,
   type OrganizerEventDateItem,
+  type OrganizerPostNamesLayout,
   type OrganizerPostTemplate,
 } from "../../lib/api";
 import { copyToClipboard } from "../../lib/clipboard";
@@ -22,12 +23,15 @@ import "./organizer.css";
 // Форматы — по анализу 21 телеграм-канала локаций: у каждой оргкоманды свой
 // регулярный пост, задача — закрыть все (зеркало POST_TEMPLATES на бэкенде).
 // needsEvent=false — пост строится по локации, селект события не нужен.
+// namesLayout=true — у шаблона есть именные списки, которые переключатель
+// «имена построчно» раскладывает в строку или по строкам.
 const TEMPLATES: {
   key: OrganizerPostTemplate;
   emoji: string;
   label: string;
   hint: string;
   needsEvent: boolean;
+  namesLayout?: boolean;
 }[] = [
   {
     key: "full",
@@ -35,6 +39,7 @@ const TEMPLATES: {
     label: "Сводный пост",
     hint: "Цифры, топ финишей, новички, рекорды, юбилеи и клубы",
     needsEvent: true,
+    namesLayout: true,
   },
   {
     key: "stats",
@@ -42,6 +47,7 @@ const TEMPLATES: {
     label: "Герои старта",
     hint: "Кого отметить: личники, новички, гости и юбилеи",
     needsEvent: true,
+    namesLayout: true,
   },
   {
     key: "volunteers",
@@ -56,6 +62,7 @@ const TEMPLATES: {
     label: "Привет новичкам",
     hint: "Первый финиш, первое волонтёрство и гости — поимённо",
     needsEvent: true,
+    namesLayout: true,
   },
   {
     key: "milestones",
@@ -63,6 +70,7 @@ const TEMPLATES: {
     label: "Юбилеи дня",
     hint: "Юбилейные финиши и волонтёрства старта — по уровням",
     needsEvent: true,
+    namesLayout: true,
   },
   {
     key: "upcoming",
@@ -121,6 +129,17 @@ function OrganizerPostContent({ slug }: { slug: string }) {
       return false;
     }
   });
+  // «Имена построчно»: списки имён каждым именем с новой строки, а не через
+  // запятую (просьба организаторов через Дмитрия 21.09.2026). Действует на
+  // все именные блоки шаблона; выбор переживает перезаходы. По умолчанию
+  // включено — так и просили.
+  const [namesPerLine, setNamesPerLine] = useState(() => {
+    try {
+      return localStorage.getItem("org-post-names-lines") !== "0";
+    } catch {
+      return true;
+    }
+  });
   const [postLoading, setPostLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
@@ -160,6 +179,14 @@ function OrganizerPostContent({ slug }: { slug: string }) {
   }, [slug]);
 
   const needsEvent = activeTemplate.needsEvent;
+  const hasNamesLayout = activeTemplate.namesLayout === true;
+  // Шаблонам без именных списков раскладку не шлём: их текст от неё не зависит,
+  // и переключение не должно перезапрашивать пост.
+  const namesLayout: OrganizerPostNamesLayout | undefined = hasNamesLayout
+    ? namesPerLine
+      ? "lines"
+      : "inline"
+    : undefined;
 
   useEffect(() => {
     if (needsEvent && !selectedEventId) {
@@ -178,6 +205,7 @@ function OrganizerPostContent({ slug }: { slug: string }) {
       minVolMilestone,
       travelersMinRuns,
       absenceWeeks,
+      namesLayout,
     })
       .then((payload) => {
         if (!cancelled) {
@@ -206,6 +234,7 @@ function OrganizerPostContent({ slug }: { slug: string }) {
     minVolMilestone,
     travelersMinRuns,
     absenceWeeks,
+    namesLayout,
   ]);
 
   const generatedText = postText === null ? null : plainMode ? postText.replace(/\*\*/g, "") : postText;
@@ -237,6 +266,18 @@ function OrganizerPostContent({ slug }: { slug: string }) {
     if (!plainMode) {
       setDraft((current) => (current === null ? null : current.replace(/\*\*/g, "")));
     }
+  };
+
+  const toggleNamesPerLine = () => {
+    setNamesPerLine((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem("org-post-names-lines", next ? "1" : "0");
+      } catch {
+        // localStorage недоступен — просто не запоминаем
+      }
+      return next;
+    });
   };
 
   const selectedEvent = dates?.find((item) => item.event_id === selectedEventId) ?? null;
@@ -418,6 +459,15 @@ function OrganizerPostContent({ slug }: { slug: string }) {
                   <span className="muted org-post-preview-sub"> · предпросмотр</span>
                 </span>
                 <span className="org-post-preview-actions">
+                  {hasNamesLayout && (
+                    <label
+                      className="org-toolbar-checkbox muted"
+                      title="Каждое имя в списках — с новой строки, а не через запятую. Действует на все блоки поста"
+                    >
+                      <input type="checkbox" checked={namesPerLine} onChange={toggleNamesPerLine} />
+                      имена построчно
+                    </label>
+                  )}
                   <label
                     className="org-toolbar-checkbox muted"
                     title="Убирает жирную разметку (**текст**) — для площадок, которые её не понимают"
