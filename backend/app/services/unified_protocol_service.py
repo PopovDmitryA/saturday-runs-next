@@ -797,7 +797,11 @@ def build_unified_protocol(
         "total": total,
         "previous_saturday": previous_saturday,
         "next_saturday": next_saturday,
-        "latest_saturday": saturdays[-1] if saturdays else None,
+        # Та же формула, что у адреса без даты (latest_protocol_saturday): по
+        # максимальной дате события, а не по кэшированному списку недель. В
+        # субботу утром событие уже есть, а строк в списке недель ещё нет — и
+        # страница показывала одну неделю, а ссылка «последняя» вела на прошлую.
+        "latest_saturday": (latest.isoformat() if (latest := latest_protocol_saturday(db)) else None),
         # Крайности субботы по стране: самый холодный/тёплый/мокрый старт.
         "weather": week_weather_extremes(db, saturday),
     }

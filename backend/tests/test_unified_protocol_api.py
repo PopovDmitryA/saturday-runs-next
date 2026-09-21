@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 pytest_plugins = ["tests.test_dashboard_api"]
 
@@ -18,13 +21,46 @@ def test_week_is_public_and_anchored_on_saturday(client: TestClient) -> None:
     assert saturday.json()["my_results"] == []
 
 
-def test_week_without_date_falls_back_to_latest(client: TestClient) -> None:
+def test_week_without_date_falls_back_to_latest(client: TestClient, db_session: Session) -> None:
+    """Адрес без даты и поле latest_saturday считаются одной формулой.
+
+    Раньше latest_saturday брался из кэшированного списка недель (где уже есть
+    строки), а неделя по умолчанию — по максимальной дате события. В субботу
+    утром они расходились, и тест падал по воскресеньям на пустой базе.
+    Здесь сеем протокол с известной датой — от дня недели не зависим.
+    """
+    from uuid import uuid4
+
+    from app.models import Event, Location, Participant, Platform, RunResult
+
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        platform = Platform(code="five_verst", name="5 вёрст")
+        db_session.add(platform)
+        db_session.flush()
+    suffix = uuid4().hex[:8]
+    location = Location(platform_id=platform.id, external_key=f"latest-{suffix}", name="Последний парк", country="Россия")
+    participant = Participant(platform_id=platform.id, external_user_id=f"latest-{suffix}", display_name="Тест Последний")
+    db_session.add_all([location, participant])
+    db_session.flush()
+    event = Event(
+        platform_id=platform.id,
+        location_id=location.id,
+        external_event_key=f"latest-{suffix}",
+        event_date=date(2026, 8, 15),
+        event_number=1,
+        title="Старт",
+    )
+    db_session.add(event)
+    db_session.flush()
+    db_session.add(RunResult(event_id=event.id, participant_id=participant.id, external_result_key=f"latest-{suffix}", position=1, finish_time_sec=1500))
+    db_session.commit()
+
     response = client.get("/api/protocol/week")
-    # Пустая dev-БД законно отдаёт 404 «протоколов пока нет».
-    assert response.status_code in (200, 404)
-    if response.status_code == 200:
-        payload = response.json()
-        assert payload["saturday"] == payload["latest_saturday"]
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["saturday"] == payload["latest_saturday"]
+    assert payload["latest_saturday"] >= "2026-08-15"
 
 
 def test_weeks_list_is_sorted(client: TestClient) -> None:
