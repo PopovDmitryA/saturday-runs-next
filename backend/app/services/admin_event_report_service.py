@@ -16,6 +16,7 @@ from uuid import UUID
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.age_groups import age_group_sql  # noqa: F401 — реэкспорт: его берёт records_digest_service
 from app.models import Event, LocationCatalogLink
 from app.services.start_weather_service import weather_for_event, weather_line
 from app.volunteer_role_taxonomy import canonical_volunteer_role, platform_role_label, strip_role_counters
@@ -65,16 +66,6 @@ POST_SIGNATURE = "📊 Статистика подготовлена канал�
 # Подпись поста из кабинета организатора: посты пишут оргкоманды от себя,
 # поэтому ссылка на сайт, а не на канал автора (решение Дмитрия 16.08.2026).
 SITE_POST_SIGNATURE = "📊 Статистика подготовлена сайтом run5k.run"
-
-
-def age_group_sql(column: str) -> str:
-    """Чистая возрастная группа без места в группе.
-
-    Протокол 5 вёрст кладёт в run_results.age_category строку вида «М40-44 (2)»,
-    где (2) — место внутри группы на этом забеге. Для ранжирования и вывода
-    нужна только сама группа; parkrun-категории (SM25-29) остаются как есть.
-    """
-    return rf"NULLIF(regexp_replace(coalesce({column}, ''), '\s*\(\d+\)\s*$', ''), '')"
 
 
 def gender_sql(column: str) -> str:

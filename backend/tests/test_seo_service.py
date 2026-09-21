@@ -8,13 +8,13 @@ from typing import cast
 import pytest
 
 from app.core.abuse_protection import RouteTier, classify_route
+from app.services.platform_titles import PLATFORM_TITLES
 from app.services.release_service import ReleasesPage
 from app.services.seo_service import (
     _SITEMAP_STATIC,
     DEFAULT_DESCRIPTION,
     DEFAULT_TITLE,
     DESCRIPTION_BUDGET,
-    PLATFORM_LABELS,
     STATIC_PAGE_META,
     TITLE_BUDGET,
     PageMeta,
@@ -136,7 +136,7 @@ def test_frontend_mirror_keeps_location_wording_in_sync() -> None:
     """
     src = (_frontend_src() / "lib" / "pageMeta.ts").read_text(encoding="utf-8")
 
-    for code, label in PLATFORM_LABELS.items():
+    for code, label in PLATFORM_TITLES.items():
         assert f'{code}: "{label}"' in src, f"Название системы {code} разошлось с бэкендом"
 
     assert f"TITLE_BUDGET = {TITLE_BUDGET}" in src

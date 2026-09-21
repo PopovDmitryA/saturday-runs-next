@@ -24,6 +24,13 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Session, aliased
 
 from app.activity_url import resolve_activity_url
+from app.core.age_groups import (  # noqa: F401 — реэкспорт: по этим именам их берут рейтинги и протоколы
+    MAX_PLAUSIBLE_AGE,
+    age_group_is_plausible,
+    age_group_key,
+    age_group_sort_key,
+    normalize_age_group,
+)
 from app.core.redis_client import get_redis_client
 from app.location_page_url import PLATFORM_ORDER, location_page_url
 from app.models import (
@@ -65,6 +72,10 @@ from app.volunteer_role_taxonomy import (
     preset_role_keys,
 )
 from app.volunteering_occasions import count_volunteering_for_platform
+
+# Старое приватное имя: под ним ключ сортировки групп берут рейтинги и протоколы
+# (fastest_rating, unified_protocol, location_protocol, location_records_rating).
+_age_group_sort_key = age_group_sort_key
 
 HISTOGRAM_BIN_SEC = 10
 # Индекс локаций — тяжёлая агрегация (~35 тыс. событий + join по протоколам
@@ -270,30 +281,6 @@ def unknown_result_clause(status_expr: Any, participant_id_expr: Any, name_expr:
 # Незачётные статусы протоколов не влияют на finish_time (он у них NULL),
 # поэтому отдельного фильтра по status нет: гистограмма и рекорды строятся
 # только по строкам с известным временем.
-# Якорим по всей строке, а не ищем подстроку: иначе из «М110-114» вытаскивалась
-# бы «10–11» — группа, которой в протоколе нет. Границы трёхзначные: у
-# участника с незаполненной датой рождения 5 вёрст считает абсурдный возраст и
-# печатает «М110-114» или «М120». Такие группы показываем как есть — это то,
-# что стоит в протоколе (решение Дмитрия 27.07.2026).
-_AGE_RANGE_RE = re.compile(r"^[A-Za-zА-Яа-я]{0,3}(\d{1,3})\s*[-–—]\s*(\d{1,3})$")
-_AGE_PLUS_RE = re.compile(r"^[A-Za-zА-Яа-я]{0,3}(\d{2,3})\s*\+$")
-# Категория одним числом, без верхней границы. Таких у 5 вёрст ровно два вида,
-# и оба перечислены в регулярке явно:
-#
-#   «М10»/«Ж10» («JM10» у parkrun-систем) — строго «младше 10»: десятилетний
-#   бежит уже в «10-14». Обе категории идут параллельно (7 тыс. протоколов
-#   содержат и ту, и другую), и все 718 участников, побывавших в обеих, сначала
-#   бежали в «М10». Поэтому «<10», а не «10»: голое «10» рядом со строкой
-#   «10–14» читалось бы как пересекающийся диапазон.
-#
-#   Трёхзначные «М120» — пометка участника без даты рождения: 5 вёрст считает
-#   ему абсурдный возраст. Показываем как есть.
-#
-# Всё остальное двузначное («М11», «М12») категорией НЕ является: группы идут
-# пятилетками, такой ступени не существует. Это обрезки старой регулярки
-# парсера («М110-114» → «М11»), их чинит
-# scripts/archive/backfill_truncated_age_categories.py, а не витрина.
-_AGE_UNDER_RE = re.compile(r"^[A-Za-zА-Яа-я]{1,3}(10|\d{3})$")
 
 
 def _platform_order_index(code: str) -> int:
@@ -301,42 +288,6 @@ def _platform_order_index(code: str) -> int:
         return PLATFORM_ORDER.index(code)
     except ValueError:
         return len(PLATFORM_ORDER)
-
-
-# Юниорская лестница RunPark — единственная, которая не ложится на общие
-# ступени: JM11-14/JW11-14 и JM15-17/JW15-17 против «10–14» и «15–19» у
-# 5 вёрст. В зачёте эти системы идут в одних ступенях (см. подпись под
-# возрастными группами), поэтому «11–14» и «15–17» вылезали отдельными
-# строками на 1–3 человека и выглядели ошибкой данных (Дмитрий 02.09.2026).
-# Своих «11–14»/«15–17» больше нет ни у одной системы — сверено по базе.
-_RUNPARK_JUNIOR_GROUPS = {"11–14": "10–14", "15–17": "15–19"}
-
-# Правдоподобный потолок возраста для возрастных зачётов. «М120», «Ж105-109»,
-# «М110-114» — обрезки старого парсера 5 вёрст (138 строк на базу), а не
-# столетние бегуны; всё старше отсекается и в рейтингах, и в протоколах.
-MAX_PLAUSIBLE_AGE = 100
-
-
-def age_group_is_plausible(age_group: str) -> bool:
-    return _age_group_sort_key(age_group)[0] <= MAX_PLAUSIBLE_AGE
-
-
-def normalize_age_group(age_category: str | None) -> str | None:
-    """«М18-24», «SM25-29», «VM35-39» → «18–24»; «М75+» → «75+»; «М10» → «<10»; «М110-114» → «110–114»."""
-    if not age_category:
-        return None
-    cleaned = age_category.strip()
-    match = _AGE_RANGE_RE.match(cleaned)
-    if match:
-        group = f"{int(match.group(1))}–{int(match.group(2))}"
-        return _RUNPARK_JUNIOR_GROUPS.get(group, group)
-    match = _AGE_PLUS_RE.match(cleaned)
-    if match:
-        return f"{int(match.group(1))}+"
-    match = _AGE_UNDER_RE.match(cleaned)
-    if match:
-        return f"<{int(match.group(1))}"
-    return None
 
 
 @dataclass
@@ -1974,26 +1925,6 @@ def _last_event_stats(
     return last_event_payload, avg_delta, median_delta
 
 
-# Не якорим на начало: у «<10» впереди знак, и с якорем группа улетала бы
-# в конец таблицы вместо первой строки.
-_AGE_GROUP_SORT_RE = re.compile(r"\d+")
-
-
-def _age_group_sort_key(age_group: str) -> tuple[int, int]:
-    """Порядок групп в таблице: по возрасту, а при равном — «<N» перед «N–…».
-
-    «<10» и «10–14» дают одно и то же число, но это разные ступени и в
-    протоколе они идут параллельно, так что порядок между ними фиксируем.
-    """
-    match = _AGE_GROUP_SORT_RE.search(age_group)
-    age = int(match.group(0)) if match else 999
-    if age_group.startswith("<"):
-        return (age, 0)
-    if age_group.endswith("+"):
-        return (age, 2)
-    return (age, 1)
-
-
 # Возрастные группы считаем только по 5 вёрст — единственной системе, которая
 # публикует возрастной диапазон в протоколе («М35-39»). У parkrun в
 # run_results.age_category лежит age grade («54.38%»), s95 категорию не отдаёт
@@ -2009,16 +1940,6 @@ AGE_GROUP_TOP_LIMIT = 5
 # запасом — у каждой сырой категории пятёрка своя, и после слияния часть строк
 # уходит вниз, иначе итоговая пятёрка могла бы недосчитаться.
 _AGE_GROUP_TOP_FETCH = AGE_GROUP_TOP_LIMIT * 2
-
-
-def age_group_key(gender: str, age_group: str) -> str:
-    """Ключ строки возрастной группы: («male», «30–34») → «male-30-34».
-
-    Служит и якорем в разметке: плитка «место в группе» из блока «Вы на этой
-    локации» ссылается по нему на нужную строку в «Рекордах по возрастным
-    группам», где под спойлером лежит топ-5 этой группы.
-    """
-    return f"{gender}-{age_group.replace('–', '-').replace('+', 'plus').replace('<', 'under')}"
 
 
 def _protocol_age_category_gender() -> Any:
