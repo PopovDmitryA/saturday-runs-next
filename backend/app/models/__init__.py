@@ -82,13 +82,6 @@ class AuthProvider(str, enum.Enum):
     email = "email"
 
 
-class SyncLogLevel(str, enum.Enum):
-    info = "info"
-    warning = "warning"
-    error = "error"
-    debug = "debug"
-
-
 class LocationMergeRequestStatus(str, enum.Enum):
     pending = "pending"
     confirmed = "confirmed"
@@ -1318,7 +1311,6 @@ class SyncRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     platform: Mapped["Platform"] = relationship()
-    log_entries: Mapped[list["SyncLogEntry"]] = relationship(back_populates="sync_run")
 
 
 class SyncJob(Base):
@@ -1339,23 +1331,6 @@ class SyncJob(Base):
 
     user: Mapped["User"] = relationship(back_populates="sync_jobs")
     platform_link: Mapped["PlatformLink | None"] = relationship(back_populates="sync_jobs")
-    log_entries: Mapped[list["SyncLogEntry"]] = relationship(back_populates="sync_job")
-
-
-class SyncLogEntry(Base):
-    __tablename__ = "sync_log_entries"
-
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
-    sync_run_id: Mapped[UUID | None] = mapped_column(ForeignKey("sync_runs.id"))
-    sync_job_id: Mapped[UUID | None] = mapped_column(ForeignKey("sync_jobs.id"))
-    level: Mapped[SyncLogLevel] = mapped_column(Enum(SyncLogLevel, name="sync_log_level_enum"), nullable=False)
-    message: Mapped[str] = mapped_column(Text, nullable=False)
-    source_url: Mapped[str | None] = mapped_column(String(1024))
-    raw_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    sync_run: Mapped["SyncRun | None"] = relationship(back_populates="log_entries")
-    sync_job: Mapped["SyncJob | None"] = relationship(back_populates="log_entries")
 
 
 class ScheduledRunLog(Base):
