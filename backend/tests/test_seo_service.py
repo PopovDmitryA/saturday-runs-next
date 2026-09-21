@@ -144,7 +144,9 @@ def test_frontend_mirror_keeps_location_wording_in_sync() -> None:
 
     for phrase in (
         "площадка субботних пробежек",
-        "Здесь прошло",
+        # Глагол согласуется с числом на обеих сторонах: «прошёл 31 старт».
+        '"прошёл", "прошло", "прошло"',
+        '"финишировал", "финишировали", "финишировали"',
         "старты здесь проводили",
         "журнал протоколов",
         " — результаты и статистика",
@@ -397,6 +399,17 @@ def test_location_lead_reads_as_sentences() -> None:
     assert "финишировали 40 123 участника" in sentences[1]
     # Прошлых систем нет — третьего предложения быть не должно.
     assert len(sentences) == 2
+
+
+def test_location_lead_agrees_verb_with_count() -> None:
+    """«Здесь прошёл 31 старт, финишировал 2 831 участник» — репорт Дмитрия
+    21.09.2026 по Люблино: с единицей на конце «прошло» и «финишировали»
+    режут глаз."""
+    sentences = location_lead_sentences(_location_payload(stats={"events_count": 31, "finishers_total": 2831}))
+    assert sentences[1] == "Здесь прошёл 31 старт, финишировал 2\u00a0831 участник."
+    # 11 и 111 — не единица: «прошло 111 стартов».
+    sentences = location_lead_sentences(_location_payload(stats={"events_count": 111, "finishers_total": 12}))
+    assert sentences[1] == "Здесь прошло 111 стартов, финишировали 12 участников."
 
 
 def test_location_lead_names_previous_systems() -> None:

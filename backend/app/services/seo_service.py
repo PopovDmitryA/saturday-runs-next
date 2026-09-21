@@ -709,11 +709,15 @@ def location_lead_sentences(payload: dict[str, Any]) -> list[str]:
     events_count = int(stats.get("events_count") or 0)
     finishers_total = int(stats.get("finishers_total") or 0)
     if events_count and finishers_total:
-        where_word = "В серии прошло" if is_series else "Здесь прошло"
+        # Глагол согласуем с числом: «прошёл 31 старт», «финишировал 2 831
+        # участник» — иначе с единицей на конце фраза режет глаз (репорт
+        # Дмитрия 21.09.2026 по Люблино).
+        where_word = "В серии" if is_series else "Здесь"
         sentences.append(
-            f"{where_word} {_num(events_count)} "
+            f"{where_word} {_plural(events_count, 'прошёл', 'прошло', 'прошло')} {_num(events_count)} "
             f"{_plural(events_count, 'старт', 'старта', 'стартов')}, "
-            f"финишировали {_num(finishers_total)} "
+            f"{_plural(finishers_total, 'финишировал', 'финишировали', 'финишировали')} "
+            f"{_num(finishers_total)} "
             f"{_plural(finishers_total, 'участник', 'участника', 'участников')}."
         )
 

@@ -739,10 +739,12 @@ export function locationLeadSentences(payload: LocationMetaSource): string[] {
   const events = stats.events_count ?? 0;
   const finishers = stats.finishers_total ?? 0;
   if (events && finishers) {
+    // Глагол согласуем с числом: «прошёл 31 старт», «финишировал 2 831 участник».
     sentences.push(
-      `${isSeries ? "В серии прошло" : "Здесь прошло"} ${num(events)} ` +
+      `${isSeries ? "В серии" : "Здесь"} ${plural(events, "прошёл", "прошло", "прошло")} ${num(events)} ` +
         `${plural(events, "старт", "старта", "стартов")}, ` +
-        `финишировали ${num(finishers)} ${plural(finishers, "участник", "участника", "участников")}.`,
+        `${plural(finishers, "финишировал", "финишировали", "финишировали")} ${num(finishers)} ` +
+        `${plural(finishers, "участник", "участника", "участников")}.`,
     );
   }
 
