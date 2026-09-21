@@ -374,12 +374,13 @@ function AgeGroupRecordsTable({
             <th>Группа</th>
             <th>Время</th>
             <th>Рекордсмен</th>
-            <th>Дата</th>
+            <th className="loc-age-records-date">Дата</th>
           </tr>
         </thead>
         <tbody>
           {records.map((record) => {
             const open = openKey === record.key;
+            const dateLabel = record.event_date ? formatDate(record.event_date) : "—";
             return (
               <Fragment key={record.key}>
                 {/* id на строке — якорь для плитки «место в группе» из блока «Вы на этой локации». */}
@@ -407,10 +408,10 @@ function AgeGroupRecordsTable({
                   </td>
                   <td>
                     <RunnerName name={record.runner_name} handle={record.runner_handle} />
+                    {/* На узком телефоне колонке даты места нет — она уходит под ФИО (CSS). */}
+                    <span className="loc-age-records-date-inline">{dateLabel}</span>
                   </td>
-                  <td className="loc-age-records-date">
-                    {record.event_date ? formatDate(record.event_date) : "—"}
-                  </td>
+                  <td className="loc-age-records-date">{dateLabel}</td>
                 </tr>
                 {open && (
                   <tr className="loc-age-records-top-row">
@@ -488,7 +489,9 @@ function AgeGroupRecordsSection({
           </span>
         </StatHintTooltip>
       </h2>
-      <div className="loc-columns">
+      {/* Модификатор: две таблицы рядом влезают только на широком экране,
+          на телефоне (даже в ландшафте) они идут друг под другом. */}
+      <div className="loc-columns loc-age-records-columns">
         {male.length > 0 && (
           <div>
             <h3 className="loc-age-records-subtitle">Мужчины</h3>

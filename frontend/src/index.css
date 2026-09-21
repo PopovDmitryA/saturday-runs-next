@@ -11098,6 +11098,54 @@ a.admin-system-chip:hover {
   white-space: nowrap;
 }
 
+/* Дата второй строкой под ФИО — только на узком телефоне, см. медиа ниже. */
+.loc-age-records-date-inline {
+  display: none;
+}
+
+/* Две таблицы М/Ж рядом влезают только от ~960px: каждой нужно около 400px
+   (группа, время, ФИО, дата). Уже — друг под другом: иначе у каждой свой
+   горизонтальный скролл, и на телефоне даже в ландшафте не видно ни даты,
+   ни раскрытого топ-5 (репорт Дмитрия 21.09.2026). */
+@media (max-width: 960px) {
+  .loc-age-records-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* На телефоне в портрете и одна таблица шире экрана (~400px против ~310):
+   колонка даты уходит второй строкой под ФИО, группа и время теснее. */
+@media (max-width: 480px) {
+  .loc-age-records-table th,
+  .loc-age-records-table td {
+    padding: 0.55rem 0.5rem;
+  }
+
+  .loc-age-records-table .loc-age-records-col-group {
+    width: 4.5rem;
+  }
+
+  .loc-age-records-table .loc-age-records-col-time {
+    width: 4rem;
+  }
+
+  .loc-age-records-table .loc-age-records-col-date {
+    width: 0;
+  }
+
+  .loc-age-records-table .loc-age-records-date {
+    display: none;
+  }
+
+  .loc-age-records-date-inline {
+    display: block;
+    margin-top: 0.1rem;
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--text-3);
+  }
+}
+
 .loc-mini-map {
   height: 220px;
   border-radius: 10px;
