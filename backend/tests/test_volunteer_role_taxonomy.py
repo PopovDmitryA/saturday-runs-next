@@ -157,3 +157,27 @@ def test_core_group_keeps_the_saturday_morning_order() -> None:
     """Внутри группы порядок — как в CANONICAL_ROLE_LABELS (ход утра)."""
     assert role_display_order("run_director") < role_display_order("timekeeper")
     assert role_display_order("timekeeper") < role_display_order("barcode_scanning")
+
+
+def test_five_verst_renamed_roles_stay_the_same_role() -> None:
+    """5 вёрст переименовали часть ролей в сентябре 2026 — задним числом.
+
+    Старое и новое имя обязаны схлопываться, иначе «Мастер на все роли» и
+    V-индекс считают одну освоенную роль за две.
+    """
+    assert _key("Сканирование штрих-кодов") == _key("Сканер") == "barcode_scanning"
+    assert _key("Проведение предстартового брифинга") == _key("Проведение общего брифинга")
+    assert _key("Лидер для слабовидящих") == _key("Сопровождение участника с ОВЗ") == "vi_guide"
+    # Новая роль 5 вёрст — тот же Parkwalker parkrun.
+    assert _key("Волонтёр — пешеход") == _key("Parkwalker") == "walk_leader"
+
+
+def test_renamed_five_verst_roles_are_on_site() -> None:
+    """Новые имена не должны выпадать из пресета «на площадке»: незнакомая
+    роль считается удалённой, и волонтёрство уезжало мимо фильтров."""
+    from app.volunteer_role_taxonomy import role_is_on_site
+
+    for role in ("Сканер", "Проведение общего брифинга", "Сопровождение участника с ОВЗ", "Волонтёр — пешеход"):
+        canonical = canonical_volunteer_role(role)
+        assert canonical is not None
+        assert role_is_on_site(canonical.key), role

@@ -117,6 +117,7 @@ _ROLE_ALIASES: dict[str, str] = {
     "Брифинг для новичков": "first_timers",  # RunPark
     "First Timers Welcome": "first_timers",
     "Проведение предстартового брифинга": "pre_run_briefing",
+    "Проведение общего брифинга": "pre_run_briefing",  # 5 вёрст с 09.2026
     "Предстартовый брифинг": "pre_run_briefing",
     "Проведение разминки": "warm_up",
     "Разминка": "warm_up",  # RunPark
@@ -131,12 +132,14 @@ _ROLE_ALIASES: dict[str, str] = {
     "Pacer": "pacer",
     "Ведущий велосипед": "lead_bike",
     "Lead Bike": "lead_bike",
-    "Лидер для слабовидящих": "vi_guide",  # 5 вёрст
+    "Лидер для слабовидящих": "vi_guide",  # 5 вёрст до 09.2026
+    "Сопровождение участника с ОВЗ": "vi_guide",  # 5 вёрст с 09.2026
     "Сопровождающий": "vi_guide",  # RunPark, С95
     "Pratilac trkača": "vi_guide",
     "VI Guide": "vi_guide",
     "Guide Runner": "vi_guide",
     "Ведущий группы": "walk_leader",
+    "Волонтёр — пешеход": "walk_leader",  # 5 вёрст с 09.2026, аналог parkrun Parkwalker
     "Сурдопереводчик": "sign_language",
     "Sign Language Support": "sign_language",
     "Координатор парковки": "parking",
@@ -162,9 +165,9 @@ _ROLE_ALIASES: dict[str, str] = {
     "Помощь в раздаче карточек позиций": "finish_token_support",
     "Помощь в раздаче карточек": "finish_token_support",
     "Finish Token Support": "finish_token_support",
-    "Сканирование штрих-кодов": "barcode_scanning",
+    "Сканирование штрих-кодов": "barcode_scanning",  # 5 вёрст до 09.2026
     "Сканирование": "barcode_scanning",  # RunPark
-    "Сканер": "barcode_scanning",  # С95
+    "Сканер": "barcode_scanning",  # С95, а с 09.2026 и 5 вёрст
     "Barcode Scanning": "barcode_scanning",
     "Проверка карточек позиций": "number_checker",
     "Number Checker": "number_checker",

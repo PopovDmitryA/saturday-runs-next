@@ -21,10 +21,59 @@ set -uo pipefail
 VPS="${VPS_HOST:-viewer@195.58.34.112}"
 REMOTE_DIR="${VPS_DIR:-/opt/saturday-runs-next}"
 LOCAL_DIR="${HOME}/saturday-runs-next"
+# Вторая копия кода на том же сервере: из неё работают docker-контейнеры
+# воркеров сбора (5 вёрст, S95, RunPark) — docker-compose.home.yml, код
+# примонтирован с диска. До 21.09.2026 её этот скрипт не трогал, и после
+# выката 3.6.6 воркеры сутки собирали данные старым кодом против новой схемы:
+# сайт уехал вперёд, а потолки времени, вынос фетчей из транзакций и пропуск
+# неизменных протоколов до них не доехали.
+WORKERS_DIR="${WORKERS_DIR:-${HOME}/srs-prod}"
+WORKERS_SERVICES="worker-five-verst worker-five-verst-fresh worker-s95 worker-runpark"
 VENV="${HOME}/queue-venv"
 QUEUE_TIMER="pm-site-queue.timer"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
+
+# Копия воркеров: своя git-копия, обновляется перемоткой (reset --hard тут не
+# нужен — локальных правок в отслеживаемых файлах быть не должно, а если они
+# появились, лучше остановиться и разобраться, чем затереть молча).
+# Вызывается ВСЕГДА, а не только когда обновилась первая копия: они живут
+# каждая своей жизнью, и очередь профилей может совпадать с продом, пока
+# воркеры отстали (так и было после 3.6.6).
+sync_workers_checkout() {
+    local target="$1" workers_sha
+    if [ ! -d "$WORKERS_DIR/.git" ]; then
+        log "копии воркеров в $WORKERS_DIR нет — пропускаю"
+        return 0
+    fi
+    workers_sha=$(git -C "$WORKERS_DIR" rev-parse HEAD 2>/dev/null | tr -d '\r\n')
+    if [ "$workers_sha" = "$target" ]; then
+        return 0
+    fi
+    if [ -n "$(git -C "$WORKERS_DIR" status --porcelain --untracked-files=no)" ]; then
+        log "ВНИМАНИЕ: в $WORKERS_DIR есть незакоммиченные правки — не трогаю, воркеры остались на $workers_sha"
+        return 0
+    fi
+    # Копия должна сидеть на ветке, а не в detached HEAD: иначе перемотка
+    # двигает только HEAD, ветка остаётся позади, и следующий checkout молча
+    # вернёт старый код (проверено 21.09.2026).
+    if ! git -C "$WORKERS_DIR" symbolic-ref -q HEAD >/dev/null; then
+        log "ВНИМАНИЕ: $WORKERS_DIR в detached HEAD — не трогаю, нужна ручная разборка"
+        return 0
+    fi
+    git -C "$WORKERS_DIR" fetch origin --quiet 2>/dev/null
+    if git -C "$WORKERS_DIR" merge --ff-only "$target" >/dev/null 2>&1; then
+        log "воркеры: код обновлён до $target, перезапускаю контейнеры"
+        # Код примонтирован с диска, поэтому достаточно перезапуска —
+        # пересборка образа нужна только при смене зависимостей.
+        (cd "$WORKERS_DIR" && docker compose -f docker-compose.yml -f docker-compose.home.yml \
+            restart $WORKERS_SERVICES >/dev/null 2>&1) \
+            || log "ВНИМАНИЕ: перезапуск контейнеров воркеров не прошёл"
+    else
+        log "ВНИМАНИЕ: $WORKERS_DIR не перематывается на $target — нужна ручная разборка"
+    fi
+}
+
 
 remote_sha=$(ssh -o BatchMode=yes -o ConnectTimeout=20 "$VPS" \
     "cat $REMOTE_DIR/.deployed_sha 2>/dev/null" | tr -d '\r\n')
@@ -35,7 +84,8 @@ fi
 
 local_sha=$(cat "$LOCAL_DIR/.deployed_sha" 2>/dev/null | tr -d '\r\n')
 if [ "$remote_sha" = "$local_sha" ]; then
-    log "совпадаем с продом ($remote_sha), делать нечего"
+    # Очередь совпала — но воркеры могли отстать, проверяем их отдельно.
+    sync_workers_checkout "$remote_sha"
     exit 0
 fi
 
@@ -70,6 +120,8 @@ fi
 
 echo "$remote_sha" > "$LOCAL_DIR/.deployed_sha"
 log "обновлено до $remote_sha"
+
+sync_workers_checkout "$remote_sha"
 
 [ "$was_active" = "active" ] && sudo systemctl start "$QUEUE_TIMER" 2>/dev/null
 log "готово"

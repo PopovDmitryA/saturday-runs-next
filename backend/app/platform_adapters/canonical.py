@@ -183,10 +183,3 @@ class ExternalEventRef:
     platform_code: str
     external_event_key: str
     source_url: str
-
-
-@dataclass
-class FetchResult:
-    source_url: str
-    source_hash: str
-    fetched_at: datetime = field(default_factory=datetime.utcnow)

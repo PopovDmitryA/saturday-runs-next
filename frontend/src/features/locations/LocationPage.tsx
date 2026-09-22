@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
 import { useCachedResource } from "../../hooks/useCachedResource";
 import { useRestorableState } from "../../hooks/useRestorableState";
 import { LocationCancellationNotice } from "../../components/LocationCancellationNotice";
@@ -41,7 +41,7 @@ import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
 import { locationCardSubject, locationEventSubject, locationMeSubject } from "../sharing/subjects";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
-import { LocationMiniMap } from "./LocationMiniMap";
+import { lazyPage } from "../../lib/lazyPage";
 import { LocationRouteButton } from "./LocationRouteButton";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
 import {
@@ -58,6 +58,10 @@ import {
   WINS_OVERALL_HINT,
   stripLeadingHours,
 } from "./LocationTopCards";
+
+// Мини-карта — единственный потребитель leaflet на странице; грузим его
+// отдельным чанком, когда координаты пришли (см. lib/lazyPage).
+const LocationMiniMap = lazyPage(() => import("./LocationMiniMap"), (m) => m.LocationMiniMap);
 
 function StatTile({
   value,
@@ -370,12 +374,13 @@ function AgeGroupRecordsTable({
             <th>Группа</th>
             <th>Время</th>
             <th>Рекордсмен</th>
-            <th>Дата</th>
+            <th className="loc-age-records-date">Дата</th>
           </tr>
         </thead>
         <tbody>
           {records.map((record) => {
             const open = openKey === record.key;
+            const dateLabel = record.event_date ? formatDate(record.event_date) : "—";
             return (
               <Fragment key={record.key}>
                 {/* id на строке — якорь для плитки «место в группе» из блока «Вы на этой локации». */}
@@ -403,10 +408,10 @@ function AgeGroupRecordsTable({
                   </td>
                   <td>
                     <RunnerName name={record.runner_name} handle={record.runner_handle} />
+                    {/* На узком телефоне колонке даты места нет — она уходит под ФИО (CSS). */}
+                    <span className="loc-age-records-date-inline">{dateLabel}</span>
                   </td>
-                  <td className="loc-age-records-date">
-                    {record.event_date ? formatDate(record.event_date) : "—"}
-                  </td>
+                  <td className="loc-age-records-date">{dateLabel}</td>
                 </tr>
                 {open && (
                   <tr className="loc-age-records-top-row">
@@ -484,7 +489,9 @@ function AgeGroupRecordsSection({
           </span>
         </StatHintTooltip>
       </h2>
-      <div className="loc-columns">
+      {/* Модификатор: две таблицы рядом влезают только на широком экране,
+          на телефоне (даже в ландшафте) они идут друг под другом. */}
+      <div className="loc-columns loc-age-records-columns">
         {male.length > 0 && (
           <div>
             <h3 className="loc-age-records-subtitle">Мужчины</h3>
@@ -912,7 +919,9 @@ function LocationInfoCard({ page }: { page: LocationPageData }) {
   return (
     <div className="loc-info">
       {page.latitude !== null && page.longitude !== null && (
-        <LocationMiniMap latitude={page.latitude} longitude={page.longitude} name={page.name} />
+        <Suspense fallback={<div className="loc-mini-map" />}>
+          <LocationMiniMap latitude={page.latitude} longitude={page.longitude} name={page.name} />
+        </Suspense>
       )}
       <ul className="loc-info-list">
         {placeParts.length > 0 && (

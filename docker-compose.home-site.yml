@@ -79,6 +79,13 @@ services:
     depends_on:
       - nginx
     restart: unless-stopped
+    # Якорь x-logging из базового файла сюда не дотягивается (якоря живут в
+    # пределах одного YAML), поэтому те же 3 × 20 МБ прописаны явно.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   # Продление сертификатов: раз в сутки пробуем, nginx перечитывает конфиг сам.
   # Ходит через тот же /.well-known, что отдаёт edge.

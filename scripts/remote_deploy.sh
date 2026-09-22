@@ -41,13 +41,15 @@ SERVICES="worker worker-warm worker-five-verst-user worker-parkrun api nginx bea
 # сам — чтобы поднятый вручную на время аварии воркер не остался жить навсегда.
 # Откат (дом недоступен, всё разбираем на проде): KEEP_HOME_WORKERS=1 ./deploy
 # и руками `compose up -d $HOME_SERVICES`.
-HOME_SERVICES="worker-s95 worker-five-verst worker-runpark"
+HOME_SERVICES="worker-s95 worker-five-verst worker-five-verst-fresh worker-runpark"
 
 # NB: `docker compose exec/run -T` всё равно цепляет контейнер к stdin, поэтому
 # каждый exec/run обязан читать из /dev/null — иначе он сожрёт остаток скрипта.
 echo "--- queue lengths ---"
 compose exec -T redis redis-cli LLEN five_verst </dev/null || true
 compose exec -T redis redis-cli LLEN five_verst_user </dev/null || true
+# Очередь свежести: если она не пустеет, суббота на сайте стоит (19.09.2026).
+compose exec -T redis redis-cli LLEN five_verst_fresh </dev/null || true
 compose exec -T redis redis-cli LLEN s95 </dev/null || true
 compose exec -T redis redis-cli LLEN s95_user </dev/null || true
 

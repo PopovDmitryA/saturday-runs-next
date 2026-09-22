@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -13,20 +14,29 @@ from app.models import (
     LocationCatalogLink,
     Participant,
     Platform,
+    PlatformLink,
     RunResult,
+    User,
     VolunteerResult,
 )
 from app.services.leaderboard_service import (
+    _BEST_TIME_SQL,
+    _GENDERED_WIN_ROWS_SQL,
+    _HOME_PICK_RUN_SQL,
     _LOCATION_VISITS_SQL,
     _METRIC_PIDS_ALIAS,
+    _OPENING_ROWS_SQL,
+    _RUNS_SQL,
     _TOURIST_MAP_SQL,
     _TOURIST_RUN_VISITS_SQL,
     _TOURIST_VOLUNTEER_VISITS_SQL,
     _VOLUNTEER_LOCATION_ROLE_ROWS_SQL,
     _VOLUNTEER_LOCATION_VISITS_SQL,
+    _VOLUNTEER_ROLE_ROWS_SQL,
     _WEEK_LOCATIONS_SQL_BY_METRIC,
     _WEEK_RUN_LOCATIONS_SQL,
     _WEEK_VOLUNTEER_LOCATIONS_SQL,
+    _WIN_ROWS_SQL,
     COUNT_BY_METRICS,
     COUNT_BY_VALUES,
     FORECAST_LIVE_PLATFORMS,
@@ -62,6 +72,7 @@ from app.services.leaderboard_service import (
     _merge_visit_row,
     _my_gendered_win_values,
     _my_location_values,
+    _my_numeric_values,
     _my_week_location,
     _my_win_values,
     _normalize_count_by,
@@ -72,10 +83,12 @@ from app.services.leaderboard_service import (
     _percentile,
     _pick_home,
     _pick_last,
+    _pid_scoped,
     _ranked,
     _remaining_units,
     _RoleUsage,
     _row_key,
+    _row_params,
     _SiteLink,
     _summarize_roles,
     _tourist_pids_filter,
@@ -88,6 +101,7 @@ from app.services.leaderboard_service import (
     count_by_values,
     forecast_available,
     forecast_finish_date,
+    get_my_leaderboard_row,
     metric_description,
     metric_title,
     metric_unit,
@@ -841,6 +855,67 @@ def test_gendered_win_rating_skips_foreign_parkrun(db_session: Session) -> None:
     assert total == 0
 
 
+def test_pid_scoped_sql_matches_inline_cte(db_session: Session) -> None:
+    """Сужённый допуск parkrun даёт ровно те же строки, что общая CTE.
+
+    Регрессия на QRY-RATINGS-01: в запросах «моей строки» CTE допуска заменена
+    на готовый список допущенных участников (_pid_scoped) — планировщик иначе
+    инлайнит её в коррелированный SubPlan и пересчитывает агрегат по ВСЕМ
+    parkrun-пробежкам на каждую строку. Берём двух участников: допущенного
+    (все старты на русских площадках) и нет — правило обязано срабатывать
+    одинаково в обоих вариантах запроса.
+    """
+    eligible = _seed_parkrun_wins_for_rating(
+        db_session, catalogued=[True, True], gender="female"
+    )
+    foreign = _seed_parkrun_wins_for_rating(
+        db_session, catalogued=[False, False], gender="female"
+    )
+    db_session.flush()
+    pids = [eligible, foreign]
+    week_start = date(2026, 7, 27)
+
+    run_templates = {
+        "runs": _RUNS_SQL,
+        "location_visits": _LOCATION_VISITS_SQL,
+        "wins": _WIN_ROWS_SQL,
+        "openings": _OPENING_ROWS_SQL,
+        "gendered_wins": _GENDERED_WIN_ROWS_SQL,
+        "home_pick": _HOME_PICK_RUN_SQL,
+        "week_locations": _WEEK_RUN_LOCATIONS_SQL,
+    }
+    # Открытия (нужен первый старт площадки) и «неделя» (нужны свежие даты) на
+    # этих данных пусты — их проверяем только на совпадение двух вариантов.
+    non_empty = {"runs", "location_visits", "wins", "gendered_wins", "home_pick"}
+    volunteer_templates = {
+        "volunteer_roles": _VOLUNTEER_ROLE_ROWS_SQL,
+        "volunteer_locations": _VOLUNTEER_LOCATION_VISITS_SQL,
+    }
+
+    for name, template in {**run_templates, **volunteer_templates}.items():
+        alias = "vr" if name in volunteer_templates else "rr"
+        sql = template.replace(
+            "/*PIDS_FILTER*/", f"AND {alias}.participant_id = ANY(:pids)"
+        )
+        params = _row_params(db_session, week_start, pids=pids)
+        scoped_sql, scoped_params = _pid_scoped(db_session, sql, params)
+        assert "parkrun_eligible" not in scoped_sql, name
+        inline_rows = db_session.execute(text(sql), params).all()
+        scoped_rows = db_session.execute(text(scoped_sql), scoped_params).all()
+        assert scoped_rows == inline_rows, name
+        if name in non_empty:
+            # Выборка не пустая — иначе сравнение ничего не проверяет; и в ней
+            # только допущенный участник (зарубежный parkrun отсечён допуском).
+            assert inline_rows, name
+            assert {row[0] for row in inline_rows} == {eligible}, name
+
+    best_params: dict[str, object] = {"pids": pids}
+    best_sql, best_scoped_params = _pid_scoped(db_session, _BEST_TIME_SQL, best_params)
+    assert db_session.execute(text(best_sql), best_scoped_params).all() == (
+        db_session.execute(text(_BEST_TIME_SQL), best_params).all()
+    )
+
+
 def test_gendered_win_rating_excludes_other_gender(db_session: Session) -> None:
     # Мужчина в женском зачёте не появляется, даже с первыми местами среди мужчин.
     participant_id = _seed_parkrun_wins_for_rating(
@@ -1416,3 +1491,106 @@ def test_crosslink_duplicate_win_counts_when_the_primary_protocol_misses_the_run
     rows = _win_rows(db_session, participant_id)
     assert len(rows) == 1
     assert rows[0].wins == 1
+
+
+def _seed_volunteer_with_two_roles(db_session: Session) -> tuple[User, str]:
+    """Волонтёр с сайтовым профилем: две смены маршалом и одна фотографом."""
+    suffix = str(uuid4().int % 1_000_000)
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        platform = Platform(code="five_verst", name="5 вёрст")
+        db_session.add(platform)
+        db_session.flush()
+    location = Location(
+        platform_id=platform.id,
+        external_key=f"roles-me-{suffix}",
+        name=f"Ролевой парк {suffix}",
+        country="Россия",
+    )
+    participant = Participant(
+        platform_id=platform.id,
+        external_user_id=f"roles-me-user-{suffix}",
+        display_name=f"Ролевой Тестер {suffix}",
+    )
+    db_session.add_all([location, participant])
+    db_session.flush()
+    user = User(telegram_id=int(uuid4().int % 10_000_000_000), telegram_username=f"r{suffix}")
+    db_session.add(user)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=platform.id,
+            participant_id=participant.id,
+            external_user_id=participant.external_user_id,
+            external_url=f"https://5verst.ru/userstats/{participant.external_user_id}/",
+        )
+    )
+    for index, (on_date, role) in enumerate(
+        (
+            (date(2026, 6, 6), "Маршал"),
+            (date(2026, 6, 13), "Маршал"),
+            (date(2026, 6, 20), "Фотограф"),
+        )
+    ):
+        event = Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"roles-me-event-{suffix}-{index}",
+            event_date=on_date,
+            event_number=index + 1,
+            title="Ролевой старт",
+        )
+        db_session.add(event)
+        db_session.flush()
+        db_session.add(
+            VolunteerResult(
+                event_id=event.id,
+                participant_id=participant.id,
+                external_result_key=f"roles-me-result-{suffix}-{index}",
+                role=role,
+            )
+        )
+    db_session.flush()
+    return user, str(participant.id)
+
+
+def test_my_volunteering_row_honours_role_filter(db_session: Session) -> None:
+    """Строка «Вы» считает те же роли, что и таблица (QRY-RATINGS-06).
+
+    До правки /leaderboards/{metric}/me терял параметр roles: значения шли по
+    всем ролям, а место бралось из отфильтрованного снапшота — строка спорила
+    с таблицей.
+    """
+    user, participant_id = _seed_volunteer_with_two_roles(db_session)
+    db_session.commit()
+    pids = [UUID(participant_id)]
+    week_start = date(2026, 8, 16)
+
+    all_roles = _my_numeric_values(db_session, "volunteering", pids, week_start)
+    assert all_roles["five_verst"][0] == 3
+
+    marshal_only = _my_numeric_values(
+        db_session, "volunteering", pids, week_start, "all", frozenset({"marshal"})
+    )
+    assert marshal_only["five_verst"][0] == 2
+
+    # И через публичный вход: роли доезжают до значений строки.
+    row = get_my_leaderboard_row(db_session, "volunteering", user, roles=["marshal"])
+    assert row["total"] == 2
+    unfiltered = get_my_leaderboard_row(db_session, "volunteering", user)
+    assert unfiltered["total"] == 3
+
+
+def test_my_volunteer_locations_row_honours_role_filter(db_session: Session) -> None:
+    """Порог визитов волонтёрского туризма тоже считается по разрешённым ролям."""
+    user, participant_id = _seed_volunteer_with_two_roles(db_session)
+    db_session.commit()
+
+    row = get_my_leaderboard_row(
+        db_session, "volunteer_locations", user, min_visits=3, roles=["marshal"]
+    )
+    # Локация набрала 3 дня только вместе с фотографом — с фильтром порог не взят.
+    assert row["total"] == 0
+    unfiltered = get_my_leaderboard_row(db_session, "volunteer_locations", user, min_visits=3)
+    assert unfiltered["total"] == 1

@@ -92,6 +92,11 @@ class HistoryMilestoneKindUpdateRequest(BaseModel):
     enabled: bool
 
 
+class HistoryMilestoneBulkUpdateRequest(BaseModel):
+    # Скрытые виды целиком; всё, чего нет в списке, — показывается.
+    disabled_kinds: list[str] = Field(default_factory=list)
+
+
 class TourismPlatformsResponse(BaseModel):
     # Коды систем для плитки «Куда дальше»; пусто — все системы.
     platforms: list[str] = Field(default_factory=list)

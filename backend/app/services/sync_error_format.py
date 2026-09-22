@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from app.services.platform_titles import PLATFORM_TITLES
+
 UNLINK_CANCELLED_MESSAGE = "Синхронизация отменена: профиль отвязан"
 
 _TECHNICAL_MARKERS = (
@@ -17,19 +19,13 @@ _TECHNICAL_MARKERS = (
 # ставит run_*_user_sync. Тексты про бан/403 обязаны называть ту платформу,
 # которая реально упала: слова «cooldown until» и «ban/protection» есть у всех
 # трёх платформ, и раньше бан parkrun подписывался как проблема С95.
-_PLATFORM_NAMES = {
-    "five_verst": "5 вёрст",
-    "s95": "С95",
-    "parkrun": "parkrun",
-    "runpark": "RunPark",
-}
-
-_PLATFORM_PREFIX_RE = re.compile(r"^(five_verst|s95|parkrun|runpark):\s*(.*)$", re.DOTALL)
+# Названия — из app.services.platform_titles, список кодов префикса — оттуда же.
+_PLATFORM_PREFIX_RE = re.compile(rf"^({'|'.join(PLATFORM_TITLES)}):\s*(.*)$", re.DOTALL)
 
 
 def _platform_site(platform: str | None) -> str:
     """«Сайт С95» / «Сайт 5 вёрст» / «Сайт платформы» — форма годится для любой."""
-    return f"Сайт {_PLATFORM_NAMES.get(platform or '', 'платформы')}"
+    return f"Сайт {PLATFORM_TITLES.get(platform or '', 'платформы')}"
 
 
 def _platform_prefixed_chunks(text: str) -> list[str] | None:

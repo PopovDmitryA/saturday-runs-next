@@ -39,11 +39,72 @@ from app.services import series_locations
 from app.services.gender_position_service import resolve_participant_gender
 from app.services.location_catalog_service import backfill_city_from_catalog, backfill_region_from_catalog
 from app.services.location_freshness import mark_location_results_changed
+from app.sync.rating_relink import relink_ratings_before_delete
+from app.volunteer_role_taxonomy import canonical_volunteer_role
 
 PARSER_VERSION = "0.3.2"
 logger = logging.getLogger(__name__)
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+class SuspectEmptyProtocolError(RuntimeError):
+    """Протокол приехал пустым, а по этому старту уже есть сохранённые строки.
+
+    Пустой разбор — страницы 5 вёрст, JSON s95 или выборки RunPark — почти
+    никогда не «старт без финишёров», а сбой источника: сменилась вёрстка,
+    отдали заглушку техработ или страницу защиты, которую детектор бана не
+    узнал, оборвался ответ. До 13.09.2026 такой разбор считался авторитетным:
+    писатель удалял все строки старта, а в состояние протокола ложились
+    новый хэш и «0 строк» как свежая правка — и планировщик сверки не видел
+    повода перечитать (воспроизведено на стенде: 50 финишёров + 5 волонтёров
+    → 0/0 одной перечиткой).
+
+    Исключение доходит до вызывающего цикла как обычная ошибка протокола:
+    транзакция откатывается, саммари получает sync_status=error, хэш не
+    меняется — следующий прогон перечитает источник заново.
+    """
+
+
+def _reject_suspect_empty_protocol(
+    db: Session,
+    event: Event,
+    model: type[RunResult] | type[VolunteerResult],
+    *,
+    expected_count: int | None,
+    what: str,
+    refuse_on_summary_only: bool = True,
+) -> None:
+    """Не дать пустому списку стереть сохранённый протокол.
+
+    expected_count — сколько строк, по данным источника, должно быть (число
+    финишёров/волонтёров из саммари 5 вёрст, finishers_count из vw_events
+    RunPark). Явный ноль — источник сам говорит «никого не было» (отменённый
+    старт) — единственный случай, когда пустой список принимается при
+    непустой базе. None — источник не знает; тогда решает база: есть строки —
+    пустой список подозрителен.
+
+    refuse_on_summary_only разводит два разных риска. Пустые ФИНИШЁРЫ при
+    саммари с финишёрами — сбой разбора, и писать ноль нельзя даже в пустую
+    базу: протокол пометился бы синхронизированным и на выходных (сверка ходит
+    только по будням) до понедельника показывал бы старт без результатов.
+    Пустые ВОЛОНТЁРЫ при пустой базе — не потеря данных: стирать нечего, а
+    расхождение с саммари и так поднимает reconcile по volunteers_mismatch
+    (five_verst_reconcile.py). Отказ здесь стоил бы дороже пользы: волонтёры
+    пишутся в той же транзакции ПОСЛЕ финишёров, и исключение откатило бы
+    вместе с ними уже разобранный протокол — субботний старт остался бы без
+    результатов из-за одного недостающего волонтёра.
+    """
+    if expected_count == 0:
+        return
+    stored = db.query(model).filter(model.event_id == event.id).count()
+    if stored == 0 and (not expected_count or not refuse_on_summary_only):
+        return
+    raise SuspectEmptyProtocolError(
+        f"{what}: источник отдал 0 строк, в базе {stored}"
+        + (f", по саммари ожидается {expected_count}" if expected_count else "")
+        + " — протокол не перезаписан, будет перечитан"
+    )
 
 
 def _resolve_geo(
@@ -920,19 +981,53 @@ def replace_event_volunteer_results(
     event: Event,
     platform: Platform,
     results: list[CanonicalVolunteerResult],
+    *,
+    expected_count: int | None = None,
+    allow_empty: bool = False,
 ) -> int:
     """Upsert incoming volunteer results for an event and delete any that are no longer present.
 
     Use for protocol-based syncs where the fetched page is the complete authoritative list.
     Prevents stale records when roles or participants are removed from a protocol.
+
+    Пустой список при непустой базе — подозрение на сбой источника, а не
+    факт (см. SuspectEmptyProtocolError). allow_empty=True — вызывающий сам
+    убедился, что ответ настоящий (например, в том же ответе есть финишёры,
+    а волонтёров просто нет); expected_count — сколько волонтёров обещает
+    саммари, если оно это знает.
+
+    В отличие от финишёров, обещание саммари само по себе отказа не даёт:
+    когда в базе волонтёров ещё нет, стирать нечего, а расхождение подхватит
+    reconcile (volunteers_mismatch). Почему так — в докстринге
+    _reject_suspect_empty_protocol.
     """
+    if not results and not allow_empty:
+        _reject_suspect_empty_protocol(
+            db,
+            event,
+            VolunteerResult,
+            expected_count=expected_count,
+            what=f"волонтёры {platform.code}",
+            refuse_on_summary_only=False,
+        )
     incoming_keys = {item.external_result_key for item in results}
     upserted = upsert_volunteer_results(db, event, platform, results)
-    deleted = 0
-    for row in db.query(VolunteerResult).filter(VolunteerResult.event_id == event.id).all():
-        if row.external_result_key not in incoming_keys:
+    rows = db.query(VolunteerResult).filter(VolunteerResult.event_id == event.id).all()
+    doomed = [row for row in rows if row.external_result_key not in incoming_keys]
+    if doomed:
+        # Отзыв с удаляемой строки — на строку того же участника, что уцелела
+        # в протоколе (ключ сменился, участник — нет); см. sync/rating_relink.py.
+        survivor_by_participant = {
+            row.participant_id: row.id for row in rows if row.external_result_key in incoming_keys
+        }
+        relink_ratings_before_delete(
+            db,
+            is_run=False,
+            moves={row.id: survivor_by_participant.get(row.participant_id) for row in doomed},
+        )
+        for row in doomed:
             db.delete(row)
-            deleted += 1
+    deleted = len(doomed)
     if deleted:
         mark_location_results_changed(
             db,
@@ -952,12 +1047,24 @@ def replace_event_run_results(
     *,
     from_profile: bool = False,
     recalculate_pr: bool = False,
+    expected_count: int | None = None,
+    allow_empty: bool = False,
 ) -> int:
     """Upsert incoming run results for an event and delete any that are no longer present.
 
     Use for protocol-based syncs where the fetched page is the complete authoritative list.
     Prevents stale records when results are corrected or participants are removed.
+
+    Пустой список при непустой базе (или при саммари с финишёрами) — не
+    авторитетный протокол, а подозрение на сбой источника: поднимаем
+    SuspectEmptyProtocolError и ничего не трогаем. expected_count — число
+    финишёров по саммари (явный 0 = старт действительно пустой), allow_empty —
+    вызывающий сам ручается за пустоту.
     """
+    if not results and not allow_empty:
+        _reject_suspect_empty_protocol(
+            db, event, RunResult, expected_count=expected_count, what=f"результаты {platform.code}"
+        )
     incoming_keys = {item.external_result_key for item in results}
     upserted = upsert_run_results(
         db,
@@ -967,11 +1074,22 @@ def replace_event_run_results(
         from_profile=from_profile,
         recalculate_pr=recalculate_pr,
     )
-    deleted = 0
-    for row in db.query(RunResult).filter(RunResult.event_id == event.id).all():
-        if row.external_result_key not in incoming_keys:
+    rows = db.query(RunResult).filter(RunResult.event_id == event.id).all()
+    doomed = [row for row in rows if row.external_result_key not in incoming_keys]
+    if doomed:
+        # Отзыв с удаляемой строки — на строку того же участника, что уцелела
+        # в протоколе (ключ сменился, участник — нет); см. sync/rating_relink.py.
+        survivor_by_participant = {
+            row.participant_id: row.id for row in rows if row.external_result_key in incoming_keys
+        }
+        relink_ratings_before_delete(
+            db,
+            is_run=True,
+            moves={row.id: survivor_by_participant.get(row.participant_id) for row in doomed},
+        )
+        for row in doomed:
             db.delete(row)
-            deleted += 1
+    deleted = len(doomed)
     if deleted:
         mark_location_results_changed(
             db,
@@ -1432,14 +1550,37 @@ def import_profile_run_results(
 
 
 def _volunteer_role_dedupe_key(role: str | None, *, platform_code: str | None = None) -> str:
+    """Ключ схлопывания: одна работа — один ключ, как бы её ни подписали.
+
+    Раньше сравнивались сырые ярлыки, и переименование роли внутри системы
+    рождало дубль: в сентябре 2026 у 5 вёрст «Сканирование штрих-кодов» стало
+    «Сканером», протокол хранил старое имя, синк профиля приносил новое — и за
+    одну субботу у человека оказывались две строки (131 случай на проде к
+    22.09.2026). Поэтому берём канонический ключ таксономии: незнакомая роль
+    получает там свой raw:*-ключ, то есть поведение «сырых» ярлыков для новых
+    ролей сохраняется.
+    """
     if not role:
         return "volunteer"
     if platform_code == "s95":
         from app.s95.parsers.volunteer_roles import s95_volunteer_role_key
 
         return s95_volunteer_role_key(role)
+    canonical = canonical_volunteer_role(role)
+    if canonical is not None:
+        return canonical.key
     normalized = re.sub(r"[^\w]+", "_", role.lower(), flags=re.UNICODE).strip("_")
     return normalized or "volunteer"
+
+
+def _role_freshness(vol: VolunteerResult) -> tuple[bool, datetime]:
+    """Когда роль этой строки последний раз видели у источника."""
+    stamp = vol.fetched_at or vol.updated_at
+    if stamp is None:
+        return (False, datetime.min.replace(tzinfo=timezone.utc))
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return (True, stamp)
 
 
 def _volunteer_result_completeness(vol: VolunteerResult) -> tuple[int, int, int, int]:
@@ -1492,6 +1633,24 @@ def dedupe_participant_volunteer_results(
                 canonical_role = prefer_s95_volunteer_role(canonical_role, vol.role)
             if canonical_role:
                 keeper.role = canonical_s95_volunteer_role(canonical_role) or canonical_role
+        else:
+            # Группа собралась из разных подписей одной работы — оставляем ту,
+            # которую у источника видели последней: после переименования роли
+            # это новое имя, и следующая перечитка протокола попадёт в ту же
+            # строку, а не заведёт ещё одну.
+            latest = max(
+                (vol for vol, _event in group if vol.role),
+                key=_role_freshness,
+                default=None,
+            )
+            if latest is not None and latest.role:
+                keeper.role = latest.role
+        # Отзывы с удаляемых дублей — на keeper (sync/rating_relink.py).
+        relink_ratings_before_delete(
+            db,
+            is_run=False,
+            moves={vol.id: keeper.id for vol, _event in group[1:]},
+        )
         for vol, event in group[1:]:
             touched_event_ids.add(event.id)
             db.delete(vol)
@@ -1539,6 +1698,12 @@ def dedupe_five_verst_run_results_in_db(
                 pair[0].finish_time_sec is None,
                 pair[0].fetched_at is None,
             ),
+        )
+        # Отзывы с удаляемых дублей — на keeper (sync/rating_relink.py).
+        relink_ratings_before_delete(
+            db,
+            is_run=True,
+            moves={run.id: group[0][0].id for run, _event in group[1:]},
         )
         for run, event in group[1:]:
             touched_event_ids.add(event.id)

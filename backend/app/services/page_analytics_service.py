@@ -380,12 +380,73 @@ def rollup_day(db: Session, day: date) -> int:
     return len(rows)
 
 
-def rollup_recent_days(db: Session, *, days: int = 2) -> int:
-    """Пересобирает последние N дней (сегодня и вчера по МСК) — идемпотентно."""
+def days_missing_rollup(db: Session, *, retention_days: int, limit: int) -> list[date]:
+    """Дни в окне хранения, где сырые события есть, а дневной строки нет.
+
+    Такие дыры остаются после простоя: задача сворачивает только последние
+    сутки-двое, догонять пропущенные часы ей нечем (у неё expires), а сырые
+    события через retention_days удаляются насовсем — день навсегда остаётся
+    нулевым (аудит 13.09.2026, QRY-USER-ADMIN-04).
+
+    Считаем по тем же событиям, что и rollup_day (без ботов): день, где были
+    только боты, агрегатов и не должен иметь, и дырой не считается — иначе мы
+    пересобирали бы его каждый час до конца хранения. Отдаём самые старые:
+    они ближе всех к удалению.
+    """
+    if limit <= 0:
+        return []
+    cutoff = datetime.now(STATS_TIMEZONE) - timedelta(days=retention_days)
+    local_day = func.date(func.timezone("Europe/Moscow", PageViewEvent.ts))
+    event_days = {
+        row[0]
+        for row in db.query(local_day)
+        .filter(PageViewEvent.ts >= cutoff, PageViewEvent.is_bot.is_(False))
+        .distinct()
+        .all()
+        if row[0] is not None
+    }
+    if not event_days:
+        return []
+    rolled_days = {
+        row[0]
+        for row in db.query(PageStatsDaily.date)
+        .filter(PageStatsDaily.date.in_(event_days))
+        .distinct()
+        .all()
+    }
+    return sorted(event_days - rolled_days)[:limit]
+
+
+# Сколько дыр чиним за один прогон: задача ходит раз в час, а пересборка дня —
+# это delete+insert по сырым событиям, и занимать ими воркера надолго незачем.
+MAX_BACKFILL_DAYS_PER_RUN = 7
+
+
+def rollup_recent_days(
+    db: Session,
+    *,
+    days: int = 2,
+    retention_days: int | None = None,
+    max_backfill_days: int = MAX_BACKFILL_DAYS_PER_RUN,
+) -> int:
+    """Пересобирает последние N дней (сегодня и вчера по МСК) — идемпотентно.
+
+    Заодно догоняет дыры внутри окна хранения: без этого день, пропущенный
+    из-за простоя, оставался нулевым навсегда (см. days_missing_rollup).
+    """
     today = local_today()
     total = 0
     for offset in range(days):
         total += rollup_day(db, today - timedelta(days=offset))
+
+    if retention_days is None:
+        from app.config import get_settings
+
+        retention_days = get_settings().page_events_retention_days
+    for day in days_missing_rollup(
+        db, retention_days=retention_days, limit=max_backfill_days
+    ):
+        total += rollup_day(db, day)
     return total
 
 

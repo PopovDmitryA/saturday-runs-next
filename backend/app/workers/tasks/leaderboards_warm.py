@@ -21,6 +21,8 @@ from app.services.leaderboard_service import (
 from app.services.location_records_rating_service import refresh_location_records_rating_cache
 from app.workers.celery_app import celery_app
 from app.workers.queues import WARM_QUEUE
+from app.workers.tasks.sync_task_reporting import run_reported_sync
+from app.workers.time_limits import LIMITS_WARM_LEADERBOARDS
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +95,19 @@ def _release_running_lock() -> None:
 
 # Очередь runpark: её воркер самый свободный (5 коротких синков в день) и не
 # обслуживает user-очереди, так что долгий пересчёт не задержит пользовательский sync.
-@celery_app.task(name="leaderboards.warm_cache", queue=WARM_QUEUE)
+@celery_app.task(name="leaderboards.warm_cache", queue=WARM_QUEUE, **LIMITS_WARM_LEADERBOARDS)
 def warm_leaderboards_cache() -> dict[str, object]:
+    """Прогрев с записью в журнал прогонов.
+
+    Сколько на проде реально длится прогрев, до 21.09.2026 было неоткуда
+    узнать: в scheduled_run_logs он не писался, логи контейнера ротируются.
+    Решение, переписывать ли расчёт сетки рейтингов (аудит, QRY-RATINGS-02),
+    принимается по этим цифрам.
+    """
+    return run_reported_sync("прогрев кэша рейтингов", _warm_leaderboards_cache)
+
+
+def _warm_leaderboards_cache() -> dict[str, object]:
     """Пересчитывает и перезаписывает кэш всех рейтингов, не дожидаясь TTL.
 
     Без прогрева первый посетитель раздела после протухания кэша ждал бы
@@ -106,7 +119,7 @@ def warm_leaderboards_cache() -> dict[str, object]:
     """
     if not _acquire_running_lock():
         logger.info("leaderboards warm skipped: another run in progress")
-        return {"skipped": "already_running"}
+        return {"skipped": True, "reason": "already_running"}
     db = get_session_factory()()
     results: dict[str, object] = {}
     # Прогреваем всю сетку кнопок каждого рейтинга: зачёт (абсолют/женский) ×

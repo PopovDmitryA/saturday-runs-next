@@ -105,15 +105,6 @@ class BacklogCommentListResponse(BaseModel):
     items: list[BacklogCommentResponse]
 
 
-class BacklogCategoryResponse(BaseModel):
-    key: str
-    label: str
-
-
-class BacklogCategoryListResponse(BaseModel):
-    items: list[BacklogCategoryResponse]
-
-
 class BacklogCardAdminResponse(BaseModel):
     id: UUID
     type: BacklogCardType
@@ -139,10 +130,6 @@ class BacklogCardAdminResponse(BaseModel):
 class BacklogCardAdminListResponse(BaseModel):
     items: list[BacklogCardAdminResponse]
     total: int
-
-
-class BacklogCardStatusUpdateRequest(BaseModel):
-    status: BacklogCardStatus
 
 
 class BacklogVoteAdminItem(BaseModel):

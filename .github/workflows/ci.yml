@@ -68,9 +68,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # npm ci, а не install: ставит ровно то, что в package-lock.json, и падает,
+      # если lock разошёлся с package.json — на проде деплой собирает так же.
       - name: Install dependencies
-        run: npm install
-      - name: Lint
-        run: npm run lint
+        run: npm ci
+      # tsc — единственный линтер фронта (package.json: lint = tsc --noEmit).
+      - name: Typecheck
+        run: npx tsc --noEmit
       - name: Build
         run: npm run build

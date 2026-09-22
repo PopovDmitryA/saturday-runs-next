@@ -186,17 +186,23 @@ def _reassign_user_content(db: Session, merged_id: UUID, survivor_id: UUID) -> N
     Уникальные ключи есть у целей (user+год+тип) и у доступа (user+локация):
     там, где у выжившего уже своя строка, чужую не тащим.
     """
-    # Отзыв уникален по (человек, пробежка) и (человек, волонтёрство). Один и
-    # тот же старт мог попасть в оба профиля, если привязка успела переехать
-    # между ними: тогда у выжившего уже есть свой отзыв, и чужой не переносим.
+    # Отзыв уникален по (человек, локация, дата, тип участия) — с миграции 091
+    # ключ естественный, а не по строке результата (её синк пересобирает). Один
+    # и тот же старт мог попасть в оба профиля, если привязка успела переехать
+    # между ними: тогда у выжившего уже есть свой отзыв, и чужой не переносим —
+    # иначе перенос упёрся бы в уникалку.
     survivor_rated = {
-        (row[0], row[1])
-        for row in db.query(LocationRating.run_result_id, LocationRating.volunteer_result_id)
+        (row[0], row[1], row[2])
+        for row in db.query(
+            LocationRating.location_id,
+            LocationRating.event_date,
+            LocationRating.participation_type,
+        )
         .filter(LocationRating.user_id == survivor_id)
         .all()
     }
     for rating in db.query(LocationRating).filter(LocationRating.user_id == merged_id).all():
-        if (rating.run_result_id, rating.volunteer_result_id) in survivor_rated:
+        if (rating.location_id, rating.event_date, rating.participation_type) in survivor_rated:
             db.delete(rating)
         else:
             rating.user_id = survivor_id

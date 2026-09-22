@@ -22,9 +22,7 @@ from app.services.dashboard_service import (
     get_dashboard_payload,
     list_user_best_results,
     list_user_personal_records,
-    list_user_runs,
     list_user_volunteer_role_stats,
-    list_user_volunteering,
     list_user_wins,
 )
 
@@ -361,32 +359,6 @@ def get_admin_user_preview_dashboard(db: Session, user_id: UUID) -> dict[str, ob
         "computed_at": payload["computed_at"],
         "platform_links": links,
     }
-
-
-def get_admin_user_preview_runs(
-    db: Session,
-    user_id: UUID,
-    *,
-    limit: int,
-    offset: int,
-    include_test: bool = False,
-) -> list[dict[str, object]] | None:
-    if get_admin_user(db, user_id) is None:
-        return None
-    return list_user_runs(db, user_id, limit=limit, offset=offset, include_test_events=include_test)
-
-
-def get_admin_user_preview_volunteering(
-    db: Session,
-    user_id: UUID,
-    *,
-    limit: int,
-    offset: int,
-    include_test: bool = False,
-) -> list[dict[str, object]] | None:
-    if get_admin_user(db, user_id) is None:
-        return None
-    return list_user_volunteering(db, user_id, limit=limit, offset=offset, include_test_events=include_test)
 
 
 def get_admin_user_preview_best_results(

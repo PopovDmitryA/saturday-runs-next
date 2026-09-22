@@ -487,3 +487,95 @@ def test_journal_leaves_the_last_start_without_a_retention_number(db_session: An
     assert last["debutants"] == 1
     assert last["debut_returned"] is None
     assert last["debut_return_pct"] is None
+
+
+def _seed_unknown_rows_location(db_session: Any) -> str:
+    """Один живой участник на двух стартах и две безымянные строки протокола."""
+    from uuid import uuid4
+
+    from app.models import Event, Location, Participant, Platform, RunResult
+
+    suffix = str(uuid4().int % 1_000_000)
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        platform = Platform(code="five_verst", name="5 вёрст")
+        db_session.add(platform)
+        db_session.flush()
+
+    external_key = f"unknown-rows-{suffix}"
+    location = Location(
+        platform_id=platform.id,
+        external_key=external_key,
+        name=f"Безымянные {suffix}",
+        country="Россия",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    events = []
+    for number, event_date in enumerate((date(2026, 8, 1), date(2026, 8, 8)), start=1):
+        event = Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"{external_key}:{number}",
+            event_date=event_date,
+            event_number=number,
+            title="Старт",
+            finishers_count=2,
+        )
+        db_session.add(event)
+        db_session.flush()
+        events.append(event)
+
+    def participant(external_user_id: str, display_name: str) -> Participant:
+        row = Participant(
+            platform_id=platform.id,
+            external_user_id=external_user_id,
+            display_name=display_name,
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row
+
+    runner = participant(f"{external_key}-runner", "Живой БЕГУН")
+    # Заглушки: у каждой безымянной строки протокола своя одноразовая личность.
+    unknown_first = participant(f"unknown:{external_key}:2026-08-01:2", "НЕИЗВЕСТНЫЙ")
+    unknown_second = participant(f"unknown:{external_key}:2026-08-08:2", "НЕИЗВЕСТНЫЙ")
+
+    rows = (
+        (runner, 0, 1, 1500),
+        (unknown_first, 0, 2, None),
+        (runner, 1, 1, 1490),
+        (unknown_second, 1, 2, None),
+    )
+    for person, event_index, place, finish_time in rows:
+        db_session.add(
+            RunResult(
+                event_id=events[event_index].id,
+                participant_id=person.id,
+                external_result_key=f"{external_key}-{person.external_user_id}-{event_index}",
+                position=place,
+                finish_time_sec=finish_time,
+            )
+        )
+    db_session.flush()
+    return external_key
+
+
+def test_unique_participants_skips_unknown_protocol_rows(db_session: Any) -> None:
+    """«Уникальных участников» — люди, а не безымянные строки протокола.
+
+    Репорт 20.09.2026 из Шадринска: на карточке локации стояло 1104 участника,
+    а 5 вёрст показывали 922. Разницу давали 183 строки «НЕИЗВЕСТНЫЙ»: под
+    каждую заводится одноразовая личность с ключом unknown:<локация>:<дата>:<место>,
+    и счётчик считал её отдельным человеком.
+    """
+    slug = _seed_unknown_rows_location(db_session)
+
+    payload = location_page_service.build_location_page(db_session, slug, use_cache=False)
+
+    assert payload is not None
+    stats = payload["stats"]
+    assert stats["unique_participants"] == 1
+    # Число финишей не трогаем: оно считается по протоколу и сходится с 5 вёрст.
+    assert stats["finishers_total"] == 4

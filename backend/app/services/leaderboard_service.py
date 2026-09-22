@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from bisect import bisect_right
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -539,30 +540,7 @@ def metric_description(
 # который просто съездил в турпоездку с parkrun'ом). Один раз посчитанная CTE
 # переиспользуется в _RUNS_SQL/_LOCATION_VISITS_SQL и в отдельном запросе для
 # волонтёрских кредитов (там нет ни площадки, ни даты, только участник).
-_PARKRUN_ELIGIBLE_CTE = """
-WITH parkrun_run_stats AS (
-    SELECT
-        rr2.participant_id,
-        COUNT(*) AS total,
-        COUNT(*) FILTER (
-            WHERE EXISTS (SELECT 1 FROM location_catalog_links lcl WHERE lcl.location_id = e2.location_id)
-        ) AS russian
-    FROM run_results rr2
-    JOIN events e2 ON e2.id = rr2.event_id
-    JOIN platforms p2 ON p2.id = e2.platform_id
-    WHERE p2.code = 'parkrun' AND e2.is_test_event = false
-    GROUP BY rr2.participant_id
-),
-parkrun_eligible AS (
-    SELECT prs.participant_id
-    FROM parkrun_run_stats prs
-    WHERE prs.total > 0
-      AND (
-        prs.russian::float / prs.total >= 0.5
-        OR EXISTS (SELECT 1 FROM platform_links pl WHERE pl.participant_id = prs.participant_id)
-      )
-),
--- Вторичное событие кросслинка — тот же самый старт, залитый второй системой
+_CROSSLINK_DUPLICATE_CTE = """-- Вторичное событие кросслинка — тот же самый старт, залитый второй системой
 -- (RunPark на площадке, перешедшей в С95 или 5 вёрст). Обычно строку оттуда
 -- надо выкинуть: тот же финиш уже посчитан по основному протоколу. Но бывает,
 -- что в основном протоколе человека нет вовсе — его там не опознали
@@ -594,12 +572,65 @@ crosslink_duplicate AS (
 )
 """
 
+
+def _parkrun_eligible_cte(pids_filter: str = "", *, with_crosslink: bool = True) -> str:
+    """CTE допуска parkrun (+ дубли кросслинка, если with_crosslink).
+
+    Дубли кросслинка — отдельной константой: запросам «моей строки» допуск
+    parkrun приезжает готовым списком (см. _pid_scoped_sql), а вот
+    crosslink_duplicate им нужен по-прежнему — _COUNTED_RUN_ROW ссылается
+    на него из тела запроса.
+    """
+    parkrun = f"""WITH parkrun_run_stats AS (
+    SELECT
+        rr2.participant_id,
+        COUNT(*) AS total,
+        COUNT(*) FILTER (
+            WHERE EXISTS (SELECT 1 FROM location_catalog_links lcl WHERE lcl.location_id = e2.location_id)
+        ) AS russian
+    FROM run_results rr2
+    JOIN events e2 ON e2.id = rr2.event_id
+    JOIN platforms p2 ON p2.id = e2.platform_id
+    WHERE p2.code = 'parkrun' AND e2.is_test_event = false
+      {pids_filter}
+    GROUP BY rr2.participant_id
+),
+parkrun_eligible AS (
+    SELECT prs.participant_id
+    FROM parkrun_run_stats prs
+    WHERE prs.total > 0
+      AND (
+        prs.russian::float / prs.total >= 0.5
+        OR EXISTS (SELECT 1 FROM platform_links pl WHERE pl.participant_id = prs.participant_id)
+      )
+)
+"""
+    if not with_crosslink:
+        return parkrun + "\n"
+    return parkrun + ",\n" + _CROSSLINK_DUPLICATE_CTE
+
+
 # Условие «эта строка идёт в зачёт»: всё, кроме настоящих дублей кросслинка
 # (см. crosslink_duplicate). Заменяет прежнее «ec.secondary_event_id IS NULL»,
 # поэтому беговым выборкам сам JOIN на event_crosslinks больше не нужен.
 # Требует run_results под алиасом rr.
 _COUNTED_RUN_ROW = (
     "  AND NOT EXISTS (SELECT 1 FROM crosslink_duplicate cd WHERE cd.id = rr.id)"
+)
+
+_PARKRUN_ELIGIBLE_CTE = _parkrun_eligible_cte()
+
+# Тот же допуск, но посчитанный сразу по списку участников. Нужен запросам
+# «моя строка»: они и так сужены до ANY(:pids), а общая CTE в них — чистые
+# потери. Планировщик её не материализует, а инлайнит в коррелированный
+# SubPlan и пересчитывает агрегат по ВСЕМ parkrun-пробежкам заново на каждую
+# строку выборки (замер 13.09.2026 на dev: loops=356, shared hit=782k,
+# ~1.0 с на запрос). Отдельный запрос по ANY(:pids) идёт индексом
+# (ix_run_results_participant_event) и стоит единицы миллисекунд, а шаблон
+# после _pid_scoped_sql работает с готовым списком (аудит, QRY-RATINGS-01).
+_PARKRUN_ELIGIBLE_FOR_PIDS_SQL = (
+    _parkrun_eligible_cte("AND rr2.participant_id = ANY(:pids)", with_crosslink=False)
+    + "SELECT participant_id FROM parkrun_eligible"
 )
 
 _PARKRUN_ELIGIBLE_EXISTS = (
@@ -619,6 +650,54 @@ _RUSSIAN_PARKRUN_ONLY = (
 )
 
 _PARKRUN_ELIGIBLE_IDS_SQL = _PARKRUN_ELIGIBLE_CTE + "SELECT participant_id FROM parkrun_eligible"
+
+# Тот же EXISTS, но записанный в шаблонах по-разному (в fastest он перенесён
+# на две строки) и по разным алиасам (rr — бег, vr — волонтёрства).
+_PARKRUN_ELIGIBLE_EXISTS_RE = re.compile(
+    r"EXISTS\s*\(\s*SELECT 1 FROM parkrun_eligible pe"
+    r" WHERE pe\.participant_id = (rr|vr)\.participant_id\s*\)"
+)
+
+
+def _parkrun_eligible_for(db: Session, pids: Sequence[UUID]) -> list[UUID]:
+    """Допущенные к рейтингам parkrun-участники среди перечисленных."""
+    pid_list = list(pids)
+    if not pid_list:
+        return []
+    rows = db.execute(text(_PARKRUN_ELIGIBLE_FOR_PIDS_SQL), {"pids": pid_list}).all()
+    return [row[0] for row in rows]
+
+
+def _pid_scoped_sql(sql: str) -> str:
+    """Шаблон рейтинга без CTE допуска: EXISTS заменён на готовый :eligible_pids."""
+    # Допуск parkrun уходит, дубли кросслинка остаются: на них ссылается
+    # _COUNTED_RUN_ROW из тела запроса.
+    scoped = sql.replace(_PARKRUN_ELIGIBLE_CTE, "\nWITH " + _CROSSLINK_DUPLICATE_CTE, 1)
+    scoped = _PARKRUN_ELIGIBLE_EXISTS_RE.sub(r"\1.participant_id = ANY(:eligible_pids)", scoped)
+    if "parkrun_eligible" in scoped:
+        # Шаблон изменили, а вырезать CTE не получилось: лучше упасть, чем
+        # молча посчитать рейтинг по другому кругу участников.
+        raise RuntimeError("pid-scoped SQL still references parkrun_eligible")
+    return scoped
+
+
+def _pid_scoped(
+    db: Session, sql: str, params: dict[str, object]
+) -> tuple[str, dict[str, object]]:
+    """SQL и параметры для запроса «моей строки»: допуск parkrun — списком.
+
+    Вызывать ПОСЛЕ подстановки /*PIDS_FILTER*/: в params уже должен лежать
+    ключ pids. Шаблоны без CTE (волонтёрские) возвращаются как есть. Готовый
+    список допуска остаётся в возвращённых параметрах — прогоняя через хелпер
+    несколько шаблонов подряд (params = результат предыдущего вызова), список
+    считаем один раз на все запросы «моей строки».
+    """
+    if "parkrun_eligible" not in sql:
+        return sql, params
+    if "eligible_pids" in params:
+        return _pid_scoped_sql(sql), params
+    pids = cast(Sequence[UUID], params.get("pids") or [])
+    return _pid_scoped_sql(sql), {**params, "eligible_pids": _parkrun_eligible_for(db, pids)}
 
 _RUNS_SQL = (
     _PARKRUN_ELIGIBLE_CTE
@@ -2119,9 +2198,33 @@ def _my_volunteer_role_rows(
     sql = _VOLUNTEER_ROLE_ROWS_SQL.replace(
         "/*PIDS_FILTER*/", "AND vr.participant_id = ANY(:pids)"
     )
+    sql, params = _pid_scoped(db, sql, {"pids": pids})
     return [
         (row[0], row[1], row[2], row[3], int(row[4]))
-        for row in db.execute(text(sql), {"pids": pids}).all()
+        for row in db.execute(text(sql), params).all()
+    ]
+
+
+def _my_volunteer_location_rows_filtered(
+    db: Session,
+    participant_ids: list[UUID],
+    week_start: date,
+    role_filter: frozenset[str],
+) -> list[tuple[UUID, str, UUID, date, int, int]]:
+    """Те же строки, что _volunteer_location_rows_filtered, но по своим pid."""
+    sql = _VOLUNTEER_LOCATION_ROLE_ROWS_SQL.replace(
+        "/*PIDS_FILTER*/", "AND vr.participant_id = ANY(:pids)"
+    )
+    sql, params = _pid_scoped(db, sql, _row_params(db, week_start, pids=participant_ids))
+    dates: dict[tuple[UUID, str, UUID], set[date]] = {}
+    for pid, code, location_id, event_date, role in db.execute(text(sql), params).all():
+        if not _role_allowed(role, role_filter):
+            continue
+        dates.setdefault((pid, code, location_id), set()).add(event_date)
+    return [
+        (pid, code, location_id, min(event_dates), len(event_dates),
+         sum(1 for d in event_dates if d >= week_start))
+        for (pid, code, location_id), event_dates in dates.items()
     ]
 
 
@@ -2385,6 +2488,7 @@ def _gendered_win_rows(
     if pids is not None:
         sql = sql.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
         params["pids"] = pids
+        sql, params = _pid_scoped(db, sql, params)
     else:
         sql = sql.replace("/*PIDS_FILTER*/", "")
     return [
@@ -3009,7 +3113,8 @@ def _best_times(db: Session, participant_ids: list[UUID]) -> dict[UUID, int]:
     """participant_id -> лучшее время (сек) по всей истории финишей."""
     if not participant_ids:
         return {}
-    rows = db.execute(text(_BEST_TIME_SQL), {"pids": participant_ids}).all()
+    sql, params = _pid_scoped(db, _BEST_TIME_SQL, {"pids": participant_ids})
+    rows = db.execute(text(sql), params).all()
     return {row[0]: int(row[1]) for row in rows if row[1] is not None}
 
 
@@ -3722,6 +3827,7 @@ def _tourist_visit_rows(
         sql = _VOLUNTEER_LOCATION_ROLE_ROWS_SQL.replace(
             "/*PIDS_FILTER*/", _tourist_pids_filter("volunteer_locations")
         )
+        sql, params = _pid_scoped(db, sql, params)
         dates: dict[tuple[UUID, str, UUID], set[date]] = {}
         for pid, code, location_id, event_date, role in db.execute(text(sql), params).all():
             if not _role_allowed(role, role_filter):
@@ -3733,6 +3839,7 @@ def _tourist_visit_rows(
         ]
 
     sql = _TOURIST_MAP_SQL[metric].replace("/*PIDS_FILTER*/", _tourist_pids_filter(metric))
+    sql, params = _pid_scoped(db, sql, params)
     return [
         (pid, code, location_id, first_date, int(visits), last_date)
         for pid, code, location_id, first_date, visits, _week, last_date in db.execute(
@@ -3979,8 +4086,11 @@ def _my_numeric_values(
     participant_ids: list[UUID],
     week_start: date,
     platform: str = "all",
+    role_filter: frozenset[str] | None = None,
 ) -> dict[str, list[int]]:
-    values = _my_numeric_values_all(db, metric, participant_ids, week_start)
+    values = _my_numeric_values_all(
+        db, metric, participant_ids, week_start, role_filter=role_filter
+    )
     if platform == "all":
         return values
     # Фильтр «по одной системе»: значения других систем не просто скрыты — они
@@ -3989,15 +4099,22 @@ def _my_numeric_values(
 
 
 def _my_numeric_values_all(
-    db: Session, metric: str, participant_ids: list[UUID], week_start: date
+    db: Session,
+    metric: str,
+    participant_ids: list[UUID],
+    week_start: date,
+    role_filter: frozenset[str] | None = None,
 ) -> dict[str, list[int]]:
     if not participant_ids:
         return {}
+    if role_filter is not None and metric != "runs":
+        return _my_volunteering_values_filtered(db, participant_ids, week_start, role_filter)
     if metric == "runs":
         # _RUNS_SQL несёт CTE со своим GROUP BY — обычный .replace("GROUP BY", ...)
         # задел бы её тоже; сентинел однозначно указывает на внешний запрос.
         sql = _RUNS_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
-        rows = db.execute(text(sql), {"week_start": week_start, "pids": participant_ids}).all()
+        sql, params = _pid_scoped(db, sql, {"week_start": week_start, "pids": participant_ids})
+        rows = db.execute(text(sql), params).all()
         return {row[1]: [int(row[2]), int(row[3])] for row in rows}
 
     sql = _VOLUNTEERING_SQL.replace("GROUP BY", "AND vr.participant_id = ANY(:pids)\nGROUP BY")
@@ -4029,7 +4146,64 @@ def _my_numeric_values_all(
     return values
 
 
-def _parkrun_volunteer_counts_for(db: Session, participant_ids: list[UUID]) -> int:
+def _my_volunteering_values_filtered(
+    db: Session,
+    participant_ids: list[UUID],
+    week_start: date,
+    role_filter: frozenset[str],
+) -> dict[str, list[int]]:
+    """«Волонтёрства» с фильтром ролей — по тем же правилам, что и таблица.
+
+    Зеркало ветки role_filter в _collect_numeric_entities: агрегат
+    _VOLUNTEERING_SQL ролей не знает, поэтому С95 считается построчно,
+    5 вёрст и RunPark — через occasions (день с отфильтрованной и разрешённой
+    ролью засчитывается по разрешённой), parkrun — суммой кредитов разрешённых
+    ролей. Без этого строка «Вы» жила по всем ролям и расходилась с таблицей
+    (аудит 13.09.2026, QRY-RATINGS-06).
+    """
+    values: dict[str, list[int]] = {}
+
+    s95_total, s95_week = 0, 0
+    for row in db.execute(
+        text(_VOLUNTEERING_ROLE_ROWS_SQL + "  AND vr.participant_id = ANY(:pids)"),
+        {"pids": participant_ids},
+    ).all():
+        role, event_date = row[2], row[3]
+        if not _role_allowed(role, role_filter):
+            continue
+        s95_total += 1
+        if event_date >= week_start:
+            s95_week += 1
+    if s95_total:
+        values["s95"] = [s95_total, s95_week]
+
+    occasion_rows_by_platform: dict[str, list[tuple[date, str]]] = {}
+    for row in db.execute(
+        text(_OCCASION_VOLUNTEER_ROWS_SQL + " AND vr.participant_id = ANY(:pids)"),
+        {"pids": participant_ids},
+    ).all():
+        platform_code, event_date, location_key, role = row[1], row[2], row[3], row[4]
+        if not _role_allowed(role, role_filter):
+            continue
+        occasion_rows_by_platform.setdefault(platform_code, []).append(
+            (event_date, location_key or "unknown")
+        )
+    for platform_code, occasion_rows in occasion_rows_by_platform.items():
+        total = count_volunteering_occasions(occasion_rows)
+        if total <= 0:
+            continue
+        week = count_volunteering_occasions([r for r in occasion_rows if r[0] >= week_start])
+        values[platform_code] = [total, week]
+
+    parkrun_counts = _parkrun_volunteer_counts_for(db, participant_ids, role_filter)
+    if parkrun_counts:
+        values["parkrun"] = [parkrun_counts, 0]
+    return values
+
+
+def _parkrun_volunteer_counts_for(
+    db: Session, participant_ids: list[UUID], role_filter: frozenset[str] | None = None
+) -> int:
     rows = db.execute(
         text(
             """
@@ -4059,6 +4233,11 @@ def _parkrun_volunteer_counts_for(db: Session, participant_ids: list[UUID]) -> i
         roles_by_pid.setdefault(pid, []).append(role)
     total = 0
     for pid, profile_extra in rows:
+        if role_filter is not None:
+            # С фильтром ролей «Total Credits» неприменим — считаем кредиты
+            # только разрешённых ролей, как и таблица (_parkrun_volunteer_counts).
+            total += _parkrun_filtered_credits(roles_by_pid.get(pid), role_filter)
+            continue
         total += resolve_parkrun_volunteering_count(
             profile_extra=profile_extra if isinstance(profile_extra, dict) else None,
             summary_role_labels=roles_by_pid.get(pid),
@@ -4120,7 +4299,8 @@ def _my_win_values(
     if not participant_ids:
         return {}, None, None
     sql = _WIN_ROWS_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
-    rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
+    sql, params = _pid_scoped(db, sql, _row_params(db, week_start, pids=participant_ids))
+    rows = db.execute(text(sql), params).all()
     if not rows:
         return {}, None, None
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
@@ -4158,7 +4338,8 @@ def _my_opening_values(
     sql = _OPENING_ROWS_SQL.replace(
         "/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)"
     )
-    rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
+    sql, params = _pid_scoped(db, sql, _row_params(db, week_start, pids=participant_ids))
+    rows = db.execute(text(sql), params).all()
     if not rows:
         return {}, 0, 0, None
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
@@ -4295,17 +4476,30 @@ def _my_location_values(
     count_by: str = "locations",
     with_geo: bool = False,
     with_forecast: bool = False,
+    role_filter: frozenset[str] | None = None,
 ) -> _MyLocationRow:
     if not participant_ids:
         return _MyLocationRow(values={}, total=0, week=0)
-    # Беговые шаблоны считают по run_results rr, волонтёрский — по
-    # volunteer_results vr. Фильтр по своим participant_id должен ссылаться на
-    # алиас ИЗ шаблона: с зашитым «rr» волонтёрская своя строка падала на
-    # «missing FROM-clause entry for table rr», и витрина молча оставалась без
-    # строки участника (репорт Дмитрия 12.08.2026).
-    pid_alias = "vr" if "FROM volunteer_results vr" in sql_template else "rr"
-    sql = sql_template.replace("/*PIDS_FILTER*/", f"AND {pid_alias}.participant_id = ANY(:pids)")
-    rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
+    if role_filter is not None:
+        # С фильтром ролей визиты считаются по дням, оставшимся после фильтра —
+        # ровно как в таблице (_volunteer_location_rows_filtered). Иначе строка
+        # «Вы» набирала бы порог визитов ролями, которые в зачёт не идут
+        # (аудит 13.09.2026, QRY-RATINGS-06).
+        rows = _my_volunteer_location_rows_filtered(
+            db, participant_ids, week_start, role_filter
+        )
+    else:
+        # Беговые шаблоны считают по run_results rr, волонтёрский — по
+        # volunteer_results vr. Фильтр по своим participant_id должен ссылаться на
+        # алиас ИЗ шаблона: с зашитым «rr» волонтёрская своя строка падала на
+        # «missing FROM-clause entry for table rr», и витрина молча оставалась без
+        # строки участника (репорт Дмитрия 12.08.2026).
+        pid_alias = "vr" if "FROM volunteer_results vr" in sql_template else "rr"
+        sql = sql_template.replace(
+            "/*PIDS_FILTER*/", f"AND {pid_alias}.participant_id = ANY(:pids)"
+        )
+        sql, params = _pid_scoped(db, sql, _row_params(db, week_start, pids=participant_ids))
+        rows = db.execute(text(sql), params).all()
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     getters = _unit_key_getters(_location_geo_map(db) if with_geo else {})
     identities: dict[str, _LocationVisits] = {}
@@ -4379,7 +4573,8 @@ def _my_home_distance_values(
     if not participant_ids:
         return _MyHomeDistanceRow(values={}, total=0, week=0)
     sql = _LOCATION_VISITS_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")
-    rows = db.execute(text(sql), _row_params(db, week_start, pids=participant_ids)).all()
+    sql, params = _pid_scoped(db, sql, _row_params(db, week_start, pids=participant_ids))
+    rows = db.execute(text(sql), params).all()
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     identities: dict[str, _LocationVisits] = {}
     for _pid, code, location_id, first_date, visits, week_visits in rows:
@@ -4388,20 +4583,23 @@ def _my_home_distance_values(
         identity = identity_by_location.get(location_id, str(location_id))
         _merge_visit_row(identities, identity, code, first_date, int(visits), int(week_visits))
     # Дом — по всем данным человека и теми же тремя ступенями, что в кабинете.
-    pick_params = _row_params(db, week_start, pids=participant_ids)
+    # Список допуска parkrun уже посчитан выше — прогоняем обе выборки через
+    # тот же params, чтобы не считать его заново на каждый запрос.
+    pick_run_sql, pick_params = _pid_scoped(
+        db,
+        _HOME_PICK_RUN_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)"),
+        params,
+    )
+    pick_volunteer_sql, pick_params = _pid_scoped(
+        db,
+        _VOLUNTEER_LOCATION_VISITS_SQL.replace(
+            "/*PIDS_FILTER*/", "AND vr.participant_id = ANY(:pids)"
+        ),
+        pick_params,
+    )
     home_stats = _collect_home_pick_stats(
-        db.execute(
-            text(_HOME_PICK_RUN_SQL.replace("/*PIDS_FILTER*/", "AND rr.participant_id = ANY(:pids)")),
-            pick_params,
-        ).all(),
-        db.execute(
-            text(
-                _VOLUNTEER_LOCATION_VISITS_SQL.replace(
-                    "/*PIDS_FILTER*/", "AND vr.participant_id = ANY(:pids)"
-                )
-            ),
-            pick_params,
-        ).all(),
+        db.execute(text(pick_run_sql), pick_params).all(),
+        db.execute(text(pick_volunteer_sql), pick_params).all(),
         identity_by_location,
         _site_links(db),
     )
@@ -4453,7 +4651,8 @@ def _my_week_location(
     sql = template.replace(
         "/*PIDS_FILTER*/", f"AND {alias}.participant_id = ANY(:pids)"
     )
-    rows = db.execute(text(sql), {"week_start": week_start, "pids": participant_ids}).all()
+    sql, params = _pid_scoped(db, sql, {"week_start": week_start, "pids": participant_ids})
+    rows = db.execute(text(sql), params).all()
     identity_by_location, identity_names, identity_slugs = _location_identity_maps(db)
     dates: dict[str, date] = {}
     for _pid, code, location_id, last_date, role in rows:
@@ -4475,12 +4674,21 @@ def get_my_leaderboard_row(
     min_visits: int = 1,
     platform: str = "all",
     count_by: str = "locations",
+    roles: Sequence[str] | None = None,
+    hide_ambiguous_home: bool = False,
 ) -> dict[str, object]:
-    """Строка залогиненного участника: значения, место, дельта места, порог."""
+    """Строка залогиненного участника: значения, место, дельта места, порог.
+
+    Фильтры приходят те же, что у таблицы, — включая набор волонтёрских ролей:
+    без него «Вы» считались по всем ролям, а место брали из отфильтрованного
+    снапшота, и строка спорила с таблицей (аудит 13.09.2026, QRY-RATINGS-06).
+    """
     resolved = _normalize_gender(metric, gender)
     visits = _normalize_min_visits(metric, min_visits)
     platform_resolved = _normalize_platform_filter(metric, platform)
     unit = _normalize_count_by(metric, count_by)
+    role_filter, _roles_key = normalize_role_filter(metric, roles)
+    hide_ambiguous = _normalize_hide_ambiguous_home(metric, hide_ambiguous_home)
     snapshot = get_leaderboard_snapshot(
         db,
         metric,
@@ -4488,6 +4696,8 @@ def get_my_leaderboard_row(
         min_visits=visits,
         platform=platform_resolved,
         count_by=unit,
+        roles=roles,
+        hide_ambiguous_home=hide_ambiguous,
     )
     week_start_raw = snapshot.get("week_start")
     latest = latest_event_date(db)
@@ -4548,6 +4758,7 @@ def get_my_leaderboard_row(
             count_by=unit,
             with_geo=True,
             with_forecast=forecast_available(metric, platform_resolved),
+            role_filter=role_filter,
         )
         values, total, week = my_geo.values, my_geo.total, my_geo.week
     elif metric == "openings":
@@ -4593,7 +4804,7 @@ def get_my_leaderboard_row(
             )
     else:
         values = _my_numeric_values(
-            db, metric, participant_ids, week_start, platform_resolved
+            db, metric, participant_ids, week_start, platform_resolved, role_filter
         )
         total = sum(v[0] for v in values.values())
         week = sum(v[1] for v in values.values())
@@ -4607,6 +4818,7 @@ def get_my_leaderboard_row(
         participant_ids,
         week_start,
         platform_resolved,
+        role_filter=role_filter,
         prefer=my_geo.new_identities if my_geo is not None else None,
     )
 

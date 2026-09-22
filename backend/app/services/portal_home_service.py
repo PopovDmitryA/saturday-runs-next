@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
@@ -18,6 +19,7 @@ from typing import Any
 from uuid import UUID
 
 import redis
+from pydantic import ValidationError
 from sqlalchemy import String, and_, case, cast, exists, func, select
 from sqlalchemy.orm import Session
 
@@ -34,6 +36,7 @@ from app.models import (
     User,
     VolunteerResult,
 )
+from app.participant_identity import identified_participant_clause
 from app.schemas.portal import PortalHomeResponse
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.platform_titles import PLATFORM_TITLES
@@ -47,6 +50,20 @@ PORTAL_HOME_CACHE_KEY = "portal:home:v22"
 # главной. Запас в 24 часа переживает и пропущенные прогревы, и рестарт воркера:
 # в худшем случае посетитель увидит слегка устаревшие цифры вместо белого экрана.
 PORTAL_HOME_CACHE_TTL_SECONDS = 24 * 60 * 60
+
+# Холодный пересчёт сериализуется: раньше каждый запрос на пустой кэш начинал
+# свой, и десяток посетителей (или один бот) означал десяток двухминутных
+# агрегатов на пуле в 5+10 соединений на воркер — аудит 13.09.2026,
+# QRY-USER-ADMIN-03. Победитель ставит SET NX на время расчёта, остальные ждут
+# готовый ключ, а если не дождались — отдают последний известный снимок.
+PORTAL_HOME_LOCK_KEY = f"{PORTAL_HOME_CACHE_KEY}:computing"
+PORTAL_HOME_LOCK_TTL_SECONDS = 3 * 60
+PORTAL_HOME_LOCK_WAIT_SECONDS = 10.0
+PORTAL_HOME_LOCK_POLL_SECONDS = 0.25
+# Неверсионированная копия payload'а: переживает бамп версии ключа и нужна
+# ровно для одного случая — «кто-то уже считает, а показать что-то надо».
+PORTAL_HOME_FALLBACK_KEY = "portal:home:last"
+PORTAL_HOME_FALLBACK_TTL_SECONDS = 14 * 24 * 60 * 60
 
 DISTANCE_KM = 5
 # Мировой рекорд на 5 км — 12:35; всё быстрее 13 минут в протоколах
@@ -222,13 +239,22 @@ def _load_events(db: Session) -> list[_EventRow]:
 
 def _participants_total(db: Session) -> int:
     """Участники: профили систем; связанные на сайте профили одного
-    человека (platform_links одного user) считаются одним участником."""
+    человека (platform_links одного user) считаются одним участником.
+
+    Безымянные строки протокола («НЕИЗВЕСТНЫЙ») в счёт не идут: под каждую
+    заводится одноразовая личность, и в счётчике уникальных они выглядели бы
+    сотней тысяч человек. Финиши при этом считаются со всеми — безымянный
+    бежал так же, как остальные (решение Дмитрия 20.09.2026)."""
     runners = select(RunResult.participant_id).where(
         RunResult.participant_id.isnot(None)
     )
     total = int(
         db.query(func.count(func.distinct(RunResult.participant_id)))
-        .filter(RunResult.participant_id.isnot(None))
+        .join(Participant, Participant.id == RunResult.participant_id)
+        .filter(
+            RunResult.participant_id.isnot(None),
+            identified_participant_clause(Participant.external_user_id, Participant.display_name),
+        )
         .scalar()
         or 0
     )
@@ -264,8 +290,10 @@ def _participants_in_window(
                 db.query(func.count(func.distinct(RunResult.participant_id)))
                 .select_from(RunResult)
                 .join(Event, Event.id == RunResult.event_id)
+                .join(Participant, Participant.id == RunResult.participant_id)
             ).filter(
                 RunResult.participant_id.isnot(None),
+                identified_participant_clause(Participant.external_user_id, Participant.display_name),
                 Event.event_date >= window_start,
                 Event.event_date <= window_end,
             ),
@@ -1601,11 +1629,11 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
     }
 
 
-def _read_portal_home_cache() -> dict[str, Any] | None:
+def _read_json_key(key: str) -> dict[str, Any] | None:
     try:
-        raw = get_redis_client().get(PORTAL_HOME_CACHE_KEY)
+        raw = get_redis_client().get(key)
     except redis.RedisError:
-        logger.warning("portal home cache read failed", exc_info=True)
+        logger.warning("portal home cache read failed (%s)", key, exc_info=True)
         return None
     if not raw or not isinstance(raw, (str, bytes, bytearray)):
         return None
@@ -1616,15 +1644,50 @@ def _read_portal_home_cache() -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _read_portal_home_cache() -> dict[str, Any] | None:
+    return _read_json_key(PORTAL_HOME_CACHE_KEY)
+
+
 def _write_portal_home_cache(payload: dict[str, Any]) -> None:
     try:
-        get_redis_client().set(
-            PORTAL_HOME_CACHE_KEY,
-            json.dumps(payload, default=str),
-            ex=PORTAL_HOME_CACHE_TTL_SECONDS,
-        )
+        client = get_redis_client()
+        encoded = json.dumps(payload, default=str)
+        client.set(PORTAL_HOME_CACHE_KEY, encoded, ex=PORTAL_HOME_CACHE_TTL_SECONDS)
+        # Та же картинка под неверсионированным ключом — её отдадут тем, кто
+        # пришёл на холодный кэш, пока пересчёт идёт у кого-то другого.
+        client.set(PORTAL_HOME_FALLBACK_KEY, encoded, ex=PORTAL_HOME_FALLBACK_TTL_SECONDS)
     except redis.RedisError:
         logger.warning("portal home cache write failed", exc_info=True)
+
+
+def _acquire_portal_home_lock() -> bool:
+    """SET NX на время холодного пересчёта. Redis недоступен — считаем сами."""
+    try:
+        acquired = get_redis_client().set(
+            PORTAL_HOME_LOCK_KEY, "1", nx=True, ex=PORTAL_HOME_LOCK_TTL_SECONDS
+        )
+    except redis.RedisError:
+        logger.warning("portal home lock failed", exc_info=True)
+        return True
+    return bool(acquired)
+
+
+def _release_portal_home_lock() -> None:
+    try:
+        get_redis_client().delete(PORTAL_HOME_LOCK_KEY)
+    except redis.RedisError:
+        logger.warning("portal home lock release failed", exc_info=True)
+
+
+def _await_portal_home_cache() -> dict[str, Any] | None:
+    """Короткое ожидание чужого пересчёта: вдруг он вот-вот закончится."""
+    deadline = time.monotonic() + PORTAL_HOME_LOCK_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        time.sleep(PORTAL_HOME_LOCK_POLL_SECONDS)
+        payload = _read_portal_home_cache()
+        if payload is not None:
+            return payload
+    return None
 
 
 def invalidate_portal_home_cache() -> None:
@@ -1642,13 +1705,49 @@ def warm_portal_home_cache(db: Session) -> None:
     _write_portal_home_cache(payload)
 
 
+def _stale_portal_home() -> PortalHomeResponse | None:
+    """Последний известный снимок главной — когда пересчёт занят кем-то другим.
+
+    Копия неверсионированная, поэтому после бампа ключа в ней может лежать
+    payload прошлой формы: не подошла — не беда, посчитаем сами.
+    """
+    payload = _read_json_key(PORTAL_HOME_FALLBACK_KEY)
+    if payload is None:
+        return None
+    try:
+        return PortalHomeResponse.model_validate(payload)
+    except ValidationError:
+        logger.info("portal home fallback payload is stale by shape, ignoring")
+        return None
+
+
 def build_portal_home(db: Session, use_cache: bool = True) -> PortalHomeResponse:
-    if use_cache:
-        cached = _read_portal_home_cache()
-        if cached is not None:
-            return PortalHomeResponse.model_validate(cached)
-    payload = _compute_portal_home(db)
-    response = PortalHomeResponse.model_validate(payload)
-    if use_cache:
+    if not use_cache:
+        return PortalHomeResponse.model_validate(_compute_portal_home(db))
+
+    cached = _read_portal_home_cache()
+    if cached is not None:
+        return PortalHomeResponse.model_validate(cached)
+
+    # Кэш пуст (протух, бампнули версию, рестартанул Redis). Пересчёт — ~2 мин,
+    # поэтому его ведёт кто-то один: остальные ждут результат, а не запускают
+    # по своей копии агрегата на всю базу.
+    holds_lock = _acquire_portal_home_lock()
+    if not holds_lock:
+        awaited = _await_portal_home_cache()
+        if awaited is not None:
+            return PortalHomeResponse.model_validate(awaited)
+        stale = _stale_portal_home()
+        if stale is not None:
+            return stale
+        # Ни свежего, ни старого — лучше долгий ответ, чем пустая главная.
+        logger.info("portal home: lock is held, no snapshot to serve — computing anyway")
+        return PortalHomeResponse.model_validate(_compute_portal_home(db))
+
+    try:
+        payload = _compute_portal_home(db)
+        response = PortalHomeResponse.model_validate(payload)
         _write_portal_home_cache(payload)
+    finally:
+        _release_portal_home_lock()
     return response

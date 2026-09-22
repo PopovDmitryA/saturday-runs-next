@@ -17,15 +17,9 @@ from dataclasses import dataclass
 
 from app.config import get_settings
 from app.services.admin_notify import notify_admin
+from app.services.platform_titles import platform_title
 
 logger = logging.getLogger(__name__)
-
-PLATFORM_TITLES: dict[str, str] = {
-    "five_verst": "5 вёрст",
-    "s95": "S95",
-    "runpark": "RunPark",
-    "parkrun": "parkrun",
-}
 
 
 @dataclass(frozen=True)
@@ -39,13 +33,9 @@ class CancellationChange:
     reason: str | None = None
 
 
-def _platform_title(code: str) -> str:
-    return PLATFORM_TITLES.get(code, code)
-
-
 def _location_line(change: CancellationChange, base_url: str) -> str:
     title = change.name or change.slug
-    line = f"• {_platform_title(change.platform_code)} · {title}"
+    line = f"• {platform_title(change.platform_code)} · {title}"
     if change.reason:
         line += f"\n  Причина: {change.reason}"
     line += f"\n  {base_url}/locations/{change.slug}"

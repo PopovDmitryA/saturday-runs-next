@@ -4,6 +4,8 @@ import { ShareIcon } from "../../components/ShareIcon";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
   getDashboard,
+  getHistoryMilestoneSettings,
+  type HistoryMilestoneSettings,
   type MyHistory,
   type MyHistoryMilestone,
 } from "../../lib/api";
@@ -18,6 +20,7 @@ import {
   volunteerNumberLabel,
 } from "./milestoneShare";
 import { ourProtocolHref } from "../../lib/protocolHref";
+import { HistoryMilestonesModal } from "./HistoryMilestonesModal";
 
 const MILESTONE_FORMS = ["веха", "вехи", "вех"] as const;
 const YEAR_FORMS = ["год", "года", "лет"] as const;
@@ -374,6 +377,8 @@ type HistoryContentProps = {
   // чужих вех.
   shareBase?: string;
   siteUrl?: string;
+  /** Шестерёнка «Какие вехи показывать» — только в своём кабинете. */
+  milestoneSettings?: boolean;
   title?: string;
   description?: string;
   emptyText?: string;
@@ -384,12 +389,13 @@ export function HistoryContent({
   cacheScope,
   shareBase,
   siteUrl,
+  milestoneSettings = false,
   title = "Моя история",
   description = "Ключевые вехи вашей беговой истории: первая пробежка, клубы, личные рекорды, рекорды серий суббот, новые регионы и волонтёрство. У каждой вехи — кнопка «Поделиться» с картинкой для сториз.",
   emptyText = "Пока нет вех — привяжите профиль беговой системы на главной, и история соберётся автоматически.",
 }: HistoryContentProps) {
   // Лента вех — из кэша вкладки, свежая подъезжает следом (см. hooks/useCachedResource).
-  const { data, loading, error } = useCachedResource(`${cacheScope}:history`, load, [load], {
+  const { data, loading, error, reload } = useCachedResource(`${cacheScope}:history`, load, [load], {
     errorText: "Не удалось загрузить историю",
   });
 
@@ -421,10 +427,52 @@ export function HistoryContent({
     return `${count} ${pluralFormRu(count, MILESTONE_FORMS)} за ${years} ${pluralFormRu(years, YEAR_FORMS)}`;
   }, [data]);
 
+  const [kindSettings, setKindSettings] = useState<HistoryMilestoneSettings | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!milestoneSettings) {
+      return;
+    }
+    let cancelled = false;
+    getHistoryMilestoneSettings()
+      .then((result) => {
+        if (!cancelled) {
+          setKindSettings(result);
+        }
+      })
+      .catch(() => {
+        // без настроек шестерёнка просто не появится
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [milestoneSettings]);
+
+  const hiddenKinds = kindSettings?.kinds.filter((item) => !item.enabled).length ?? 0;
+
   return (
     <>
       <section className="card history-intro">
-        <h2 className="section-title">{title}</h2>
+        <div className="history-intro-head">
+          <h2 className="section-title">{title}</h2>
+          {kindSettings && (
+            <button
+              type="button"
+              className={`lb-roles-gear${hiddenKinds > 0 ? " lb-roles-gear-active" : ""}`}
+              aria-label="Настроить, какие вехи показывать"
+              title="Какие вехи показывать"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <span aria-hidden="true">⚙</span>
+              <span>
+                {hiddenKinds > 0
+                  ? `Вехи: ${kindSettings.kinds.length - hiddenKinds} из ${kindSettings.kinds.length}`
+                  : "Все вехи"}
+              </span>
+            </button>
+          )}
+        </div>
         <p className="muted">{description}</p>
         {summary && <p className="history-summary">{summary}</p>}
       </section>
@@ -461,6 +509,18 @@ export function HistoryContent({
             </section>
           ))}
         </div>
+      )}
+
+      {settingsOpen && kindSettings && (
+        <HistoryMilestonesModal
+          settings={kindSettings}
+          onClose={() => setSettingsOpen(false)}
+          onSaved={(saved) => {
+            setKindSettings(saved);
+            setSettingsOpen(false);
+            reload();
+          }}
+        />
       )}
     </>
   );

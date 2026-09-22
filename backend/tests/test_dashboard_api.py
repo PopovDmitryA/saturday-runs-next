@@ -2123,3 +2123,106 @@ def test_list_user_runs_participants_total_parkrun_by_country(
     assert response.status_code == 200
     row = next(item for item in response.json() if item["event_date"] == "2097-04-06")
     assert row["participants_total"] == expected
+
+
+def test_dashboard_field_avg_ignores_foreign_events(
+    authenticated_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Запасное среднее по полю считается только по стартам пользователя.
+
+    Регрессия на QRY-USER-ADMIN-01: агрегат сужён до пар (локация, дата)
+    самого пользователя, и числа обязаны остаться теми же, что и без сужения,
+    сколько бы чужих стартов ни лежало рядом — в той же локации в другую дату
+    и в другой локации в ту же дату.
+    """
+    from app.services.dashboard_service import compute_dashboard_stats
+
+    me = authenticated_client.get("/api/auth/me")
+    user = db_session.query(User).filter(User.telegram_id == me.json()["telegram_id"]).one()
+    suffix = str(uuid4().int % 1_000_000)
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+
+    def make_location(tag: str) -> Location:
+        location = Location(
+            platform_id=platform.id,
+            external_key=f"field-scope-{tag}-{suffix}",
+            name=f"Field Scope {tag} {suffix}",
+            city="Москва",
+            country="Россия",
+        )
+        db_session.add(location)
+        db_session.flush()
+        return location
+
+    def make_event(location: Location, event_date: date, tag: str) -> Event:
+        event_number = int(uuid4().int % 100_000) + 800_000
+        event = Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"field-scope:{tag}:{event_number}:{suffix}",
+            event_date=event_date,
+            event_number=event_number,
+            title=f"Field Scope {tag} #{event_number}",
+            finishers_count=3,
+            runners_count=3,
+        )
+        db_session.add(event)
+        db_session.flush()
+        return event
+
+    def add_result(event: Event, tag: str, finish_time_sec: int, participant: Participant) -> None:
+        db_session.add(
+            RunResult(
+                event_id=event.id,
+                participant_id=participant.id,
+                external_result_key=f"field-scope:{tag}:{suffix}:{finish_time_sec}",
+                finish_time_sec=finish_time_sec,
+                finish_time_display="00:30:00",
+                status="finished",
+                is_pr=False,
+            )
+        )
+
+    def make_participant(tag: str) -> Participant:
+        participant = Participant(
+            platform_id=platform.id,
+            external_user_id=f"field-scope-{tag}-{suffix}",
+            display_name=f"Field Scope {tag}",
+            profile_url=f"https://5verst.ru/userstats/field-scope-{tag}-{suffix}/",
+        )
+        db_session.add(participant)
+        db_session.flush()
+        return participant
+
+    mine = make_participant("me")
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=platform.id,
+            participant_id=mine.id,
+            external_user_id=mine.external_user_id,
+            external_url=mine.profile_url,
+        )
+    )
+
+    home = make_location("home")
+    my_date = date(2024, 3, 2)
+    my_event = make_event(home, my_date, "mine")
+    add_result(my_event, "mine-user", 30 * 60, mine)
+    for idx, finish_time_sec in enumerate([32 * 60, 34 * 60], start=1):
+        add_result(my_event, f"mine-other-{idx}", finish_time_sec, make_participant(f"mine-other-{idx}"))
+
+    # Шум: та же локация в другую субботу и другая локация в ту же субботу.
+    other_date_event = make_event(home, date(2024, 3, 9), "other-date")
+    for idx, finish_time_sec in enumerate([60 * 60, 61 * 60], start=1):
+        add_result(other_date_event, f"other-date-{idx}", finish_time_sec, make_participant(f"other-date-{idx}"))
+    away_event = make_event(make_location("away"), my_date, "away")
+    for idx, finish_time_sec in enumerate([12 * 60, 13 * 60], start=1):
+        add_result(away_event, f"away-{idx}", finish_time_sec, make_participant(f"away-{idx}"))
+
+    db_session.commit()
+
+    analytics = compute_dashboard_stats(db_session, user.id)["analytics"]
+    assert analytics["runs_with_field_avg_count"] == 1
+    assert analytics["avg_vs_field_pct"] == 6.2

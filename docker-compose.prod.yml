@@ -1,5 +1,12 @@
 # Production on server: host PostgreSQL, no published DB/Redis ports, LK nginx on 127.0.0.1:8080.
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# depends_on у api и воркеров переопределяется целиком через `!override`
+# (Compose ≥ 2.24.4): postgres на проде живёт на хосте, ждать надо только
+# redis. До 13.09.2026 стоял `!reset` — он обнуляет атрибут, а мапу под ним
+# Compose отбрасывает: в итоговом конфиге (`docker compose … config`) у api и
+# воркеров depends_on не было вовсе, и после перезагрузки они стартовали
+# наперегонки с redis.
 
 services:
   postgres:
@@ -32,7 +39,7 @@ services:
       - ./data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -54,7 +61,7 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -66,7 +73,7 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -78,7 +85,24 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
+      redis:
+        condition: service_healthy
+
+  # Свежесть 5 вёрст — свой воркер, чтобы latest не ждал фон (см.
+  # docker-compose.yml, worker-five-verst-fresh). Живёт на домашнем сервере,
+  # прод его гасит вместе с остальными домашними (HOME_SERVICES в
+  # scripts/remote_deploy.sh), но описание нужно здесь: без него Compose не
+  # соберёт проект вовсе.
+  worker-five-verst-fresh:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./.env:/app/.env:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -92,7 +116,7 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -105,7 +129,7 @@ services:
       - ./data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -118,7 +142,7 @@ services:
       - ./data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -142,6 +166,6 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy

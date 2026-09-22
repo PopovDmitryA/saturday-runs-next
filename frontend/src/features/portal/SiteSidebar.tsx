@@ -77,7 +77,7 @@ type CabinetNavItem = {
  * публичном адресе /users/{хендл}/…, а служебные (Поделиться, Настройки)
  * остаются на собственных путях — публиковать их незачем.
  */
-function navHref(user: User | null | undefined, item: CabinetNavItem): string {
+export function navHref(user: User | null | undefined, item: CabinetNavItem): string {
   if (item.key === "share" || item.key === "settings") {
     return item.href;
   }

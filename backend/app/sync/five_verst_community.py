@@ -152,7 +152,12 @@ def _sync_one(
     result.events_upserted += 1
 
     runs = upsert.replace_event_run_results(db, event_row, platform, page.run_results)
-    vols = upsert.replace_event_volunteer_results(db, event_row, platform, page.volunteer_results)
+    # Волонтёров у страницы сообщества может и не быть; если результаты
+    # разобрались, страница настоящая — пустой список принимаем (сторож от
+    # пустого разбора — upsert.SuspectEmptyProtocolError).
+    vols = upsert.replace_event_volunteer_results(
+        db, event_row, platform, page.volunteer_results, allow_empty=bool(page.run_results)
+    )
     result.run_results_upserted += runs
     result.volunteer_results_upserted += vols
 

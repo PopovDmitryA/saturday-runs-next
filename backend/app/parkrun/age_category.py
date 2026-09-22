@@ -1,17 +1,12 @@
+"""Возрастная группа parkrun/RunPark — реэкспорт из app.core.age_groups.
+
+Модуль оставлен, чтобы по импорту было видно, чей формат ожидается («SM25-29»,
+а не «М30-34»); сами правила с 21.09.2026 (аудит DUP-01) лежат рядом с
+остальными в app/core/age_groups.py.
+"""
+
 from __future__ import annotations
 
-import re
+from app.core.age_groups import PARKRUN_AGE_GROUP_RE, normalize_parkrun_age_group
 
-# Возрастная группа parkrun/RunPark: SM25-29, VM40-44, JW11-14, JM10, SW18-19, VW70-74.
-# Отсекает age grade («50.59%»), который старый код записывал в participants.age_category.
-PARKRUN_AGE_GROUP_RE = re.compile(r"^[A-Z]{2,3}\d{1,2}(?:-\d{2})?$")
-
-
-def normalize_parkrun_age_group(value: object) -> str | None:
-    """Строка возрастной группы parkrun или None, если значение не похоже на группу."""
-    if not isinstance(value, str):
-        return None
-    cleaned = value.strip()
-    if PARKRUN_AGE_GROUP_RE.match(cleaned):
-        return cleaned
-    return None
+__all__ = ["PARKRUN_AGE_GROUP_RE", "normalize_parkrun_age_group"]

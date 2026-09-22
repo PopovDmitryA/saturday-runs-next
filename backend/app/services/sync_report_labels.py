@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 PIPELINE_LABELS: dict[str, str] = {
     "5v registry /events/": "5verst: реестр /events/",
     "5v latest /results/latest/": "5verst: свежие результаты /results/latest/",
@@ -178,7 +176,6 @@ DETAIL_SECTION_LABELS: dict[str, str] = {
 }
 
 DETAIL_LIST_KEYS = frozenset(DETAIL_SECTION_LABELS.keys())
-DETAIL_LIST_LIMIT = 25
 
 
 def location_detail_label(slug: str, name: str | None = None) -> str:
@@ -206,29 +203,3 @@ def pipeline_label(name: str) -> str:
 
 def field_label(key: str) -> str:
     return FIELD_LABELS.get(key, key)
-
-
-def format_field_value(key: str, value: Any) -> str:
-    if isinstance(value, bool):
-        return "да" if value else "нет"
-    if isinstance(value, list):
-        if key in DETAIL_LIST_KEYS:
-            return str(len(value))
-        if key == "planned":
-            return str(len(value))
-        return ", ".join(str(item) for item in value[:5]) + ("…" if len(value) > 5 else "")
-    return str(value)
-
-
-def format_detail_sections(payload: dict[str, Any]) -> list[str]:
-    lines: list[str] = []
-    for key, title in DETAIL_SECTION_LABELS.items():
-        value = payload.get(key)
-        if not isinstance(value, list) or not value:
-            continue
-        lines.append(f"{title}:")
-        for item in value[:DETAIL_LIST_LIMIT]:
-            lines.append(f"• {item}")
-        if len(value) > DETAIL_LIST_LIMIT:
-            lines.append(f"… и ещё {len(value) - DETAIL_LIST_LIMIT}")
-    return lines

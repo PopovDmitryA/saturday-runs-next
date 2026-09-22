@@ -22,6 +22,8 @@ from app.services.unified_protocol_service import (
 )
 from app.workers.celery_app import celery_app
 from app.workers.queues import WARM_QUEUE
+from app.workers.tasks.sync_task_reporting import run_reported_sync
+from app.workers.time_limits import LIMITS_WARM_LOCATIONS
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +31,19 @@ logger = logging.getLogger(__name__)
 # Очередь warm — общая с leaderboards.warm_cache: оба прогрева тяжёлые по базе,
 # и живут они рядом с ней, на том же хосте. Держать их на очереди синка нельзя —
 # пользовательский sync вставал за ними в хвост (см. app/workers/queues.py).
-@celery_app.task(name="locations.warm_cache", queue=WARM_QUEUE)
+@celery_app.task(name="locations.warm_cache", queue=WARM_QUEUE, **LIMITS_WARM_LOCATIONS)
 def warm_locations_cache() -> dict[str, object]:
+    """Прогрев с записью в журнал прогонов.
+
+    Сколько на проде реально длится прогрев, до 21.09.2026 было неоткуда
+    узнать: в scheduled_run_logs он не писался, логи контейнера ротируются.
+    Решение, переписывать ли расчёт сетки рейтингов (аудит, QRY-RATINGS-02),
+    принимается по этим цифрам.
+    """
+    return run_reported_sync("прогрев кэша локаций", _warm_locations_cache)
+
+
+def _warm_locations_cache() -> dict[str, object]:
     """Пересчитывает кэш каталога и страниц локаций, не дожидаясь TTL.
 
     Без прогрева первый посетитель после протухания кэша ждал бы расчёт

@@ -19,10 +19,18 @@ from typing import Any, cast
 from uuid import UUID
 
 import redis
-from sqlalchemy import String, and_, bindparam, case, func, or_, select, text
+from sqlalchemy import Date, String, and_, bindparam, case, column, func, or_, select, text, values
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Session, aliased
 
 from app.activity_url import resolve_activity_url
+from app.core.age_groups import (  # noqa: F401 — реэкспорт: по этим именам их берут рейтинги и протоколы
+    MAX_PLAUSIBLE_AGE,
+    age_group_is_plausible,
+    age_group_key,
+    age_group_sort_key,
+    normalize_age_group,
+)
 from app.core.redis_client import get_redis_client
 from app.location_page_url import PLATFORM_ORDER, location_page_url
 from app.models import (
@@ -40,6 +48,7 @@ from app.models import (
     VolunteerResult,
 )
 from app.participant_identity import UNKNOWN_DISPLAY_NAMES as _UNKNOWN_DISPLAY_NAMES
+from app.participant_identity import identified_participant_clause
 from app.services.home_distance_service import location_distance_from_home
 from app.services.location_catalog_service import (
     LocationCatalogIndex,
@@ -63,6 +72,10 @@ from app.volunteer_role_taxonomy import (
     preset_role_keys,
 )
 from app.volunteering_occasions import count_volunteering_for_platform
+
+# Старое приватное имя: под ним ключ сортировки групп берут рейтинги и протоколы
+# (fastest_rating, unified_protocol, location_protocol, location_records_rating).
+_age_group_sort_key = age_group_sort_key
 
 HISTOGRAM_BIN_SEC = 10
 # Индекс локаций — тяжёлая агрегация (~35 тыс. событий + join по протоколам
@@ -214,6 +227,19 @@ LOCATION_ACTIVE_MIN_COUNT = 3
 UNKNOWN_DISPLAY_NAMES = _UNKNOWN_DISPLAY_NAMES
 
 
+def _identified_participant_clause() -> Any:
+    """Участник-человек, а не одноразовая заглушка под безымянную строку.
+
+    Каждой строке «НЕИЗВЕСТНЫЙ» заводится своя личность с ключом
+    ``unknown:<локация>:<дата>:<место>`` (см. app/participant_identity.py), и в
+    счётчике уникальных участников она выглядела отдельным человеком: в
+    Шадринске 183 такие строки превращались в 183 «участника» — 1104 вместо
+    921, тогда как 5 вёрст показывают 922 (репорт 20.09.2026).
+    """
+
+    return identified_participant_clause(Participant.external_user_id, Participant.display_name)
+
+
 def _identified_name_clause(name_expr: Any) -> Any:
     """Строка про живого человека, а не про заглушку протокола."""
     normalized = func.lower(func.trim(name_expr))
@@ -255,30 +281,6 @@ def unknown_result_clause(status_expr: Any, participant_id_expr: Any, name_expr:
 # Незачётные статусы протоколов не влияют на finish_time (он у них NULL),
 # поэтому отдельного фильтра по status нет: гистограмма и рекорды строятся
 # только по строкам с известным временем.
-# Якорим по всей строке, а не ищем подстроку: иначе из «М110-114» вытаскивалась
-# бы «10–11» — группа, которой в протоколе нет. Границы трёхзначные: у
-# участника с незаполненной датой рождения 5 вёрст считает абсурдный возраст и
-# печатает «М110-114» или «М120». Такие группы показываем как есть — это то,
-# что стоит в протоколе (решение Дмитрия 27.07.2026).
-_AGE_RANGE_RE = re.compile(r"^[A-Za-zА-Яа-я]{0,3}(\d{1,3})\s*[-–—]\s*(\d{1,3})$")
-_AGE_PLUS_RE = re.compile(r"^[A-Za-zА-Яа-я]{0,3}(\d{2,3})\s*\+$")
-# Категория одним числом, без верхней границы. Таких у 5 вёрст ровно два вида,
-# и оба перечислены в регулярке явно:
-#
-#   «М10»/«Ж10» («JM10» у parkrun-систем) — строго «младше 10»: десятилетний
-#   бежит уже в «10-14». Обе категории идут параллельно (7 тыс. протоколов
-#   содержат и ту, и другую), и все 718 участников, побывавших в обеих, сначала
-#   бежали в «М10». Поэтому «<10», а не «10»: голое «10» рядом со строкой
-#   «10–14» читалось бы как пересекающийся диапазон.
-#
-#   Трёхзначные «М120» — пометка участника без даты рождения: 5 вёрст считает
-#   ему абсурдный возраст. Показываем как есть.
-#
-# Всё остальное двузначное («М11», «М12») категорией НЕ является: группы идут
-# пятилетками, такой ступени не существует. Это обрезки старой регулярки
-# парсера («М110-114» → «М11»), их чинит
-# scripts/backfill_truncated_age_categories.py, а не витрина.
-_AGE_UNDER_RE = re.compile(r"^[A-Za-zА-Яа-я]{1,3}(10|\d{3})$")
 
 
 def _platform_order_index(code: str) -> int:
@@ -286,42 +288,6 @@ def _platform_order_index(code: str) -> int:
         return PLATFORM_ORDER.index(code)
     except ValueError:
         return len(PLATFORM_ORDER)
-
-
-# Юниорская лестница RunPark — единственная, которая не ложится на общие
-# ступени: JM11-14/JW11-14 и JM15-17/JW15-17 против «10–14» и «15–19» у
-# 5 вёрст. В зачёте эти системы идут в одних ступенях (см. подпись под
-# возрастными группами), поэтому «11–14» и «15–17» вылезали отдельными
-# строками на 1–3 человека и выглядели ошибкой данных (Дмитрий 02.09.2026).
-# Своих «11–14»/«15–17» больше нет ни у одной системы — сверено по базе.
-_RUNPARK_JUNIOR_GROUPS = {"11–14": "10–14", "15–17": "15–19"}
-
-# Правдоподобный потолок возраста для возрастных зачётов. «М120», «Ж105-109»,
-# «М110-114» — обрезки старого парсера 5 вёрст (138 строк на базу), а не
-# столетние бегуны; всё старше отсекается и в рейтингах, и в протоколах.
-MAX_PLAUSIBLE_AGE = 100
-
-
-def age_group_is_plausible(age_group: str) -> bool:
-    return _age_group_sort_key(age_group)[0] <= MAX_PLAUSIBLE_AGE
-
-
-def normalize_age_group(age_category: str | None) -> str | None:
-    """«М18-24», «SM25-29», «VM35-39» → «18–24»; «М75+» → «75+»; «М10» → «<10»; «М110-114» → «110–114»."""
-    if not age_category:
-        return None
-    cleaned = age_category.strip()
-    match = _AGE_RANGE_RE.match(cleaned)
-    if match:
-        group = f"{int(match.group(1))}–{int(match.group(2))}"
-        return _RUNPARK_JUNIOR_GROUPS.get(group, group)
-    match = _AGE_PLUS_RE.match(cleaned)
-    if match:
-        return f"{int(match.group(1))}+"
-    match = _AGE_UNDER_RE.match(cleaned)
-    if match:
-        return f"<{int(match.group(1))}"
-    return None
 
 
 @dataclass
@@ -570,6 +536,17 @@ def _course_record(
 
 
 def _histogram_rows(db: Session, event_ids: list[UUID]) -> list[dict[str, object]]:
+    """Гистограмма финишей: корзина по 10 секунд × пол.
+
+    По возрастной группе НЕ разбиваем: витрина (LocationFinishHistogram.tsx и
+    доля быстрых финишей в sharing/subjects.ts) складывает строки по корзине и
+    полу, а age_group не читает ни в одном месте. Разбивка по ней раздувала
+    payload страницы в двадцать раз — 6007 строк и 470 КБ из 515 КБ (аудит
+    13.09.2026, QRY-LOCATIONS-03). Поле age_group у строки ответа осталось
+    (схема отдаёт null) — его собирает страница протокола из своих данных.
+    Версию ключа кэша не бампаем: старый снимок валиден, просто толще, и за
+    три часа TTL уйдёт сам — бамп означал бы пересчёт всех трёх тысяч страниц.
+    """
     gender_expr = _gender_expression(
         Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
     )
@@ -578,7 +555,6 @@ def _histogram_rows(db: Session, event_ids: list[UUID]) -> list[dict[str, object
         db.query(
             bin_expr.label("start_sec"),
             gender_expr.label("gender"),
-            RunResult.age_category,
             func.count().label("count"),
         )
         .join(Event, RunResult.event_id == Event.id)
@@ -593,18 +569,18 @@ def _histogram_rows(db: Session, event_ids: list[UUID]) -> list[dict[str, object
         # "start_sec"/"gender": PostgreSQL при group-by по алиасу требует, чтобы
         # все колонки внутри выражения (platforms.code в CASE для gender) тоже
         # были в GROUP BY, и падал с GroupingError. Семантика та же.
-        .group_by(bin_expr, gender_expr, RunResult.age_category)
+        .group_by(bin_expr, gender_expr)
         .all()
     )
-    aggregated: dict[tuple[int, str | None, str | None], int] = {}
-    for start_sec, gender, age_category, count in rows:
+    aggregated: dict[tuple[int, str | None], int] = {}
+    for start_sec, gender, count in rows:
         if gender not in ("male", "female"):
             gender = None
-        key = (int(start_sec), gender, normalize_age_group(age_category))
+        key = (int(start_sec), gender)
         aggregated[key] = aggregated.get(key, 0) + int(count)
     return [
-        {"start_sec": start_sec, "gender": gender, "age_group": age_group, "count": count}
-        for (start_sec, gender, age_group), count in sorted(aggregated.items(), key=lambda item: item[0][0])
+        {"start_sec": start_sec, "gender": gender, "count": count}
+        for (start_sec, gender), count in sorted(aggregated.items(), key=lambda item: item[0][0])
     ]
 
 
@@ -1949,26 +1925,6 @@ def _last_event_stats(
     return last_event_payload, avg_delta, median_delta
 
 
-# Не якорим на начало: у «<10» впереди знак, и с якорем группа улетала бы
-# в конец таблицы вместо первой строки.
-_AGE_GROUP_SORT_RE = re.compile(r"\d+")
-
-
-def _age_group_sort_key(age_group: str) -> tuple[int, int]:
-    """Порядок групп в таблице: по возрасту, а при равном — «<N» перед «N–…».
-
-    «<10» и «10–14» дают одно и то же число, но это разные ступени и в
-    протоколе они идут параллельно, так что порядок между ними фиксируем.
-    """
-    match = _AGE_GROUP_SORT_RE.search(age_group)
-    age = int(match.group(0)) if match else 999
-    if age_group.startswith("<"):
-        return (age, 0)
-    if age_group.endswith("+"):
-        return (age, 2)
-    return (age, 1)
-
-
 # Возрастные группы считаем только по 5 вёрст — единственной системе, которая
 # публикует возрастной диапазон в протоколе («М35-39»). У parkrun в
 # run_results.age_category лежит age grade («54.38%»), s95 категорию не отдаёт
@@ -1984,16 +1940,6 @@ AGE_GROUP_TOP_LIMIT = 5
 # запасом — у каждой сырой категории пятёрка своя, и после слияния часть строк
 # уходит вниз, иначе итоговая пятёрка могла бы недосчитаться.
 _AGE_GROUP_TOP_FETCH = AGE_GROUP_TOP_LIMIT * 2
-
-
-def age_group_key(gender: str, age_group: str) -> str:
-    """Ключ строки возрастной группы: («male», «30–34») → «male-30-34».
-
-    Служит и якорем в разметке: плитка «место в группе» из блока «Вы на этой
-    локации» ссылается по нему на нужную строку в «Рекордах по возрастным
-    группам», где под спойлером лежит топ-5 этой группы.
-    """
-    return f"{gender}-{age_group.replace('–', '-').replace('+', 'plus').replace('<', 'under')}"
 
 
 def _protocol_age_category_gender() -> Any:
@@ -2502,7 +2448,12 @@ def _compute_location_page(
         )
         unique_participants = (
             db.query(func.count(func.distinct(RunResult.participant_id)))
-            .filter(RunResult.event_id.in_(event_ids), RunResult.participant_id.isnot(None))
+            .join(Participant, Participant.id == RunResult.participant_id)
+            .filter(
+                RunResult.event_id.in_(event_ids),
+                RunResult.participant_id.isnot(None),
+                _identified_participant_clause(),
+            )
             .scalar()
             or 0
         )
@@ -3546,47 +3497,116 @@ def _compute_last_results(db: Session) -> dict[str, object]:
     if not location_ids:
         return {"saturday_date": None, "items": [], "total": 0}
 
-    event_rows = (
-        db.query(Event, Platform.code)
-        .join(Platform, Event.platform_id == Platform.id)
+    # Дедуп кросслинков — как в _bulk_identity_stats: вторичное событие не в
+    # счёт, если его первичное тоже принадлежит каталогу. Раньше это считалось
+    # в Python по ВСЕМ событиям каталога (на проде 178k ORM-объектов Event на
+    # каждую сборку: 3.9 с wall при 0.6 с SQL — вся разница уходила в
+    # гидрацию). Теперь условие живёт в SQL, а в Python приезжает только
+    # максимум даты по локации и события последнего дня — аудит 13.09.2026,
+    # QRY-LOCATIONS-02.
+    # Кросслинков немного, поэтому их проще привезти списком, чем гонять
+    # коррелированный NOT EXISTS по каждому событию каталога (на dev такой
+    # план стоил больше двух минут).
+    crosslink_rows = (
+        db.query(EventCrosslink.primary_event_id, EventCrosslink.secondary_event_id)
+        .join(Event, EventCrosslink.secondary_event_id == Event.id)
         .filter(Event.location_id.in_(location_ids), Event.is_test_event.is_(False))
         .all()
     )
-    # Дедуп кросслинков — как в _bulk_identity_stats: JOIN по location_id,
-    # а не IN() по десяткам тысяч event_id.
-    all_event_ids = {event.id for event, _code in event_rows}
-    excluded_secondary: set[UUID] = set()
-    if all_event_ids:
-        crosslink_rows = (
-            db.query(EventCrosslink.primary_event_id, EventCrosslink.secondary_event_id)
-            .join(Event, EventCrosslink.secondary_event_id == Event.id)
-            .filter(Event.location_id.in_(location_ids), Event.is_test_event.is_(False))
+    excluded_secondary: list[UUID] = []
+    if crosslink_rows:
+        catalog_primaries = {
+            row[0]
+            for row in db.query(Event.id)
+            .filter(
+                Event.id.in_({primary for primary, _secondary in crosslink_rows}),
+                Event.location_id.in_(location_ids),
+                Event.is_test_event.is_(False),
+            )
             .all()
-        )
-        excluded_secondary = {secondary for primary, secondary in crosslink_rows if primary in all_event_ids}
-    kept = [(event, code) for event, code in event_rows if event.id not in excluded_secondary]
+        }
+        excluded_secondary = [
+            secondary for primary, secondary in crosslink_rows if primary in catalog_primaries
+        ]
+
+    kept_conditions = [Event.location_id.in_(location_ids), Event.is_test_event.is_(False)]
+    if excluded_secondary:
+        kept_conditions.append(Event.id.notin_(excluded_secondary))
+    kept_events = and_(*kept_conditions)
 
     # «Последняя суббота» — как пульс на главной: максимальная субботняя дата.
     # Fallback на общий максимум нужен разве что теоретически (пустых суббот
     # при живых данных не бывает), но пусть страница не падает и на нём.
-    saturday_dates = [event.event_date for event, _code in kept if event.event_date.weekday() == 5]
-    saturday_date = max(saturday_dates, default=None) or max((event.event_date for event, _code in kept), default=None)
+    # extract('dow') = 6 — это суббота (в Python weekday() == 5).
+    saturday_row = (
+        db.query(
+            func.max(
+                case((func.extract("dow", Event.event_date) == 6, Event.event_date))
+            ).label("saturday"),
+            func.max(Event.event_date).label("latest"),
+        )
+        .filter(kept_events)
+        .one()
+    )
+    saturday_date = saturday_row.saturday or saturday_row.latest
 
     # Последний день каждой идентичности и события этого дня (обычно одно;
     # два бывает, когда локация в один день отметилась в двух системах без
     # кросслинка — тогда цифры складываем, времена берём лучшие).
+    latest_by_location: dict[UUID, date] = dict(
+        db.query(Event.location_id, func.max(Event.event_date))
+        .filter(kept_events)
+        .group_by(Event.location_id)
+        .all()
+    )
     latest_date: dict[str, date] = {}
-    for event, _code in kept:
-        identity_key = location_id_to_identity[event.location_id]
-        if identity_key not in latest_date or event.event_date > latest_date[identity_key]:
-            latest_date[identity_key] = event.event_date
-    chosen: dict[str, list[tuple[Event, str]]] = {}
-    for event, code in kept:
-        identity_key = location_id_to_identity[event.location_id]
-        if latest_date.get(identity_key) == event.event_date:
-            chosen.setdefault(identity_key, []).append((event, code))
+    for loc_id, loc_latest in latest_by_location.items():
+        identity_key = location_id_to_identity[loc_id]
+        if identity_key not in latest_date or loc_latest > latest_date[identity_key]:
+            latest_date[identity_key] = loc_latest
+
+    chosen: dict[str, list[tuple[Any, str]]] = {}
+    latest_pairs = [
+        (loc_id, latest_date[location_id_to_identity[loc_id]]) for loc_id in latest_by_location
+    ]
+    if latest_pairs:
+        # JOIN с VALUES, а не tuple_(...).in_(pairs): построчный IN из трёх
+        # тысяч пар разворачивается в OR-цепочку и считается почти три минуты,
+        # тот же отбор джойном — 0.4 с (замер на dev 14.09.2026).
+        pairs_source = values(
+            column("location_id", PG_UUID(as_uuid=True)),
+            column("event_date", Date),
+            name="latest_event_pairs",
+        ).data(latest_pairs)
+        chosen_rows = (
+            db.query(
+                Event.id.label("id"),
+                Event.location_id.label("location_id"),
+                Event.event_date.label("event_date"),
+                Event.event_number.label("event_number"),
+                Event.finishers_count.label("finishers_count"),
+                Event.source_url.label("source_url"),
+                Platform.code.label("platform_code"),
+            )
+            .join(Platform, Event.platform_id == Platform.id)
+            .join(
+                pairs_source,
+                and_(
+                    Event.location_id == pairs_source.c.location_id,
+                    Event.event_date == pairs_source.c.event_date,
+                ),
+            )
+            .filter(kept_events)
+            .all()
+        )
+        for event_row in chosen_rows:
+            identity_key = location_id_to_identity[event_row.location_id]
+            chosen.setdefault(identity_key, []).append((event_row, event_row.platform_code))
 
     chosen_event_ids = [event.id for pairs in chosen.values() for event, _code in pairs]
+    # Локации выбранных событий — включая parkrun-эпоху, которой нет среди
+    # витринных members идентичности (из них берётся слаг для ссылки на
+    # протокол).
     chosen_location_ids = {event.location_id for pairs in chosen.values() for event, _code in pairs}
     last_results_weather = weather_for_pairs(
         db, [(event.location_id, event.event_date) for pairs in chosen.values() for event, _code in pairs]

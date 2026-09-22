@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import QRCode from "qrcode";
 import { PlatformBadge } from "./PlatformBadge";
 import { platformCodeLabel } from "../lib/format";
 
@@ -20,15 +19,20 @@ export function QrCodeModal({ open, platformCode, displayName, code, onClose }: 
       return;
     }
     let cancelled = false;
-    // Те же параметры, что у штатных QR систем: режим alphanumeric (код — это
-    // «A» + цифры) и повышенная коррекция ошибок, чтобы код читался с экрана
-    // телефона — бликующего, с невыключенной ночной подсветкой и отпечатками.
-    QRCode.toDataURL(code, {
-      margin: 1,
-      width: 320,
-      errorCorrectionLevel: "Q",
-      color: { dark: "#0f172a", light: "#ffffff" },
-    })
+    // Библиотека едет отдельным чанком и грузится при первом открытии модалки —
+    // в стартовом бандле ей делать нечего. Параметры — те же, что у штатных QR
+    // систем: режим alphanumeric (код — это «A» + цифры) и повышенная коррекция
+    // ошибок, чтобы код читался с экрана телефона — бликующего, с невыключенной
+    // ночной подсветкой и отпечатками.
+    import("qrcode")
+      .then(({ default: QRCode }) =>
+        QRCode.toDataURL(code, {
+          margin: 1,
+          width: 320,
+          errorCorrectionLevel: "Q",
+          color: { dark: "#0f172a", light: "#ffffff" },
+        }),
+      )
       .then((url) => {
         if (!cancelled) {
           setDataUrl(url);

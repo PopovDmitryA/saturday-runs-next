@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readCached, writeCached } from "../../lib/dataCache";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { LastSaturdayCard } from "../../components/LastSaturdayCard";
@@ -14,7 +14,7 @@ import "../portal/portal.css";
 import "../portal/portalSection.css";
 import { AppDataSourceProvider, createPublicProfileDataSource } from "../../lib/appDataSource";
 import { AchievementsShowcase } from "../achievements/AchievementsPage";
-import { UserMapPanel } from "../maps/UserMapPanel";
+import { lazyPage } from "../../lib/lazyPage";
 import { RunsContent } from "../runs/RunsPage";
 import { VolunteeringContent } from "../volunteering/VolunteeringPage";
 import { HistoryContent } from "../history/HistoryPage";
@@ -40,6 +40,9 @@ import {
   type User,
 } from "../../lib/api";
 import { platformCodeLabel, runsCapLabel, volunteeringCapLabel } from "../../lib/format";
+
+// Карта (leaflet) нужна только на вкладке «карта» — грузится по обращению.
+const UserMapPanel = lazyPage(() => import("../maps/UserMapPanel"), (m) => m.UserMapPanel);
 
 type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "achievements" | "history" | "meetings";
 
@@ -492,12 +495,14 @@ function PublicProfileContent({
 
       {tab === "map" && (
         <section className="card admin-preview-map">
-          <UserMapPanel
-            loadVisitedMap={loadVisitedMap}
-            loadCatalogMap={getCatalogLocationsMap}
-            loadCatalogTable={loadCatalogTable}
-            visitedTabLabel="Визиты"
-          />
+          <Suspense fallback={<p className="muted">Загрузка…</p>}>
+            <UserMapPanel
+              loadVisitedMap={loadVisitedMap}
+              loadCatalogMap={getCatalogLocationsMap}
+              loadCatalogTable={loadCatalogTable}
+              visitedTabLabel="Визиты"
+            />
+          </Suspense>
         </section>
       )}
 

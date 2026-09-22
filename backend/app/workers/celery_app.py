@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from celery import Celery
 from celery.schedules import crontab
 
 from app.config import get_settings
 from app.platform_adapters.registry import ensure_adapters_registered
 from app.workers.queues import FIVE_VERST_BATCH_QUEUE, FIVE_VERST_FRESH_QUEUE, WARM_QUEUE
+from app.workers.time_limits import (
+    BROKER_VISIBILITY_TIMEOUT,
+    DEFAULT_SOFT_TIME_LIMIT,
+    DEFAULT_TIME_LIMIT,
+)
 
 settings = get_settings()
 
@@ -16,13 +23,22 @@ celery_app.conf.update(
     # round-robin: очередь b получает слот, даже когда в a есть работа. Нам
     # нужен строгий приоритет — five_verst_fresh перед five_verst, s95_user
     # перед s95, — поэтому просим redis-транспорт уважать порядок из -Q.
-    # visibility_timeout поднят выше самой долгой задачи: у фоновых задач
+    # visibility_timeout поднят выше самого долгого жёсткого лимита: у задач
     # 5 вёрст acks_late=True (см. app/workers/tasks/five_verst_sync.py), и
-    # при часовом дефолте брокер вернул бы в очередь ещё работающую задачу.
+    # если брокер перестанет ждать раньше, чем воркер убьёт задачу по лимиту,
+    # он вернёт в очередь ещё живую задачу вторым экземпляром. Два часа
+    # перестали хватать 21.09.2026, когда latest получил лимит 180/185 минут
+    # (тяжёлая суббота на проде — 153 минуты); теперь четыре. Сторож
+    # «hard-лимит acks_late-задачи < visibility_timeout» — в тестах.
     broker_transport_options={
         "queue_order_strategy": "priority",
-        "visibility_timeout": 7200,
+        "visibility_timeout": BROKER_VISIBILITY_TIMEOUT,
     },
+    # Потолок для задачи без явного лимита (CEL-01, app/workers/time_limits.py):
+    # воркеры однопоточные, зависший сокет без лимита держит очередь вечно.
+    # У всех существующих задач лимит задан в декораторе; это — на случай новой.
+    task_soft_time_limit=DEFAULT_SOFT_TIME_LIMIT,
+    task_time_limit=DEFAULT_TIME_LIMIT,
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
@@ -30,7 +46,6 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     imports=(
-        "app.workers.tasks.global_sync",
         "app.workers.tasks.five_verst_sync",
         "app.workers.tasks.user_sync",
         "app.workers.tasks.admin_resync",
@@ -51,6 +66,7 @@ celery_app.conf.update(
         "app.workers.tasks.weather_forecast",
         "app.workers.tasks.sync_runs_maintenance",
         "app.workers.tasks.notifications",
+        "app.workers.tasks.queue_watch",
     ),
     task_routes={
         # Точные имена идут до шаблона `five_verst_sync.*` — первое совпадение
@@ -58,7 +74,6 @@ celery_app.conf.update(
         # приоритетной очереди, всё остальное по 5 вёрст — фон.
         "five_verst_sync.sync_latest_results": {"queue": FIVE_VERST_FRESH_QUEUE},
         "five_verst_sync.*": {"queue": FIVE_VERST_BATCH_QUEUE},
-        "global_sync.*": {"queue": FIVE_VERST_BATCH_QUEUE},
         "user_sync.*": {"queue": "five_verst_user"},
         "s95_sync.run_user_sync": {"queue": "s95_user"},
         "s95_sync.run_admin_resync": {"queue": "s95_user"},
@@ -164,6 +179,15 @@ celery_app.conf.update(
         },
         # Зависшие sync_runs: раньше их гасило только открытие админской
         # страницы, и висяки жили неделями. Задача внутри базы, сети нет.
+        # Сторож приоритетных очередей: 17–19.09.2026 очередь свежести стояла
+        # двое суток, и заметил это человек глазами на сайте, а не мониторинг.
+        # Общая очередь обязательна: сторож не может стоять в той очереди, за
+        # которой следит.
+        "priority-queues-watch": {
+            "task": "queues.watch_priority",
+            "schedule": crontab(minute="*/15"),
+            "options": {"queue": "celery", "expires": 14 * 60},
+        },
         "sync-runs-close-stale": {
             "task": "sync_runs.close_stale",
             "schedule": crontab(minute=5),
@@ -464,3 +488,81 @@ celery_app.conf.update(
         },
     },
 )
+
+
+# --------------------------------------------------------------- срок годности
+#
+# `expires` — прививка от долгов очереди: не взяли вовремя — задача умирает, а
+# не копится. 12.09.2026 в очереди five_verst лежало 26 просроченных latest и
+# 30 сверок, и субботние протоколы ждали своей минуты полутора суток; 18.07.2026
+# так же накопился 41 прогрев главной. До 21.09.2026 срок стоял у половины
+# записей, остальные (sweep-hq, наблюдатель протоколов, og-render, s95-*,
+# runpark-*, реестры) копились молча.
+#
+# Считаем его из самого расписания, а не пишем руками: правило «expires ≈
+# интервал запуска» тогда держится само, даже если кто-то поменяет крон. Явно
+# заданный в записи срок не трогаем — там, где выбрано короче интервала (прогрев
+# главной, агрегаты страниц), это осознанное решение.
+
+MAX_EXPIRES_SECONDS = 6 * 3600
+"""Потолок срока годности.
+
+Задача, опоздавшая больше чем на шесть часов, не догоняет ничего: свежие данные
+принесёт следующий запуск. Столько же выбрано руками у суточных записей
+(реестр 5 вёрст, сводка в ВК) — держим одну планку.
+"""
+
+
+def schedule_interval_seconds(schedule: crontab, *, window_days: int = 70) -> int | None:
+    """Наименьший промежуток между двумя срабатываниями crontab-записи.
+
+    Именно наименьший: у записи вроде «часы 0,5,10,15,20 по будням» промежутки
+    разные (5 часов внутри дня, 4 часа через полночь, 76 часов через выходные),
+    и срок годности надо мерить по самому короткому — иначе две соседние задачи
+    успеют встретиться в очереди.
+
+    Считаем по разобранным множествам crontab, а не гоняем
+    `crontab.remaining_estimate` вперёд по времени: он считает относительно
+    «сейчас» и на датах дальше сегодняшней начинает возвращать прошлое.
+    Окно в 70 дней покрывает и day_of_month="*/3", и месячные записи.
+    """
+    minutes = sorted(schedule.minute)
+    hours = sorted(schedule.hour)
+    if not minutes or not hours:
+        return None
+
+    today = date.today()
+    days = [
+        day
+        for day in (today + timedelta(days=shift) for shift in range(window_days))
+        if day.month in schedule.month_of_year
+        and day.day in schedule.day_of_month
+        and day.isoweekday() % 7 in schedule.day_of_week
+    ]
+
+    first = hours[0] * 60 + minutes[0]  # первое срабатывание внутри суток
+    last = hours[-1] * 60 + minutes[-1]  # последнее срабатывание внутри суток
+    gaps_minutes: list[int] = []
+    gaps_minutes += [b - a for a, b in zip(minutes, minutes[1:], strict=False)]
+    if len(hours) > 1:
+        step = min(b - a for a, b in zip(hours, hours[1:], strict=False))
+        gaps_minutes.append(step * 60 - (minutes[-1] - minutes[0]))
+    if len(days) > 1:
+        step_days = min((b - a).days for a, b in zip(days, days[1:], strict=False))
+        gaps_minutes.append(step_days * 24 * 60 - last + first)
+    if not gaps_minutes:
+        return None
+    return min(gaps_minutes) * 60
+
+
+def _fill_missing_expires(app: Celery) -> None:
+    for entry in app.conf.beat_schedule.values():
+        options = entry.setdefault("options", {})
+        if "expires" in options:
+            continue
+        interval = schedule_interval_seconds(entry["schedule"])
+        if interval:
+            options["expires"] = min(interval, MAX_EXPIRES_SECONDS)
+
+
+_fill_missing_expires(celery_app)

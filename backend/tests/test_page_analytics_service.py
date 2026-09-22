@@ -16,11 +16,13 @@ from app.services.page_analytics_service import (
     build_page_analytics,
     classify_page,
     cleanup_old_events,
+    days_missing_rollup,
     local_today,
     record_page_leave,
     record_page_view,
     resolve_period,
     rollup_day,
+    rollup_recent_days,
 )
 
 
@@ -499,3 +501,87 @@ def test_build_home_link_clicks_groups_and_labels(db_session: Session) -> None:
     assert runner_row["kind"] == "runner"
     assert runner_row["label"] == "Тест"
     assert runner_row["href"] == f"/users/{user.public_slug}"
+
+
+def test_backfill_repairs_days_missed_during_downtime(db_session: Session) -> None:
+    """Пропущенный день чинится сам, а не остаётся нулевым навсегда.
+
+    QRY-USER-ADMIN-04: задача сворачивала только сегодня и вчера, а сырые
+    события через 90 дней удаляются — день простоя оставался пустым.
+    """
+    today = local_today()
+    gap_day = today - timedelta(days=10)
+    entity_key = f"test-{uuid4()}"
+    db_session.add(
+        PageViewEvent(
+            view_id=uuid4(),
+            ts=datetime.combine(gap_day, datetime.min.time(), tzinfo=STATS_TIMEZONE)
+            + timedelta(hours=12),
+            path=f"/locations/{entity_key}",
+            page_type="location",
+            entity_key=entity_key,
+            visitor_key="a:gap111111",
+        )
+    )
+    db_session.commit()
+
+    assert gap_day in days_missing_rollup(db_session, retention_days=90, limit=50)
+
+    rollup_recent_days(db_session, days=2, retention_days=90)
+
+    row = (
+        db_session.query(PageStatsDaily)
+        .filter(PageStatsDaily.date == gap_day, PageStatsDaily.entity_key == entity_key)
+        .one()
+    )
+    assert row.views == 1
+    # Дыра закрыта — второй раз день не пересобирается.
+    assert gap_day not in days_missing_rollup(db_session, retention_days=90, limit=50)
+
+
+def test_backfill_ignores_bot_only_days(db_session: Session) -> None:
+    """День с одними ботами дырой не считается: агрегатов у него и не должно быть."""
+    today = local_today()
+    bot_day = today - timedelta(days=11)
+    entity_key = f"test-{uuid4()}"
+    db_session.add(
+        PageViewEvent(
+            view_id=uuid4(),
+            ts=datetime.combine(bot_day, datetime.min.time(), tzinfo=STATS_TIMEZONE)
+            + timedelta(hours=9),
+            path=f"/locations/{entity_key}",
+            page_type="location",
+            entity_key=entity_key,
+            visitor_key="a:crawler999",
+            is_bot=True,
+        )
+    )
+    db_session.commit()
+
+    assert bot_day not in days_missing_rollup(db_session, retention_days=90, limit=50)
+
+
+def test_backfill_takes_the_oldest_gaps_first(db_session: Session) -> None:
+    """Чиним по несколько дней за прогон — начиная с тех, что ближе к удалению."""
+    today = local_today()
+    entity_key = f"test-{uuid4()}"
+    for offset in (20, 30, 40):
+        db_session.add(
+            PageViewEvent(
+                view_id=uuid4(),
+                ts=datetime.combine(
+                    today - timedelta(days=offset), datetime.min.time(), tzinfo=STATS_TIMEZONE
+                )
+                + timedelta(hours=8),
+                path=f"/locations/{entity_key}",
+                page_type="location",
+                entity_key=entity_key,
+                visitor_key="a:gap222222",
+            )
+        )
+    db_session.commit()
+
+    picked = days_missing_rollup(db_session, retention_days=90, limit=2)
+    assert len(picked) == 2
+    assert picked == sorted(picked)
+    assert today - timedelta(days=40) in picked

@@ -75,9 +75,9 @@ function formatAvgFinishers(item: LocationIndexItem): string {
   if (value === null) {
     return "—";
   }
-  // Меньше десяти человек — один знак после запятой: разница 4,2 и 4,8
-  // для маленькой площадки существенна, для сотенной — шум.
-  return value < 10 ? value.toFixed(1).replace(".", ",") : formatInt(value);
+  // Всегда с десятыми (просьба Дмитрия 21.09.2026): у соседних локаций явка
+  // часто различается меньше чем на человека, целые их не разводят.
+  return value.toFixed(1).replace(".", ",");
 }
 
 function matchesQuery(item: LocationIndexItem, query: string): boolean {

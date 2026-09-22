@@ -12,6 +12,7 @@ import logging
 from app.db.session import get_session_factory
 from app.sync.mark_inactive_locations_paused import mark_inactive_locations_paused
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_MEDIUM
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 # сетевых запросов не делает, занимать им очередь синков незачем. Очередь
 # задаётся в beat_schedule — и именно там она до 27.08.2026 была написана как
 # "default", то есть в очередь, которую никто не слушает.
-@celery_app.task(name="locations.refresh_activity_status")
+@celery_app.task(name="locations.refresh_activity_status", **LIMITS_MEDIUM)
 def refresh_location_activity_status() -> dict[str, object]:
     db = get_session_factory()()
     try:

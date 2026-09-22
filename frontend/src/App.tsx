@@ -1,31 +1,13 @@
 import type { ReactElement } from "react";
-import { Fragment, useEffect } from "react";
-import { AdminAbusePage } from "./features/admin/AdminAbusePage";
-import { AdminBlockedSlugsPage } from "./features/admin/AdminBlockedSlugsPage";
-import { AdminStatsPage } from "./features/admin/AdminStatsPage";
-import { AdminSyncRunsPage } from "./features/admin/AdminSyncRunsPage";
-import { AdminPageAnalyticsPage } from "./features/admin/AdminPageAnalyticsPage";
-import { AdminRatingsPage } from "./features/admin/AdminRatingsPage";
-import { AdminResyncPage } from "./features/admin/AdminResyncPage";
-import { AdminLocationContactsPage } from "./features/admin/AdminLocationContactsPage";
-import { AdminLocationOpeningsPage } from "./features/admin/AdminLocationOpeningsPage";
-import { AdminRecordsDigestPage } from "./features/admin/AdminRecordsDigestPage";
+import { Fragment, Suspense, useEffect } from "react";
 import { ProfileRoute } from "./features/profile/ProfileRoute";
-import { AdminUsersPage } from "./features/admin/AdminUsersPage";
 import { OAuthCallbackPage } from "./features/auth/OAuthCallbackPage";
 import { TelegramReturnPage } from "./features/auth/TelegramReturnPage";
-import { OnboardingPage } from "./features/onboarding/OnboardingPage";
 import { PortalAboutPage } from "./features/portal/PortalAboutPage";
 import { PortalBlogPage } from "./features/portal/PortalBlogPage";
 import { PortalHomePage } from "./features/portal/PortalHomePage";
 import { PortalLoginPage } from "./features/portal/PortalLoginPage";
-import { PortalMapLab } from "./features/portal/PortalMapLab";
 import { PortalUpdatesPage } from "./features/portal/PortalUpdatesPage";
-import { AdminBlogPage } from "./features/admin/AdminBlogPage";
-import { AdminReleasesPage } from "./features/admin/AdminReleasesPage";
-import { AdminBacklogPage } from "./features/admin/AdminBacklogPage";
-import { AdminNotificationsPage } from "./features/admin/AdminNotificationsPage";
-import { BacklogPage } from "./features/backlog/BacklogPage";
 import {
   cabinetTabHref,
   profileBaseHref,
@@ -45,47 +27,10 @@ import {
   PORTAL_LOGIN_HREF,
   PORTAL_UPDATES_HREF,
 } from "./lib/portalRoutes";
-import {
-  PortalCabinetSettingsPage,
-  PortalCabinetSharePage,
-} from "./features/portal/cabinet/PortalCabinetPages";
-import { LocationEventsPage } from "./features/locations/LocationEventsPage";
-import { LocationParticipantsPage } from "./features/locations/LocationParticipantsPage";
-import { LocationTopsPage } from "./features/locations/LocationTopsPage";
-import { LocationProtocolPage } from "./features/locations/LocationProtocolPage";
-import { LocationPage } from "./features/locations/LocationPage";
-import { LastResultsPage } from "./features/locations/LastResultsPage";
-import { LocationsIndexPage } from "./features/locations/LocationsIndexPage";
-import { FastestRatingPage } from "./features/leaderboards/FastestRatingPage";
-import { UnifiedProtocolPage } from "./features/locations/UnifiedProtocolPage";
-import { LeaderboardPage } from "./features/leaderboards/LeaderboardPage";
-import { LeaderboardsHubPage } from "./features/leaderboards/LeaderboardsHubPage";
-import { OrganizerAbsencePage } from "./features/organizer/OrganizerAbsencePage";
-import { OrganizerAttendancePage } from "./features/organizer/OrganizerAttendancePage";
-import { OrganizerProtocolsPage } from "./features/organizer/OrganizerProtocolsPage";
-import { OrganizerAudiencePage } from "./features/organizer/OrganizerAudiencePage";
-import { OrganizerBenchPage } from "./features/organizer/OrganizerBenchPage";
-import { OrganizerBenchmarkPage } from "./features/organizer/OrganizerBenchmarkPage";
-import { OrganizerIndexPage } from "./features/organizer/OrganizerIndexPage";
-import { OrganizerMilestonesPage } from "./features/organizer/OrganizerMilestonesPage";
-import { OrganizerNewcomersPage } from "./features/organizer/OrganizerNewcomersPage";
-import { OrganizerPostPage } from "./features/organizer/OrganizerPostPage";
-import { OrganizerTeamPage } from "./features/organizer/OrganizerTeamPage";
-import { OrganizerLocationHubPage } from "./features/organizer/OrganizerLocationHubPage";
-import { OrganizerLocationPage } from "./features/organizer/OrganizerLocationPage";
-import { LocationRecordsRatingPage } from "./features/leaderboards/LocationRecordsRatingPage";
-import { RegionsRatingPage } from "./features/leaderboards/RegionsRatingPage";
-import { LocationWeatherPage } from "./features/locations/LocationWeatherPage";
-import { QueuePage } from "./features/queue/QueuePage";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { TapTooltipLayer } from "./components/TapTooltipLayer";
 import { useEntryKey } from "./hooks/useEntryKey";
 import { useAppPath } from "./hooks/useAppPath";
-import {
-  RenderOgDefaultPage,
-  RenderOgLocationPage,
-  RenderOgUserPage,
-} from "./features/sharing/RenderOgPage";
 import { ShareSheetProvider } from "./features/sharing/ShareSheetContext";
 import { TeaserClaimRunner } from "./features/portal/teaserClaim";
 import { reportAuthDoneOnce } from "./lib/abTest";
@@ -96,6 +41,66 @@ import { applyPageMeta, isLocationEntityPath, resolvePageMeta } from "./lib/page
 import { deferMetrikaHit, reportMetrikaHit } from "./lib/metrika";
 import { isLegacyGrafanaPath, legacyGrafanaTarget } from "./lib/siteBrand";
 import { buildVisitorKey } from "./lib/siteVisitor";
+import { LazyErrorBoundary, RouteFallback, lazyPage } from "./lib/lazyPage";
+
+// Разделы, не нужные на первом экране, грузятся по первому обращению (см.
+// lib/lazyPage): админка, кабинет организатора, локации и протоколы, рейтинги,
+// постеры, /hq, бэклог, онбординг. Главная, вход, кабинет участника и сайдбар
+// остаются в стартовом чанке — их видит каждый.
+const LocationTopsPage = lazyPage(() => import("./features/locations/LocationTopsPage"), (m) => m.LocationTopsPage);
+const LocationWeatherPage = lazyPage(() => import("./features/locations/LocationWeatherPage"), (m) => m.LocationWeatherPage);
+const OrganizerBenchmarkPage = lazyPage(() => import("./features/organizer/OrganizerBenchmarkPage"), (m) => m.OrganizerBenchmarkPage);
+const AdminAbusePage = lazyPage(() => import("./features/admin/AdminAbusePage"), (m) => m.AdminAbusePage);
+const AdminBlockedSlugsPage = lazyPage(() => import("./features/admin/AdminBlockedSlugsPage"), (m) => m.AdminBlockedSlugsPage);
+const AdminStatsPage = lazyPage(() => import("./features/admin/AdminStatsPage"), (m) => m.AdminStatsPage);
+const AdminSyncRunsPage = lazyPage(() => import("./features/admin/AdminSyncRunsPage"), (m) => m.AdminSyncRunsPage);
+const AdminPageAnalyticsPage = lazyPage(() => import("./features/admin/AdminPageAnalyticsPage"), (m) => m.AdminPageAnalyticsPage);
+const AdminRatingsPage = lazyPage(() => import("./features/admin/AdminRatingsPage"), (m) => m.AdminRatingsPage);
+const AdminResyncPage = lazyPage(() => import("./features/admin/AdminResyncPage"), (m) => m.AdminResyncPage);
+const AdminLocationContactsPage = lazyPage(() => import("./features/admin/AdminLocationContactsPage"), (m) => m.AdminLocationContactsPage);
+const AdminLocationOpeningsPage = lazyPage(() => import("./features/admin/AdminLocationOpeningsPage"), (m) => m.AdminLocationOpeningsPage);
+const AdminRecordsDigestPage = lazyPage(() => import("./features/admin/AdminRecordsDigestPage"), (m) => m.AdminRecordsDigestPage);
+const AdminUsersPage = lazyPage(() => import("./features/admin/AdminUsersPage"), (m) => m.AdminUsersPage);
+const OnboardingPage = lazyPage(() => import("./features/onboarding/OnboardingPage"), (m) => m.OnboardingPage);
+const PortalMapLab = lazyPage(() => import("./features/portal/PortalMapLab"), (m) => m.PortalMapLab);
+const AdminBlogPage = lazyPage(() => import("./features/admin/AdminBlogPage"), (m) => m.AdminBlogPage);
+const AdminReleasesPage = lazyPage(() => import("./features/admin/AdminReleasesPage"), (m) => m.AdminReleasesPage);
+const AdminBacklogPage = lazyPage(() => import("./features/admin/AdminBacklogPage"), (m) => m.AdminBacklogPage);
+const AdminNotificationsPage = lazyPage(
+  () => import("./features/admin/AdminNotificationsPage"),
+  (m) => m.AdminNotificationsPage,
+);
+const BacklogPage = lazyPage(() => import("./features/backlog/BacklogPage"), (m) => m.BacklogPage);
+const LocationEventsPage = lazyPage(() => import("./features/locations/LocationEventsPage"), (m) => m.LocationEventsPage);
+const LocationParticipantsPage = lazyPage(() => import("./features/locations/LocationParticipantsPage"), (m) => m.LocationParticipantsPage);
+const LocationProtocolPage = lazyPage(() => import("./features/locations/LocationProtocolPage"), (m) => m.LocationProtocolPage);
+const LocationPage = lazyPage(() => import("./features/locations/LocationPage"), (m) => m.LocationPage);
+const LastResultsPage = lazyPage(() => import("./features/locations/LastResultsPage"), (m) => m.LastResultsPage);
+const LocationsIndexPage = lazyPage(() => import("./features/locations/LocationsIndexPage"), (m) => m.LocationsIndexPage);
+const FastestRatingPage = lazyPage(() => import("./features/leaderboards/FastestRatingPage"), (m) => m.FastestRatingPage);
+const UnifiedProtocolPage = lazyPage(() => import("./features/locations/UnifiedProtocolPage"), (m) => m.UnifiedProtocolPage);
+const LeaderboardPage = lazyPage(() => import("./features/leaderboards/LeaderboardPage"), (m) => m.LeaderboardPage);
+const LeaderboardsHubPage = lazyPage(() => import("./features/leaderboards/LeaderboardsHubPage"), (m) => m.LeaderboardsHubPage);
+const OrganizerAbsencePage = lazyPage(() => import("./features/organizer/OrganizerAbsencePage"), (m) => m.OrganizerAbsencePage);
+const OrganizerAttendancePage = lazyPage(() => import("./features/organizer/OrganizerAttendancePage"), (m) => m.OrganizerAttendancePage);
+const OrganizerProtocolsPage = lazyPage(() => import("./features/organizer/OrganizerProtocolsPage"), (m) => m.OrganizerProtocolsPage);
+const OrganizerAudiencePage = lazyPage(() => import("./features/organizer/OrganizerAudiencePage"), (m) => m.OrganizerAudiencePage);
+const OrganizerBenchPage = lazyPage(() => import("./features/organizer/OrganizerBenchPage"), (m) => m.OrganizerBenchPage);
+const OrganizerIndexPage = lazyPage(() => import("./features/organizer/OrganizerIndexPage"), (m) => m.OrganizerIndexPage);
+const OrganizerMilestonesPage = lazyPage(() => import("./features/organizer/OrganizerMilestonesPage"), (m) => m.OrganizerMilestonesPage);
+const OrganizerNewcomersPage = lazyPage(() => import("./features/organizer/OrganizerNewcomersPage"), (m) => m.OrganizerNewcomersPage);
+const OrganizerPostPage = lazyPage(() => import("./features/organizer/OrganizerPostPage"), (m) => m.OrganizerPostPage);
+const OrganizerTeamPage = lazyPage(() => import("./features/organizer/OrganizerTeamPage"), (m) => m.OrganizerTeamPage);
+const OrganizerLocationHubPage = lazyPage(() => import("./features/organizer/OrganizerLocationHubPage"), (m) => m.OrganizerLocationHubPage);
+const OrganizerLocationPage = lazyPage(() => import("./features/organizer/OrganizerLocationPage"), (m) => m.OrganizerLocationPage);
+const LocationRecordsRatingPage = lazyPage(() => import("./features/leaderboards/LocationRecordsRatingPage"), (m) => m.LocationRecordsRatingPage);
+const RegionsRatingPage = lazyPage(() => import("./features/leaderboards/RegionsRatingPage"), (m) => m.RegionsRatingPage);
+const QueuePage = lazyPage(() => import("./features/queue/QueuePage"), (m) => m.QueuePage);
+const PortalCabinetSettingsPage = lazyPage(() => import("./features/portal/cabinet/PortalCabinetPages"), (m) => m.PortalCabinetSettingsPage);
+const PortalCabinetSharePage = lazyPage(() => import("./features/portal/cabinet/PortalCabinetPages"), (m) => m.PortalCabinetSharePage);
+const RenderOgDefaultPage = lazyPage(() => import("./features/sharing/RenderOgPage"), (m) => m.RenderOgDefaultPage);
+const RenderOgLocationPage = lazyPage(() => import("./features/sharing/RenderOgPage"), (m) => m.RenderOgLocationPage);
+const RenderOgUserPage = lazyPage(() => import("./features/sharing/RenderOgPage"), (m) => m.RenderOgUserPage);
 
 function useSitePageviewTracking(path: string) {
   useEffect(() => {
@@ -489,7 +494,11 @@ export function App() {
   const entryKey = useEntryKey();
   return (
     <ShareSheetProvider>
-      <Fragment key={entryKey}>{renderRoute(path)}</Fragment>
+      <Fragment key={entryKey}>
+        <LazyErrorBoundary>
+          <Suspense fallback={<RouteFallback />}>{renderRoute(path)}</Suspense>
+        </LazyErrorBoundary>
+      </Fragment>
       <TeaserClaimRunner userId={viewer?.id ?? null} />
       {/* Тап-подсказки на телефоне — один слой на весь сайт (см. TapTooltipLayer). */}
       <TapTooltipLayer />

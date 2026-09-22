@@ -16,6 +16,7 @@ from uuid import UUID
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.age_groups import age_group_sql  # noqa: F401 — реэкспорт: его берёт records_digest_service
 from app.models import Event, LocationCatalogLink
 from app.services.start_weather_service import weather_for_event, weather_line
 from app.volunteer_role_taxonomy import canonical_volunteer_role, platform_role_label, strip_role_counters
@@ -65,16 +66,6 @@ POST_SIGNATURE = "📊 Статистика подготовлена канал�
 # Подпись поста из кабинета организатора: посты пишут оргкоманды от себя,
 # поэтому ссылка на сайт, а не на канал автора (решение Дмитрия 16.08.2026).
 SITE_POST_SIGNATURE = "📊 Статистика подготовлена сайтом run5k.run"
-
-
-def age_group_sql(column: str) -> str:
-    """Чистая возрастная группа без места в группе.
-
-    Протокол 5 вёрст кладёт в run_results.age_category строку вида «М40-44 (2)»,
-    где (2) — место внутри группы на этом забеге. Для ранжирования и вывода
-    нужна только сама группа; parkrun-категории (SM25-29) остаются как есть.
-    """
-    return rf"NULLIF(regexp_replace(coalesce({column}, ''), '\s*\(\d+\)\s*$', ''), '')"
 
 
 def gender_sql(column: str) -> str:
@@ -135,31 +126,6 @@ def fmt_date_ru(value: date) -> str:
 
 
 # ===== Списки для формы =====
-
-
-def list_report_locations(db: Session) -> list[dict[str, Any]]:
-    """Локации с хотя бы одним не-тестовым событием, для выпадающего списка."""
-    rows = db.execute(
-        text(
-            f"""
-            SELECT l.id AS location_id,
-                   l.name AS location_name,
-                   l.city AS city,
-                   p.code AS platform_code,
-                   p.name AS platform_name,
-                   count(e.id) AS events_count,
-                   max(e.event_date) AS last_event_date
-            FROM locations l
-            JOIN platforms p ON p.id = l.platform_id
-            JOIN events e ON e.location_id = l.id
-            WHERE NOT e.is_test_event
-              AND e.{NOT_SECONDARY_SQL}
-            GROUP BY l.id, l.name, l.city, p.code, p.name
-            ORDER BY l.name, p.code
-            """
-        )
-    ).mappings()
-    return [dict(row) for row in rows]
 
 
 def list_report_event_dates(db: Session, location_id: UUID) -> list[dict[str, Any]]:
@@ -390,7 +356,13 @@ def _event_context(db: Session, event_id: UUID) -> tuple[Event, dict[str, Any], 
     return event, params, canonical_name
 
 
-def build_event_report(db: Session, event_id: UUID, *, post_signature: str = POST_SIGNATURE) -> dict[str, Any] | None:
+def build_event_report(
+    db: Session,
+    event_id: UUID,
+    *,
+    post_signature: str = POST_SIGNATURE,
+    names_layout: str = "inline",
+) -> dict[str, Any] | None:
     context = _event_context(db, event_id)
     if context is None:
         return None
@@ -779,7 +751,9 @@ def build_event_report(db: Session, event_id: UUID, *, post_signature: str = POS
         "clubs": {"runs": run_clubs, "volunteering": vol_clubs},
         "global_run_jubilees": global_run_jubilees,
     }
-    report["post_text"] = _build_post_text(report, location_title, signature=post_signature)
+    report["post_text"] = _build_post_text(
+        report, location_title, signature=post_signature, names_layout=names_layout
+    )
     return report
 
 
@@ -790,8 +764,22 @@ def _join_names(items: list[dict[str, Any]]) -> str:
     return ", ".join(item["name"] or "Неизвестный участник" for item in items)
 
 
-def _build_post_text(report: dict[str, Any], location_title: str, *, signature: str = POST_SIGNATURE) -> str:
+def _build_post_text(
+    report: dict[str, Any],
+    location_title: str,
+    *,
+    signature: str = POST_SIGNATURE,
+    names_layout: str = "inline",
+) -> str:
+    """Текст поста. names_layout: «inline» — имена в строку через запятую
+    («Клуб 50: А, Б»), «lines» — заголовок и каждое имя своей строкой
+    («Клуб 50:» / «• А» / «• Б») — переключатель кабинета организатора."""
     event = report["event"]
+
+    def _named(title: str, people: list[dict[str, Any]]) -> list[str]:
+        if names_layout == "lines":
+            return [f"{title}:", *(f"• {item['name'] or 'Неизвестный участник'}" for item in people)]
+        return [f"{title}: {_join_names(people)}"]
     header_stats = report["header"]
     platform_label = event["platform_name"]
 
@@ -899,8 +887,9 @@ def _build_post_text(report: dict[str, Any], location_title: str, *, signature: 
         for item in items:
             by_count.setdefault(item["count"], []).append(item)
         return [
-            f"{count} {word} в локации: {_join_names(people)}"
+            line
             for count, people in sorted(by_count.items(), reverse=True)
+            for line in _named(f"{count} {word} в локации", people)
         ]
 
     jub_lines = _milestone_lines(report["location_milestones"]["runs"], "пробежек")
@@ -913,8 +902,9 @@ def _build_post_text(report: dict[str, Any], location_title: str, *, signature: 
         for item in items:
             by_next.setdefault(item["next_milestone"], []).append(item)
         return [
-            f"1 {word} до {next_n} в локации: {_join_names(people)}"
+            line
             for next_n, people in sorted(by_next.items(), reverse=True)
+            for line in _named(f"1 {word} до {next_n} в локации", people)
         ]
 
     one_step_lines = _one_step_lines(report["one_step"]["runs"], "пробежка")
@@ -928,7 +918,9 @@ def _build_post_text(report: dict[str, Any], location_title: str, *, signature: 
         by_level: dict[int, list[dict[str, Any]]] = {}
         for item in items:
             by_level.setdefault(item["count"], []).append(item)
-        return [f"🌟Клуб {level} {label}: {_join_names(people)}" for level, people in sorted(by_level.items())]
+        return [
+            line for level, people in sorted(by_level.items()) for line in _named(f"🌟Клуб {level} {label}", people)
+        ]
 
     club_lines = _club_lines(report["clubs"]["runs"], f"пробежек в системе {platform_label}")
     club_lines += _club_lines(report["clubs"]["volunteering"], f"волонтёрств в системе {platform_label}")
@@ -936,7 +928,10 @@ def _build_post_text(report: dict[str, Any], location_title: str, *, signature: 
 
     # Глобальные юбилейные пробежки (кратные 25, кроме клубных уровней)
     jubilee_items = [f"{item['name']} ({item['count']} пробежек)" for item in report["global_run_jubilees"]]
-    jub_extra_block = "🎖️**Юбилейные пробежки:**\n" + ", ".join(jubilee_items) if jubilee_items else ""
+    jubilee_body = (
+        "\n".join(f"• {item}" for item in jubilee_items) if names_layout == "lines" else ", ".join(jubilee_items)
+    )
+    jub_extra_block = "🎖️**Юбилейные пробежки:**\n" + jubilee_body if jubilee_items else ""
 
     blocks = [
         header,

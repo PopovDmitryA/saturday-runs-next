@@ -2026,6 +2026,14 @@ export function getHistoryMilestoneSettings() {
   return apiFetch<HistoryMilestoneSettings>("/settings/history-milestones");
 }
 
+// Скрытые виды целиком — модалка «Какие вехи показывать» применяет набор разом.
+export function setHistoryMilestoneDisabledKinds(disabledKinds: string[]) {
+  return apiFetch<HistoryMilestoneSettings>("/settings/history-milestones", {
+    method: "PUT",
+    body: JSON.stringify({ disabled_kinds: disabledKinds }),
+  });
+}
+
 export function setHistoryMilestoneEnabled(kind: string, enabled: boolean) {
   return apiFetch<HistoryMilestoneSettings>(`/settings/history-milestones/${kind}`, {
     method: "PUT",
@@ -4052,6 +4060,8 @@ export type OrganizerPostTemplate =
   | "vacancies"
   | "travelers";
 
+export type OrganizerPostNamesLayout = "inline" | "lines";
+
 export function getOrganizerEventPost(
   slug: string,
   eventId: string | null,
@@ -4062,6 +4072,8 @@ export function getOrganizerEventPost(
     minVolMilestone?: number;
     travelersMinRuns?: number;
     absenceWeeks?: number;
+    /** Списки имён: в строку через запятую или каждое имя своей строкой. */
+    namesLayout?: OrganizerPostNamesLayout;
   },
 ) {
   const params = new URLSearchParams();
@@ -4070,6 +4082,9 @@ export function getOrganizerEventPost(
     params.set("event_id", eventId);
   }
   params.set("template", template);
+  if (options?.namesLayout) {
+    params.set("names_layout", options.namesLayout);
+  }
   if (options?.minRunMilestone) {
     params.set("min_run_milestone", String(options.minRunMilestone));
   }

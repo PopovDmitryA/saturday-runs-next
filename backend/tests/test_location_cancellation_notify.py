@@ -32,7 +32,8 @@ def test_report_lists_cancellations_and_restores() -> None:
     )
 
     assert "🚫 Отмена ближайшего старта" in text
-    assert "S95 · Иваново" in text
+    # «С95» с кириллической «С» — каноническое написание из platform_titles.
+    assert "С95 · Иваново" in text
     assert "Причина: Отмена забега 29 августа" in text
     assert "https://run5k.run/locations/ivanovo" in text
     assert "✅ Отмена снята" in text

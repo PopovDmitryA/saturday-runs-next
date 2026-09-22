@@ -18,18 +18,17 @@ parkrun-monitoring и переиспользуется отсюда — дубл
 from __future__ import annotations
 
 import logging
-import os
 import sys
 import time
 from pathlib import Path
+
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
 def _monitoring_dir() -> Path | None:
-    raw = os.environ.get("PARKRUN_MONITORING_DIR") or str(
-        Path.home() / "Projects" / "parkrun-monitoring"
-    )
+    raw = get_settings().parkrun_monitoring_dir or str(Path.home() / "Projects" / "parkrun-monitoring")
     path = Path(raw)
     return path if (path / "athlete_sweep" / "waf_solver.py").exists() else None
 

@@ -12,6 +12,7 @@ import {
   SITE_SECTIONS_NAV,
   SiteSidebar,
   icon,
+  navHref,
   type CabinetTabKey,
 } from "../SiteSidebar";
 import "../portal.css";
@@ -61,8 +62,10 @@ export function PortalCabinetShell({
   hideSecondaryNav = false,
   children,
 }: PortalCabinetShellProps) {
+  // Сразу на /users/{хендл}/…, как в сайдбаре: служебные /new/* отдают
+  // страницу-редирект, и каждый тап по нижней панели стоил лишней загрузки.
   const tabHref = (item: (typeof CABINET_NAV)[number]) =>
-    hrefForTab ? hrefForTab(item.key, item.href) : item.href;
+    hrefForTab ? hrefForTab(item.key, item.href) : navHref(user, item);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const mainRef = useRef<HTMLElement>(null);

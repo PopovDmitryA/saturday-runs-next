@@ -144,7 +144,7 @@ def test_warm_skips_when_another_run_holds_lock(
 
     results = leaderboards_warm.warm_leaderboards_cache()
 
-    assert results == {"skipped": "already_running"}
+    assert results["skipped"] is True and results["reason"] == "already_running"
     assert journal == [], "занятый замок не должен пускать прогон к базе"
 
 

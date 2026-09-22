@@ -15,6 +15,7 @@ from app.services.scheduled_run_log_service import (
 )
 from app.services.vk_admin_notify import format_daily_summary
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_MEDIUM
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ def _day_bounds(day: datetime) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
-@celery_app.task(name="admin_digest.daily_sync_summary")
+@celery_app.task(name="admin_digest.daily_sync_summary", **LIMITS_MEDIUM)
 def daily_sync_summary_task() -> dict[str, object]:
     """Одна сводка в сутки в ВК: сколько раз запускали и что обновилось.
 

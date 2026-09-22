@@ -13,6 +13,13 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Миграции пишутся руками, но autogenerate нужен как сторож дрейфа: без этих
+# флагов он молчит про смену типа колонки (JSON -> JSONB жил в расхождении
+# больше года) и про серверные значения по умолчанию. Ревизию-пустышку
+# (`alembic revision --autogenerate -m drift_check`) можно гонять как проверку:
+# непустой upgrade() = модель и БД разошлись.
+COMPARE_OPTIONS = {"compare_type": True, "compare_server_default": True}
+
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
@@ -24,6 +31,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        **COMPARE_OPTIONS,
     )
 
     with context.begin_transaction():
@@ -38,7 +46,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(connection=connection, target_metadata=target_metadata, **COMPARE_OPTIONS)
 
         with context.begin_transaction():
             context.run_migrations()

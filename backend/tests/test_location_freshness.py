@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from uuid import uuid4
 
 import fakeredis
@@ -266,3 +267,49 @@ def test_organizer_index_does_not_touch_other_locations(
 
     assert 0 < fake_redis.ttl(my_key) <= STALE_AFTER_WRITE_SECONDS
     assert fake_redis.ttl(their_key) > STALE_AFTER_WRITE_SECONDS
+
+
+def test_mark_shortens_protocol_and_records_caches(
+    db_session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Пришёл субботний протокол — /protocol и рейтинг рекордов не ждут три часа.
+
+    DEAD-01: функции сброса единого протокола, протокола локации и рейтинга
+    рекордов существовали, но их никто не звал.
+    """
+    from app.models import Location
+    from app.services.location_protocol_service import location_protocol_cache_key
+    from app.services.location_records_rating_service import RATING_CACHE_KEY
+    from app.services.unified_protocol_service import (
+        unified_protocol_cache_key,
+        unified_protocol_weeks_cache_key,
+    )
+
+    five_verst = _five_verst_platform(db_session)
+    suffix = uuid4().hex[:8]
+    location = Location(
+        platform_id=five_verst.id,
+        external_key=f"sokolniki-{suffix}",
+        name="Сокольники",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    saturday = date(2026, 3, 7)
+    protocol_key = location_protocol_cache_key(location.external_key, "five_verst", saturday)
+    week_key = unified_protocol_cache_key(saturday)
+    weeks_key = unified_protocol_weeks_cache_key()
+    for key in (protocol_key, week_key, weeks_key, RATING_CACHE_KEY):
+        fake_redis.setex(key, 6 * 60 * 60, "{}")
+
+    mark_location_results_changed(
+        db_session,
+        [location.id],
+        reason="тест: протокол",
+        protocols=[("five_verst", saturday)],
+    )
+    db_session.commit()
+
+    assert 0 < fake_redis.ttl(protocol_key) <= STALE_AFTER_WRITE_SECONDS
+    for key in (week_key, weeks_key, RATING_CACHE_KEY):
+        assert 0 < fake_redis.ttl(key) <= STALE_AFTER_WRITE_SECONDS_SHOWCASE, key

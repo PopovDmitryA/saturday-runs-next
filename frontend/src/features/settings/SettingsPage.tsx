@@ -3,7 +3,6 @@ import { AppShell } from "../../components/AppShell";
 import { AuthProvidersSection } from "./AuthProvidersSection";
 import { AvatarSection } from "./AvatarSection";
 import { DisplayNameSection } from "./DisplayNameSection";
-import { HistoryMilestonesSection } from "./HistoryMilestonesSection";
 import { HomeLocationSection } from "./HomeLocationSection";
 import { NewsletterSection } from "./NewsletterSection";
 import { PrivacySettingsSection } from "./PrivacySettingsSection";
@@ -25,7 +24,6 @@ export function SettingsContent({ bare = false }: { bare?: boolean } = {}) {
       <NewsletterSection />
       <ProfileLinkSection />
       <HomeLocationSection />
-      <HistoryMilestonesSection />
       <AuthProvidersSection initialMergeToken={mergeToken} />
     </>
   );

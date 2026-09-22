@@ -105,6 +105,14 @@ def unified_protocol_weeks_cache_key() -> str:
 
 
 def invalidate_unified_protocol_cache(saturday: date) -> None:
+    """Снести неделю руками — для разовых прогревов из админки и с сервера.
+
+    В синках её не зовут и звать не нужно: после перезаписи протокола TTL
+    ключей недели и списка недель подрезает mark_location_results_changed
+    (app/services/location_freshness.py, с 21.09.2026). Подрезка до двух минут,
+    а не delete — субботний синк переписывает сотни протоколов подряд, и
+    каждый delete стоил бы холодного пересчёта всей страны.
+    """
     try:
         client = get_redis_client()
         client.delete(unified_protocol_cache_key(saturday))
@@ -789,7 +797,11 @@ def build_unified_protocol(
         "total": total,
         "previous_saturday": previous_saturday,
         "next_saturday": next_saturday,
-        "latest_saturday": saturdays[-1] if saturdays else None,
+        # Та же формула, что у адреса без даты (latest_protocol_saturday): по
+        # максимальной дате события, а не по кэшированному списку недель. В
+        # субботу утром событие уже есть, а строк в списке недель ещё нет — и
+        # страница показывала одну неделю, а ссылка «последняя» вела на прошлую.
+        "latest_saturday": (latest.isoformat() if (latest := latest_protocol_saturday(db)) else None),
         # Крайности субботы по стране: самый холодный/тёплый/мокрый старт.
         "weather": week_weather_extremes(db, saturday),
     }

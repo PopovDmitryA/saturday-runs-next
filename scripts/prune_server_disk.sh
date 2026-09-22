@@ -21,7 +21,9 @@ if [[ -d /root/.cache/ms-playwright ]]; then
 fi
 
 echo "=== unused Docker images (keep running containers) ==="
-docker image prune -af
+# Без -a: он сносит и node:22-alpine, которым деплой собирает фронт, и следующая
+# выкатка качает образ заново (деплой сам чистит так же, см. remote_deploy.sh).
+docker image prune -f
 
 echo "=== dangling Docker build cache ==="
 docker builder prune -f

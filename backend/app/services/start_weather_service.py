@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import math
 import statistics
-from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -87,7 +86,6 @@ _WMO_LABELS: dict[int, tuple[str, str]] = {
     99: ("гроза с градом", "⛈️"),
 }
 
-RAIN_CODES = {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99}
 SNOW_CODES = {71, 73, 75, 77, 85, 86}
 
 MONTH_NAMES = (
@@ -704,10 +702,3 @@ def user_weather_stats(db: Session, user_id: UUID) -> dict[str, Any]:
         "heat_runs": sum(1 for r in with_temp if float(r.weather.temperature_c) >= HEAT_C),
         "snow_runs": len(snowy),
     }
-
-
-def group_by_year(rows: Iterable[RunWeatherRow]) -> dict[int, list[RunWeatherRow]]:
-    grouped: dict[int, list[RunWeatherRow]] = defaultdict(list)
-    for row in rows:
-        grouped[row.event_date.year].append(row)
-    return dict(grouped)

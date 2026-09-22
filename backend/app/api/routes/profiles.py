@@ -130,15 +130,6 @@ async def s95_preview(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> S95ProfilePreviewResponse | Response:
-    from app.debug_agent_log import agent_log
-
-    started = __import__("time").time()
-    agent_log(
-        location="profiles.py:s95_preview:entry",
-        message="s95 preview request",
-        data={"url_len": len(body.profile_url.strip()), "has_url": bool(body.profile_url.strip())},
-        hypothesis_id="D",
-    )
     try:
         result = await _run_with_cancel(
             request,
@@ -151,15 +142,6 @@ async def s95_preview(
             return Response(status_code=499)
         s95_preview, parkrun_match = result
 
-        agent_log(
-            location="profiles.py:s95_preview:success",
-            message="s95 preview ok",
-            data={
-                "external_user_id": s95_preview.external_user_id,
-                "has_parkrun_match": parkrun_match is not None,
-            },
-            hypothesis_id="A",
-        )
         return S95ProfilePreviewResponse(
             **_preview_to_response(s95_preview).model_dump(),
             parkrun_match=_preview_to_response(parkrun_match) if parkrun_match else None,
@@ -167,28 +149,7 @@ async def s95_preview(
     except RequestCancelled:
         return Response(status_code=499)
     except ProfileLinkingError as exc:
-        agent_log(
-            location="profiles.py:s95_preview:linking_error",
-            message="ProfileLinkingError",
-            data={"status_code": exc.status_code, "error_type": type(exc).__name__},
-            hypothesis_id="D",
-        )
         raise _handle_linking_error(exc) from exc
-    except Exception as exc:
-        agent_log(
-            location="profiles.py:s95_preview:unhandled",
-            message="unhandled exception",
-            data={"error_type": type(exc).__name__, "error_msg": str(exc)[:300]},
-            hypothesis_id="D",
-        )
-        raise
-    finally:
-        agent_log(
-            location="profiles.py:s95_preview:exit",
-            message="s95 preview finished",
-            data={"elapsed_ms": int((__import__("time").time() - started) * 1000)},
-            hypothesis_id="A",
-        )
 
 
 @router.post("/s95/confirm", response_model=S95ProfileLinkConfirmResponse)

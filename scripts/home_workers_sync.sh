@@ -16,13 +16,26 @@ set -uo pipefail
 VPS="${VPS_HOST:-viewer@195.58.34.112}"
 REMOTE_DIR="${VPS_DIR:-/opt/saturday-runs-next}"
 HOME_DIR="${HOME_PROD_DIR:-$HOME/srs-prod}"
-SERVICES="worker-s95 worker-five-verst worker-runpark"
+# tg-proxy — не воркер, но без неё домашние воркеры не достучатся до
+# api.telegram.org, и уведомления об отмене старта уйдут в ВК-фолбэк.
+SERVICES="worker-s95 worker-five-verst worker-five-verst-fresh worker-runpark tg-proxy"
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.home.yml)
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
 
 [ -d "$HOME_DIR/.git" ] || { log "нет клона $HOME_DIR — сначала git clone"; exit 1; }
 [ -f "$HOME_DIR/.env" ] || { log "нет $HOME_DIR/.env — воркеру неоткуда взять настройки"; exit 1; }
+# Конфиг прокси gitignored и живёт только на серверах: без него docker
+# подсунул бы вместо файла пустой каталог, и xray не поднялся бы.
+if [ ! -f "$HOME_DIR/deploy/tg-proxy/config.json" ]; then
+    log "нет deploy/tg-proxy/config.json — поднимаю без прокси, Telegram-уведомления уйдут в ВК"
+    SERVICES="worker-s95 worker-five-verst worker-five-verst-fresh worker-runpark"
+# Контейнер xray ходит под uid 65532, а не под хозяином файла: конфиг с правами
+# 600 он не прочитает и уйдёт в крэш-луп. На VPS файл лежит с 664.
+elif [ "$(stat -c '%A' "$HOME_DIR/deploy/tg-proxy/config.json" | cut -c8)" != "r" ]; then
+    log "deploy/tg-proxy/config.json не читается чужим uid — выставляю 644"
+    chmod 644 "$HOME_DIR/deploy/tg-proxy/config.json"
+fi
 
 remote_sha=$(ssh -o BatchMode=yes -o ConnectTimeout=20 "$VPS" "cat $REMOTE_DIR/.deployed_sha 2>/dev/null" | tr -d '\r\n')
 [ -n "$remote_sha" ] || { log "на проде нет маркера .deployed_sha, пропускаю"; exit 0; }

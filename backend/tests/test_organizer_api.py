@@ -468,6 +468,53 @@ def test_absence_marks_who_still_runs_elsewhere(
     assert row["elsewhere_hint"] == f"{other.name} — пробежка"
 
 
+def test_absence_follows_site_profile_across_systems(
+    client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Человек склеен профилем сайта: «бегает где-то ещё» видит его вторую систему.
+
+    Регрессия на QRY-USER-ADMIN-02: тяжёлые выборки «Долгой паузы» получили
+    второй, сарджабельный фильтр по participant_id, и в него обязаны попасть
+    все привязки профиля, а не только тот участник, чьим id оказался ключ
+    группировки. Здесь ключ группировки — user_id, а бежал человек под другим
+    participant'ом в другой системе.
+    """
+    location, platform, user = _absence_fixture(db_session)
+    suffix = str(uuid4().int % 1_000_000)
+    lost = (
+        db_session.query(Participant)
+        .filter(Participant.display_name == "Пропавший Иванов")
+        .order_by(Participant.created_at.desc())
+        .first()
+    )
+    assert lost is not None
+    runner = User(telegram_id=int(uuid4().int % 10_000_000_000), telegram_username=f"r{suffix}")
+    db_session.add(runner)
+    db_session.flush()
+    _link(db_session, runner, platform, lost)
+
+    s95 = _platform(db_session, "s95", "S95")
+    other_location = _location(db_session, s95, f"org-s95-{suffix}")
+    other_event = _event(db_session, s95, other_location, date(2026, 6, 6), 1)
+    s95_participant = _participant(db_session, s95, f"{suffix}-s95", "Пропавший Иванов")
+    _link(db_session, runner, s95, s95_participant)
+    _run(db_session, other_event, s95_participant)
+    db_session.commit()
+
+    fake_redis.delete(LOCATIONS_INDEX_CACHE_KEY)
+    _login(client, user.telegram_id or 0, "organizer")
+    response = client.get(
+        f"/api/organizer/{location.external_key}/absence",
+        params={"min_runs": 3, "min_missed": 1},
+    )
+    assert response.status_code == 200
+    row = next(item for item in response.json()["items"] if item["name"] == "Пропавший Иванов")
+    assert row["elsewhere_date_display"] == "06.06.2026"
+    assert row["elsewhere_hint"] == f"{other_location.name} — пробежка"
+    # «Всего пробежек» тоже считается по обеим системам профиля.
+    assert row["runs_total"] == 4
+
+
 def test_absence_leaves_elsewhere_empty_when_dates_match(
     client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
 ) -> None:
@@ -617,6 +664,28 @@ def test_event_post_uses_site_signature(
     assert "run5k.run" in post
     assert "t.me/popov_way" not in post
     assert "Статистика пробежки" in post
+
+
+def test_event_post_names_layout(
+    client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Переключатель «имена построчно»: lines — по имени на строку, inline —
+    через запятую, чужое значение — 422."""
+    location, today, user = _svod_fixture(db_session)
+    fake_redis.delete(LOCATIONS_INDEX_CACHE_KEY)
+    _login(client, user.telegram_id or 0, "organizer")
+
+    base = {"event_id": str(today.id), "template": "stats"}
+    lines = client.get(f"/api/organizer/{location.external_key}/event-post", params={**base, "names_layout": "lines"})
+    assert lines.status_code == 200
+    assert "👑 Первый раз на старте (1):\n• Новичок Иванов\n" in lines.json()["post_text"]
+
+    inline = client.get(f"/api/organizer/{location.external_key}/event-post", params={**base, "names_layout": "inline"})
+    assert inline.status_code == 200
+    assert "👑 Первый раз на старте (1): Новичок Иванов." in inline.json()["post_text"]
+
+    bad = client.get(f"/api/organizer/{location.external_key}/event-post", params={**base, "names_layout": "columns"})
+    assert bad.status_code == 422
 
 
 def test_milestones_shows_upcoming_jubilee(

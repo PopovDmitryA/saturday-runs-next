@@ -21,13 +21,9 @@ from app.s95.parsers.volunteer_roles import canonical_s95_volunteer_role, s95_vo
 ATHLETE_ID_RE = re.compile(r"/athletes/(\d+)", re.IGNORECASE)
 DATE_RE = re.compile(r"(\d{2})\.(\d{2})\.(\d{4})")
 EVENT_LINK_RE = re.compile(r"/(?:events|protocols?)/", re.IGNORECASE)
-VOL_HEADER_RE = re.compile(r"Волонт[ёe]р|Volonteri|Volunteer", re.IGNORECASE)
 VOL_SECTION_TITLE_RE = re.compile(r"^Волонт[её]р(ства|ы)$", re.I)
 ACTIVITY_LINK_RE = re.compile(r"/activities/\d+", re.I)
 EVENT_LINK_RE = re.compile(r"/events/([^/?#]+)", re.I)
-FRIENDS_HEADER_RE = re.compile(r"^\s*\d*\s*Друзья\s*$", re.I)
-IN_FRIENDS_HEADER_RE = re.compile(r"^\s*\d*\s*В друзьях\s*$", re.I)
-AWARDS_HEADER_RE = re.compile(r"наград|trophies|bedž", re.I)
 
 
 class AthleteParseError(ValueError):
@@ -414,10 +410,15 @@ def parse_athlete_runs_html(
             if len(cells) < 2:
                 continue
 
+            # Колонка «#» в профиле S95 — порядковый номер ПРОБЕЖКИ самого
+            # человека, а не номер старта локации. По репорту 19.09.2026: в
+            # профиле с четырьмя пробежками стоят 1–4, тогда как настоящие
+            # номера тех стартов — 177 (Троицк), 60 (ЗИЛ), 124 (Щёлково) и 2
+            # (Малаховка). Мы писали это число в events.event_number, и по нему
+            # считались числовые челленджи: «Нумератор» закрывал клетку №4
+            # вместо №2. Номер старта у S95 приезжает только с реестра локации
+            # (ранг в /events/{slug}.json), в профиле его нет вовсе.
             event_number = None
-            event_num_text = _cell_text(cells, cols["event_num"])
-            if event_num_text.isdigit():
-                event_number = int(event_num_text)
 
             position = None
             place_text = _cell_text(cells, cols["place"])
@@ -552,63 +553,6 @@ def parse_athlete_html(html: str, profile_url: str, external_user_id: str) -> Ca
         planning_location=planning,
         source_url=profile_url,
     )
-
-
-def _friend_links_after_header(soup: BeautifulSoup, header_pattern: re.Pattern[str]) -> list[dict[str, str]]:
-    header = soup.find(lambda tag: tag.name in ["h2", "h3", "h4"] and header_pattern.search(tag.get_text(strip=True)))
-    if header is None:
-        return []
-    container = header.find_parent("div") or header.parent
-    if container is None:
-        return []
-    friends: list[dict[str, str]] = []
-    for link in container.find_all("a", href=ATHLETE_ID_RE):
-        href = link.get("href", "")
-        match = ATHLETE_ID_RE.search(href)
-        if not match:
-            continue
-        friends.append(
-            {
-                "external_user_id": match.group(1),
-                "display_name": link.get_text(strip=True),
-                "profile_url": urljoin("https://s95.ru", href),
-            }
-        )
-    return friends
-
-
-def parse_athlete_friends_html(html: str) -> dict[str, list[dict[str, str]]]:
-    soup = BeautifulSoup(html, "html.parser")
-    return {
-        "friends_added": _friend_links_after_header(soup, FRIENDS_HEADER_RE),
-        "friends_of": _friend_links_after_header(soup, IN_FRIENDS_HEADER_RE),
-    }
-
-
-def parse_athlete_awards_html(html: str) -> list[dict[str, str]]:
-    soup = BeautifulSoup(html, "html.parser")
-    awards: list[dict[str, str]] = []
-    header = soup.find(lambda tag: tag.name in ["h2", "h3", "h4"] and AWARDS_HEADER_RE.search(tag.get_text(strip=True)))
-    if header is None:
-        return awards
-    container = header.find_parent("div") or header.parent
-    if container is None:
-        return awards
-    for item in container.find_all(["li", "div", "span", "a"]):
-        text = item.get_text(" ", strip=True)
-        if not text or text.lower() == "загрузка...":
-            continue
-        if len(text) > 200:
-            continue
-        if AWARDS_HEADER_RE.search(text):
-            continue
-        if any(marker in text.lower() for marker in ("всего", "загрузка", "посещ", "рекорд", "лучшее", "trophies", "new ")):
-            continue
-        if re.fullmatch(r"\d+", text):
-            continue
-        if text not in {a["title"] for a in awards}:
-            awards.append({"title": text})
-    return awards[:50]
 
 
 def participant_to_preview(

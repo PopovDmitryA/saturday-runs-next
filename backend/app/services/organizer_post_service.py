@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -111,8 +111,45 @@ def _role_emoji(label: str) -> str:
     return ROLE_EMOJI.get(canonical.key, "🙌")
 
 
+# Как писать списки имён в постах: одной строкой через запятую или каждое имя
+# своей строкой. Переключатель в кабинете (просьба организаторов через Дмитрия
+# 21.09.2026: «через перенос строки каждого писать»), действует на все именные
+# блоки шаблона. Умолчание — как было, в строку.
+NamesLayout = Literal["inline", "lines"]
+NAMES_LAYOUTS: tuple[str, ...] = ("inline", "lines")
+
+
+def _row_name(row: dict[str, Any]) -> str:
+    return str(row.get("name") or "Неизвестный участник")
+
+
 def _names(rows: list[dict[str, Any]]) -> str:
-    return ", ".join(str(row.get("name") or "Неизвестный участник") for row in rows)
+    return ", ".join(_row_name(row) for row in rows)
+
+
+def _name_block(
+    title: str,
+    items: list[str],
+    layout: NamesLayout,
+    *,
+    tail: str | None = None,
+    sep: str = ", ",
+) -> list[str]:
+    """Блок «заголовок + имена» в выбранной раскладке.
+
+    inline: «👑 Первый раз на старте (4): А, Б. Добро пожаловать!»
+    lines:  «👑 Первый раз на старте (4):» / «• А» / «• Б» / «Добро пожаловать!»
+    Парсер постера (postPoster.ts) читает оба вида.
+    """
+    if layout == "lines":
+        lines = [f"{title}:", *(f"• {item}" for item in items)]
+        if tail:
+            lines.append(tail)
+        return lines
+    line = f"{title}: {sep.join(items)}."
+    if tail:
+        line += f" {tail}"
+    return [line]
 
 
 def _event_header(event: dict[str, Any], title: str) -> list[str]:
@@ -127,7 +164,12 @@ def _event_header(event: dict[str, Any], title: str) -> list[str]:
     return lines
 
 
-def _stats_post(svod: dict[str, Any], guest_homes: list[dict[str, Any]] | None = None) -> str:
+def _stats_post(
+    svod: dict[str, Any],
+    guest_homes: list[dict[str, Any]] | None = None,
+    *,
+    names_layout: NamesLayout = "inline",
+) -> str:
     event = svod["event"]
     runners = svod["runners"]
 
@@ -141,27 +183,41 @@ def _stats_post(svod: dict[str, Any], guest_homes: list[dict[str, Any]] | None =
     lines.append(f"🤝 Волонтёров: {event['volunteers_count']}")
     if pbs:
         lines.append("")
-        lines.append(f"🚀 Личные рекорды обновили ({len(pbs)}): {_names(pbs)}. Гордимся каждым новым максимумом!")
+        lines.extend(
+            _name_block(
+                f"🚀 Личные рекорды обновили ({len(pbs)})",
+                [_row_name(r) for r in pbs],
+                names_layout,
+                tail="Гордимся каждым новым максимумом!",
+            )
+        )
     if newcomers:
         lines.append("")
-        lines.append(
-            f"👑 Первый раз на старте ({len(newcomers)}): {_names(newcomers)}. Добро пожаловать в беговую семью!"
+        lines.extend(
+            _name_block(
+                f"👑 Первый раз на старте ({len(newcomers)})",
+                [_row_name(r) for r in newcomers],
+                names_layout,
+                tail="Добро пожаловать в беговую семью!",
+            )
         )
     # «Откуда гости» (просьба Дмитрия 24.08.2026): гость — финишёр, чья
     # домашняя локация другая (по общесайтовой логике дома), и гостить он
-    # может не в первый раз. Пишем, откуда приехал.
+    # может не в первый раз. Пишем, откуда приехал. В строку — через «;»:
+    # запятая внутри «Имя — Дом (Город)» читалась бы как разделитель.
     if guest_homes:
-        lines.append("")
-        lines.append(f"🧳 Гости локации ({len(guest_homes)}):")
+        guest_items = []
         for guest in guest_homes:
             home = guest["home_name"]
             if guest.get("home_city"):
                 home += f" ({guest['home_city']})"
-            lines.append(f"• {guest['name']} — {home}")
+            guest_items.append(f"{guest['name']} — {home}")
+        lines.append("")
+        lines.extend(_name_block(f"🧳 Гости локации ({len(guest_homes)})", guest_items, names_layout, sep="; "))
     if jubilees:
         lines.append("")
         jubilee_parts = [f"{row['name']} — {row['location_milestone']}-й финиш здесь" for row in jubilees]
-        lines.append("🎂 Юбилеи: " + "; ".join(jubilee_parts) + ".")
+        lines.extend(_name_block("🎂 Юбилеи", jubilee_parts, names_layout, sep="; "))
     lines.append("")
     lines.append(SITE_POST_SIGNATURE)
     return "\n".join(lines)
@@ -205,7 +261,7 @@ def _volunteers_post(svod: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _newcomers_post(svod: dict[str, Any]) -> str:
+def _newcomers_post(svod: dict[str, Any], *, names_layout: NamesLayout = "lines") -> str:
     event = svod["event"]
     runners = svod["runners"]
     volunteers = svod["volunteers"]
@@ -215,21 +271,14 @@ def _newcomers_post(svod: dict[str, Any]) -> str:
     first_vols = [v for v in volunteers if v["first_volunteering"]]
 
     lines = _event_header(event, "👑 Новые лица")
-    if first_runs:
-        lines.append("")
-        lines.append("🏃 Первый финиш:")
-        for row in first_runs:
-            lines.append(f"• {row.get('name') or 'Неизвестный участник'}")
-    if first_vols:
-        lines.append("")
-        lines.append("🙋 Первое волонтёрство:")
-        for row in first_vols:
-            lines.append(f"• {row.get('name') or 'Неизвестный участник'}")
-    if guests:
-        lines.append("")
-        lines.append("🧳 Впервые на нашей локации:")
-        for row in guests:
-            lines.append(f"• {row.get('name') or 'Неизвестный участник'}")
+    for title, rows in (
+        ("🏃 Первый финиш", first_runs),
+        ("🙋 Первое волонтёрство", first_vols),
+        ("🧳 Впервые на нашей локации", guests),
+    ):
+        if rows:
+            lines.append("")
+            lines.extend(_name_block(title, [_row_name(row) for row in rows], names_layout))
     if not (first_runs or first_vols or guests):
         lines.append("")
         lines.append("На этом старте новых лиц не было — все свои!")
@@ -250,7 +299,17 @@ def _newcomers_post(svod: dict[str, Any]) -> str:
 # и так списаны с 5в, кроме руководителя — у 5в он «Организатор», а не
 # «Директор забега» (правило Дмитрия 07.09.2026: на старте 5 вёрст роли
 # называются ровно как в 5 вёрстах).
-FIVE_VERST_ROLE_LABELS: dict[str, str] = {"run_director": "Организатор"}
+# Ярлыки 5 вёрст для ролей, которые система называет не так, как справочник
+# таксономии. Нужны запасному пути «Нужных волонтёров»: живой таблицы записи
+# нет, роли печатаются из справочника, и читателю должно быть привычно.
+FIVE_VERST_ROLE_LABELS: dict[str, str] = {
+    "run_director": "Организатор",
+    "barcode_scanning": "Сканер",  # до 09.2026 — «Сканирование штрих-кодов»
+    "first_timers": "Инструктаж новых участников",
+    "pre_run_briefing": "Проведение общего брифинга",
+    "vi_guide": "Сопровождение участника с ОВЗ",
+    "walk_leader": "Волонтёр — пешеход",
+}
 
 KEY_VACANCY_ROLE_KEYS: tuple[str, ...] = (
     "run_director",
@@ -345,7 +404,14 @@ def _grouped_milestones(rows: list[dict[str, Any]], key: str) -> dict[int, list[
     return dict(sorted(grouped.items()))
 
 
-def _milestones_post(svod: dict[str, Any]) -> str:
+def _milestone_lines(grouped: dict[int, list[str]], suffix: str, layout: NamesLayout) -> list[str]:
+    """Уровни юбилея: в строку — «🔹 50-й: А, Б», построчно — «• А — 50-й»."""
+    if layout == "lines":
+        return [f"• {name} — {milestone}-{suffix}" for milestone, names in grouped.items() for name in names]
+    return [f"🔹 {milestone}-{suffix}: {', '.join(names)}" for milestone, names in grouped.items()]
+
+
+def _milestones_post(svod: dict[str, Any], *, names_layout: NamesLayout = "inline") -> str:
     event = svod["event"]
     runners = svod["runners"]
     volunteers = svod["volunteers"]
@@ -359,23 +425,19 @@ def _milestones_post(svod: dict[str, Any]) -> str:
     if run_local:
         lines.append("")
         lines.append("🏃 Юбилейные финиши на нашей локации:")
-        for milestone, names in run_local.items():
-            lines.append(f"🔹 {milestone}-й: {', '.join(names)}")
+        lines.extend(_milestone_lines(run_local, "й", names_layout))
     if run_platform:
         lines.append("")
         lines.append(f"🏅 Юбилейные финиши в системе {event['platform_name']}:")
-        for milestone, names in run_platform.items():
-            lines.append(f"🔹 {milestone}-й: {', '.join(names)}")
+        lines.extend(_milestone_lines(run_platform, "й", names_layout))
     if vol_local:
         lines.append("")
         lines.append("🙌 Юбилейные волонтёрства на локации:")
-        for milestone, names in vol_local.items():
-            lines.append(f"🔹 {milestone}-е: {', '.join(names)}")
+        lines.extend(_milestone_lines(vol_local, "е", names_layout))
     if vol_platform:
         lines.append("")
         lines.append(f"🤝 Юбилейные волонтёрства в системе {event['platform_name']}:")
-        for milestone, names in vol_platform.items():
-            lines.append(f"🔹 {milestone}-е: {', '.join(names)}")
+        lines.extend(_milestone_lines(vol_platform, "е", names_layout))
     if not (run_local or run_platform or vol_local or vol_platform):
         lines.append("")
         lines.append("Юбилеев на этом старте не случилось — значит, всё впереди!")
@@ -449,11 +511,27 @@ def build_upcoming_post(
     return "\n".join(lines)
 
 
-def build_event_post(db: Session, event_id: UUID, template: str) -> dict[str, Any] | None:
+def build_event_post(
+    db: Session,
+    event_id: UUID,
+    template: str,
+    *,
+    names_layout: NamesLayout | None = None,
+) -> dict[str, Any] | None:
     """Пост по шаблону. None — событие не найдено; KeyError не бывает:
-    неизвестный шаблон отсекает роут по списку POST_TEMPLATES."""
+    неизвестный шаблон отсекает роут по списку POST_TEMPLATES.
+
+    names_layout — раскладка именных списков (см. NamesLayout); None —
+    исторический вид шаблона: «Привет новичкам» всегда был построчным,
+    остальные — в строку. Шаблон волонтёров раскладку не читает: там формат
+    «роль — имена» выбран отдельно (Мещерский, 17.08.2026)."""
     if template == "full":
-        report = build_event_report(db, event_id, post_signature=SITE_POST_SIGNATURE)
+        report = build_event_report(
+            db,
+            event_id,
+            post_signature=SITE_POST_SIGNATURE,
+            names_layout=names_layout or "inline",
+        )
         if report is None:
             return None
         return {
@@ -466,14 +544,13 @@ def build_event_post(db: Session, event_id: UUID, template: str) -> dict[str, An
     if svod is None:
         return None
     if template == "stats":
-        post_text = _stats_post(svod, _event_guest_homes(db, svod))
+        post_text = _stats_post(svod, _event_guest_homes(db, svod), names_layout=names_layout or "inline")
+    elif template == "newcomers":
+        post_text = _newcomers_post(svod, names_layout=names_layout or "lines")
+    elif template == "milestones":
+        post_text = _milestones_post(svod, names_layout=names_layout or "inline")
     else:
-        builders = {
-            "volunteers": _volunteers_post,
-            "newcomers": _newcomers_post,
-            "milestones": _milestones_post,
-        }
-        post_text = builders[template](svod)
+        post_text = _volunteers_post(svod)
     return {
         "post_text": post_text,
         "template": template,

@@ -32,7 +32,6 @@ from app.platform_adapters.five_verst.result_keys import (
 
 DATE_IN_URL_RE = re.compile(r"/results/(\d{2}\.\d{2}\.\d{4})/")
 USERSTATS_ID_RE = re.compile(r"/userstats/(\d+)")
-PARK_HOME_RE = re.compile(r"^https://5verst\.ru/([a-z0-9]+)/$", re.I)
 FIVE_VERST_SLUG_RE = re.compile(r"^https://5verst\.ru/([a-z0-9]+)/?$", re.I)
 EVENTS_PAGE_URL = f"{BASE_URL}/events/"
 LATEST_RESULTS_URL = f"{BASE_URL}/results/latest/"
@@ -74,15 +73,6 @@ class LocationRegistryStatus(str, enum.Enum):
 
 
 @dataclass(frozen=True)
-class ParsedLocationRef:
-    slug: str
-    name: str
-    city: str | None
-    country: str | None
-    source_url: str
-
-
-@dataclass(frozen=True)
 class ParsedRegistryEntry:
     slug: str
     name: str
@@ -100,15 +90,6 @@ class ParsedRegistryEntry:
 class ParsedEventsPage:
     entries: list[ParsedRegistryEntry]
     saturday_cancellations: list[ParsedRegistryEntry]
-
-
-@dataclass(frozen=True)
-class ParsedEventRow:
-    event_number: int | None
-    event_date: date
-    finishers_count: int | None
-    volunteers_count: int | None
-    source_url: str
 
 
 def _parse_ru_date(value: str) -> date:
@@ -511,22 +492,6 @@ def fetch_event_summaries(
     source_url = _results_all_url(slug)
     html = fetch_html(source_url)
     return parse_event_summaries_html(html, slug, location_name, limit=limit), html
-
-
-def parse_events_all_html(html: str, slug: str, location_name: str, limit: int | None = None) -> list[CanonicalEvent]:
-    summaries = parse_event_summaries_html(html, slug, location_name, limit=limit)
-    return [
-        CanonicalEvent(
-            external_event_key=summary.external_event_key,
-            event_date=summary.event_date,
-            location_external_key=summary.location_external_key,
-            location_name=summary.location_name,
-            title=f"{summary.location_name} #{summary.event_number}",
-            event_number=summary.event_number,
-            source_url=summary.source_url,
-        )
-        for summary in summaries
-    ]
 
 
 def fetch_events(slug: str, location_name: str, limit: int | None = None) -> tuple[list[CanonicalEvent], str]:
@@ -1204,8 +1169,3 @@ def parse_latest_results_html(html: str, *, limit: int | None = None) -> list[Ca
 def fetch_latest_results(*, limit: int | None = None) -> tuple[list[CanonicalEventSummary], str]:
     html = fetch_html(LATEST_RESULTS_URL)
     return parse_latest_results_html(html, limit=limit), html
-
-
-def list_park_slugs(limit: int | None = None) -> list[str]:
-    """Deprecated alias: registry slugs from /events/ (not /parks/)."""
-    return list_location_slugs(limit=limit)
