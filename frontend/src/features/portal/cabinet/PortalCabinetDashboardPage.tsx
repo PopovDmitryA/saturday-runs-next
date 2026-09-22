@@ -16,12 +16,13 @@ import {
 } from "../../../lib/api";
 import { formatDuration, formatStatValue, pluralFormRu } from "../../../lib/format";
 import {
-  PORTAL_CABINET_HISTORY_HREF,
   PORTAL_CABINET_MAP_HREF,
   PORTAL_CABINET_RUNS_HREF,
   PORTAL_DISPLAY_NAME_SETTINGS_HREF,
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_LOGIN_HREF,
+  cabinetTabHref,
+  type CabinetTabSegmentKey,
 } from "../../../lib/portalRoutes";
 import { PortalCabinetShell, userLabel } from "./PortalCabinetShell";
 
@@ -121,6 +122,14 @@ function buildHeroStats(data: Pick<DashboardResponse, "stats">): HeroStat[] {
  * «Профили беговых систем» внизу страницы: там привязка, отвязка и кнопка
  * обновления данных.
  */
+// Плитки героя → вкладки кабинета. Адрес — сразу /users/{хендл}/…: служебные
+// /new/* отдают страницу-редирект, и каждый клик стоил лишней загрузки.
+const HERO_STAT_TABS: Record<string, CabinetTabSegmentKey> = {
+  runs: "runs",
+  vol: "volunteering",
+  geo: "map",
+};
+
 function HeroPlatforms({ byPlatform }: { byPlatform: Record<string, unknown> }) {
   const codes = PLATFORM_ORDER.filter((code) => code in byPlatform);
   if (codes.length === 0) {
@@ -343,7 +352,13 @@ function PortalDashboardContent({ user }: { user: User }) {
 
       {data && !error && (
         <>
-          <DashboardHero data={data} userName={userLabel(user)} />
+          <DashboardHero
+            data={data}
+            userName={userLabel(user)}
+            hrefForStat={(key, defaultHref) =>
+              HERO_STAT_TABS[key] ? cabinetTabHref(user, HERO_STAT_TABS[key]) : defaultHref
+            }
+          />
 
           {/* «Последняя суббота» — одна карточка про этот день целиком: пробежка
               и волонтёрство, вехи, оценка и «Поделиться». Раньше это были четыре
@@ -354,7 +369,7 @@ function PortalDashboardContent({ user }: { user: User }) {
               data={stats.analytics.last_saturday}
               own
               user={user}
-              historyHref={PORTAL_CABINET_HISTORY_HREF}
+              historyHref={cabinetTabHref(user, "history")}
             />
           )}
 
