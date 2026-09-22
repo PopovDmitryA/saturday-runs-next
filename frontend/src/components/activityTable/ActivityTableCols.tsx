@@ -4,9 +4,11 @@ type ActivityTableColsProps = {
   withRating?: boolean;
   /** Краткий мобильный набор: Дата · Система · Локация · Место · Время. */
   short?: boolean;
+  /** Колонка «Погода» (волонтёрства): значок и градусы в час старта. */
+  withWeather?: boolean;
 };
 
-export function ActivityTableCols({ variant, withRating = false, short = false }: ActivityTableColsProps) {
+export function ActivityTableCols({ variant, withRating = false, short = false, withWeather = false }: ActivityTableColsProps) {
   if (variant === "runs" && short) {
     return (
       <colgroup>
@@ -24,6 +26,7 @@ export function ActivityTableCols({ variant, withRating = false, short = false }
         <col className="col-date" />
         <col className="col-platform" />
         <col className="col-location" />
+        {withWeather && <col className="col-weather" />}
         <col className="col-role" />
         {withRating && <col className="col-rating" />}
       </colgroup>

@@ -17,13 +17,19 @@ from app.platform_adapters.five_verst.bulk_parser import (
 from app.sync.five_verst_locations import LocationRegistrySyncOptions, sync_locations_registry
 
 
-def _entry(slug: str, name: str, status: LocationRegistryStatus) -> ParsedRegistryEntry:
+def _entry(
+    slug: str,
+    name: str,
+    status: LocationRegistryStatus,
+    cancel_reason: str | None = None,
+) -> ParsedRegistryEntry:
     return ParsedRegistryEntry(
         slug=slug,
         name=name,
         source_url=f"https://5verst.ru/{slug}/",
         city_group="Test City",
         status=status,
+        cancel_reason=cancel_reason,
     )
 
 
@@ -91,6 +97,51 @@ def test_sync_registry_updates_cancel_status(db_session: Session, five_verst_pla
         )
 
     assert result.cancel_status_changed == 1
+
+
+def test_sync_registry_stores_cancel_reason(db_session: Session, five_verst_platform: Platform) -> None:
+    # Причина со страницы /events/ («отменён по причине: …») должна доезжать до
+    # строки локации — раньше 5 вёрст показывали отмену без объяснения, хотя
+    # текст на сайте системы был.
+    slug = f"reasonpark-{uuid4().hex[:8]}"
+    location = Location(
+        platform_id=five_verst_platform.id,
+        external_key=slug,
+        name="Reason Park",
+        is_paused=False,
+        source_url=f"https://5verst.ru/{slug}/",
+    )
+    db_session.add(location)
+    db_session.commit()
+
+    page = ParsedEventsPage(
+        entries=[
+            _entry(slug, "Reason Park", LocationRegistryStatus.cancelled, "Городской марафон"),
+        ],
+        saturday_cancellations=[],
+    )
+    with patch("app.sync.five_verst_locations.bulk_parser.fetch_events_page", return_value=(page, "<html></html>")):
+        sync_locations_registry(
+            db_session,
+            LocationRegistrySyncOptions(fetch_missing_coordinates=False, detect_duplicates=False),
+        )
+    db_session.refresh(location)
+    assert location.is_cancelled is True
+    assert location.cancel_reason == "Городской марафон"
+
+    # Отмену сняли — причина уходит вместе с ней, не висит прошлой субботой.
+    page = ParsedEventsPage(
+        entries=[_entry(slug, "Reason Park", LocationRegistryStatus.active)],
+        saturday_cancellations=[],
+    )
+    with patch("app.sync.five_verst_locations.bulk_parser.fetch_events_page", return_value=(page, "<html></html>")):
+        sync_locations_registry(
+            db_session,
+            LocationRegistrySyncOptions(fetch_missing_coordinates=False, detect_duplicates=False),
+        )
+    db_session.refresh(location)
+    assert location.is_cancelled is False
+    assert location.cancel_reason is None
 
 
 def test_sync_registry_backfills_region_for_existing_location(

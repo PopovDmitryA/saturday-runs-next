@@ -150,10 +150,18 @@ class CanonicalRunResult:
     is_first_run_at_location: bool = False
     club_name: str | None = None
     barcode_id: str | None = None
+    # Пол, если система отдаёт его сама. У RunPark с 17.09.2026 это колонка
+    # vw_run_results.gender; она закрывает тех, у кого пустая возрастная
+    # категория, — вывести пол из неё там не из чего.
+    gender: str | None = None
     achievement_labels: list[str] = field(default_factory=list)
     location_external_key: str = ""
     location_name: str = ""
     event_number: int | None = None
+    # Тематический старт 5 вёрст (/starti-soobshchestv/): площадки за ним нет,
+    # финиш ложится в локацию-серию «Старты сообществ», а location_name
+    # становится заголовком события. См. app/services/series_locations.py.
+    is_community_event: bool = False
 
 
 @dataclass
@@ -167,6 +175,7 @@ class CanonicalVolunteerResult:
     location_external_key: str = ""
     location_name: str = ""
     event_number: int | None = None
+    is_community_event: bool = False
 
 
 @dataclass
@@ -174,10 +183,3 @@ class ExternalEventRef:
     platform_code: str
     external_event_key: str
     source_url: str
-
-
-@dataclass
-class FetchResult:
-    source_url: str
-    source_hash: str
-    fetched_at: datetime = field(default_factory=datetime.utcnow)

@@ -17,6 +17,7 @@ from app.sync.s95_user_sync import run_s95_user_sync
 from app.workers.celery_app import celery_app
 from app.workers.s95_batch_yield import run_s95_batch_reported_sync
 from app.workers.tasks.sync_task_reporting import run_reported_sync
+from app.workers.time_limits import LIMITS_BACKFILL, LIMITS_MEDIUM, LIMITS_S95_PASS, LIMITS_SHORT
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -49,7 +50,7 @@ def _run_api_sync(sync: Callable[[Session], S95ApiSyncResult]) -> dict[str, obje
         db.close()
 
 
-@celery_app.task(name="s95_sync.run_user_sync", queue="s95_user")
+@celery_app.task(name="s95_sync.run_user_sync", queue="s95_user", **LIMITS_MEDIUM)
 def s95_user_sync_task(
     user_id: str,
     trigger: str,
@@ -85,7 +86,7 @@ def s95_user_sync_task(
         db.close()
 
 
-@celery_app.task(name="s95_sync.sync_locations_registry", queue="s95")
+@celery_app.task(name="s95_sync.sync_locations_registry", queue="s95", **LIMITS_MEDIUM)
 def s95_sync_locations_registry_task(limit: int | None = None, *, force: bool = False) -> dict[str, object]:
     name = "s95 registry /activities"
     details = s95_registry_details(limit=limit)
@@ -118,7 +119,7 @@ def s95_sync_locations_registry_task(limit: int | None = None, *, force: bool = 
     )
 
 
-@celery_app.task(name="s95_sync.watch_cancellations", queue="s95")
+@celery_app.task(name="s95_sync.watch_cancellations", queue="s95", **LIMITS_MEDIUM)
 def s95_watch_cancellations_task(*, force: bool = False) -> dict[str, object]:
     """Отмены ближайшего старта у s95 — отдельным лёгким проходом.
 
@@ -145,13 +146,13 @@ def s95_watch_cancellations_task(*, force: bool = False) -> dict[str, object]:
     )
 
 
-@celery_app.task(name="s95_sync.enqueue_locations_registry", queue="s95")
+@celery_app.task(name="s95_sync.enqueue_locations_registry", queue="s95", **LIMITS_SHORT)
 def s95_enqueue_locations_registry() -> dict[str, object]:
     s95_sync_locations_registry_task.apply_async(kwargs={"force": True}, queue="s95")
     return {"enqueued": 1}
 
 
-@celery_app.task(name="s95_sync.sync_location_descriptions", queue="s95")
+@celery_app.task(name="s95_sync.sync_location_descriptions", queue="s95", **LIMITS_MEDIUM)
 def s95_sync_location_descriptions_task(limit: int | None = None, *, force: bool = False) -> dict[str, object]:
     """Описания площадок S95: пачка самых «протухших» страниц `/events/{slug}` за запуск."""
 
@@ -179,7 +180,7 @@ def s95_sync_location_descriptions_task(limit: int | None = None, *, force: bool
     )
 
 
-@celery_app.task(name="s95_sync.api_new_protocols", queue="s95")
+@celery_app.task(name="s95_sync.api_new_protocols", queue="s95", **LIMITS_S95_PASS)
 def s95_api_new_protocols_task() -> dict[str, object]:
     """Import new protocols and refresh changed ones (via JSON API updated_at). Weekend scan —
     catches same-day results and same-day edits."""
@@ -193,7 +194,7 @@ def s95_api_new_protocols_task() -> dict[str, object]:
     return run_reported_sync("s95 API: новые протоколы", _run, batch_queue_name="s95")
 
 
-@celery_app.task(name="s95_sync.api_sync_updated", queue="s95")
+@celery_app.task(name="s95_sync.api_sync_updated", queue="s95", **LIMITS_S95_PASS)
 def s95_api_sync_updated_task() -> dict[str, object]:
     """Import new protocols and refresh any whose server-side updated_at moved past what we
     have stored. Runs 3x/week across all locations."""
@@ -205,7 +206,29 @@ def s95_api_sync_updated_task() -> dict[str, object]:
     return run_reported_sync("s95 API: обновлённые протоколы", _run, batch_queue_name="s95")
 
 
-@celery_app.task(name="s95_sync.api_reconcile_date", queue="s95")
+@celery_app.task(name="s95_sync.reconcile_events", queue="s95", **LIMITS_MEDIUM)
+def s95_reconcile_events_task(only_slug: str | None = None) -> dict[str, object]:
+    """Сверить состав и нумерацию событий со списками площадок S95.
+
+    Раз в неделю: оба обычных синка ходят по `updated_at` и не видят ни удалений
+    на стороне S95, ни съехавшей от них нумерации. Протоколы не качает — только
+    36 небольших списков (см. app/sync/s95_events_reconcile).
+    """
+    from app.sync.s95_events_reconcile import reconcile_s95_events
+
+    def _run() -> dict[str, object]:
+        db = get_session_factory()()
+        try:
+            result = reconcile_s95_events(db, only_slug=only_slug)
+            db.commit()
+            return result.as_dict()
+        finally:
+            db.close()
+
+    return run_reported_sync("s95: сверка состава событий", _run, batch_queue_name="s95")
+
+
+@celery_app.task(name="s95_sync.api_reconcile_date", queue="s95", **LIMITS_S95_PASS)
 def s95_api_reconcile_date_task(weeks_ago: int = 0) -> dict[str, object]:
     """Re-fetch all protocols dated (most recent Saturday - weeks_ago weeks) to pick up
     late edits. Updates changed protocols and bumps the reviewed timestamp on the rest."""
@@ -226,7 +249,7 @@ def s95_api_reconcile_date_task(weeks_ago: int = 0) -> dict[str, object]:
     )
 
 
-@celery_app.task(name="s95_sync.api_full_backfill", queue="s95")
+@celery_app.task(name="s95_sync.api_full_backfill", queue="s95", **LIMITS_BACKFILL)
 def s95_api_full_backfill_task(limit_per_location: int | None = None) -> dict[str, object]:
     """One-time full pass over every protocol. Run manually, not on a schedule."""
     from app.sync.s95_global_sync_api import full_backfill
@@ -237,7 +260,7 @@ def s95_api_full_backfill_task(limit_per_location: int | None = None) -> dict[st
     return run_reported_sync("s95 API: полный backfill", _run)
 
 
-@celery_app.task(name="s95_sync.fetch_protocol_from_profile", queue="s95")
+@celery_app.task(name="s95_sync.fetch_protocol_from_profile", queue="s95", **LIMITS_MEDIUM)
 def fetch_protocol_from_profile_task(
     location_slug: str,
     event_date_iso: str,

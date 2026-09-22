@@ -28,7 +28,7 @@ from app.services.location_catalog_cache import (
 )
 from app.services.location_geo_service import apply_reverse_geocode_to_location
 from app.sync import upsert
-from app.sync.iteration_commit import commit_step, rollback_step
+from app.sync.iteration_commit import commit_step, release_before_fetch, rollback_step
 from app.sync.location_registry_status import apply_location_registry_flags
 
 logger = logging.getLogger(__name__)
@@ -144,6 +144,10 @@ def _apply_registry_meta(db: Session, row: Location, entry: ParsedRegistryEntry)
         is_paused=registry_entry_is_paused(entry.status),
         is_cancelled=registry_entry_is_cancelled(entry.status),
         is_upcoming=registry_entry_is_upcoming(entry.status),
+        # Причина отмены у 5 вёрст лежит в блоке отмен на /events/ («отменён по
+        # причине: …») — раньше её никто не читал, и на странице локации 5 вёрст
+        # висела голая плашка «старт отменён», хотя у s95 причина была.
+        cancel_reason=entry.cancel_reason,
     )
     if row.name != entry.name:
         row.name = entry.name
@@ -295,6 +299,7 @@ def _record_cancel_change(
             slug=entry.slug,
             name=entry.name,
             cancelled=registry_entry_is_cancelled(entry.status),
+            reason=entry.cancel_reason,
         )
     )
 
@@ -340,6 +345,13 @@ def _process_registry_entry(
 
         needs_coords = row.latitude is None or row.longitude is None
         if needs_coords and fetch_missing_coordinates:
+            # Правки меты (имя, пауза, отмена) уже лежат в сессии — коммитим их
+            # ДО похода за координатами. Фетч страницы локации — это ожидание
+            # общего лока загрузок плюс до пяти попыток по 30 секунд, а прод
+            # рвёт сессии «idle in transaction» через 60 с: без коммита смена
+            # статуса отмены терялась вместе с соединением, а ошибка
+            # всплывала на следующем SELECT (см. iteration_commit).
+            commit_step(db)
             try:
                 location_data, location_html = bulk_parser.fetch_location(entry.slug)
                 if location_data.latitude is None or location_data.longitude is None:
@@ -378,6 +390,9 @@ def _process_registry_entry(
             _record_location(result, "updated_locations", entry.slug, entry.name)
         return
 
+    # Новая локация: в сессии только SELECT выше — отпускаем транзакцию, чтобы
+    # соединение не висело «idle in transaction» всю загрузку страницы.
+    release_before_fetch(db)
     try:
         location_data, location_html = bulk_parser.fetch_location(entry.slug)
     except NotFoundError:
@@ -426,6 +441,10 @@ def _process_registry_entry(
     _record_location(result, "created_locations", entry.slug, entry.name)
 
     if detect_duplicates:
+        # Локация создана и мета применена — коммитим до второго похода в сеть
+        # (страница результатов для проверки на дубль), иначе новая локация
+        # висела бы незакоммиченной весь фетч и терялась при обрыве.
+        commit_step(db)
         candidate_dates = _candidate_summary_dates(entry.slug, entry.name)
         matches = _find_duplicate_matches(db, platform, entry, candidate_dates)
         if matches:

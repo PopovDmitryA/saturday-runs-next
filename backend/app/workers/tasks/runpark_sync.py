@@ -14,11 +14,12 @@ from app.sync.runpark_global_sync import (
 )
 from app.workers.celery_app import celery_app
 from app.workers.tasks.sync_task_reporting import run_reported_sync
+from app.workers.time_limits import LIMITS_MEDIUM
 
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="runpark_sync.sync_latest", queue="runpark")
+@celery_app.task(name="runpark_sync.sync_latest", queue="runpark", **LIMITS_MEDIUM)
 def runpark_sync_latest() -> dict[str, object]:
     since = date.today() - timedelta(days=7)
 
@@ -42,6 +43,7 @@ def runpark_sync_latest() -> dict[str, object]:
                 "events_total": result.events_total,
                 "events_upserted": result.events_upserted,
                 "events_unchanged": result.events_unchanged,
+                "barcode_rows_reassigned": result.barcode_rows_reassigned,
                 "run_results_upserted": result.run_results_upserted,
                 "volunteer_results_upserted": result.volunteer_results_upserted,
                 "errors": result.errors,
@@ -56,7 +58,7 @@ def runpark_sync_latest() -> dict[str, object]:
     )
 
 
-@celery_app.task(name="runpark_sync.backfill_crosslinks", queue="runpark")
+@celery_app.task(name="runpark_sync.backfill_crosslinks", queue="runpark", **LIMITS_MEDIUM)
 def runpark_backfill_crosslinks() -> dict[str, object]:
     """Досвязать dual_load-протоколы RunPark с парой на основной платформе.
 
@@ -78,7 +80,7 @@ def runpark_backfill_crosslinks() -> dict[str, object]:
     return run_reported_sync("runpark crosslinks", _run)
 
 
-@celery_app.task(name="runpark_sync.user_sync", queue="runpark")
+@celery_app.task(name="runpark_sync.user_sync", queue="runpark", **LIMITS_MEDIUM)
 def runpark_user_sync_task(
     user_id: str,
     trigger: str,

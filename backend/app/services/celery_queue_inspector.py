@@ -9,17 +9,20 @@ from celery.result import AsyncResult
 from app.core.redis_client import get_redis_client
 from app.workers.celery_app import celery_app
 
-FIVE_VERST_BATCH_QUEUE = "five_verst"
-FIVE_VERST_USER_QUEUE = "five_verst_user"
-S95_BATCH_QUEUE = "s95"
-S95_USER_QUEUE = "s95_user"
-PARKRUN_SYNC_QUEUE = "parkrun"
+# Имена очередей живут одним списком в app/workers/queues.py; здесь они
+# переэкспортируются для старых импортов (форма `X as X` — чтобы mypy считал
+# это явным экспортом).
+from app.workers.queues import FIVE_VERST_BATCH_QUEUE as FIVE_VERST_BATCH_QUEUE
+from app.workers.queues import FIVE_VERST_FRESH_QUEUE as FIVE_VERST_FRESH_QUEUE
+from app.workers.queues import FIVE_VERST_USER_QUEUE as FIVE_VERST_USER_QUEUE
+from app.workers.queues import PARKRUN_SYNC_QUEUE as PARKRUN_SYNC_QUEUE
+from app.workers.queues import RUNPARK_SYNC_QUEUE as RUNPARK_SYNC_QUEUE
+from app.workers.queues import S95_BATCH_QUEUE as S95_BATCH_QUEUE
+from app.workers.queues import S95_USER_QUEUE as S95_USER_QUEUE
 
 # Backward-compatible alias used by admin summaries for user profile sync.
 USER_SYNC_QUEUE = FIVE_VERST_USER_QUEUE
 S95_SYNC_QUEUE = S95_USER_QUEUE
-
-RUNPARK_SYNC_QUEUE = "runpark"
 
 TASK_QUEUE_BY_SUFFIX: dict[str, str] = {
     "five_verst": FIVE_VERST_USER_QUEUE,

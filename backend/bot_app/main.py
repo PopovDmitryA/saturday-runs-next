@@ -9,7 +9,15 @@ import httpx
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    BotCommand,
+    BotCommandScopeAllPrivateChats,
+    BotCommandScopeChat,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from app.legal.consent_text import consent_bot_message
 from bot_app import admin_ops
@@ -59,6 +67,18 @@ LOGIN_DENIED_MESSAGE = (
     "без подтверждения здесь войти в ваш профиль нельзя."
 )
 
+START_MESSAGE = (
+    "Привет! Это бот сайта run5k.run.\n\n"
+    "🔐 Вход на сайт\n"
+    "Нажмите «Войти через Telegram» на run5k.run — сюда придёт запрос с устройством и городом, "
+    "вы подтвердите его кнопкой. Ни пароля, ни кода вводить не нужно.\n\n"
+    "📬 Новости проекта\n"
+    "Приходят сюда, если включить их в настройках профиля. Там же и выключаются.\n\n"
+    "Сам сайт собирает пробежки 5 вёрст, parkrun, S95 и RunPark в одном месте: личная статистика, "
+    "рейтинги, карта локаций и протоколы стартов. Пригодится, когда решаетесь на первый старт там, "
+    "где ещё не бегали."
+)
+
 ADMIN_HELP_TEXT = (
     "Admin-команды:\n"
     "/stats [дней] — статистика ЛК\n"
@@ -76,7 +96,9 @@ ADMIN_HELP_TEXT = (
     "/sync s95-athletes — s95 реестр атлетов\n"
     "/sync s95-registry — s95 реестр /activities\n"
     "/sync location <slug> — одна локация\n"
-    "/sync protocol <url> — протокол 5 вёрст или s95 по ссылке"
+    "/sync protocol <url> — протокол 5 вёрст или s95 по ссылке\n\n"
+    "Координаты локаций s95: Reply на сообщение бота — latitude:longitude, "
+    "затем Reply «ок» на сообщение с проверкой карты."
 )
 
 
@@ -123,6 +145,16 @@ def _login_keyboard(request_token: str, *, with_consent: bool) -> InlineKeyboard
             [InlineKeyboardButton(text="🚫 Это не я", callback_data=f"{LOGIN_DECLINE_PREFIX}{request_token}")],
         ]
     )
+
+
+def _site_keyboard() -> InlineKeyboardMarkup | None:
+    """Кнопка на сайт под приветствием. На локальном стенде её не будет: Telegram
+    не принимает в кнопках ни http, ни localhost."""
+
+    url = settings.app_base_url.rstrip("/")
+    if not _is_telegram_inline_button_url(url):
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть run5k.run", url=url)]])
 
 
 async def _fetch_login_context(request_token: str, telegram_id: int) -> dict[str, object] | None:
@@ -316,7 +348,7 @@ async def on_cmd_stats(message: Message, command: CommandObject) -> None:
             await _send_admin_reply(message.chat.id, "Использование: /stats [дней]")
             return
     try:
-        text = admin_ops.fetch_stats(settings, period_days)
+        text = await admin_ops.fetch_stats(settings, period_days)
     except Exception as exc:
         text = f"Не удалось получить статистику: {exc}"
     await _send_admin_reply(message.chat.id, text)
@@ -326,7 +358,7 @@ async def on_cmd_status(message: Message) -> None:
     if not await _admin_only(message) or message.chat is None:
         return
     try:
-        text = admin_ops.fetch_pipeline_status(settings)
+        text = await admin_ops.fetch_pipeline_status(settings)
     except Exception as exc:
         text = f"Не удалось получить статус: {exc}"
     await _send_admin_reply(message.chat.id, text)
@@ -339,7 +371,7 @@ async def on_cmd_sync(message: Message, command: CommandObject) -> None:
 
     if not args:
         try:
-            pipelines = admin_ops.list_pipelines(settings)
+            pipelines = await admin_ops.list_pipelines(settings)
         except Exception as exc:
             await _send_admin_reply(message.chat.id, f"Не удалось получить список пайплайнов: {exc}")
             return
@@ -361,7 +393,7 @@ async def on_cmd_sync(message: Message, command: CommandObject) -> None:
             )
             return
         try:
-            text = admin_ops.sync_protocol_url(settings, args[1])
+            text = await admin_ops.sync_protocol_url(settings, args[1])
         except Exception as exc:
             text = f"Не удалось обновить протокол: {exc}"
         await _send_admin_reply(message.chat.id, text)
@@ -369,7 +401,7 @@ async def on_cmd_sync(message: Message, command: CommandObject) -> None:
 
     try:
         location_slug = args[1] if args[0].lower() == "location" and len(args) > 1 else None
-        reply = admin_ops.enqueue_pipeline(settings, args[0], location_slug=location_slug)
+        reply = await admin_ops.enqueue_pipeline(settings, args[0], location_slug=location_slug)
     except ValueError as exc:
         reply = str(exc)
     except Exception as exc:
@@ -398,14 +430,7 @@ async def on_start(message: Message, command: CommandObject) -> None:
         await _prompt_login_confirmation(message, request_token, context)
         return
 
-    await message.answer(
-        "Привет! Я бот личного кабинета Saturday Runs.\n\n"
-        "Saturday Runs собирает статистику из разных беговых систем в одном месте — "
-        "чтобы проще решиться на первую пробежку там, где вы ещё не начинали.\n\n"
-        "Чтобы войти на сайт, нажмите «Войти через Telegram» на странице входа.\n\n"
-        "Координаты локаций с95: Reply на сообщение бота — latitude:longitude, "
-        "затем Reply «ок» на сообщение с проверкой карты."
-    )
+    await message.answer(START_MESSAGE, reply_markup=_site_keyboard())
 
 
 async def on_login_callback(callback: CallbackQuery) -> None:
@@ -470,6 +495,38 @@ async def on_cmd_broadcast_callback(callback: CallbackQuery) -> None:
     await on_broadcast_callback(callback, settings)
 
 
+USER_COMMANDS = [
+    BotCommand(command="start", description="О боте и вход на сайт"),
+    BotCommand(command="help", description="То же самое ещё раз"),
+]
+
+ADMIN_COMMANDS = USER_COMMANDS + [
+    BotCommand(command="stats", description="Статистика ЛК"),
+    BotCommand(command="status", description="Запущенные пайплайны"),
+    BotCommand(command="sync", description="Запустить пайплайн"),
+    BotCommand(command="broadcast", description="Черновик рассылки подписчикам"),
+    BotCommand(command="broadcast_subscribers", description="Кто получит рассылку"),
+    BotCommand(command="admin_help", description="Все admin-команды списком"),
+]
+
+
+async def _publish_commands(bot: Bot) -> None:
+    """Список команд для кнопки «Меню»: общий всем и расширенный админу.
+
+    Telegram хранит его на своей стороне, поэтому шлём на каждом старте бота —
+    это идемпотентно и переживает смену текстов. Упасть здесь нельзя: без меню
+    бот работает, без polling — нет.
+    """
+
+    try:
+        await bot.set_my_commands(USER_COMMANDS, scope=BotCommandScopeAllPrivateChats())
+        admin_chat_id = settings.admin_telegram_id or settings.telegram_admin_chat_id
+        if admin_chat_id:
+            await bot.set_my_commands(ADMIN_COMMANDS, scope=BotCommandScopeChat(chat_id=admin_chat_id))
+    except Exception:
+        logger.exception("Не удалось обновить меню команд")
+
+
 async def main() -> None:
     if not settings.telegram_bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
@@ -482,6 +539,7 @@ async def main() -> None:
     bot = Bot(token=settings.telegram_bot_token, session=session) if session else Bot(token=settings.telegram_bot_token)
     dispatcher = Dispatcher()
     dispatcher.message.register(on_start, CommandStart())
+    dispatcher.message.register(on_start, Command("help"))
     dispatcher.message.register(on_cmd_broadcast, Command("broadcast"))
     dispatcher.message.register(on_cmd_broadcast_subscribers, Command("broadcast_subscribers"))
     dispatcher.message.register(on_cmd_broadcast_send, Command("broadcast_send"))
@@ -503,6 +561,7 @@ async def main() -> None:
     )
 
     logger.info("Starting Telegram bot")
+    await _publish_commands(bot)
     heartbeat = asyncio.create_task(_heartbeat_loop(bot))
     try:
         await dispatcher.start_polling(bot)

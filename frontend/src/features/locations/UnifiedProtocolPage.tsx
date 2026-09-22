@@ -19,6 +19,8 @@ import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { formatTemp, temperatureTone } from "../../lib/weather";
+import { WeatherChip } from "../../components/WeatherChip";
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import {
@@ -121,7 +123,7 @@ function RunnerCell({ row }: { row: UnifiedProtocolRow }) {
       {row.is_me && <span className="protocol-row-badge protocol-badge-me">вы</span>}
       {row.is_first_run && (
         <StatHintTooltip text="Первый старт в системе">
-          <span className="protocol-row-badge">дебют</span>
+          <span className="protocol-row-badge">новичок</span>
         </StatHintTooltip>
       )}
       {row.is_pr && (
@@ -499,6 +501,70 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
           hint="Результат лучше всех прежних в своей системе"
         />
       </div>
+
+      {data.weather && data.weather.locations_with_weather > 0 && (
+        <section className="card loc-section uniprot-weather">
+          <h2 className="section-title">
+            Погода недели
+            <StatHintTooltip text="Погода из архива Open-Meteo на время старта каждой локации недели. Крайности — среди локаций, где в эту субботу был старт; «по стране» — медиана температуры на старте.">
+              <span className="loc-section-title-info" aria-label="Как считается">
+                ⓘ
+              </span>
+            </StatHintTooltip>
+          </h2>
+          <div className="loc-stats-grid uniprot-weather-grid">
+            {data.weather.temperature_median_c != null && (
+              <div className="stat-card loc-stat-card">
+                <span className={`stat-value loc-stat-value temp-${temperatureTone(data.weather.temperature_median_c)}`}>
+                  {formatTemp(data.weather.temperature_median_c)}
+                </span>
+                <span className="stat-label">по стране на старте</span>
+                <span className="loc-stat-sub muted">
+                  {formatInt(data.weather.locations_with_weather)} локаций с погодой
+                  {data.weather.rain_locations > 0 && ` · дождь на ${data.weather.rain_locations}`}
+                </span>
+              </div>
+            )}
+            {(
+              [
+                ["coldest", "🥶 холоднее всего", data.weather.coldest],
+                ["warmest", "🔥 теплее всего", data.weather.warmest],
+                ["wettest", "🌧️ мокрее всего", data.weather.wettest],
+                ["windiest", "💨 ветренее всего", data.weather.windiest],
+              ] as const
+            ).map(([key, label, item]) =>
+              item ? (
+                <div className="stat-card loc-stat-card uniprot-weather-card" key={key}>
+                  <span
+                    className={`stat-value loc-stat-value temp-${
+                      key === "coldest" || key === "warmest" ? temperatureTone(item.weather.temperature_c) : "none"
+                    }`}
+                  >
+                    {key === "wettest"
+                      ? `${(item.weather.precipitation_run_mm ?? 0).toFixed(1)} мм`
+                      : key === "windiest"
+                        ? `${Math.round(item.weather.wind_gusts_ms ?? 0)} м/с`
+                        : formatTemp(item.weather.temperature_c)}
+                  </span>
+                  <span className="stat-label">{label}</span>
+                  <span className="loc-stat-sub">
+                    <a href={`/locations/${item.location_slug ?? ""}`}>{item.location_name}</a>
+                  </span>
+                  <span className="loc-stat-sub">
+                    <WeatherChip
+                      weather={item.weather}
+                      locationSlug={item.location_slug}
+                      locationName={item.location_name}
+                      labelOnly
+                    />
+                  </span>
+                </div>
+              ) : null,
+            )}
+          </div>
+        </section>
+      )}
+
 
       {/* Анониму — на месте «Вашего результата» призыв войти: страница открыта
           всем, но найти в ней СЕБЯ можно только с привязанным профилем (тот же

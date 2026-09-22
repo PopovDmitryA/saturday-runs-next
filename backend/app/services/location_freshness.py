@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from datetime import date
+from typing import Any
 from uuid import UUID
 
 import redis
@@ -34,6 +35,7 @@ from app.services.location_catalog_service import normalize_location_slug
 from app.services.location_page_service import (
     LAST_RESULTS_CACHE_KEY,
     LOCATIONS_INDEX_CACHE_KEY,
+    _write_json_cache,
     location_events_cache_key,
     location_leaders_cache_key,
     location_page_cache_key,
@@ -53,7 +55,81 @@ STALE_AFTER_WRITE_SECONDS_SHOWCASE = 2 * 60
 # Ключи сессии: что подрезать после коммита и уже посчитанные слаги площадок.
 _PENDING_KEYS = "location_freshness_pending_keys"
 _PENDING_SHOWCASE_KEYS = "location_freshness_pending_showcase_keys"
+_PENDING_ORGANIZER_LOCATIONS = "location_freshness_pending_organizer_locations"
 _SLUG_MEMO = "location_freshness_slug_memo"
+
+# Кабинет организатора: перечислить его ключи заранее нельзя — они собраны не по
+# слагу, а по identity_key, да ещё с хвостами параметров («:180», «:12»,
+# «:5:10:0»). Скан по префиксу тоже не годится: в прод-Redis триста тысяч
+# ключей, а субботний синк перезаписывает под две сотни протоколов — это
+# десятки миллионов проходов впустую. Поэтому кабинет сам записывает свои ключи
+# в множество по каждой площадке идентичности, а синк по этому множеству их и
+# находит. Индекс по location_id, а не по identity_key: пишущий знает площадки
+# идентичности, синк знает location_id — встречаются здесь, и считать каталог
+# на горячем пути не нужно.
+#
+# До 14.09.2026 кабинет не сбрасывался вообще: протокол приезжал, страница
+# локации освежалась за минуту, а «Посещаемость» и «Протоколы» показывали
+# прошлую субботу ещё три часа. Ровно на это жаловались организаторы.
+_ORGANIZER_INDEX_PREFIX = "organizer:index:loc:"
+
+
+def organizer_index_key(location_id: UUID) -> str:
+    return f"{_ORGANIZER_INDEX_PREFIX}{location_id}"
+
+
+def remember_organizer_cache_key(
+    location_ids: Iterable[UUID], cache_key: str, ttl_seconds: int
+) -> None:
+    """Запомнить снимок кабинета, чтобы синк знал, что у этой площадки протухло.
+
+    Множество живёт чуть дольше самого снимка: истёкший ключ в нём безвреден
+    (подрезать нечего), а вот потерять живой — значит снова показывать старое.
+    """
+    ids = [location_id for location_id in location_ids if location_id is not None]
+    if not ids:
+        return
+    try:
+        client = get_redis_client()
+        pipe = client.pipeline()
+        for location_id in ids:
+            index_key = organizer_index_key(location_id)
+            pipe.sadd(index_key, cache_key)
+            pipe.expire(index_key, ttl_seconds + STALE_AFTER_WRITE_SECONDS)
+        pipe.execute()
+    except redis.RedisError:
+        # Индекс — ускоритель, а не источник правды: кэш и без него доживёт
+        # до своего TTL. Ронять чтение кабинета из-за Redis незачем.
+        logger.warning("Не удалось запомнить ключ кабинета %s", cache_key, exc_info=True)
+
+
+def write_organizer_cache(
+    identity: Any, cache_key: str, payload: dict[str, object], ttl_seconds: int
+) -> None:
+    """Записать снимок кабинета — и сразу занести его в индекс площадок.
+
+    Единственная точка записи кэша кабинета: забыть про индекс здесь нельзя,
+    а значит раздел не окажется снова «вечно вчерашним».
+    """
+    _write_json_cache(cache_key, payload, ttl_seconds)
+    remember_organizer_cache_key(
+        [location.id for location, _code in identity.locations], cache_key, ttl_seconds
+    )
+
+
+def _organizer_keys_for(location_ids: Iterable[UUID]) -> set[str]:
+    keys: set[str] = set()
+    ids = list(location_ids)
+    if not ids:
+        return keys
+    client = get_redis_client()
+    pipe = client.pipeline()
+    for location_id in ids:
+        pipe.smembers(organizer_index_key(location_id))
+    for members in pipe.execute():
+        for member in members or ():
+            keys.add(member if isinstance(member, str) else member.decode())
+    return keys
 
 
 def identity_slugs_for_locations(db: Session, location_ids: Iterable[UUID]) -> set[str]:
@@ -202,18 +278,46 @@ def mark_location_results_changed(
     showcase.add(LOCATIONS_INDEX_CACHE_KEY)
     showcase.add(LAST_RESULTS_CACHE_KEY)
 
+    # Сами ключи кабинета разворачиваем уже после коммита: между пометкой и
+    # коммитом кто-то мог открыть кабинет и записать новый снимок — он тоже
+    # должен протухнуть.
+    organizer: set[UUID] = db.info.setdefault(_PENDING_ORGANIZER_LOCATIONS, set())
+    organizer.update(ids)
+
     keys: set[str] = db.info.setdefault(_PENDING_KEYS, set())
     for slug in slugs:
         keys.add(location_page_cache_key(slug))
         keys.add(location_events_cache_key(slug))
         keys.add(location_leaders_cache_key(slug))
+    # Рейтинг рекордов локаций считается по тем же протоколам и держит снимок
+    # 6 часов. Функция сброса у него была, но её никто не звал (DEAD-01):
+    # рекорд субботы доезжал до рейтинга только к протуханию. Кладём в
+    # «витринные» ключи — пересчёт общий на всю страну, минутного окна ему мало.
+    from app.services.location_records_rating_service import (
+        RATING_CACHE_KEY as LOCATION_RECORDS_RATING_CACHE_KEY,
+    )
+
+    showcase.add(LOCATION_RECORDS_RATING_CACHE_KEY)
+
     protocol_pairs = list(protocols)
     if protocol_pairs:
         from app.services.location_protocol_service import location_protocol_cache_key
+        from app.services.unified_protocol_service import (
+            saturday_of,
+            unified_protocol_cache_key,
+            unified_protocol_weeks_cache_key,
+        )
 
         for slug in slugs:
             for platform_code, event_date in protocol_pairs:
                 keys.add(location_protocol_cache_key(slug, platform_code, event_date))
+        # Единый протокол недели (/protocol) — та же история, что у рейтинга
+        # рекордов: исправленный субботний протокол ждал бы читателя до трёх
+        # часов. Неделя определяется субботой события, список недель гасим
+        # заодно — в нём цифры этой же недели.
+        for _platform_code, event_date in protocol_pairs:
+            showcase.add(unified_protocol_cache_key(saturday_of(event_date)))
+        showcase.add(unified_protocol_weeks_cache_key())
 
 
 @sa_event.listens_for(Session, "after_commit")
@@ -226,10 +330,13 @@ def _expire_marked_location_caches(session: Session) -> None:
     """
     keys = session.info.pop(_PENDING_KEYS, None)
     showcase = session.info.pop(_PENDING_SHOWCASE_KEYS, None)
-    if not keys and not showcase:
+    organizer_locations = session.info.pop(_PENDING_ORGANIZER_LOCATIONS, None)
+    if not keys and not showcase and not organizer_locations:
         return
     try:
+        organizer_keys = _organizer_keys_for(organizer_locations or ())
         capped = _cap_ttl(keys or (), STALE_AFTER_WRITE_SECONDS)
+        capped += _cap_ttl(organizer_keys, STALE_AFTER_WRITE_SECONDS)
         capped += _cap_ttl(showcase or (), STALE_AFTER_WRITE_SECONDS_SHOWCASE)
     except redis.RedisError:
         # Redis недоступен — витрины доживут до своего TTL, ронять синк незачем.
@@ -245,3 +352,4 @@ def _drop_marked_location_caches(session: Session, previous_transaction: object)
         return
     session.info.pop(_PENDING_KEYS, None)
     session.info.pop(_PENDING_SHOWCASE_KEYS, None)
+    session.info.pop(_PENDING_ORGANIZER_LOCATIONS, None)

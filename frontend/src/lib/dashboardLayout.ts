@@ -56,6 +56,9 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
       "avg_finish",
       "avg_pace",
       "pr_count",
+      // «Стабильность» (Ч25) живёт в скоростной группе, но в свёрнутом хвосте:
+      // это метрика для тех, кто уже насмотрелся на рекорды и ловит ровность.
+      "finish_spread",
       "avg_position",
       "avg_gender_position",
     ],
@@ -74,8 +77,29 @@ export const DASHBOARD_ANALYTICS_GROUPS: readonly DashboardAnalyticsGroup[] = [
       // прошлое, — за «ещё N» её никто не найдёт. Ценой места в витрине идут
       // «новые локации за 12 месяцев» — слабейший из счётчиков группы.
       "nearest_unvisited",
+      // «Луковица лояльности» (Ч9): доля пробежек дома — вторая сторона той же
+      // медали, что и вся группа. Стоит сразу за витриной: она не про новую
+      // цель, а про то, как уже устроен твой субботний год.
+      "home_ratio",
       "new_locations_12m",
       "unique_run_regions",
+    ],
+    panels: [],
+  },
+  {
+    key: "weather",
+    title: "Погода",
+    // Крайности первыми: «самая холодная пробежка» — то, чем хвастаются.
+    // Плитки кликабельны: открывают окно с погодой того старта.
+    cards: [
+      "weather_coldest",
+      "weather_hottest",
+      "weather_rain_runs",
+      "weather_frost_runs",
+      "weather_wettest",
+      "weather_windiest",
+      "weather_snow_runs",
+      "weather_heat_runs",
     ],
     panels: [],
   },

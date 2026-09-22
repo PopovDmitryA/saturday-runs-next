@@ -78,10 +78,19 @@ def fetch_page_html(url: str, *, reason: str = "fetch", extra_wait_ms: int | Non
 
     check_cancelled()
     _check_ban_cooldown()
+    # Пауза ДО замка — чтобы не спать, держа очередь; интервал под замком
+    # проверяется ещё раз (ниже).
     wait_for_turn(reason=reason)
     check_cancelled()
 
     with parkrun_fetch_lock():
+        check_cancelled()
+        # Та же дыра, что у S95 (SYNC-OTHER-03): двое, отстоявшие паузу
+        # одновременно, берут замок по очереди и уходят на parkrun с разницей
+        # в секунды вместо 25–55. Под замком отметка последнего запроса уже
+        # свежая, и второй честно ждёт свой интервал. TTL замка (240 с)
+        # это покрывает.
+        wait_for_turn(reason=reason)
         check_cancelled()
         logger.info("parkrun fetch start: %s (reason=%s)", url, reason)
         settings = get_settings()

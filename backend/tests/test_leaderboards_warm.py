@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from app.workers.queues import WARM_QUEUE
 from app.workers.tasks import leaderboards_warm
 
 
@@ -125,7 +126,7 @@ def test_sync_schedules_warm_once_per_debounce_window(
     assert leaderboards_warm.schedule_leaderboards_warm() is False
 
     assert len(sent) == 1
-    assert sent[0]["queue"] == "runpark"
+    assert sent[0]["queue"] == WARM_QUEUE
     # Пауза перед стартом — чтобы протоколы соседних систем попали в тот же прогон.
     assert sent[0]["countdown"] > 0
 
@@ -143,7 +144,7 @@ def test_warm_skips_when_another_run_holds_lock(
 
     results = leaderboards_warm.warm_leaderboards_cache()
 
-    assert results == {"skipped": "already_running"}
+    assert results["skipped"] is True and results["reason"] == "already_running"
     assert journal == [], "занятый замок не должен пускать прогон к базе"
 
 

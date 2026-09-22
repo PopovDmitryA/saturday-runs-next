@@ -10,11 +10,6 @@ from app.services.vk_client import VK_MESSAGE_LIMIT, send_vk_message
 logger = logging.getLogger(__name__)
 
 
-def vk_admin_configured() -> bool:
-    settings = get_settings()
-    return bool(settings.vk_bot_group_token and settings.vk_admin_user_id)
-
-
 def send_vk_admin_message(text: str, *, reply_to: int | None = None) -> int | None:
     # Тесты гоняются на стеке с боевым .env, поэтому глушим отправку здесь, а не
     # надеемся на моки в каждом тесте: иначе прогон уходит сообщениями админу.
@@ -42,16 +37,6 @@ def send_vk_admin_message(text: str, *, reply_to: int | None = None) -> int | No
         return None
 
 
-def _fmt_errors(errors: list[str] | None, *, limit: int = 5) -> str:
-    if not errors:
-        return "нет"
-    shown = errors[:limit]
-    lines = "\n".join(f"• {item}" for item in shown)
-    if len(errors) > limit:
-        lines += f"\n… и ещё {len(errors) - limit}"
-    return lines
-
-
 def _plural(count: int, one: str, few: str, many: str) -> str:
     tail_100 = count % 100
     if 11 <= tail_100 <= 14:
@@ -73,6 +58,31 @@ def _fmt_number(value: float) -> str:
 # Сколько счётчиков показывать на платформу — в сводке нужны крупные итоги,
 # полный разбор есть в админке.
 SUMMARY_METRIC_LIMIT = 5
+
+# Сколько РАЗНЫХ поломок показывать. Одна залипшая вещь повторяется в каждом
+# прогоне: Плотинка №225 дала 13.09.2026 пять одинаковых строк подряд и заняла
+# собой весь раздел. Схлопываем одинаковые в «× N» и режем список, чтобы вторая,
+# настоящая ошибка дня доезжала до сводки, а не упиралась в лимит длины.
+SUMMARY_PROBLEM_LIMIT = 5
+
+
+def _problem_lines(problems: list[dict[str, Any]]) -> list[str]:
+    """Строки раздела «Что болит»: одинаковые схлопнуты, порядок сохранён."""
+    counts: dict[str, int] = {}
+    for run in problems:
+        errors = run.get("errors") or []
+        first_error = errors[0] if errors else "без текста ошибки"
+        key = f"{run['pipeline_label']}: {first_error}"
+        counts[key] = counts.get(key, 0) + 1
+
+    lines = [
+        text if repeats == 1 else f"{text} (× {repeats})"
+        for text, repeats in list(counts.items())[:SUMMARY_PROBLEM_LIMIT]
+    ]
+    hidden = len(counts) - len(lines)
+    if hidden > 0:
+        lines.append(f"…и ещё {hidden} {_plural(hidden, 'поломка', 'поломки', 'поломок')}")
+    return lines
 
 
 def format_daily_summary(
@@ -112,9 +122,8 @@ def format_daily_summary(
     if problems:
         lines.append("")
         lines.append("Что болит:")
-        for run in problems:
-            first_error = run["errors"][0] if run.get("errors") else "без текста ошибки"
-            lines.append(f"• {run['pipeline_label']}: {first_error}")
+        for line in _problem_lines(problems):
+            lines.append(f"• {line}")
 
     if admin_url:
         lines.append("")

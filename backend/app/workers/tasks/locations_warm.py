@@ -13,6 +13,7 @@ from app.services.location_page_service import (
     build_location_participants,
     build_locations_index,
 )
+from app.services.start_weather_service import build_location_weather
 from app.services.unified_protocol_service import (
     build_unified_protocol,
     latest_protocol_saturday,
@@ -20,15 +21,29 @@ from app.services.unified_protocol_service import (
     week_start_of,
 )
 from app.workers.celery_app import celery_app
+from app.workers.queues import WARM_QUEUE
+from app.workers.tasks.sync_task_reporting import run_reported_sync
+from app.workers.time_limits import LIMITS_WARM_LOCATIONS
 
 logger = logging.getLogger(__name__)
 
 
-# Очередь runpark — как у leaderboards.warm_cache: её воркер самый свободный
-# и не обслуживает user-очереди, так что долгий прогрев не задержит
-# пользовательский sync.
-@celery_app.task(name="locations.warm_cache", queue="runpark")
+# Очередь warm — общая с leaderboards.warm_cache: оба прогрева тяжёлые по базе,
+# и живут они рядом с ней, на том же хосте. Держать их на очереди синка нельзя —
+# пользовательский sync вставал за ними в хвост (см. app/workers/queues.py).
+@celery_app.task(name="locations.warm_cache", queue=WARM_QUEUE, **LIMITS_WARM_LOCATIONS)
 def warm_locations_cache() -> dict[str, object]:
+    """Прогрев с записью в журнал прогонов.
+
+    Сколько на проде реально длится прогрев, до 21.09.2026 было неоткуда
+    узнать: в scheduled_run_logs он не писался, логи контейнера ротируются.
+    Решение, переписывать ли расчёт сетки рейтингов (аудит, QRY-RATINGS-02),
+    принимается по этим цифрам.
+    """
+    return run_reported_sync("прогрев кэша локаций", _warm_locations_cache)
+
+
+def _warm_locations_cache() -> dict[str, object]:
     """Пересчитывает кэш каталога и страниц локаций, не дожидаясь TTL.
 
     Без прогрева первый посетитель после протухания кэша ждал бы расчёт
@@ -45,7 +60,6 @@ def warm_locations_cache() -> dict[str, object]:
         # use_cache=False, но это «не читать И не писать»: прогрев считал всё
         # впустую, кэш наполняли сами посетители ценой холодного расчёта.
         index = build_locations_index(db, refresh=True)
-        build_last_results(db, refresh=True)
         items = cast(list[dict[str, Any]], index.get("items") or [])
         for item in items:
             slug = item.get("slug")
@@ -56,11 +70,16 @@ def warm_locations_cache() -> dict[str, object]:
                 build_location_events(db, str(slug), refresh=True)
                 build_location_leaders(db, str(slug), refresh=True)
                 build_location_participants(db, str(slug), refresh=True)
+                build_location_weather(db, str(slug), refresh=True)
                 warmed += 1
             except Exception:
                 logger.exception("locations warm failed for slug %s", slug)
                 db.rollback()
                 failed += 1
+        # «Последние пробежки» — ПОСЛЕ страниц локаций: витрина берёт число
+        # гостей из кэша каждой площадки, а его только что наполнил цикл выше.
+        # До перестановки страница отставала на один прогрев.
+        build_last_results(db, refresh=True)
         # Единый протокол: свежая неделя и предыдущая. Холодный расчёт недели
         # — это 12–16 тыс. строк со всей страны, и без прогрева его оплатил бы
         # первый же посетитель субботним вечером. Список недель тоже трогаем:

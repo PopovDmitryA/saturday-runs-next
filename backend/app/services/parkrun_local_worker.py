@@ -67,31 +67,6 @@ def get_local_worker_status() -> dict[str, Any]:
     }
 
 
-def request_local_worker_run(*, reset_failed: bool = True) -> dict[str, Any]:
-    redis = _redis()
-    if not is_worker_alive():
-        return {
-            "queued": False,
-            "message": (
-                "Локальный воркер не запущен. В терминале на Mac: "
-                "cd ~/Projects/saturday_runs_stats && make parkrun-local-worker"
-            ),
-        }
-    now = str(time.time())
-    redis.set(REQUESTED_AT_KEY, now, ex=TTL_SECONDS)
-    redis.set(STATUS_KEY, "queued", ex=TTL_SECONDS)
-    redis.set(
-        PROGRESS_KEY,
-        json.dumps({"message": "Ожидание воркера…", "reset_failed": reset_failed}, ensure_ascii=False),
-        ex=TTL_SECONDS,
-    )
-    return {
-        "queued": True,
-        "message": "Задача поставлена в очередь. Воркер на Mac начнёт обработку parkrun.",
-        "requested_at": now,
-    }
-
-
 def prepare_parkrun_cdp_fetch() -> None:
     """Clear Redis ban/captcha pause so Mac CDP fetch can run after Docker failures."""
     clear_captcha_pending()

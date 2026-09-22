@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import QRCode from "qrcode";
 import { PlatformBadge } from "./PlatformBadge";
+import { platformCodeLabel } from "../lib/format";
 
 type QrCodeModalProps = {
   open: boolean;
@@ -19,7 +19,20 @@ export function QrCodeModal({ open, platformCode, displayName, code, onClose }: 
       return;
     }
     let cancelled = false;
-    QRCode.toDataURL(code, { margin: 1, width: 320, color: { dark: "#0f172a", light: "#ffffff" } })
+    // Библиотека едет отдельным чанком и грузится при первом открытии модалки —
+    // в стартовом бандле ей делать нечего. Параметры — те же, что у штатных QR
+    // систем: режим alphanumeric (код — это «A» + цифры) и повышенная коррекция
+    // ошибок, чтобы код читался с экрана телефона — бликующего, с невыключенной
+    // ночной подсветкой и отпечатками.
+    import("qrcode")
+      .then(({ default: QRCode }) =>
+        QRCode.toDataURL(code, {
+          margin: 1,
+          width: 320,
+          errorCorrectionLevel: "Q",
+          color: { dark: "#0f172a", light: "#ffffff" },
+        }),
+      )
       .then((url) => {
         if (!cancelled) {
           setDataUrl(url);
@@ -81,7 +94,10 @@ export function QrCodeModal({ open, platformCode, displayName, code, onClose }: 
             <div className="qr-modal-image-placeholder" aria-hidden="true" />
           )}
         </div>
-        <p className="qr-modal-hint muted">Покажите этот экран сканеру на финише</p>
+        <p className="qr-modal-hint muted">
+          Покажите этот экран сканеру на финише. Код работает только на стартах{" "}
+          {platformCodeLabel(platformCode)}.
+        </p>
       </div>
     </div>,
     document.body,

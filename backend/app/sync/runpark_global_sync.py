@@ -17,7 +17,9 @@ from app.models import (
     Event,
     EventCrosslink,
     Location,
+    Participant,
     Platform,
+    PlatformLink,
     ProtocolSyncState,
     RunparkLocationMapping,
     RunResult,
@@ -28,9 +30,12 @@ from app.models import (
 from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunteerResult
 from app.runpark.mappings import runpark_protocol_base
 from app.runpark.mssql_client import fix_varchar_encoding, runpark_query
-from app.services.gender_position_service import recalculate_event_gender_positions
+from app.services.gender_position_service import (
+    normalize_source_gender,
+    recalculate_event_gender_positions,
+)
 from app.sync import upsert
-from app.sync.iteration_commit import commit_step, rollback_step
+from app.sync.iteration_commit import commit_step, release_before_fetch, rollback_step
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +128,7 @@ class RunparkSyncResult:
     events_total: int = 0
     events_upserted: int = 0
     events_unchanged: int = 0
+    barcode_rows_reassigned: int = 0
     run_results_upserted: int = 0
     volunteer_results_upserted: int = 0
     errors: list[str] = field(default_factory=list)
@@ -390,10 +396,102 @@ def _ensure_event(
     return existing
 
 
-def _delete_event_results(db: Session, event: Event) -> None:
-    db.query(VolunteerResult).filter(VolunteerResult.event_id == event.id).delete()
-    db.query(RunResult).filter(RunResult.event_id == event.id).delete()
-    db.flush()
+def _sync_event_rows(
+    db: Session,
+    platform: Platform,
+    location: Location,
+    ev: dict,
+    protocol_base: str | None,
+    *,
+    external_event_key: str,
+    run_rows: list[dict],
+    vol_rows: list[dict],
+    result: RunparkSyncResult,
+) -> None:
+    """Записать один протокол RunPark из уже прочитанных строк вьюх.
+
+    Строки вьюх читаются ДО вызова — здесь только база. Раньше событие
+    сначала отмечалось (_ensure_event), а в пользовательском синке ещё и
+    стирались все результаты, и лишь потом шли 2–3 запроса к MSSQL: на
+    зависшем MSSQL транзакция с грязными изменениями висела «idle in
+    transaction» до обрыва соединения (см. iteration_commit).
+
+    Пишем через upsert.replace_event_*: ключи RunPark стабильны (result_id
+    забега, event:participant:role у волонтёров), поэтому строки обновляются
+    на месте и сохраняют свои id — на run_results.id/volunteer_results.id
+    висят оценки и фото участников (location_ratings), и прежний
+    delete+reinsert уносил их вместе со строками при каждой перезаливке.
+    Заодно действует сторож от пустой выборки (SuspectEmptyProtocolError).
+    """
+    event_row = _ensure_event(db, platform, location, ev, protocol_base)
+    _fix_merged_finishers_count(db, event_row, external_event_key, run_rows)
+
+    # Синк ходит 5 раз в день по окну в 7 дней, и почти всегда данные
+    # не менялись. Раньше каждое событие безусловно проходило
+    # delete+reinsert всех результатов с пересчётом PR и гендерных
+    # позиций — пустой churn для базы (см. историю раздутия). Теперь
+    # содержимое сверяется по хэшу, и неизменные события пропускаются.
+    content_hash = _rows_content_hash(run_rows, vol_rows)
+    state = _get_or_create_sync_state(db, event_row.id)
+    now = datetime.now(timezone.utc)
+    if state.protocol_source_hash == content_hash:
+        # Кросслинк всё равно сверяем: парный протокол основной
+        # платформы мог появиться позже нашей заливки — тогда PR
+        # нужно пересчитать, хотя сам протокол RunPark не менялся.
+        if _upsert_crosslinks_for_event(db, event_row):
+            _recalculate_event_prs(db, event_row)
+        state.last_protocol_check_at = now
+        result.events_unchanged += 1
+        return
+
+    # Строка приехала с аккаунтом И штрихкодом — значит человек
+    # зарегистрировался, и его прежние забеги «по штрихкоду» пора
+    # перевесить на аккаунт. Источник об этом молчит: updated_at у
+    # старых строк не меняется, сам синк их не заберёт (см.
+    # reconcile_barcode_identity).
+    for row in run_rows:
+        barcode = row.get("barcode_id")
+        if row.get("participant_id") and barcode and _BARCODE_RE.match(str(barcode)):
+            result.barcode_rows_reassigned += reconcile_barcode_identity(db, platform, str(barcode))
+
+    canonical_runs = [_to_canonical_run(r) for r in run_rows]
+    # recalculate_pr=False: PRs are recalculated after crosslinks are upserted
+    # (below) so "не в зачёте" duplicates never get the PR marker.
+    run_count = upsert.replace_event_run_results(
+        db,
+        event_row,
+        platform,
+        canonical_runs,
+        recalculate_pr=False,
+        expected_count=ev.get("finishers_count"),
+    )
+    recalculate_event_gender_positions(db, event_row.id, PLATFORM_CODE)
+    result.run_results_upserted += run_count
+
+    canonical_vols = [
+        v for r in vol_rows
+        if (v := _to_canonical_volunteer(r, external_event_key)) is not None
+    ]
+    # Пустой список волонтёров при непустых результатах — обычное дело
+    # (вьюха настоящая, волонтёров просто не внесли); при пустых результатах
+    # сторож уже сработал выше.
+    vol_count = upsert.replace_event_volunteer_results(
+        db, event_row, platform, canonical_vols, allow_empty=bool(canonical_runs)
+    )
+    result.volunteer_results_upserted += vol_count
+
+    _upsert_crosslinks_for_event(db, event_row)
+    _recalculate_event_prs(db, event_row)
+    state.protocol_source_hash = content_hash
+    state.last_protocol_fetched_at = now
+    state.last_protocol_check_at = now
+    state.run_results_count = run_count
+    state.volunteer_results_count = vol_count
+    result.events_upserted += 1
+    logger.info(
+        "RunPark event %s: %d runs, %d volunteers",
+        external_event_key, run_count, vol_count,
+    )
 
 
 def _external_user_id(row: dict, result_id: str) -> str:
@@ -418,6 +516,10 @@ def _to_canonical_run(row: dict) -> CanonicalRunResult:
         age_category=row.get("age_category"),
         status=row.get("status"),
         is_pr=bool(row.get("is_pr")),
+        # Пол системы старше категории: у каждой третьей строки категории нет
+        # вовсе, а «M»/«W» в vw_run_results есть (появилась 17.09.2026 по нашей
+        # просьбе — до неё пол был неизвестен у 59% финишей).
+        gender=normalize_source_gender(row.get("gender")),
         barcode_id=row["barcode_id"] if row.get("barcode_id") and _BARCODE_RE.match(str(row["barcode_id"])) else None,
     )
 
@@ -439,6 +541,130 @@ def _to_canonical_volunteer(row: dict, event_id_str: str) -> CanonicalVolunteerR
         participant_name=fix_varchar_encoding(row.get("participant_name")),
         role=role,
     )
+
+
+def reconcile_barcode_identity(db: Session, platform: Platform, barcode_id: str) -> int:
+    """Перевесить строки со «штрихкодной» личности на аккаунт, если он появился.
+
+    Человек бежит по штрихкоду 5 вёрст — в выгрузке у строки пустой
+    participant_id, и мы заводим личность «barcode:A…». Позже он регистрируется
+    в RunPark, и там аккаунт дописывают СТАРЫМ результатам задним числом: по
+    штрихкоду Буторова вьюха отдаёт все четыре забега 2023-2026 уже с его GUID.
+
+    Беда в том, что `updated_at` у этих строк остаётся прежним (2023-10-21 и
+    т.п.), а инкрементальный синк ходит именно по нему — сам он их не заберёт
+    никогда. Поэтому спрашиваем источник напрямую про один штрихкод и
+    перевешиваем ровно те строки, которые RunPark отдаёт с аккаунтом. Своей
+    головой ничего не склеиваем: на 14.09.2026 таких строк 199 у 13 человек, и
+    ни у одного штрихкода источник не называет двух разных аккаунтов.
+
+    Возвращает число перевешенных строк.
+    """
+    barcode_key = f"barcode:{barcode_id}"
+    stale = (
+        db.query(Participant)
+        .filter(Participant.platform_id == platform.id, Participant.external_user_id == barcode_key)
+        .one_or_none()
+    )
+    if stale is None:
+        return 0
+    stale_runs = db.query(RunResult).filter(RunResult.participant_id == stale.id).all()
+    if not stale_runs:
+        return 0
+
+    # Сюда приходим из _sync_event_rows уже с грязной сессией (событие,
+    # finishers_count, строка состояния) — и дальше запрос к MSSQL: на
+    # зависшем источнике это 3 попытки по 30 с плюс логин, а прод рвёт сессии
+    # «idle in transaction» через 60 с. Коммитим накопленное: всё это
+    # штатные записи, а хэш протокола ставится только в самом конце, так что
+    # обрыв после коммита просто отдаст событие следующему прогону.
+    commit_step(db)
+    try:
+        rows = runpark_query(
+            "SELECT result_id, participant_id FROM api.vw_run_results WHERE barcode_id = %s",
+            (barcode_id,),
+        )
+    except Exception:
+        logger.warning("RunPark: не удалось сверить штрихкод %s", barcode_id, exc_info=True)
+        return 0
+
+    owner_by_result = {
+        str(row["result_id"]).upper(): str(row["participant_id"]).upper()
+        for row in rows
+        if row.get("participant_id")
+    }
+    if not owner_by_result:
+        return 0
+
+    moved = 0
+    moved_to = None
+    for run in stale_runs:
+        guid = owner_by_result.get((run.external_result_key or "").upper())
+        if guid is None:
+            continue
+        account = upsert.upsert_participant(
+            db,
+            platform,
+            external_user_id=guid,
+            display_name=stale.display_name or f"RunPark {guid}",
+            barcode_id=barcode_id,
+        )
+        if account.id == run.participant_id:
+            continue
+        run.participant_id = account.id
+        moved_to = account.id
+        moved += 1
+
+    if not moved:
+        return 0
+    db.flush()
+
+    # Привязка человека на сайте смотрела на штрихкодную личность — её надо
+    # ПЕРЕВЕСТИ на аккаунт, а не обнулить: иначе профиль останется без пробежек
+    # RunPark вовсе. Ровно случай Буторова: привязка была на «barcode:A790152825»,
+    # а старт 12.09.2026 приехал на аккаунт и в профиль не попадал.
+    links = db.query(PlatformLink).filter(PlatformLink.participant_id == stale.id).all()
+    for link in links:
+        account = db.query(Participant).filter(Participant.id == moved_to).one_or_none()
+        if account is None:
+            continue
+        taken = (
+            db.query(PlatformLink)
+            .filter(
+                PlatformLink.platform_id == platform.id,
+                PlatformLink.external_user_id == account.external_user_id,
+                PlatformLink.id != link.id,
+            )
+            .first()
+        )
+        if taken is not None:
+            # Аккаунт уже привязан к другому профилю сайта — руками, не здесь.
+            logger.warning(
+                "RunPark: аккаунт %s уже привязан, привязку со штрихкода %s не трогаю",
+                account.external_user_id,
+                barcode_id,
+            )
+            continue
+        link.participant_id = account.id
+        link.external_user_id = account.external_user_id
+        link.external_url = account.profile_url or link.external_url
+    db.flush()
+
+    # Личность-пустышку убираем, только если на ней не осталось ничего: у неё
+    # могут висеть волонтёрства, а их источник отдаёт отдельной вьюхой.
+    left_runs = db.query(RunResult).filter(RunResult.participant_id == stale.id).count()
+    left_vols = db.query(VolunteerResult).filter(VolunteerResult.participant_id == stale.id).count()
+    left_links = db.query(PlatformLink).filter(PlatformLink.participant_id == stale.id).count()
+    if not left_runs and not left_vols and not left_links:
+        db.delete(stale)
+        db.flush()
+    logger.info(
+        "RunPark: штрихкод %s — перевесил %d строк на аккаунт, пустышка %s",
+        barcode_id,
+        moved,
+        "убрана" if not left_runs and not left_vols and not left_links else "оставлена",
+    )
+    return moved
 
 
 def sync_runpark_batch(
@@ -466,6 +692,9 @@ def sync_runpark_batch(
 
     location_ids_sql = ", ".join(f"'{lid}'" for lid in location_map)
     sync_run = _start_sync_run(db, platform, f"runpark:batch:since:{since_date}")
+    # Ран закоммичен до первого похода в MSSQL: иначе он висел бы в грязной
+    # транзакции всё время запроса к vw_events (см. iteration_commit).
+    commit_step(db)
 
     try:
         events = runpark_query(
@@ -489,58 +718,22 @@ def sync_runpark_batch(
                 # Обрабатывается вместе со своим primary (см. MERGED_EVENT_GROUPS).
                 continue
             try:
-                event_row = _ensure_event(db, platform, location, ev, protocol_bases.get(location.id))
-
+                # Сначала все походы в MSSQL, потом запись (см. _sync_event_rows).
+                release_before_fetch(db)
                 run_rows = _fetch_merged_run_rows(external_event_key)
                 vol_rows = _fetch_merged_vol_rows(external_event_key)
-                _fix_merged_finishers_count(db, event_row, external_event_key, run_rows)
-
-                # Синк ходит 5 раз в день по окну в 7 дней, и почти всегда данные
-                # не менялись. Раньше каждое событие безусловно проходило
-                # delete+reinsert всех результатов с пересчётом PR и гендерных
-                # позиций — пустой churn для базы (см. историю раздутия). Теперь
-                # содержимое сверяется по хэшу, и неизменные события пропускаются.
-                content_hash = _rows_content_hash(run_rows, vol_rows)
-                state = _get_or_create_sync_state(db, event_row.id)
-                now = datetime.now(timezone.utc)
-                if state.protocol_source_hash == content_hash:
-                    # Кросслинк всё равно сверяем: парный протокол основной
-                    # платформы мог появиться позже нашей заливки — тогда PR
-                    # нужно пересчитать, хотя сам протокол RunPark не менялся.
-                    if _upsert_crosslinks_for_event(db, event_row):
-                        _recalculate_event_prs(db, event_row)
-                    state.last_protocol_check_at = now
-                    result.events_unchanged += 1
-                    commit_step(db)
-                    continue
-
-                _delete_event_results(db, event_row)
-
-                canonical_runs = [_to_canonical_run(r) for r in run_rows]
-                run_count = upsert.upsert_run_results(db, event_row, platform, canonical_runs, recalculate_pr=False)
-                recalculate_event_gender_positions(db, event_row.id, PLATFORM_CODE)
-                result.run_results_upserted += run_count
-
-                canonical_vols = [
-                    v for r in vol_rows
-                    if (v := _to_canonical_volunteer(r, external_event_key)) is not None
-                ]
-                vol_count = upsert.upsert_volunteer_results(db, event_row, platform, canonical_vols)
-                result.volunteer_results_upserted += vol_count
-
-                _upsert_crosslinks_for_event(db, event_row)
-                _recalculate_event_prs(db, event_row)
-                state.protocol_source_hash = content_hash
-                state.last_protocol_fetched_at = now
-                state.last_protocol_check_at = now
-                state.run_results_count = run_count
-                state.volunteer_results_count = vol_count
-                result.events_upserted += 1
-                commit_step(db)
-                logger.info(
-                    "RunPark event %s: %d runs, %d volunteers",
-                    external_event_key, run_count, vol_count,
+                _sync_event_rows(
+                    db,
+                    platform,
+                    location,
+                    ev,
+                    protocol_bases.get(location.id),
+                    external_event_key=external_event_key,
+                    run_rows=run_rows,
+                    vol_rows=vol_rows,
+                    result=result,
                 )
+                commit_step(db)
             except Exception as exc:
                 msg = f"Event {external_event_key}: {exc}"
                 logger.exception(msg)
@@ -571,6 +764,9 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
     pid_upper = participant_id.upper()
 
     # Find all 5км event_ids where this participant has run or volunteered.
+    # Маппинг локаций только что прочитан — транзакция открыта; закрываем её
+    # перед походами в MSSQL (см. iteration_commit.release_before_fetch).
+    release_before_fetch(db)
     run_events = runpark_query(
         "SELECT DISTINCT event_id FROM api.vw_run_results "
         "WHERE UPPER(CAST(participant_id AS nvarchar(64))) = %s AND event_type_description = %s",
@@ -593,6 +789,9 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
     logger.info("RunPark user sync: %d events for participant %s", len(event_ids), pid_upper)
 
     for external_event_key in event_ids:
+        # Каждая итерация начинается с чистой транзакции: предыдущая
+        # закрылась commit/rollback, но первая идёт сразу после SELECT'ов.
+        release_before_fetch(db)
         events = runpark_query(
             "SELECT * FROM api.vw_events WHERE UPPER(CAST(event_id AS nvarchar(64))) = %s "
             "AND event_type_description = %s",
@@ -607,31 +806,25 @@ def sync_runpark_for_participant(db: Session, participant_id: str) -> RunparkSyn
             continue  # not a tracked location
 
         try:
-            event_row = _ensure_event(db, platform, location, ev, protocol_bases.get(location.id))
-            _delete_event_results(db, event_row)
-
+            # Вьюхи — до записи. Раньше здесь сначала стирались все результаты
+            # события (_delete_event_results) и только потом шли запросы к
+            # MSSQL: пустая выборка или обрыв оставляли старт без строк, а
+            # оценки участников уносило каскадом при каждом синке профиля.
+            # Теперь тот же путь, что у батча: хэш содержимого, запись на
+            # месте, неизменное — пропускается.
             run_rows = _fetch_merged_run_rows(external_event_key)
-            _fix_merged_finishers_count(db, event_row, external_event_key, run_rows)
-            canonical_runs = [_to_canonical_run(r) for r in run_rows]
-            # recalculate_pr=False: PRs are recalculated after crosslinks are upserted
-            # (below) so "не в зачёте" duplicates never get the PR marker.
-            result.run_results_upserted += upsert.upsert_run_results(
-                db, event_row, platform, canonical_runs, recalculate_pr=False
-            )
-            recalculate_event_gender_positions(db, event_row.id, PLATFORM_CODE)
-
             vol_rows = _fetch_merged_vol_rows(external_event_key)
-            canonical_vols = [
-                v for r in vol_rows
-                if (v := _to_canonical_volunteer(r, external_event_key)) is not None
-            ]
-            result.volunteer_results_upserted += upsert.upsert_volunteer_results(
-                db, event_row, platform, canonical_vols
+            _sync_event_rows(
+                db,
+                platform,
+                location,
+                ev,
+                protocol_bases.get(location.id),
+                external_event_key=external_event_key,
+                run_rows=run_rows,
+                vol_rows=vol_rows,
+                result=result,
             )
-
-            _upsert_crosslinks_for_event(db, event_row)
-            _recalculate_event_prs(db, event_row)
-            result.events_upserted += 1
             commit_step(db)
         except Exception as exc:
             msg = f"Event {external_event_key}: {exc}"

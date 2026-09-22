@@ -5,31 +5,43 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from app.models import UserGoal
+from app.saturday_week import max_saturday_streak
 from app.services.achievements_service import (
     CHALLENGE_TIERS,
+    PLAN_SPECS,
     REVIEW_MIN_COMMENT_LEN,
     RatingRow,
     RunRow,
     VolunteerRoleRow,
+    WeatherDay,
+    _all_weather_challenge,
     _alphabet_challenge,
     _alphabet_tiers,
     _best_year_challenge,
     _best_year_level_dates,
+    _build_challenge_list,
     _calendar_days_challenge,
     _club_entry,
     _compute_clubs,
+    _countries_challenge,
     _deja_vu_challenge,
+    _fibonacci_challenge,
     _first_letter,
     _goal_progress,
     _inspector_challenge,
+    _is_prime,
+    _jubilee_challenge,
     _level_dates,
-    _max_saturday_streak,
+    _minute_range_challenge,
+    _nelson_challenge,
     _number_match_challenge,
     _p_index_challenge,
     _p_index_level_dates,
     _palindrome_challenge,
     _photo_reporter_challenge,
+    _platform_slam_challenge,
     _positions_challenge,
+    _primes_challenge,
     _resolve_level,
     _reviewer_challenge,
     _role_master_challenge,
@@ -40,13 +52,18 @@ from app.services.achievements_service import (
     _scope_by_platform,
     _seconds_challenge,
     _start_numbers_range_challenge,
+    _streak_challenge,
     _streak_level_dates,
     _threshold_dates,
     _time_display,
     _upcoming_hint,
     _v_index,
     _v_index_challenge,
+    _walrus_challenge,
     _weekdays_challenge,
+    _wilson_chains,
+    _wilson_challenge,
+    _wilson_level_dates,
     _year_fraction_elapsed,
 )
 from app.volunteer_role_taxonomy import CANONICAL_ROLE_LABELS
@@ -60,6 +77,7 @@ def _row(
     location_name: str = "Кузьминки",
     location_key: str = "kuzminki",
     region: str | None = "Москва",
+    country: str | None = "Россия",
     platform_code: str = "five_verst",
     is_pr: bool = False,
 ) -> RunRow:
@@ -71,8 +89,29 @@ def _row(
         location_name=location_name,
         location_key=location_key,
         region=region,
+        country=country,
         platform_code=platform_code,
         is_pr=is_pr,
+    )
+
+
+def _weather_day(
+    event_date: date = date(2026, 1, 3),
+    platform_code: str = "five_verst",
+    location_name: str = "Кузьминки",
+    location_key: str = "kuzminki",
+    volunteered: bool = False,
+    temperature_c: float | None = None,
+    precipitation_run_mm: float | None = None,
+) -> WeatherDay:
+    return WeatherDay(
+        event_date=event_date,
+        location_name=location_name,
+        location_key=location_key,
+        platform_code=platform_code,
+        volunteered=volunteered,
+        temperature_c=temperature_c,
+        precipitation_run_mm=precipitation_run_mm,
     )
 
 
@@ -236,25 +275,33 @@ def test_scope_by_platform_filters_rows_vol_rows_and_upcoming() -> None:
         _role_row(platform_code="s95", event_date=date(2026, 1, 10)),
     ]
 
+    weather_days = [
+        _weather_day(platform_code="five_verst", event_date=date(2026, 1, 3)),
+        _weather_day(platform_code="s95", event_date=date(2026, 1, 10)),
+    ]
+
     (
         scoped_rows,
         scoped_vol_rows,
         scoped_upcoming,
         scoped_rating_rows,
         scoped_role_rows,
-    ) = _scope_by_platform(rows, vol_rows, upcoming, rating_rows, role_rows, "s95")
+        scoped_weather_days,
+    ) = _scope_by_platform(rows, vol_rows, upcoming, rating_rows, role_rows, weather_days, "s95")
     assert [row.platform_code for row in scoped_rows] == ["s95"]
     assert set(scoped_vol_rows) == {"s95"}
     assert set(scoped_upcoming) == {("s95", 42)}
     assert [row.platform_code for row in scoped_rating_rows] == ["s95"]
     assert [row.platform_code for row in scoped_role_rows] == ["s95"]
+    assert [day.platform_code for day in scoped_weather_days] == ["s95"]
 
-    assert _scope_by_platform(rows, vol_rows, upcoming, rating_rows, role_rows, None) == (
+    assert _scope_by_platform(rows, vol_rows, upcoming, rating_rows, role_rows, weather_days, None) == (
         rows,
         vol_rows,
         upcoming,
         rating_rows,
         role_rows,
+        weather_days,
     )
 
 
@@ -323,6 +370,19 @@ def test_number_match_uses_chronological_run_index() -> None:
     assert challenge["detail"]["items"][0]["value"] == "№2"  # type: ignore[index]
 
 
+def test_coincidence_items_carry_platform_label() -> None:
+    # Номер старта у каждой системы свой, поэтому в строке детализации нужна
+    # плашка системы (просьба Дмитрия 17.09.2026).
+    rows = [
+        _row(event_date=date(2026, 2, 7), event_number=1, platform_code="s95"),
+        _row(event_date=date(2026, 2, 14), event_number=50, platform_code="runpark"),
+    ]
+    match_items = _number_match_challenge(rows)["detail"]["items"]  # type: ignore[index]
+    assert [item["platform_code"] for item in match_items] == ["s95"]
+    jubilee_items = _jubilee_challenge(rows)["detail"]["items"]  # type: ignore[index]
+    assert [item["platform_code"] for item in jubilee_items] == ["runpark"]
+
+
 def test_p_index() -> None:
     rows = (
         [_row(location_key="a", location_name="А") for _ in range(3)]
@@ -340,9 +400,18 @@ def test_max_saturday_streak() -> None:
         date(2026, 6, 20),
         # пропуск 27 июня
         date(2026, 7, 4),
-        date(2026, 7, 8),  # не суббота — не участвует
+        date(2026, 7, 8),  # среда — считается за свою неделю (суббота 11.07)
     }
-    assert _max_saturday_streak(dates) == 3
+    assert max_saturday_streak(dates) == 3
+
+
+def test_streak_challenge_counts_sunday_transfer_as_its_saturday() -> None:
+    # 01.11.2025 была рабочей субботой, старты перенесли на воскресенье 02.11.
+    # До 16.09.2026 челлендж считал только буквальные субботы и рвал здесь
+    # серию, хотя календарь суббот её продолжал.
+    dates = [date(2025, 10, 18), date(2025, 10, 25), date(2025, 11, 2), date(2025, 11, 8)]
+    challenge = _streak_challenge([_row(event_date=value) for value in dates], {})
+    assert challenge["current"] == 4
 
 
 def test_first_letter_rules() -> None:
@@ -940,3 +1009,307 @@ def test_role_master_prefers_dated_row_over_parkrun_summary() -> None:
     assert marshal["date"] == "2026-01-03"
     assert marshal["location"] == "Кузьминки"
     assert marshal["count"] == 5
+
+
+# ---------------------------------------------------------------------------
+# Ч48/Ч51/Ч23/Ч26/Ч27/Ч28/Ч29 — челленджи из бэклога сообщества
+
+
+def test_platform_slam_needs_a_finish_not_just_a_start() -> None:
+    """Условие Дмитрия (10.09.2026) — именно ФИНИШ в каждой из четырёх систем.
+    Строка без времени (снятый протокол, DNF) систему не открывает."""
+    rows = [
+        _row(platform_code="five_verst", finish_time_sec=1500),
+        _row(platform_code="s95", finish_time_sec=1510),
+        _row(platform_code="parkrun", finish_time_sec=None),
+    ]
+    challenge = _platform_slam_challenge(rows)
+    assert challenge["current"] == 2
+    cells = {cell["label"]: cell for cell in challenge["detail"]["cells"]}  # type: ignore[index,union-attr]
+    assert cells["5 вёрст"]["done"] is True
+    assert cells["parkrun"]["done"] is False
+    assert cells["RunPark"]["done"] is False
+
+
+def test_platform_slam_counts_all_four_systems() -> None:
+    rows = [
+        _row(platform_code=code, finish_time_sec=1500)
+        for code in ("five_verst", "s95", "parkrun", "runpark")
+    ]
+    challenge = _platform_slam_challenge(rows)
+    assert challenge["current"] == 4
+    assert challenge["best_level"] == "gold"
+
+
+def test_platform_slam_hidden_under_platform_filter() -> None:
+    """Под фильтром одной системы «Хет-трик» показывал бы вечную единицу из
+    четырёх — в разрезе платформы карточки просто нет."""
+    rows = [_row(platform_code="five_verst", finish_time_sec=1500)]
+    codes_all = {
+        c["code"]
+        for c in _build_challenge_list(
+            rows, {}, {}, [], [], [], alphabet_names={}, platform_code=None, home_country="Россия"
+        )
+    }
+    codes_scoped = {
+        c["code"]
+        for c in _build_challenge_list(
+            rows, {}, {}, [], [], [], alphabet_names={}, platform_code="five_verst", home_country="Россия"
+        )
+    }
+    assert "platform_slam" in codes_all
+    assert "platform_slam" not in codes_scoped
+
+
+def test_countries_challenge_marks_home_country_first() -> None:
+    """Дом задаётся домашней локацией, а не «Россией по умолчанию»: у бегуна
+    из Белграда международный старт — как раз российский."""
+    rows = [
+        _row(country="Сербия", finish_time_sec=1500, location_name="Ада Циганлия"),
+        _row(country="Сербия", finish_time_sec=1505, location_name="Ада Циганлия"),
+        _row(country="Россия", finish_time_sec=1600, location_name="Кузьминки"),
+    ]
+    challenge = _countries_challenge(rows, "Сербия")
+    assert challenge["current"] == 2
+    items = challenge["detail"]["items"]  # type: ignore[index]
+    assert items[0]["value"].endswith("Сербия") and items[0]["value"].startswith("🏠")
+    assert items[1]["value"] == "Россия"
+    assert "Дом — Сербия" in str(challenge["detail"]["note"])  # type: ignore[index]
+
+
+def test_countries_challenge_shows_unknown_country_gap() -> None:
+    """Площадки без страны (часть мирового каталога parkrun) в счётчик не идут,
+    но и не молчат: иначе дыра в данных читалась бы как занижение бейджа."""
+    rows = [
+        _row(country="Россия", finish_time_sec=1500),
+        _row(country=None, finish_time_sec=1500, location_name="Bushy Park"),
+    ]
+    challenge = _countries_challenge(rows, "Россия")
+    assert challenge["current"] == 1
+    assert challenge["detail"]["items"][-1]["count"] == 1  # type: ignore[index]
+
+
+def test_minute_range_counts_closed_buckets_not_the_span() -> None:
+    """Правка Дмитрия 14.09.2026: две пробежки, 24:xx и 38:xx, — это ДВЕ
+    корзины, а не пятнадцать. Лента при этом рисуется на весь диапазон, и
+    пустые клетки внутри — то, что осталось собрать."""
+    rows = [
+        _row(finish_time_sec=24 * 60 + 10),
+        _row(finish_time_sec=38 * 60 + 5),
+    ]
+    challenge = _minute_range_challenge(rows)
+    assert challenge["current"] == 2
+    cells = challenge["detail"]["cells"]  # type: ignore[index]
+    assert len(cells) == 15  # 24…38 включительно
+    assert cells[0]["done"] is True and cells[-1]["done"] is True
+    assert [cell["label"] for cell in cells if not cell["done"]][:2] == ["25", "26"]
+    assert "24:xx — 38:xx" in str(challenge["detail"]["note"])  # type: ignore[index]
+
+
+def test_minute_range_repeat_does_not_add_a_bucket() -> None:
+    rows = [_row(finish_time_sec=25 * 60 + 5), _row(finish_time_sec=25 * 60 + 50)]
+    assert _minute_range_challenge(rows)["current"] == 1
+
+
+def test_minute_range_level_dates_follow_new_buckets() -> None:
+    """Уровень датируется днём, когда закрыта k-я корзина, — новая минута
+    засчитывается хоть быстрее прежних, хоть медленнее."""
+    rows = [
+        _row(event_date=date(2026, 1, 3), finish_time_sec=25 * 60),
+        _row(event_date=date(2026, 1, 10), finish_time_sec=25 * 60 + 40),  # та же корзина
+        _row(event_date=date(2026, 1, 17), finish_time_sec=29 * 60),
+        _row(event_date=date(2026, 1, 24), finish_time_sec=21 * 60),
+    ]
+    challenge = _minute_range_challenge(rows)
+    assert challenge["current"] == 3
+    tier = next(t for t in challenge["tiers"] if t["tier"] == "easy")  # type: ignore[union-attr]
+    assert tier["level_dates"]["bronze"] == "2026-01-24"  # третья корзина
+
+
+def test_minute_range_ignores_impossible_times() -> None:
+    rows = [_row(finish_time_sec=59), _row(finish_time_sec=25 * 60), _row(finish_time_sec=None)]
+    assert _minute_range_challenge(rows)["current"] == 1
+
+
+def test_wilson_chains_classic_and_floating() -> None:
+    # 1,2,3 — классическая цепочка; 10..14 — самая длинная плавающая
+    numbers = {1, 2, 3, 10, 11, 12, 13, 14, 20}
+    classic, floating, start = _wilson_chains(numbers)
+    assert (classic, floating, start) == (3, 5, 10)
+
+
+def test_wilson_without_first_number_has_zero_classic() -> None:
+    challenge = _wilson_challenge([_row(event_number=n) for n in (7, 8, 9)], {})
+    assert challenge["current"] == 0
+    note = str(challenge["detail"]["note"])  # type: ignore[index]
+    assert "нужен старт №1" in note
+    assert "Самая длинная цепочка — 3 (№7–№9)" in note
+
+
+def test_wilson_marks_both_chains_on_one_strip() -> None:
+    """Просьба Дмитрия 11.09.2026: не два блока, а одна лента, где видно, где
+    цепочка рвётся. Клетки помечаются группой, а не рисуются дважды."""
+    challenge = _wilson_challenge([_row(event_number=n) for n in (1, 2, 20, 21, 22, 23)], {})
+    cells = {int(cell["label"]): cell for cell in challenge["detail"]["cells"]}  # type: ignore[index,union-attr]
+    assert cells[1]["accent"] == "classic" and cells[2]["accent"] == "classic"
+    assert cells[3]["accent"] is None
+    assert [n for n in (20, 21, 22, 23) if cells[n]["accent"] == "floating"] == [20, 21, 22, 23]
+
+
+def test_wilson_cell_hint_says_where_to_take_the_next_link() -> None:
+    """Планирование живёт в модалке (правка Дмитрия 14.09.2026), а подсказка у
+    клетки отвечает на «где взять именно этот номер»."""
+    planned = {("five_verst", 3): [(date(2027, 2, 14), "Битца")]}
+    challenge = _wilson_challenge([_row(event_number=n) for n in (1, 2)], planned)
+    cells = {cell["label"]: cell for cell in challenge["detail"]["cells"]}  # type: ignore[index,union-attr]
+    assert cells["3"]["hint"] == "Где взять: Битца ≈ 14.02.27"
+    assert "items" not in challenge["detail"]
+
+
+def test_wilson_level_dates_follow_the_chain() -> None:
+    rows = [
+        _row(event_date=date(2026, 1, 3), event_number=2),
+        _row(event_date=date(2026, 1, 10), event_number=1),  # цепочка стала 1–2
+        _row(event_date=date(2026, 1, 17), event_number=3),
+    ]
+    dates = _wilson_level_dates(rows, {"bronze": 1, "silver": 2, "gold": 3})
+    assert dates["bronze"] == "2026-01-10"
+    assert dates["silver"] == "2026-01-10"  # №1 сразу вытянул цепочку до двух
+    assert dates["gold"] == "2026-01-17"
+
+
+def test_nelson_counts_distinct_multiples_of_111() -> None:
+    """С 11.09.2026 это коллекция, а не счётчик финишей: два старта №111 на
+    разных площадках закрывают одну клетку, а всего финишей видно в подписи."""
+    rows = [_row(event_number=111), _row(event_number=111), _row(event_number=222), _row(event_number=150)]
+    challenge = _nelson_challenge(rows, {})
+    assert challenge["current"] == 2
+    assert len(challenge["detail"]["cells"]) == 9  # №111…№999  # type: ignore[arg-type]
+    # Один и тот же номер, взятый дважды, клетку не удваивает — но счётчик
+    # финишей остаётся в подсказке клетки.
+    cells = {cell["label"]: cell for cell in challenge["detail"]["cells"]}  # type: ignore[index,union-attr]
+    assert cells["111"]["count"] == 2
+
+
+def test_nelson_plans_where_to_get_the_missing_ones() -> None:
+    """Оговорка «без анонсов будущих дат» снята (решение Дмитрия 11.09.2026):
+    карточка обязана показывать, где наступит следующий нельсон."""
+    planned = {
+        ("five_verst", 222): [(date(2027, 2, 14), "Битца"), (date(2027, 2, 21), "Сормовский")],
+        ("s95", 222): [(date(2027, 3, 6), "Ярославль")],
+    }
+    challenge = _nelson_challenge([_row(event_number=111)], planned)
+    assert "без анонсов" not in str(challenge["description"])
+    cells = {cell["label"]: cell for cell in challenge["detail"]["cells"]}  # type: ignore[index,union-attr]
+    # Номер закрывается стартом в ЛЮБОЙ системе — прогнозы систем в одной подсказке.
+    assert cells["222"]["hint"] == "Где взять: Битца ≈ 14.02.27, Сормовский ≈ 21.02.27, Ярославль ≈ 06.03.27"
+    assert cells["111"]["hint"] is None  # закрытому подсказка не нужна
+
+
+def test_plan_specs_cover_every_challenge_with_a_plan_button() -> None:
+    """Сторож: кнопка «Планирование →» на фронте зажигается по списку кодов, и
+    у каждого из них обязан быть PLAN_SPEC — иначе модалка ответит 404."""
+    assert set(PLAN_SPECS) == {
+        "start_numbers",
+        "start_numbers_pro",
+        "fibonacci",
+        "nelson",
+        "primes",
+        "wilson",
+        "jubilee",
+        "number_match",
+    }
+    for code, spec in PLAN_SPECS.items():
+        numbers = spec.numbers(200)
+        assert numbers, code
+        assert len(spec.column_titles) == spec.columns, code
+        assert spec.horizon_label, code
+
+
+def test_number_match_plan_follows_your_run_count() -> None:
+    """Строки «Совпадения номеров» — номера БУДУЩИХ пробежек: у кого 202
+    позади, следующая попытка это старт №203."""
+    numbers = PLAN_SPECS["number_match"].numbers(202)
+    assert numbers[0] == 203
+    assert numbers[-1] == 212
+    # Счётчик, а не коллекция: отметки «закрыто» в таблице быть не должно.
+    assert PLAN_SPECS["number_match"].tracks_done is False
+
+
+def test_jubilee_plan_lists_round_numbers() -> None:
+    numbers = PLAN_SPECS["jubilee"].numbers(0)
+    assert numbers[0] == 50 and numbers[-1] == 400
+    assert all(number % 50 == 0 for number in numbers)
+    assert PLAN_SPECS["jubilee"].tracks_done is False
+
+
+def test_fibonacci_is_a_fifteen_cell_collection() -> None:
+    rows = [_row(event_number=n) for n in (1, 2, 3, 4, 8, 8)]
+    challenge = _fibonacci_challenge(rows, {})
+    assert challenge["current"] == 4  # 1, 2, 3, 8 — №4 не из ряда, дубль не считается
+    assert len(challenge["detail"]["cells"]) == 15  # type: ignore[arg-type]
+
+
+def test_fibonacci_cell_hint_says_where_and_when() -> None:
+    """«Для каждого числа прописать, кто и когда будет бегать нужный старт»
+    (Дмитрий 11.09.2026) — подсказка незакрытой клетки."""
+    planned = {("five_verst", 144): [(date(2027, 2, 14), "Раменское")]}
+    challenge = _fibonacci_challenge([_row(event_number=1)], planned)
+    cells = {cell["label"]: cell for cell in challenge["detail"]["cells"]}  # type: ignore[index,union-attr]
+    assert cells["144"]["hint"] == "Где взять: Раменское ≈ 14.02.27"
+    assert cells["1"]["hint"] is None  # закрытым подсказка не нужна
+
+
+def test_primes_is_a_collection_of_distinct_numbers() -> None:
+    """С 11.09.2026 счётчик — РАЗНЫЕ простые номера (плитками, как Фибоначчи),
+    а не финиши на них."""
+    rows = [_row(event_number=n) for n in (2, 3, 4, 5, 9, 11, 11)]
+    challenge = _primes_challenge(rows, {})
+    assert challenge["current"] == 4  # 2, 3, 5, 11 — дубль №11 клетку не удваивает
+    cells = challenge["detail"]["cells"]  # type: ignore[index]
+    assert len(cells) == 78  # все простые до №400
+    assert cells[0]["label"] == "2" and cells[-1]["label"] == "397"
+
+
+def test_primes_ignores_numbers_above_the_strip() -> None:
+    """№401+ бывают только у зарубежного parkrun, куда прогноз всё равно не
+    ходит: в коллекцию они не идут."""
+    challenge = _primes_challenge([_row(event_number=401), _row(event_number=3)], {})
+    assert challenge["current"] == 1
+
+
+def test_is_prime_edge_cases() -> None:
+    assert [n for n in range(1, 20) if _is_prime(n)] == [2, 3, 5, 7, 11, 13, 17, 19]
+
+
+def test_weather_challenge_counts_volunteering_days() -> None:
+    """Волонтёр мёрзнет в тот же мороз, что и бегуны, — «Морж» это засчитывает.
+
+    Просьба Киры Барановской (18.09.2026): «мои дождливые и морозные
+    организаторства хотелось бы тут учесть».
+    """
+    days = [
+        _weather_day(event_date=date(2026, 1, 3), temperature_c=-24.0),
+        _weather_day(event_date=date(2026, 1, 10), temperature_c=-27.0, volunteered=True, location_name="Битца"),
+    ]
+    challenge = _walrus_challenge(days)
+    assert challenge["current"] == 2
+    items = challenge["detail"]["items"]  # type: ignore[index]
+    # Свежие сверху: волонтёрский выход помечен, беговой — нет.
+    assert items[0]["note"] == "волонтёрство"
+    assert items[1]["note"] is None
+
+
+def test_all_weather_cell_counts_starts_not_finishes() -> None:
+    """Клетку коллекции может закрыть волонтёрство — подпись «финиш» там врала бы."""
+    days = [
+        _weather_day(event_date=date(2026, 1, 3), temperature_c=-25.0, volunteered=True),
+        _weather_day(event_date=date(2026, 1, 10), temperature_c=-22.0),
+    ]
+    cells = {cell["label"]: cell for cell in _all_weather_challenge(days)["detail"]["cells"]}  # type: ignore[index]
+    deep_frost = cells["Лютый мороз"]
+    assert deep_frost["done"] is True
+    assert deep_frost["count"] == 2
+    assert deep_frost["count_label"] == "2 старта"
+    # Клетка закрыта первым по дате выходом — волонтёрским.
+    assert deep_frost["date"] == "2026-01-03"

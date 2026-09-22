@@ -20,8 +20,24 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://saturday_runs:saturday_runs@localhost:5433/saturday_runs_lk"
     redis_url: str = "redis://localhost:6379/0"
 
-    api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    # Соседние базы и каталоги. Читаются ТОЛЬКО отсюда, а не через os.getenv:
+    # Settings берёт значения и из смонтированного в контейнер .env, а
+    # os.getenv видит лишь окружение процесса. На этой разнице табло /hq
+    # месяц считалось пустым — PM_WORLD_DSN лежал в .env, а воркер его не
+    # видел, пока переменную не продублировали в docker-compose (21.09.2026
+    # остальные такие чтения переведены сюда).
+    #
+    # legacy_database_url — read-only доступ к базе легаси «5 вёрст
+    # статистика» (five_verst_stats): разовые переносы, посев очереди parkrun.
+    # Пусто — берём database_url с заменой имени базы (локальный дамп/туннель).
+    legacy_database_url: str = ""
+    # parkrun_monitoring_dir — каталог соседнего проекта parkrun-monitoring
+    # (решатель капчи WAF, недельная статистика стран). Пусто — на этой машине
+    # его нет, и всё, что на него опирается, мягко выключается.
+    parkrun_monitoring_dir: str = ""
+    # parkrun_fetch_proxies — исходящие прокси фетча parkrun через запятую (на
+    # домашнем сервере — пул VPN-выходов). Пусто — ходим со своего адреса.
+    parkrun_fetch_proxies: str = ""
 
     # Хранилище аватарок пользователей (том ./data:/data в docker-compose).
     # В БД лежит только имя файла (users.avatar_path), файлы — здесь.
@@ -113,7 +129,6 @@ class Settings(BaseSettings):
     auth_rate_limit_magic_window_seconds: int = 3600
 
     vk_oauth_client_id: str = ""
-    vk_oauth_client_secret: str = ""
     vk_oauth_redirect_uri: str = ""
 
     yandex_oauth_client_id: str = ""
@@ -253,8 +268,6 @@ class Settings(BaseSettings):
     s95_parkrun_barcode_max_length: int = 8
     parkrun_participant_discovery_enabled: bool = True
     parkrun_participant_discovery_min_refetch_days: int = 7
-    s95_global_sync_locations: str = ""
-    s95_global_sync_protocol_limit: int = 3
 
     five_verst_fetch_min_interval_seconds: float = 20.0
     five_verst_fetch_max_interval_seconds: float = 30.0
@@ -310,8 +323,11 @@ class Settings(BaseSettings):
     # чего хватает на всю неделю (~200 стартов у 5 вёрст). Режется на звенья
     # по той же причине, что и сверка: воркер один, и двухчасовую задачу не
     # прервать.
-    five_verst_week_sweep_batch_limit: int = 60
-    five_verst_week_sweep_chunks_per_run: int = 4
+    # Тот же принцип, что у сверки: кусок — это потолок ожидания приоритетной
+    # очереди. Норма прогона прежняя (240 протоколов), но кусками по ~9 минут,
+    # а не по часу.
+    five_verst_week_sweep_batch_limit: int = 10
+    five_verst_week_sweep_chunks_per_run: int = 24
     # Протокол, скачанный за последние N часов, в текущий обход не берём:
     # так звенья цепочки двигаются вперёд, а не топчутся по одним и тем же.
     five_verst_week_sweep_min_refetch_hours: int = 12
@@ -319,21 +335,22 @@ class Settings(BaseSettings):
     # (имя, координаты), а не только таблицу результатов. Между этими проходами
     # хватает ежедневного реестра /events/, который следит за именем и статусом.
     five_verst_location_refresh_interval_days: int = 7
-    s95_sync_protocol_limit: int = 3
-    s95_sync_latest_update_limit: int = 20
-    s95_fetch_all_protocols_on_change: bool = True
-    s95_reconcile_batch_limit: int = 10
-    s95_reconcile_min_check_interval_days: int = 7
-    s95_location_batch_summaries_limit: int = 20
     s95_athlete_mismatch_check_runs: int = 10
-    # Протоколов за один заход воркера. Общая норма прогона — 200 (см.
-    # five_verst_reconcile_chunks_per_run): пачка режется пополам, чтобы
-    # пользовательский синк не ждал два часа за спиной батча.
-    five_verst_reconcile_batch_limit: int = 100
+    # Протоколов за один заход воркера. Размер куска — это ПОТОЛОК ОЖИДАНИЯ для
+    # приоритетной очереди: задачу с concurrency=1 прервать нельзя, и свежий
+    # latest ждёт ровно столько, сколько доедает текущий кусок. При ~52 секундах
+    # на протокол (пауза five_verst_protocol_min_interval_seconds + сам фетч)
+    # 10 протоколов ≈ 9 минут. До 12.09.2026 здесь было 100 — кусок по 63 минуты,
+    # и субботние протоколы ждали своей очереди часами.
+    five_verst_reconcile_batch_limit: int = 10
     # Сколько заходов подряд делает один запуск по расписанию. Каждый заход —
-    # отдельная celery-задача, и между ними воркер успевает взять задачу из
-    # приоритетной очереди five_verst_user.
-    five_verst_reconcile_chunks_per_run: int = 2
+    # отдельная celery-задача; между ними воркер заглядывает в приоритетные
+    # очереди (five_verst_user, five_verst_fresh). Норма прогона =
+    # batch_limit × chunks_per_run = 90 протоколов ≈ 78 минут; при 8 запусках в
+    # будние сутки это ~720 протоколов и ~10,4 часа работы воркера из 24.
+    # Согласовано с Дмитрием 12.09.2026: потолок ~11 часов в сутки, полный круг
+    # по пулу в 31 тыс. протоколов — около двух месяцев.
+    five_verst_reconcile_chunks_per_run: int = 9
     # 0 = перечитывать по кругу без пауз (как было до 08.2026). При пуле в 31 тыс.
     # протоколов полный круг и так занимает недели — это страховка от повторных
     # проверок, если поднять лимит пачки или частоту.
@@ -345,7 +362,13 @@ class Settings(BaseSettings):
     # от последней ЗАКАЧКИ протокола: потолок «от проверки» спрятал бы сам
     # случай Серова — там расхождение возникло через 8 часов после закачки.
     five_verst_reconcile_mismatch_retry_hours: int = 6
-    five_verst_clubs_batch_limit: int = 20
+    # Клубов за заход. Как у сверки, размер куска — это потолок ожидания
+    # приоритетной очереди five_verst_fresh: замер на проде 12.09.2026 — 20
+    # клубов шли 12,3 минуты (~37 секунд на клуб), и именно за клубами ждал
+    # свежий latest. 8 клубов ≈ 5 минут. Суточный объём сохранён переводом
+    # расписания с 3 заходов на 8 (см. five-verst-clubs-details): 64 клуба в
+    # сутки против 60, круг по 519 клубам — те же ~8 дней.
+    five_verst_clubs_batch_limit: int = 8
 
     # Fallback-канал для admin-уведомлений (см. app/services/admin_telegram_notify.py) —
     # используется только когда Telegram-прокси недоступна.
@@ -353,7 +376,6 @@ class Settings(BaseSettings):
     vk_admin_user_id: int = 0
 
     # Секретный токен для скрытой страницы-табло обхода атлетов (/hq/<token>).
-    sweep_hq_token: str = ""
 
     parkrun_base_url: str = "https://www.parkrun.org.uk"
     parkrun_fetch_min_interval_seconds: float = 25.0

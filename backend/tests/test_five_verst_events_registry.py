@@ -35,6 +35,39 @@ def test_parse_events_page_html_fixture() -> None:
     assert len(page.saturday_cancellations) >= 2
     cancel_slugs = {entry.slug for entry in page.saturday_cancellations}
     assert "izumrudnyy" in cancel_slugs
+    # Причина из блока отмен доезжает и до записи в общем списке площадок:
+    # именно её мы кладём в location.cancel_reason.
+    assert by_slug["izumrudnyy"].cancel_reason == "test"
+    assert by_slug["park10letiyaangarska"].cancel_reason is None
+
+
+def test_parse_events_page_html_reads_cancel_reasons() -> None:
+    # Разметка 5 вёрст в живую (16.09.2026): площадки в блоке отмен разделены
+    # <br>, причина есть не у всех.
+    html = """
+    <div class="cancel-list">
+    <a href="https://5verst.ru/olimpiyskayaalleya">Пенза</a> отменён по причине:
+    Проведение регионального мероприятия в это время.<br>
+    <a href="https://5verst.ru/gubernskypark">Калуга</a> отменён<br></div>
+    <div class='events-columns'>
+    <div class="event-block"><ul><h4>Пенза</h4>
+    <li><a href="https://5verst.ru/olimpiyskayaalleya">Пенза</a> (отмена)</li>
+    </ul></div>
+    <div class="event-block"><ul><h4>Калуга</h4>
+    <li><a href="https://5verst.ru/gubernskypark">Калуга</a> (отмена)</li>
+    </ul></div>
+    </div>
+    """
+    page = bulk_parser.parse_events_page_html(html)
+    by_slug = {entry.slug: entry for entry in page.entries}
+    assert (
+        by_slug["olimpiyskayaalleya"].cancel_reason
+        == "Проведение регионального мероприятия в это время"
+    )
+    # Причина соседа не утекает к площадке, которая её не назвала.
+    assert by_slug["gubernskypark"].cancel_reason is None
+    by_cancel = {entry.slug: entry for entry in page.saturday_cancellations}
+    assert by_cancel["olimpiyskayaalleya"].cancel_reason is not None
 
 
 def test_registry_entry_is_paused() -> None:

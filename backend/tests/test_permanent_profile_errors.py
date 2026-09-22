@@ -32,6 +32,26 @@ def test_conflict_is_permanent() -> None:
     )
 
 
+def test_httpx_status_error_is_permanent() -> None:
+    """httpx держит код не на себе, а во вложенном ответе.
+
+    Так 404 приходит от s95 и five_verst (raise_for_status). Без этой проверки
+    три заявки живых людей на несуществующие профили s95 крутились в очереди
+    три недели: попытки исчерпывались, сброс их воскрешал, каждый прогон
+    рапортовал лишние «ошибки: 3».
+    """
+
+    class _Response:
+        status_code = 404
+
+    class _HttpxStatusError(Exception):
+        response = _Response()
+
+    assert _is_permanent_profile_error(
+        _HttpxStatusError("Client error '404 Not Found' for url 'https://s95.ru/athletes/0029/'")
+    )
+
+
 def test_unparseable_page_is_permanent() -> None:
     """parkrun отдаёт заглушку с кодом 200 вместо 404 на несуществующий номер."""
     assert _is_permanent_profile_error(
@@ -52,6 +72,14 @@ def test_transient_errors_stay_retryable() -> None:
     assert not _is_permanent_profile_error(TimeoutError("сеть отвалилась"))
     assert not _is_permanent_profile_error(_WithStatus("сервис недоступен", 503))
     assert not _is_permanent_profile_error(_WithStatus("плохой запрос", 400))
+
+    class _Response:
+        status_code = 503
+
+    class _HttpxStatusError(Exception):
+        response = _Response()
+
+    assert not _is_permanent_profile_error(_HttpxStatusError("сервис недоступен"))
 
 
 def test_cause_chain_is_bounded() -> None:

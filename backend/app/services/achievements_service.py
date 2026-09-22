@@ -25,14 +25,15 @@ hard в основном воспроизводит прежние, «ветер
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.geo.country_names import normalize_country_name
 from app.models import (
     Event,
     Location,
@@ -42,10 +43,30 @@ from app.models import (
     Platform,
     PlatformLink,
     RunResult,
+    User,
     UserGoal,
     VolunteerResult,
 )
+from app.saturday_week import max_saturday_streak, saturday_weeks
 from app.services.location_catalog_service import LocationCatalogIndex, russian_parkrun_location_ids
+from app.services.start_weather_service import (
+    DEEP_FROST_C,
+    DOWNPOUR_MM,
+    FROST_C,
+    HEAT_C,
+    SNOW_CODES,
+    SNOW_DEPTH_CM,
+    WINDY_GUST_MS,
+    format_temperature,
+    is_rain,
+    weather_rows_for_pairs,
+)
+
+
+def _f(value: object) -> float | None:
+    return None if value is None else float(value)  # type: ignore[arg-type]
+
+
 from app.services.location_map_service import MAP_HISTORIC_PLATFORM
 from app.services.platform_titles import PLATFORM_TITLES
 from app.services.user_location_stats import _canonical_region, _normalize_geo_value
@@ -53,6 +74,7 @@ from app.time_format import normalize_finish_time_display
 from app.volunteer_role_taxonomy import (
     CANONICAL_ROLE_LABELS,
     canonical_volunteer_role,
+    role_is_on_site,
     role_occasions,
 )
 from app.volunteering_occasions import count_volunteering_for_platform, is_inventory_day, volunteer_occasion_dates
@@ -111,7 +133,90 @@ CHALLENGE_TIERS: dict[str, dict[str, tuple[int, int, int]]] = {
     # сводкой parkrun: лёгкий — 95 / 83 / 72 %, средний — 60 / 50 / 35 %,
     # сложный — 23 / 14 / 5.6 %. В справочнике 37 ролей, рекорд базы — 25.
     "role_master": {"easy": (2, 4, 6), "medium": (8, 10, 13), "hard": (15, 17, 20)},
+    # Ч48 «Хет-трик систем»: систем всего четыре, лестница упирается в потолок
+    # по построению — тир один. Доли 519 бегунов прод-масштабной базы:
+    # 2 системы — 62%, 3 — 26%, все 4 — 5%.
+    "platform_slam": {"solo": (2, 3, 4)},
+    # Ч51 «Международный турист»: 87% бегунов знают ровно одну страну, поэтому
+    # уже бронза (вторая страна) — редкость, а золото берут единицы. Тир один:
+    # растянуть это на три уровня сложности не на чем — рекорд базы 11 стран,
+    # и «сложный» тир стоял бы пустым у всех.
+    "countries": {"solo": (2, 3, 5)},
+    # Ч23 «Коллекция минут» — ЗАКРЫТЫЕ минутные корзины, по одной за каждую
+    # новую минуту на финишных часах. Считать размах (от самой быстрой минуты
+    # до самой медленной) оказалось нельзя: две пробежки, 21:xx и 60:xx, давали
+    # сразу сорок корзин и закрывали челлендж целиком (Дмитрий, 14.09.2026).
+    # Перцентили по 519 бегунам: p20=9, p50=15, p80=20, p90=23, p95=27, p99=33,
+    # рекорд базы — 48. Потолок лестницы оставлен на 35, как Дмитрий и просил.
+    "minute_range": {"easy": (3, 6, 9), "medium": (12, 15, 18), "hard": (22, 28, 35)},
+    # Ч26 «Индекс Уилсона» — классический (цепочка с №1). Перцентили: p50=1,
+    # p80=4, p90=12, p95=17, p99=55.
+    # Лестница задана Дмитрием 14.09.2026. Прежняя (1/2/3 · 5/8/12 · 18/25/40)
+    # была откалибрована по распределению (p50=1, p90=12, p99=55) и оказалась
+    # слишком доступной: золото лёгкого тира выдавалось за три номера подряд.
+    # Новая смотрит за горизонт — по тому же правилу, что у p-индекса: сложный
+    # тир и должен быть запасом на вырост, а не снимком сегодняшней базы.
+    "wilson": {"easy": (3, 10, 15), "medium": (25, 40, 75), "hard": (75, 100, 150)},
+    # Ч27 «Клуб Нельсона» — финиши на стартах с номером, кратным 111. Половина
+    # базы имеет хотя бы один, рекорд — 5. Тир один: на трёх «нельсонах» уже
+    # 7.7% бегунов, дальше растягивать нечего.
+    # Считаем РАЗНЫЕ нельсоны, а не финиши на них (карточка стала коллекцией
+    # 11.09.2026). Доли базы: №111 или №222 есть у половины, оба — у 14%,
+    # три разных — у двух человек из 519. Золото здесь и должно быть за
+    # горизонтом: до №333 действующим площадкам ещё года полтора.
+    "nelson": {"solo": (1, 2, 3)},
+    # Ч28 «Числа Фибоначчи» — коллекция из 15 клеток (1…987). Доли базы:
+    # 4 клетки — 55%, 6 — 39%, 8 — 22%, 10 — 12%, 11 — 6.7%, 12 — 1.5%.
+    # Золото сложного (13) требует №233 — до него дорастают 5 вёрст и S95;
+    # №377 и дальше живут только в мировом parkrun.
+    "fibonacci": {"easy": (2, 3, 4), "medium": (6, 8, 10), "hard": (11, 12, 13)},
+    # Ч29 «Простые числа» — счётчик финишей на стартах с простым номером.
+    # Перцентили среди тех, у кого есть хоть один: p50=18, p80=42, p95=77, p99=101.
+    # РАЗНЫЕ простые номера до №400 (всего их 78). Перцентили 503 бегунов:
+    # p20=6, p35=11, p50=17, p65=23, p80=31, p90=38, p95=45, p99=57, рекорд 71.
+    "primes": {"easy": (2, 5, 10), "medium": (17, 23, 31), "hard": (38, 45, 57)},
+    # Погодные челленджи (Дмитрий, 14.09.2026). «Морж» — старт при −20° и ниже:
+    # в средней полосе такое случается раз в несколько зим, в Якутске — всю зиму,
+    # поэтому средний и сложный тиры — сибирские. «Огнеупорный» — от +25° в час
+    # старта, симметричная редкость (+25°). «Под дождём» — от 0.3 мм за час забега.
+    "walrus": {"easy": (1, 2, 3), "medium": (5, 8, 12), "hard": (20, 35, 50)},
+    "heatproof": {"easy": (1, 2, 3), "medium": (5, 8, 12), "hard": (20, 35, 50)},
+    "rain_runner": {"easy": (3, 7, 12), "medium": (20, 30, 45), "hard": (60, 80, 100)},
+    # Коллекции без тиров: всё меню погоды (8 клеток) и все 12 месяцев.
+    "all_weather": {"solo": (3, 5, 8)},
+    "seasons": {"solo": (6, 9, 12)},
 }
+
+# Ч48: порядок систем в клетках «Хет-трика» — по возрасту системы в России.
+PLATFORM_SLAM_ORDER: tuple[str, ...] = ("parkrun", "five_verst", "s95", "runpark")
+
+# Ч23: минутные корзины считаем в разумных границах. Нижняя — 14 минут
+# (решение Дмитрия 14.09.2026): 13:xx на пятёрке это уровень мирового рекорда,
+# в парковых протоколах такое время означает ошибку, а не бегуна. В прод-базе
+# финишей быстрее 14 минут нет ни одного, так что на распределение и на пороги
+# правка не влияет. Верхняя — два часа: дальше это уже сбой протокола, а не
+# прогулка шагом.
+MINUTE_BUCKET_MIN = 14
+MINUTE_BUCKET_MAX = 120
+
+# Ч28: числа Фибоначчи в пределах номеров, которые вообще бывают у стартов
+# (мировой рекорд parkrun — чуть больше 1100).
+FIBONACCI_NUMBERS: tuple[int, ...] = (1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987)
+
+# Ч27: «нельсон» из крикета — 111 и его кратные. Коллекция кончается на 999:
+# «три девятки» — последний нельсон, который вообще выговаривают в крикете.
+NELSON_STEP = 111
+NELSON_NUMBERS: tuple[int, ...] = tuple(range(NELSON_STEP, 10 * NELSON_STEP, NELSON_STEP))
+
+# Ч26: сколько номеров показываем на ленте Уилсона. Классическая цепочка длиннее
+# 55 есть у одного человека из ста, так что шестьдесят клеток закрывают почти
+# всех; лента при необходимости растягивается до конца плавающей цепочки.
+WILSON_STRIP_NUMBERS = 60
+
+# Ч29: верхняя граница коллекции простых. Рекорд действующих площадок — №241,
+# у закрытого российского parkrun — №357; за 400 во всей базе набирается
+# одиннадцать финишей, и все — на зарубежных площадках, куда не спланируешь.
+PRIME_STRIP_MAX = 400
 
 # Диапазоны номеров для «Нумератора» и «Нумератора ПРО». Одни и те же границы
 # нужны и карточке челленджа, и таблице планирования — держим в одном месте,
@@ -129,6 +234,17 @@ START_NUMBER_TITLES: dict[str, str] = {
 }
 # Сколько недельных окон показываем в планировании: ближайшая неделя, W+1, W+2.
 START_NUMBER_PLAN_WEEKS = 3
+
+# Горизонт планирования «числовых» челленджей (Фибоначчи, Нельсон, простые,
+# Уилсон). Три недели «Нумератора» им не годятся: до №222 ближайшей площадке
+# полгода, и в трёхнедельном окне подсказка была бы пустой у всех. Полгода —
+# компромисс: №144, №222 и №233 в него попадают (замер 10.09.2026: 17, 43 и 90
+# площадок соответственно), а дальше прогноз «плюс старт в неделю» врёт слишком
+# сильно, чтобы называть даты.
+PLANNING_WEEKS = 26
+# Выше номеров стартов в наших системах не бывает: рекорд действующих площадок —
+# 241, у закрытого российского parkrun — 357.
+PLANNING_MAX_NUMBER = 400
 
 # Русский алфавит для челленджа «Алфавит» (Ё объединяем с Е, твёрдый/мягкий знак
 # и Ы не бывают первыми буквами названий).
@@ -185,8 +301,52 @@ class RunRow:
     location_name: str
     location_key: str
     region: str | None
+    # Страна площадки по-русски (см. _row_country): None — в БД её нет, такая
+    # пробежка не идёт в зачёт «Международного туриста», но видна отдельной
+    # строкой в деталях, чтобы дыра в данных не выглядела занижением счётчика.
+    country: str | None
     platform_code: str
     is_pr: bool
+    # Погода в час старта (start_weather); None — строки нет (зарубежный parkrun
+    # или площадка без координат). Заполняется одним батчем в _collect_run_rows.
+    temperature_c: float | None = None
+    precipitation_run_mm: float | None = None
+    snow_depth_cm: float | None = None
+    snowfall_cm: float | None = None
+    weather_code: int | None = None
+    wind_gusts_ms: float | None = None
+    #: Когда посчитана строка погоды — по ней выбирается порог дождя на время
+    #: переходного периода (см. start_weather_service._thresholds).
+    weather_fetched_at: datetime | None = None
+
+
+@dataclass
+class WeatherDay:
+    """День, когда человек был на площадке, с погодой того часа старта.
+
+    Погодные челленджи считают не финиши, а присутствие: волонтёр мокнет под
+    тем же ливнем и мёрзнет в тот же мороз, что и бегуны (просьба Киры
+    Барановской, 18.09.2026). Поэтому к пробежкам добавляются волонтёрства —
+    но только в ролях, требующих быть на площадке (role_is_on_site): за пост в
+    канале или обработку результатов из дома «Морж» начисляться не должен.
+
+    Один день на одной площадке — одна строка: пробежал и отработал в ту же
+    субботу — это по-прежнему один выход, а не два.
+    """
+
+    event_date: date
+    location_name: str
+    location_key: str
+    platform_code: str
+    #: День закрыт волонтёрством, а не финишем — показываем это в деталях.
+    volunteered: bool
+    temperature_c: float | None = None
+    precipitation_run_mm: float | None = None
+    snow_depth_cm: float | None = None
+    snowfall_cm: float | None = None
+    weather_code: int | None = None
+    wind_gusts_ms: float | None = None
+    weather_fetched_at: datetime | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -214,8 +374,12 @@ def _collect_run_rows(db: Session, user_id: UUID) -> list[RunRow]:
         query = query.filter(RunResult.id.notin_(secondary_ids))
 
     catalog_index = LocationCatalogIndex(db)
+    russian_parkrun = russian_parkrun_location_ids(db, catalog_index)
+    fetched = query.all()
+    weather_rows = weather_rows_for_pairs(db, [(event.location_id, event.event_date) for _r, event, _l, _p in fetched])
     rows: list[RunRow] = []
-    for run, event, location, platform_code in query.all():
+    for run, event, location, platform_code in fetched:
+        weather = weather_rows.get((event.location_id, event.event_date))
         rows.append(
             RunRow(
                 event_date=event.event_date,
@@ -225,23 +389,42 @@ def _collect_run_rows(db: Session, user_id: UUID) -> list[RunRow]:
                 location_name=catalog_index.display_name(location, platform_code),
                 location_key=catalog_index.canonical_identity_key(location, platform_code),
                 region=_normalize_geo_value(location.region),
+                country=_row_country(location, platform_code, russian_parkrun),
                 platform_code=platform_code,
                 is_pr=bool(run.is_pr),
+                temperature_c=_f(weather.temperature_c) if weather else None,
+                precipitation_run_mm=_f(weather.precipitation_run_mm) if weather else None,
+                snow_depth_cm=_f(weather.snow_depth_cm) if weather else None,
+                snowfall_cm=_f(weather.snowfall_cm) if weather else None,
+                weather_code=int(weather.weather_code) if weather and weather.weather_code is not None else None,
+                wind_gusts_ms=_f(weather.wind_gusts_ms) if weather else None,
+                weather_fetched_at=weather.fetched_at if weather else None,
             )
         )
     rows.sort(key=lambda row: (row.event_date, row.location_key))
     return rows
 
 
+def _row_country(location: Location, platform_code: str, russian_parkrun: frozenset[UUID]) -> str | None:
+    """Страна площадки одним написанием.
+
+    Русский parkrun определяется не полем country (у части строк оно пустое или
+    осталось заглушкой «United Kingdom» из мирового каталога), а связкой с
+    каталогом локаций — тем же правилом, что карта и рейтинги
+    (russian_parkrun_location_ids). Остальным нормализуем написание:
+    «United Kingdom» и «Великобритания» — одна страна, иначе турист по
+    британским паркранам получил бы две.
+    """
+    if platform_code == MAP_HISTORIC_PLATFORM and location.id in russian_parkrun:
+        return "Россия"
+    return normalize_country_name(location.country)
+
+
 def _collect_rating_rows(db: Session, user_id: UUID) -> list[RatingRow]:
     """Оценки пользователя: когда оценил, в какой системе, рецензия или звёзды,
     и есть ли фото. Фото считаем наличием, а не количеством: пять кадров на
     один старт — это по-прежнему один рассказ о нём."""
-    photos = (
-        db.query(LocationRatingPhoto.rating_id)
-        .filter(LocationRatingPhoto.rating_id == LocationRating.id)
-        .exists()
-    )
+    photos = db.query(LocationRatingPhoto.rating_id).filter(LocationRatingPhoto.rating_id == LocationRating.id).exists()
     query = db.query(
         LocationRating.created_at,
         LocationRating.platform_code,
@@ -307,6 +490,82 @@ def _collect_volunteer_role_rows(db: Session, user_id: UUID) -> list[VolunteerRo
     # 2014–2022, то есть в основном ДО появления 5 вёрст и С95.
     rows.sort(key=lambda row: (row.event_date is not None, row.event_date or date.min, row.role_key))
     return rows
+
+
+def _collect_weather_days(db: Session, user_id: UUID, rows: list[RunRow]) -> list[WeatherDay]:
+    """Дни на площадке с погодой: финиши плюс волонтёрства «с присутствием».
+
+    Пробежки уже несут погоду (её подтянул _collect_run_rows), волонтёрским
+    строкам она добирается отдельным батчем. Удалённые роли отсекаются
+    таксономией, недатированная сводка parkrun — тоже: без даты неизвестно,
+    какая тогда была погода.
+    """
+
+    by_day: dict[tuple[str, date], WeatherDay] = {}
+    for row in rows:
+        by_day[(row.location_key, row.event_date)] = WeatherDay(
+            event_date=row.event_date,
+            location_name=row.location_name,
+            location_key=row.location_key,
+            platform_code=row.platform_code,
+            volunteered=False,
+            temperature_c=row.temperature_c,
+            precipitation_run_mm=row.precipitation_run_mm,
+            snow_depth_cm=row.snow_depth_cm,
+            snowfall_cm=row.snowfall_cm,
+            weather_code=row.weather_code,
+            wind_gusts_ms=row.wind_gusts_ms,
+            weather_fetched_at=row.weather_fetched_at,
+        )
+
+    query = (
+        db.query(Event.event_date, Event.location_id, VolunteerResult.role, Platform.code, Location)
+        .select_from(VolunteerResult)
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(PlatformLink, PlatformLink.participant_id == VolunteerResult.participant_id)
+        .filter(
+            PlatformLink.user_id == user_id,
+            PlatformLink.platform_id == Platform.id,
+            Event.is_test_event.is_(False),
+            Event.event_date > _EPOCH_GUARD,
+        )
+    )
+    catalog_index = LocationCatalogIndex(db)
+    pending: dict[tuple[str, date], tuple[UUID, date, str, str]] = {}
+    for event_date, location_id, role, platform_code, location in query.all():
+        canonical = canonical_volunteer_role(role)
+        if canonical is None or not role_is_on_site(canonical.key):
+            continue
+        location_key = catalog_index.canonical_identity_key(location, platform_code)
+        day = (location_key, event_date)
+        if day in by_day or day in pending:
+            # Несколько ролей в одну субботу — это один выход на площадку.
+            continue
+        pending[day] = (location_id, event_date, catalog_index.display_name(location, platform_code), platform_code)
+
+    weather_rows = weather_rows_for_pairs(db, [(loc_id, when) for loc_id, when, _n, _p in pending.values()])
+    for (location_key, event_date), (location_id, _when, location_name, platform_code) in pending.items():
+        weather = weather_rows.get((location_id, event_date))
+        by_day[(location_key, event_date)] = WeatherDay(
+            event_date=event_date,
+            location_name=location_name,
+            location_key=location_key,
+            platform_code=platform_code,
+            volunteered=True,
+            temperature_c=_f(weather.temperature_c) if weather else None,
+            precipitation_run_mm=_f(weather.precipitation_run_mm) if weather else None,
+            snow_depth_cm=_f(weather.snow_depth_cm) if weather else None,
+            snowfall_cm=_f(weather.snowfall_cm) if weather else None,
+            weather_code=int(weather.weather_code) if weather and weather.weather_code is not None else None,
+            wind_gusts_ms=_f(weather.wind_gusts_ms) if weather else None,
+            weather_fetched_at=weather.fetched_at if weather else None,
+        )
+
+    days = list(by_day.values())
+    days.sort(key=lambda day: (day.event_date, day.location_key))
+    return days
 
 
 def _collect_volunteer_rows(db: Session, user_id: UUID) -> dict[str, list[tuple[date, str]]]:
@@ -395,9 +654,7 @@ def _level_dates(sorted_dates: list[date], levels: dict[str, int]) -> dict[str, 
     return result
 
 
-def _level_dates_optional(
-    ordered_dates: list[date | None], levels: dict[str, int]
-) -> dict[str, str | None]:
+def _level_dates_optional(ordered_dates: list[date | None], levels: dict[str, int]) -> dict[str, str | None]:
     """Как _level_dates, но часть шагов счётчика может быть без даты.
 
     Нужно там, где в зачёт идёт сводка parkrun: волонтёрства есть, дат у них нет.
@@ -469,9 +726,7 @@ def _challenge(
     # систем (см. _alphabet_tiers).
     thresholds_by_tier = tier_thresholds or CHALLENGE_TIERS[code]
     tiers = [
-        _tier_payload(
-            tier_key, thresholds, current, level_dates_fn=level_dates_fn, to_next_label_fn=to_next_label_fn
-        )
+        _tier_payload(tier_key, thresholds, current, level_dates_fn=level_dates_fn, to_next_label_fn=to_next_label_fn)
         for tier_key, thresholds in thresholds_by_tier.items()
     ]
     # "Лучшее" достижение — самый сложный тир, где взят хоть один уровень.
@@ -533,12 +788,16 @@ def _first_letter(name: str) -> str | None:
 
 def _cell(
     label: str,
-    row: RunRow | None,
+    row: RunRow | WeatherDay | None,
     *,
     hint: str | None = None,
     count: int | None = None,
+    accent: str | None = None,
+    count_label: str | None = None,
 ) -> dict[str, object]:
-    """Клетка коллекции: закрыта первой пробежкой row; hint — подсказка для незакрытых."""
+    """Клетка коллекции: закрыта первой пробежкой row; hint — подсказка для
+    незакрытых. accent помечает клетку как часть выделенной группы — сегодня
+    так «Индекс Уилсона» показывает обе свои цепочки на одной ленте номеров."""
     return {
         "label": label,
         "done": row is not None,
@@ -547,6 +806,8 @@ def _cell(
         "hint": hint,
         "platform_code": row.platform_code if row else None,
         "count": count,
+        "count_label": count_label,
+        "accent": accent,
     }
 
 
@@ -561,8 +822,7 @@ def _seconds_challenge(rows: list[RunRow]) -> dict[str, object]:
         first_by_second.setdefault(second, row)
         count_by_second[second] = count_by_second.get(second, 0) + 1
     cells = [
-        _cell(f":{second:02d}", first_by_second.get(second), count=count_by_second.get(second))
-        for second in range(60)
+        _cell(f":{second:02d}", first_by_second.get(second), count=count_by_second.get(second)) for second in range(60)
     ]
     sorted_dates = sorted(row.event_date for row in first_by_second.values())
     return _challenge(
@@ -626,9 +886,7 @@ def _alphabet_available_names(db: Session, platform_code: str | None) -> dict[st
     которые в ней физически не закрыть, значит врать о цели.
     """
     query = (
-        db.query(Location.name)
-        .join(Platform, Location.platform_id == Platform.id)
-        .filter(Location.name.isnot(None))
+        db.query(Location.name).join(Platform, Location.platform_id == Platform.id).filter(Location.name.isnot(None))
     )
     if platform_code is None:
         # Сквозной вид: parkrun не считается (см. _alphabet_challenge), значит
@@ -882,20 +1140,16 @@ def _predict_upcoming_starts(
     return predictions
 
 
-def _upcoming_event_numbers(
-    db: Session,
-    *,
-    today: date | None = None,
-    weeks: int = 3,
-    max_number: int = 400,
+def _numbers_from_predictions(
+    predictions: list[PredictedStart], *, weeks: int, max_number: int
 ) -> dict[tuple[str, int], list[tuple[date, str]]]:
     """Прогноз для подсказок в ячейках: (платформа, номер) → отсортированные
-    пары (дата, локация)."""
+    пары (дата, локация), суженный до weeks недель и номеров до max_number."""
     upcoming: dict[tuple[str, int], list[tuple[date, str]]] = {}
-    for item in _predict_upcoming_starts(db, today=today, weeks=weeks, max_number=max_number):
-        upcoming.setdefault((item.platform_code, item.number), []).append(
-            (item.event_date, item.location_name)
-        )
+    for item in predictions:
+        if item.week_index >= weeks or item.number > max_number:
+            continue
+        upcoming.setdefault((item.platform_code, item.number), []).append((item.event_date, item.location_name))
     for entries in upcoming.values():
         entries.sort()
     return upcoming
@@ -910,6 +1164,32 @@ def _upcoming_hint(entries: list[tuple[date, str]] | None) -> str | None:
     return "Скоро: " + ", ".join(parts) + suffix
 
 
+def _planned_hint(entries: list[tuple[date, str]] | None) -> str | None:
+    """Подсказка на длинном горизонте — с годом: полгода вперёд «14.02» без года
+    уже двусмысленно."""
+    if not entries:
+        return None
+    parts = [f"{name} ≈ {when.strftime('%d.%m.%y')}" for when, name in entries[:3]]
+    more = len(entries) - 3
+    suffix = f" и ещё {more}" if more > 0 else ""
+    return "Где взять: " + ", ".join(parts) + suffix
+
+
+def _planned_by_number(
+    planned: dict[tuple[str, int], list[tuple[date, str]]], numbers: Iterable[int]
+) -> dict[int, list[tuple[date, str]]]:
+    """Прогноз, схлопнутый по системам: номер закрывается стартом в ЛЮБОЙ
+    системе, поэтому «№222 в Битце» и «№222 в Сормовском» стоят в одном списке."""
+    wanted = set(numbers)
+    by_number: dict[int, list[tuple[date, str]]] = {}
+    for (_platform_code, number), entries in planned.items():
+        if number in wanted:
+            by_number.setdefault(number, []).extend(entries)
+    for entries in by_number.values():
+        entries.sort()
+    return by_number
+
+
 def _start_numbers_range_challenge(
     rows: list[RunRow],
     upcoming: dict[tuple[str, int], list[tuple[date, str]]],
@@ -921,7 +1201,7 @@ def _start_numbers_range_challenge(
     high: int,
 ) -> dict[str, object]:
     """Номер старта считается ВНУТРИ одной системы (каждая платформа нумерует
-    события независимо — см. _upcoming_event_numbers), но само число в
+    события независимо — см. _predict_upcoming_starts), но само число в
     диапазоне засчитывается в общий счётчик, если получено В ЛЮБОЙ системе:
     старт №4 на s95 закрывает клетку "4" точно так же, как старт №4 на
     five_verst — платформы здесь не соревнуются друг с другом, просто у
@@ -1032,6 +1312,10 @@ def _number_match_challenge(rows: list[RunRow]) -> dict[str, object]:
                     "date": row.event_date.isoformat(),
                     "value": f"№{row.event_number}",
                     "location": row.location_name,
+                    # Система нужна в строке: номер старта у каждой системы
+                    # свой, и на мультисистемной площадке «№30» без плашки не
+                    # говорит, чей это номер (просьба Дмитрия 17.09.2026).
+                    "platform_code": row.platform_code,
                 }
             )
     detail: dict[str, object] = {"items": items}
@@ -1067,6 +1351,7 @@ def _jubilee_challenge(rows: list[RunRow]) -> dict[str, object]:
                     "date": row.event_date.isoformat(),
                     "value": f"№{row.event_number}",
                     "location": row.location_name,
+                    "platform_code": row.platform_code,
                 }
             )
     sorted_dates = [date.fromisoformat(str(item["date"])) for item in items]
@@ -1079,6 +1364,452 @@ def _jubilee_challenge(rows: list[RunRow]) -> dict[str, object]:
         current=len(items),
         unit="юбилеев",
         detail={"items": items},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Ч48/Ч51/Ч23/Ч26/Ч27/Ч28/Ч29 — челленджи из бэклога сообщества (10.09.2026)
+
+
+def _finished_rows(rows: list[RunRow]) -> list[RunRow]:
+    """Только финиши: у части строк время пустое (DNF, снятые протоколы,
+    волонтёрский зачёт в чужой системе). «Хет-трик систем» и «Международный
+    турист» — про финиш, а не про факт присутствия на старте."""
+    return [row for row in rows if row.finish_time_sec is not None and row.finish_time_sec > 0]
+
+
+def _platform_slam_challenge(rows: list[RunRow]) -> dict[str, object]:
+    """Ч48. Финиш во всех четырёх системах — механика, которой нет ни у одного
+    западного аналога: Running Challenges живёт внутри одного parkrun, а у нас
+    четыре системы в одном профиле."""
+    finished = _finished_rows(rows)
+    first_by_platform: dict[str, RunRow] = {}
+    counts: Counter[str] = Counter()
+    for row in finished:
+        first_by_platform.setdefault(row.platform_code, row)
+        counts[row.platform_code] += 1
+    cells = [
+        _cell(
+            PLATFORM_TITLES.get(code, code),
+            first_by_platform.get(code),
+            count=counts.get(code),
+            hint="Финиша в этой системе ещё нет" if code not in first_by_platform else None,
+        )
+        for code in PLATFORM_SLAM_ORDER
+    ]
+    sorted_dates = sorted(row.event_date for row in first_by_platform.values())
+    return _challenge(
+        code="platform_slam",
+        title="Хет-трик систем",
+        icon="🎰",
+        description="Финишируй в каждой из четырёх систем: parkrun, 5 вёрст, S95, RunPark.",
+        category="collection",
+        current=len(first_by_platform),
+        unit="систем",
+        detail={"cells": cells},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
+def _countries_challenge(rows: list[RunRow], home_country: str | None) -> dict[str, object]:
+    """Ч51. Страны, где человек финишировал.
+
+    Домашней считается страна ДОМАШНЕЙ ЛОКАЦИИ (той же, от которой считается
+    «дальность от дома»), а не Россия по умолчанию: у нас есть площадки в
+    Сербии, Беларуси, Аргентине и Грузии, и для бегуна из Белграда
+    международным стартом является как раз российский.
+    """
+    finished = _finished_rows(rows)
+    first_by_country: dict[str, RunRow] = {}
+    counts: Counter[str] = Counter()
+    unknown = 0
+    for row in finished:
+        if row.country is None:
+            unknown += 1
+            continue
+        first_by_country.setdefault(row.country, row)
+        counts[row.country] += 1
+
+    def _order(country: str) -> tuple[int, int, str]:
+        # Дом первым, дальше по числу финишей — так виден масштаб выезда.
+        return (0 if country == home_country else 1, -counts[country], country)
+
+    items: list[dict[str, object]] = [
+        {
+            "value": f"🏠 {country}" if country == home_country else country,
+            "count": counts[country],
+            "location": first_by_country[country].location_name,
+            "date": first_by_country[country].event_date.isoformat(),
+        }
+        for country in sorted(first_by_country, key=_order)
+    ]
+    if unknown:
+        items.append(
+            {
+                "value": "Страна площадки неизвестна",
+                "count": unknown,
+                "location": "в каталоге parkrun у неё не заполнена страна",
+            }
+        )
+    # Дата страны — первый финиш в ней; счётчик растёт именно в этот день.
+    sorted_dates = sorted(row.event_date for row in first_by_country.values())
+    abroad = sum(1 for country in first_by_country if country != home_country)
+    if home_country is None:
+        note = "Домашняя страна пока не определена — нужен хотя бы один финиш."
+    elif abroad == 0:
+        note = f"Дом — {home_country}. Заграничных стартов пока нет."
+    else:
+        note = f"Дом — {home_country}; {abroad} {_plural_ru(abroad, ('страна', 'страны', 'стран'))} за его пределами."
+    return _challenge(
+        code="countries",
+        title="Международный турист",
+        icon="🌍",
+        description=(
+            "Финишируй в разных странах. Домашней считается страна твоей домашней локации — "
+            "от неё и отсчитывается заграница: для бегуна из Белграда международный старт "
+            "это как раз российский."
+        ),
+        category="scale",
+        current=len(first_by_country),
+        unit="стран",
+        detail={"items": items, "note": note},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
+def _minute_bucket(finish_time_sec: int | None) -> int | None:
+    """Минутная корзина финиша: 24:31 → 24. Вне разумных границ — None."""
+    if finish_time_sec is None or finish_time_sec <= 0:
+        return None
+    minutes = finish_time_sec // 60
+    if minutes < MINUTE_BUCKET_MIN or minutes > MINUTE_BUCKET_MAX:
+        return None
+    return minutes
+
+
+def _minute_range_challenge(rows: list[RunRow]) -> dict[str, object]:
+    """Ч23. Коллекция разных минут на финишных часах: 21:xx, 22:xx, 23:xx…
+
+    Считаем ЗАКРЫТЫЕ корзины, а не размах между самой быстрой и самой
+    медленной (правка Дмитрия 14.09.2026): при размахе две пробежки, 21:xx и
+    60:xx, давали сразу сорок корзин и закрывали челлендж целиком, хотя между
+    ними пусто. Теперь каждая новая минута — ровно +1.
+
+    Лента рисуется от своей быстрой минуты до своей медленной: пустые клетки
+    внутри — это и есть то, что осталось собрать, а недостижимых клеток из
+    чужой сетки здесь по-прежнему не бывает.
+    """
+    first_by_bucket: dict[int, RunRow] = {}
+    counts: Counter[int] = Counter()
+    for row in rows:
+        bucket = _minute_bucket(row.finish_time_sec)
+        if bucket is None:
+            continue
+        first_by_bucket.setdefault(bucket, row)
+        counts[bucket] += 1
+    sorted_dates = sorted(row.event_date for row in first_by_bucket.values())
+    if not first_by_bucket:
+        return _challenge(
+            code="minute_range",
+            title="Коллекция минут",
+            icon="🪗",
+            description=_MINUTE_RANGE_DESCRIPTION,
+            category="collection",
+            current=0,
+            unit="минутных корзин",
+            detail={"cells": [], "note": "Первый же финиш откроет первую корзину."},
+            level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+        )
+    lowest = min(first_by_bucket)
+    highest = max(first_by_bucket)
+    cells = [
+        _cell(
+            f"{bucket}",
+            first_by_bucket.get(bucket),
+            count=counts.get(bucket),
+            hint=None if bucket in first_by_bucket else f"Финиша в {bucket}:xx ещё не было",
+        )
+        for bucket in range(lowest, highest + 1)
+    ]
+    note = (
+        f"Закрыто {len(first_by_bucket)} "
+        f"{_plural_ru(len(first_by_bucket), ('корзина', 'корзины', 'корзин'))} "
+        f"в диапазоне {lowest}:xx — {highest}:xx. "
+        "Новая появится от финиша в минуту, которой ещё не было."
+    )
+    return _challenge(
+        code="minute_range",
+        title="Коллекция минут",
+        icon="🪗",
+        description=_MINUTE_RANGE_DESCRIPTION,
+        category="collection",
+        current=len(first_by_bucket),
+        unit="минутных корзин",
+        detail={"cells": cells, "note": note},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
+# Две строки максимум (правка Дмитрия 11.09.2026): подробности человек и так
+# видит на ленте клеток, объяснять их словами в шапке карточки незачем.
+_MINUTE_RANGE_DESCRIPTION = (
+    "Собери разные минуты на финишных часах: 21:xx, 22:xx, 23:xx… Каждая новая минута — плюс одна корзина."
+)
+
+
+def _wilson_chains(numbers: set[int]) -> tuple[int, int, int]:
+    """(классический Wilson, плавающий Wilson, начало плавающей цепочки).
+
+    Классический считает цепочку строго с №1 — отсюда охота за инаугурациями;
+    плавающий берёт самую длинную цепочку подряд идущих номеров с любого числа.
+    """
+    classic = 0
+    while classic + 1 in numbers:
+        classic += 1
+    best_len = 0
+    best_start = 0
+    for number in sorted(numbers):
+        if number - 1 in numbers:
+            continue
+        length = 0
+        while number + length in numbers:
+            length += 1
+        if length > best_len:
+            best_len, best_start = length, number
+    return classic, best_len, best_start
+
+
+def _wilson_level_dates(rows: list[RunRow], levels: dict[str, int]) -> dict[str, str | None]:
+    numbers: set[int] = set()
+    classic = 0
+    achieved: dict[str, date | None] = {level: None for level in LEVEL_ORDER}
+    for row in rows:
+        if row.event_number is None or row.event_number <= 0:
+            continue
+        numbers.add(row.event_number)
+        while classic + 1 in numbers:
+            classic += 1
+        for level in LEVEL_ORDER:
+            if achieved[level] is None and classic >= levels[level]:
+                achieved[level] = row.event_date
+    return {level: (value.isoformat() if value else None) for level, value in achieved.items()}
+
+
+def _wilson_challenge(rows: list[RunRow], planned: dict[tuple[str, int], list[tuple[date, str]]]) -> dict[str, object]:
+    """Ч26. Индекс Уилсона в обеих вариациях — считаем по номерам стартов в
+    любой системе, как и «Нумератор»: номер №4 на S95 закрывает то же число,
+    что №4 на 5 вёрстах.
+
+    Обе цепочки показываем на ОДНОЙ ленте номеров (просьба Дмитрия 11.09.2026):
+    классическая — это её начало от №1, плавающая — самый длинный сплошной
+    кусок где угодно. Раздельные блоки заставляли бы сравнивать две сетки
+    глазами, а тут видно сразу, где цепочка рвётся.
+    """
+    first_by_number: dict[int, RunRow] = {}
+    for row in rows:
+        if row.event_number is not None and row.event_number > 0:
+            first_by_number.setdefault(row.event_number, row)
+    numbers = set(first_by_number)
+    classic, floating, floating_start = _wilson_chains(numbers)
+
+    classic_range = range(1, classic + 1)
+    floating_range = range(floating_start, floating_start + floating) if floating else range(0)
+    # Лента охватывает начало (там живёт классическая цепочка) и обязательно
+    # достаёт до конца плавающей — иначе вторая цифра подписи ссылалась бы на
+    # номера, которых на ленте нет.
+    high = min(
+        max(WILSON_STRIP_NUMBERS, floating_start + floating + 4, classic + 5),
+        PLANNING_MAX_NUMBER,
+    )
+    strip = list(range(1, high + 1))
+    planned_by_number = _planned_by_number(planned, strip)
+    cells = []
+    for number in strip:
+        if number in classic_range:
+            accent = "classic"
+        elif number in floating_range:
+            accent = "floating"
+        else:
+            accent = None
+        cells.append(
+            _cell(
+                str(number),
+                first_by_number.get(number),
+                hint=_planned_hint(planned_by_number.get(number)),
+                accent=accent,
+            )
+        )
+
+    note_parts = [
+        f"Цепочка с начала — {classic}"
+        + (f" (№1–№{classic}), следующий нужен №{classic + 1}." if classic else ": нужен старт №1."),
+    ]
+    if floating:
+        note_parts.append(f"Самая длинная цепочка — {floating} (№{floating_start}–№{floating_start + floating - 1}).")
+    note_parts.append("Уровни считаются по цепочке с начала; даты стартов приблизительные.")
+    return _challenge(
+        code="wilson",
+        title="Индекс Уилсона",
+        icon="⛓️",
+        description=(
+            "Собирай номера стартов подряд: №1, №2, №3… Индекс — длина непрерывной цепочки. "
+            "Классический считается только от самого первого старта площадки, "
+            "плавающий — от любого номера."
+        ),
+        category="scale",
+        current=classic,
+        unit="",
+        detail={"cells": cells, "note": " ".join(note_parts)},
+        level_dates_fn=lambda levels: _wilson_level_dates(rows, levels),
+    )
+
+
+def _nelson_challenge(rows: list[RunRow], planned: dict[tuple[str, int], list[tuple[date, str]]]) -> dict[str, object]:
+    """Ч27. «Нельсоны» — номера, кратные 111.
+
+    Решение Дмитрия 11.09.2026: планирование НУЖНО — карточка показывает, где и
+    когда наступит следующий нельсон. Прежняя оговорка «считается по факту, без
+    анонсов» (осторожность после просьбы parkrun HQ 2023 года) снята: у нас
+    четыре системы и три сотни площадок, наплыв на одну конкретную субботу нам
+    не грозит, а без подсказки челлендж выпадает случайным образом и им нельзя
+    пользоваться.
+    """
+    first_by_number: dict[int, RunRow] = {}
+    counts: Counter[int] = Counter()
+    for row in rows:
+        number = row.event_number
+        if number is not None and number > 0 and number % NELSON_STEP == 0:
+            first_by_number.setdefault(number, row)
+            counts[number] += 1
+    planned_by_number = _planned_by_number(planned, NELSON_NUMBERS)
+    cells = [
+        _cell(
+            str(number),
+            first_by_number.get(number),
+            count=counts.get(number),
+            hint=_planned_hint(planned_by_number.get(number)),
+        )
+        for number in NELSON_NUMBERS
+    ]
+    sorted_dates = sorted(row.event_date for row in first_by_number.values())
+    return _challenge(
+        code="nelson",
+        title="Клуб Нельсона",
+        icon="🏏",
+        description=(
+            "Старты с номерами, кратными 111: №111, №222, №333… "
+            "«Нельсон» пришёл из крикета и стал одним из самых любимых суеверий parkrun."
+        ),
+        category="coincidence",
+        current=len(first_by_number),
+        unit="нельсонов",
+        detail={"cells": cells},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
+def _fibonacci_challenge(
+    rows: list[RunRow], planned: dict[tuple[str, int], list[tuple[date, str]]]
+) -> dict[str, object]:
+    """Ч28. Коллекция из пятнадцати клеток ряда Фибоначчи."""
+    first_by_number: dict[int, RunRow] = {}
+    counts: Counter[int] = Counter()
+    for row in rows:
+        number = row.event_number
+        if number is not None and number in FIBONACCI_NUMBERS:
+            first_by_number.setdefault(number, row)
+            counts[number] += 1
+    planned_by_number = _planned_by_number(planned, FIBONACCI_NUMBERS)
+    cells = [
+        _cell(
+            str(number),
+            first_by_number.get(number),
+            count=counts.get(number),
+            hint=_planned_hint(planned_by_number.get(number)),
+        )
+        for number in FIBONACCI_NUMBERS
+    ]
+    sorted_dates = sorted(row.event_date for row in first_by_number.values())
+    return _challenge(
+        code="fibonacci",
+        title="Числа Фибоначчи",
+        icon="🐚",
+        description=(
+            "Финишируй на стартах с номерами из ряда Фибоначчи: 1, 2, 3, 5, 8, 13, 21, 34… "
+            "Каждое следующее число — сумма двух предыдущих."
+        ),
+        category="collection",
+        current=len(first_by_number),
+        unit="чисел ряда",
+        detail={"cells": cells},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
+def _is_prime(number: int) -> bool:
+    if number < 2:
+        return False
+    if number % 2 == 0:
+        return number == 2
+    divisor = 3
+    while divisor * divisor <= number:
+        if number % divisor == 0:
+            return False
+        divisor += 2
+    return True
+
+
+# Клетки коллекции простых: 78 чисел от №2 до №397.
+PRIME_NUMBERS: tuple[int, ...] = tuple(n for n in range(2, PRIME_STRIP_MAX + 1) if _is_prime(n))
+
+
+def _primes_challenge(rows: list[RunRow], planned: dict[tuple[str, int], list[tuple[date, str]]]) -> dict[str, object]:
+    """Ч29. Коллекция простых номеров стартов.
+
+    Была счётчиком финишей, стала коллекцией плитками (просьба Дмитрия
+    11.09.2026): плитки показывают, каких простых номеров не хватает и где их
+    взять, а счётчик финишей на это не отвечал. Сколько всего финишей пришлось
+    на простые номера и какую долю они составляют — осталось в подписи.
+    """
+    first_by_number: dict[int, RunRow] = {}
+    counts: Counter[int] = Counter()
+    matched = 0
+    numbered = 0
+    for row in rows:
+        number = row.event_number
+        if number is None or number <= 0:
+            continue
+        numbered += 1
+        if number > PRIME_STRIP_MAX or not _is_prime(number):
+            continue
+        matched += 1
+        first_by_number.setdefault(number, row)
+        counts[number] += 1
+    planned_by_number = _planned_by_number(planned, PRIME_NUMBERS)
+    cells = [
+        _cell(
+            str(number),
+            first_by_number.get(number),
+            count=counts.get(number),
+            hint=_planned_hint(planned_by_number.get(number)),
+        )
+        for number in PRIME_NUMBERS
+    ]
+    sorted_dates = sorted(row.event_date for row in first_by_number.values())
+    return _challenge(
+        code="primes",
+        title="Простые числа",
+        icon="➗",
+        description=(
+            "Собирай старты с простыми номерами: №2, №3, №5, №7, №11… "
+            "Простое число делится только на себя и на единицу. "
+            f"В коллекции все простые до №{PRIME_STRIP_MAX}."
+        ),
+        category="collection",
+        current=len(first_by_number),
+        unit="простых номеров",
+        detail={"cells": cells},
         level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
     )
 
@@ -1129,10 +1860,7 @@ def _p_index_challenge(rows: list[RunRow]) -> dict[str, object]:
         needed = _runs_needed_for_p(counts_values, levels[next_level])
         return f"ещё {needed} {_plural_ru(needed, ('пробежка', 'пробежки', 'пробежек'))}"
 
-    top = [
-        {"location": names[key], "count": count}
-        for key, count in counts.most_common(20)
-    ]
+    top = [{"location": names[key], "count": count} for key, count in counts.most_common(20)]
     return _challenge(
         code="p_index",
         title="p-индекс",
@@ -1283,11 +2011,7 @@ def _v_index_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
         code="v_index",
         title="V-индекс",
         icon="🧰",
-        description=(
-            "V локаций, на каждой минимум по V волонтёрств. "
-            "Индекс растёт не от того, что вы двадцатый раз вышли на своей площадке, "
-            "а от того, что помогаете регулярно и не в одном месте."
-        ),
+        description=("V локаций, на каждой минимум по V волонтёрств."),
         category="community",
         current=current,
         unit="",
@@ -1345,18 +2069,12 @@ def _role_master_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
             "hint": (
                 "Роль ещё не пробовали"
                 if row is None
-                else (
-                    "Закрыто по сводке волонтёрств parkrun — дат она не хранит"
-                    if row.event_date is None
-                    else None
-                )
+                else ("Закрыто по сводке волонтёрств parkrun — дат она не хранит" if row.event_date is None else None)
             ),
             "platform_code": row.platform_code if row is not None else None,
             "count": count,
             "count_label": (
-                f"{count} {_plural_ru(count, ('волонтёрство', 'волонтёрства', 'волонтёрств'))}"
-                if count
-                else None
+                f"{count} {_plural_ru(count, ('волонтёрство', 'волонтёрства', 'волонтёрств'))}" if count else None
             ),
         }
 
@@ -1366,9 +2084,7 @@ def _role_master_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
     # Роль, которой в справочнике ещё нет (система завела новую), не теряется:
     # она идёт под своим названием в хвосте — и в счётчик, и в меню.
     cells += [
-        _cell_for(key, first_by_role[key].role_label)
-        for key in first_by_role
-        if key not in CANONICAL_ROLE_LABELS
+        _cell_for(key, first_by_role[key].role_label) for key in first_by_role if key not in CANONICAL_ROLE_LABELS
     ]
     # Роли, закрытые недатированной сводкой parkrun, идут первыми: см.
     # порядок строк в _collect_volunteer_role_rows.
@@ -1381,8 +2097,8 @@ def _role_master_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
         title="Мастер на все роли",
         icon="🧑\u200d🔧",
         description=(
-            "Освой как можно больше разных волонтёрских ролей — годятся любые. "
-            "Одна и та же работа в разных системах считается одной ролью."
+            "Побывай в как можно большем числе разных волонтёрских ролей — годятся любые. "
+            "Одна и та же роль в разных системах считается одной."
         ),
         category="community",
         current=len(first_by_role),
@@ -1413,23 +2129,11 @@ def _regions_challenge(rows: list[RunRow]) -> dict[str, object]:
     )
 
 
-def _max_saturday_streak(dates: set[date]) -> int:
-    saturdays = sorted(value for value in dates if value.weekday() == 5)
-    best = 0
-    current = 0
-    previous: date | None = None
-    for value in saturdays:
-        current = current + 1 if previous is not None and value - previous == timedelta(days=7) else 1
-        best = max(best, current)
-        previous = value
-    return best
-
-
 def _streak_level_dates(activity_dates: set[date], levels: dict[str, int]) -> dict[str, str | None]:
     """Идём по субботам-с-активностью по порядку; в момент, когда текущая
     (не обязательно ещё финальная) серия впервые достигает порога — это и есть
     дата уровня, даже если серия потом прервётся."""
-    saturdays = sorted(value for value in activity_dates if value.weekday() == 5)
+    saturdays = sorted(saturday_weeks(activity_dates))
     achieved: dict[str, date | None] = {level: None for level in LEVEL_ORDER}
     current_run = 0
     previous: date | None = None
@@ -1443,10 +2147,17 @@ def _streak_level_dates(activity_dates: set[date], levels: dict[str, int]) -> di
 
 
 def _streak_challenge(rows: list[RunRow], vol_rows: dict[str, list[tuple[date, str]]]) -> dict[str, object]:
+    """«Серийный бегун» — по неделям, как календарь суббот и серии дашборда.
+
+    До 16.09.2026 челлендж считал только буквальные субботы (weekday() == 5) и
+    расходился с календарём: перенос старта на воскресенье (рабочая суббота
+    01.11.2025) рвал серию здесь, хотя в календаре она шла дальше. Правило
+    одно на весь сайт — app.saturday_week.
+    """
     activity_dates = {row.event_date for row in rows}
     for platform_code, platform_rows in vol_rows.items():
         activity_dates |= volunteer_occasion_dates(platform_code, platform_rows)
-    streak = _max_saturday_streak(activity_dates)
+    streak = max_saturday_streak(activity_dates)
     return _challenge(
         code="streak",
         title="Серийный бегун",
@@ -1527,9 +2238,7 @@ def _volunteer_occasion_instances(platform_code: str, rows: list[tuple[date, str
     return instances
 
 
-def _club_entry(
-    code: str, title: str, icon: str, dates: list[date], *, extra_count: int = 0
-) -> dict[str, object]:
+def _club_entry(code: str, title: str, icon: str, dates: list[date], *, extra_count: int = 0) -> dict[str, object]:
     """extra_count — волонтёрства без известной даты (parkrun: только общий
     счётчик), добавляются к current, но не могут дать level_dates для
     порогов за пределами len(dates)."""
@@ -1566,9 +2275,7 @@ def _compute_clubs(
         all_vol_instances.extend(_volunteer_occasion_instances(code, platform_rows))
     overall = [
         _club_entry("runs", "Пробежки", "🏃", [row.event_date for row in rows]),
-        _club_entry(
-            "volunteering", "Волонтёрства", "💚", all_vol_instances, extra_count=parkrun_volunteer_total
-        ),
+        _club_entry("volunteering", "Волонтёрства", "💚", all_vol_instances, extra_count=parkrun_volunteer_total),
     ]
     runs_by_platform: dict[str, list[date]] = {}
     for row in rows:
@@ -1595,17 +2302,223 @@ def _compute_clubs(
     return {"overall": overall, "platforms": platforms}
 
 
+def _weather_counter_challenge(
+    days: list[WeatherDay],
+    *,
+    code: str,
+    title: str,
+    icon: str,
+    description: str,
+    unit: str,
+    predicate: Callable[[WeatherDay], bool],
+) -> dict[str, object]:
+    """Счётчик выходов на площадку в такую погоду, с датами уровней."""
+    matched = sorted((day for day in days if predicate(day)), key=lambda day: day.event_date)
+    sorted_dates = [day.event_date for day in matched]
+    items = [
+        {
+            "date": day.event_date.isoformat(),
+            "location": day.location_name,
+            "value": (
+                format_temperature(day.temperature_c)
+                if code in ("walrus", "heatproof")
+                else f"{day.precipitation_run_mm:.1f} мм"
+                if day.precipitation_run_mm is not None
+                else ""
+            ),
+            # Волонтёрский выход помечаем: человек должен видеть, за что именно
+            # ему засчитали тот мороз.
+            "note": "волонтёрство" if day.volunteered else None,
+        }
+        for day in reversed(matched)
+    ][:30]
+    return _challenge(
+        code=code,
+        title=title,
+        icon=icon,
+        description=description,
+        category="weather",
+        current=len(matched),
+        unit=unit,
+        detail={"items": items},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
+def _walrus_challenge(days: list[WeatherDay]) -> dict[str, object]:
+    return _weather_counter_challenge(
+        days,
+        code="walrus",
+        title="Морж",
+        icon="🥶",
+        description=(
+            "Будь на старте при −20° и ниже — финишёром или волонтёром на площадке. Температура — "
+            "по архиву погоды в точке старта; ощущаемая с ветром бывает ещё ниже, но считаем воздух."
+        ),
+        unit="морозных стартов",
+        predicate=lambda day: day.temperature_c is not None and day.temperature_c <= DEEP_FROST_C,
+    )
+
+
+def _heatproof_challenge(days: list[WeatherDay]) -> dict[str, object]:
+    return _weather_counter_challenge(
+        days,
+        code="heatproof",
+        title="Огнеупорный",
+        icon="🔥",
+        description=(
+            "Будь на старте при +25° и выше — финишёром или волонтёром на площадке. "
+            "Жара в девять утра редкость даже на юге."
+        ),
+        unit="жарких стартов",
+        predicate=lambda day: day.temperature_c is not None and day.temperature_c >= HEAT_C,
+    )
+
+
+def _rain_runner_challenge(days: list[WeatherDay]) -> dict[str, object]:
+    return _weather_counter_challenge(
+        days,
+        code="rain_runner",
+        title="Под дождём",
+        icon="🌧️",
+        description=(
+            "Старты, на которых шёл дождь, — свои и отработанные волонтёром: от 0.3 мм за час забега. "
+            "Морось архив видит, но дождём не считает, а снегопад считает снегом, а не дождём."
+        ),
+        unit="дождливых стартов",
+        predicate=lambda day: is_rain(day.precipitation_run_mm, day.weather_fetched_at),
+    )
+
+
+# Меню погоды «Всепогодного»: ключ → (подпись, условие, подсказка).
+_ALL_WEATHER_CELLS: tuple[tuple[str, str, Callable[[WeatherDay], bool], str], ...] = (
+    (
+        "rain",
+        "Дождь",
+        lambda r: is_rain(r.precipitation_run_mm, r.weather_fetched_at),
+        "от 0.3 мм дождя за час забега",
+    ),
+    (
+        "downpour",
+        "Ливень",
+        lambda r: r.precipitation_run_mm is not None and r.precipitation_run_mm >= DOWNPOUR_MM,
+        "от 3 мм дождя за час забега",
+    ),
+    (
+        "snowfall",
+        "Снегопад",
+        lambda r: (r.snowfall_cm or 0) > 0 or (r.weather_code in SNOW_CODES),
+        "снег шёл в час старта",
+    ),
+    (
+        "snow_cover",
+        "По снегу",
+        lambda r: r.snow_depth_cm is not None and r.snow_depth_cm >= SNOW_DEPTH_CM,
+        "снежный покров от 1 см",
+    ),
+    ("frost", "Мороз", lambda r: r.temperature_c is not None and r.temperature_c <= FROST_C, "−10° и ниже"),
+    (
+        "deep_frost",
+        "Лютый мороз",
+        lambda r: r.temperature_c is not None and r.temperature_c <= DEEP_FROST_C,
+        "−20° и ниже",
+    ),
+    ("heat", "Жара", lambda r: r.temperature_c is not None and r.temperature_c >= HEAT_C, "+25° и выше"),
+    ("gale", "Шквал", lambda r: r.wind_gusts_ms is not None and r.wind_gusts_ms >= WINDY_GUST_MS, "порывы от 15 м/с"),
+)
+
+
+def _all_weather_challenge(days: list[WeatherDay]) -> dict[str, object]:
+    """Коллекция погод: клетка закрывается первым выходом на площадку в такую погоду."""
+    first_by_key: dict[str, WeatherDay] = {}
+    counts: Counter[str] = Counter()
+    for day in sorted(days, key=lambda d: d.event_date):
+        for key, _label, predicate, _hint in _ALL_WEATHER_CELLS:
+            if predicate(day):
+                counts[key] += 1
+                first_by_key.setdefault(key, day)
+    cells = []
+    for key, label, _predicate, hint in _ALL_WEATHER_CELLS:
+        first = first_by_key.get(key)
+        count = counts.get(key) or None
+        cells.append(
+            _cell(
+                label,
+                first,
+                hint=None if first else hint,
+                count=count,
+                # «Финиш» здесь больше не подходит: клетку мог закрыть и
+                # волонтёрский выход.
+                count_label=(
+                    None if count is None else f"{count} {_plural_ru(count, ('старт', 'старта', 'стартов'))}"
+                ),
+            )
+        )
+    sorted_dates = sorted(day.event_date for day in first_by_key.values())
+    return _challenge(
+        code="all_weather",
+        title="Всепогодный",
+        icon="🌦️",
+        description=(
+            "Собери все погоды: дождь и ливень, снегопад и трасса под снегом, мороз и лютый мороз, "
+            "жара и шквалистый ветер. Клетку закрывает и пробежка, и волонтёрство на площадке. "
+            "Погода берётся из архива по точке старта."
+        ),
+        category="weather",
+        current=len(first_by_key),
+        unit="погод",
+        detail={"cells": cells},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
+_SEASON_MONTHS = ("Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек")
+
+
+def _seasons_challenge(rows: list[RunRow]) -> dict[str, object]:
+    """Финиши во все 12 месяцев года — год не важен."""
+    first_by_month: dict[int, RunRow] = {}
+    counts: Counter[int] = Counter()
+    for row in sorted(rows, key=lambda r: r.event_date):
+        counts[row.event_date.month] += 1
+        first_by_month.setdefault(row.event_date.month, row)
+    cells = [
+        _cell(
+            label,
+            first_by_month.get(month),
+            hint=None if month in first_by_month else "ещё не бегали в этом месяце",
+            count=counts.get(month) or None,
+        )
+        for month, label in enumerate(_SEASON_MONTHS, start=1)
+    ]
+    sorted_dates = sorted(row.event_date for row in first_by_month.values())
+    return _challenge(
+        code="seasons",
+        title="Коллекционер сезонов",
+        icon="🍂",
+        description="Финишируй во все двенадцать месяцев года — январь и июль считаются одинаково, год не важен.",
+        category="weather",
+        current=len(first_by_month),
+        unit="месяцев",
+        detail={"cells": cells},
+        level_dates_fn=lambda levels: _level_dates(sorted_dates, levels),
+    )
+
+
 def _build_challenge_list(
     rows: list[RunRow],
     vol_rows: dict[str, list[tuple[date, str]]],
     upcoming: dict[tuple[str, int], list[tuple[date, str]]],
     rating_rows: list[RatingRow],
     vol_role_rows: list[VolunteerRoleRow],
+    weather_days: list[WeatherDay],
     *,
     alphabet_names: dict[str, set[str]],
     platform_code: str | None,
+    home_country: str | None,
+    planned: dict[tuple[str, int], list[tuple[date, str]]] | None = None,
 ) -> list[dict[str, object]]:
-    return [
+    challenges = [
         _seconds_challenge(rows),
         _positions_challenge(rows),
         _alphabet_challenge(rows, alphabet_names, platform_code=platform_code),
@@ -1643,7 +2556,24 @@ def _build_challenge_list(
         _photo_reporter_challenge(rating_rows),
         _v_index_challenge(vol_role_rows),
         _role_master_challenge(vol_role_rows),
+        _minute_range_challenge(rows),
+        _fibonacci_challenge(rows, planned or {}),
+        _nelson_challenge(rows, planned or {}),
+        _primes_challenge(rows, planned or {}),
+        _wilson_challenge(rows, planned or {}),
+        _countries_challenge(rows, home_country),
+        _walrus_challenge(weather_days),
+        _heatproof_challenge(weather_days),
+        _rain_runner_challenge(weather_days),
+        _all_weather_challenge(weather_days),
+        _seasons_challenge(rows),
     ]
+    if platform_code is None:
+        # «Хет-трик систем» — челлендж ПРО переходы между системами: под
+        # фильтром одной системы он по построению показывал бы вечную единицу
+        # из четырёх. В сквозном виде он на месте, в разрезе платформы его нет.
+        challenges.append(_platform_slam_challenge(rows))
+    return challenges
 
 
 def _rows_before_last_activity(rows: list[RunRow]) -> list[RunRow] | None:
@@ -1661,6 +2591,7 @@ def _scope_by_platform(
     upcoming: dict[tuple[str, int], list[tuple[date, str]]],
     rating_rows: list[RatingRow],
     vol_role_rows: list[VolunteerRoleRow],
+    weather_days: list[WeatherDay],
     platform_code: str | None,
 ) -> tuple[
     list[RunRow],
@@ -1668,21 +2599,166 @@ def _scope_by_platform(
     dict[tuple[str, int], list[tuple[date, str]]],
     list[RatingRow],
     list[VolunteerRoleRow],
+    list[WeatherDay],
 ]:
-    """Сужает пробежки/волонтёрства/прогноз номеров/оценки/роли до одной системы —
-    для челленджей в разрезе платформы. None — без сужения (сквозной вид)."""
+    """Сужает пробежки/волонтёрства/прогноз номеров/оценки/роли/погодные дни до
+    одной системы — для челленджей в разрезе платформы. None — без сужения."""
     if platform_code is None:
-        return rows, vol_rows, upcoming, rating_rows, vol_role_rows
+        return rows, vol_rows, upcoming, rating_rows, vol_role_rows, weather_days
     scoped_rows = [row for row in rows if row.platform_code == platform_code]
     scoped_vol_rows = {code: v for code, v in vol_rows.items() if code == platform_code}
     scoped_upcoming = {key: v for key, v in upcoming.items() if key[0] == platform_code}
     scoped_rating_rows = [row for row in rating_rows if row.platform_code == platform_code]
     scoped_role_rows = [row for row in vol_role_rows if row.platform_code == platform_code]
-    return scoped_rows, scoped_vol_rows, scoped_upcoming, scoped_rating_rows, scoped_role_rows
+    scoped_weather_days = [day for day in weather_days if day.platform_code == platform_code]
+    return (
+        scoped_rows,
+        scoped_vol_rows,
+        scoped_upcoming,
+        scoped_rating_rows,
+        scoped_role_rows,
+        scoped_weather_days,
+    )
 
 
 class StartNumberPlanError(ValueError):
-    """Запрошен челлендж, у которого нет диапазона номеров стартов."""
+    """Запрошен челлендж, у которого нет планирования по номерам стартов."""
+
+
+@dataclass(frozen=True)
+class PlanSpec:
+    """Как устроена таблица планирования конкретного челленджа.
+
+    columns × weeks_per_column = weeks: «Нумератор» режет три недели на три
+    колонки по неделе (E, E+1, E+2 — забеги локации подряд), остальные кладут
+    весь горизонт в одну колонку «Где и когда», потому что до №222 ближайшей
+    площадке ехать месяцы и колонок понадобилось бы 26.
+
+    numbers получает число пробежек человека: «Совпадению номеров» нужны не
+    фиксированные числа, а НОМЕРА ЕГО БУДУЩИХ ПРОБЕЖЕК — 203-я, 204-я и так
+    далее.
+
+    tracks_done=False у челленджей-счётчиков: там один и тот же номер можно
+    брать сколько угодно раз (каждый юбилей идёт в зачёт), и отметка «закрыто»
+    в таблице только сбивала бы.
+    """
+
+    numbers: Callable[[int], tuple[int, ...]]
+    weeks: int
+    columns: int
+    column_titles: tuple[str, ...]
+    horizon_label: str
+    entries_per_cell: int
+    tracks_done: bool = True
+    intro: str | None = None
+
+    @property
+    def weeks_per_column(self) -> int:
+        return max(1, self.weeks // self.columns)
+
+
+def _range_numbers(low: int, high: int) -> Callable[[int], tuple[int, ...]]:
+    return lambda _runs: tuple(range(low, high + 1))
+
+
+# Подписи колонок «Нумератора»: считаем в ЗАБЕГАХ локации, а не в календарных
+# неделях — E это ближайший старт площадки, E+1 следующий за ним.
+_START_NUMBER_COLUMNS = ("Ближайший забег (E)", "E+1", "E+2")
+_WIDE_COLUMN = ("Где и когда",)
+
+# Ч «Совпадение номеров»: на сколько будущих пробежек вперёд показываем шансы.
+# Дальше десятка смысла нет — чтобы поймать 213-е совпадение, нужно сначала
+# ровно десять раз никуда не попасть.
+NUMBER_MATCH_PLAN_DEPTH = 10
+
+# Ч «Юбилейщик»: круглые номера, до которых наши системы вообще доросли.
+JUBILEE_STEP = 50
+JUBILEE_NUMBERS: tuple[int, ...] = tuple(range(JUBILEE_STEP, PLANNING_MAX_NUMBER + 1, JUBILEE_STEP))
+
+
+def _number_match_plan_numbers(runs: int) -> tuple[int, ...]:
+    """Номера, которые дадут совпадение: следующая пробежка должна прийтись на
+    старт со своим порядковым номером, через одну — на следующий, и так далее."""
+    return tuple(range(runs + 1, runs + 1 + NUMBER_MATCH_PLAN_DEPTH))
+
+
+PLAN_SPECS: dict[str, PlanSpec] = {
+    "start_numbers": PlanSpec(
+        numbers=_range_numbers(*START_NUMBER_RANGES["start_numbers"]),
+        weeks=START_NUMBER_PLAN_WEEKS,
+        columns=START_NUMBER_PLAN_WEEKS,
+        column_titles=_START_NUMBER_COLUMNS,
+        horizon_label="ближайшие 3 недели",
+        entries_per_cell=12,
+    ),
+    "start_numbers_pro": PlanSpec(
+        numbers=_range_numbers(*START_NUMBER_RANGES["start_numbers_pro"]),
+        weeks=START_NUMBER_PLAN_WEEKS,
+        columns=START_NUMBER_PLAN_WEEKS,
+        column_titles=_START_NUMBER_COLUMNS,
+        horizon_label="ближайшие 3 недели",
+        entries_per_cell=12,
+    ),
+    "fibonacci": PlanSpec(
+        numbers=lambda _runs: FIBONACCI_NUMBERS,
+        weeks=PLANNING_WEEKS,
+        columns=1,
+        column_titles=_WIDE_COLUMN,
+        horizon_label="ближайшие полгода",
+        entries_per_cell=10,
+    ),
+    "nelson": PlanSpec(
+        numbers=lambda _runs: NELSON_NUMBERS,
+        weeks=PLANNING_WEEKS,
+        columns=1,
+        column_titles=_WIDE_COLUMN,
+        horizon_label="ближайшие полгода",
+        entries_per_cell=10,
+    ),
+    "primes": PlanSpec(
+        numbers=lambda _runs: PRIME_NUMBERS,
+        weeks=PLANNING_WEEKS,
+        columns=1,
+        column_titles=_WIDE_COLUMN,
+        horizon_label="ближайшие полгода",
+        entries_per_cell=10,
+    ),
+    "wilson": PlanSpec(
+        numbers=_range_numbers(1, WILSON_STRIP_NUMBERS),
+        weeks=PLANNING_WEEKS,
+        columns=1,
+        column_titles=_WIDE_COLUMN,
+        horizon_label="ближайшие полгода",
+        entries_per_cell=10,
+    ),
+    "jubilee": PlanSpec(
+        numbers=lambda _runs: JUBILEE_NUMBERS,
+        weeks=PLANNING_WEEKS,
+        columns=1,
+        column_titles=_WIDE_COLUMN,
+        horizon_label="ближайшие полгода",
+        entries_per_cell=12,
+        tracks_done=False,
+        intro=(
+            "Юбилеи идут в зачёт сколько угодно раз, поэтому «закрытых» номеров здесь нет: "
+            "каждый круглый старт — плюс один, даже если на таком номере вы уже бывали."
+        ),
+    ),
+    "number_match": PlanSpec(
+        numbers=_number_match_plan_numbers,
+        weeks=PLANNING_WEEKS,
+        columns=1,
+        column_titles=_WIDE_COLUMN,
+        horizon_label="ближайшие полгода",
+        entries_per_cell=12,
+        tracks_done=False,
+        intro=(
+            "Совпадение ловится по СЧЁТУ ваших пробежек: №N в таблице — это ваша N-я пробежка. "
+            "Первая строка — следующая пробежка, вторая — та, что через одну, и так далее. "
+            "Поедете на старт не из списка — счёт сдвинется, и целевым станет следующий номер."
+        ),
+    ),
+}
 
 
 def build_start_numbers_plan(
@@ -1693,9 +2769,14 @@ def build_start_numbers_plan(
     platform_code: str | None = None,
     today: date | None = None,
 ) -> dict[str, object]:
-    """Таблица планирования «Нумератора»: строка — номер старта, три колонки —
-    ближайшая неделя, W+1, W+2, в ячейках локации, у которых старт с этим
-    номером выпадает на эту неделю.
+    """Таблица планирования: строка — номер старта, колонки — ближайшие забеги
+    локаций, в ячейках сами локации с датами.
+
+    У «Нумератора» строки идут сплошным диапазоном, а колонок три: E, E+1, E+2 —
+    номер известен на три недели вперёд с приличной точностью. У числовых
+    челленджей (Фибоначчи, Нельсон, простые, Уилсон) строки разрежены, а до
+    нужного номера площадке бывает полгода, поэтому у них одна колонка «Где и
+    когда» на весь горизонт (см. PLAN_SPECS).
 
     Номер закрывается пробежкой В ЛЮБОЙ системе (см. _start_numbers_range_challenge),
     поэтому `done` считаем по номерам без привязки к платформе, а систему
@@ -1706,27 +2787,31 @@ def build_start_numbers_plan(
     одной системе, иначе таблица предлагала бы старты, которые в текущем
     скоупе всё равно не засчитаются.
     """
-    bounds = START_NUMBER_RANGES.get(code)
-    if bounds is None:
-        raise StartNumberPlanError(f"У челленджа «{code}» нет диапазона номеров стартов")
-    low, high = bounds
+    spec = PLAN_SPECS.get(code)
+    if spec is None:
+        raise StartNumberPlanError(f"У челленджа «{code}» нет планирования по номерам стартов")
 
     today = today or date.today()
     my_rows = _collect_run_rows(db, user_id)
     if platform_code:
         my_rows = [row for row in my_rows if row.platform_code == platform_code]
-    done_numbers = {row.event_number for row in my_rows if row.event_number is not None}
+    # Номера строк «Совпадения номеров» зависят от того, сколько пробежек уже
+    # набрано, поэтому список считается ПОСЛЕ сужения по системе — под фильтром
+    # «только 5 вёрст» челлендж считает свои пробежки тем же способом.
+    numbers = spec.numbers(len(my_rows))
+    done_numbers = {row.event_number for row in my_rows if row.event_number is not None} if spec.tracks_done else set()
 
+    wanted = set(numbers)
+    high = max(numbers)
     cells: dict[int, list[list[dict[str, object]]]] = {}
-    for item in _predict_upcoming_starts(
-        db, today=today, weeks=START_NUMBER_PLAN_WEEKS, max_number=high
-    ):
-        if not low <= item.number <= high:
+    for item in _predict_upcoming_starts(db, today=today, weeks=spec.weeks, max_number=high):
+        if item.number not in wanted:
             continue
         if platform_code and item.platform_code != platform_code:
             continue
-        row_cells = cells.setdefault(item.number, [[] for _ in range(START_NUMBER_PLAN_WEEKS)])
-        row_cells[item.week_index].append(
+        column = min(item.week_index // spec.weeks_per_column, spec.columns - 1)
+        row_cells = cells.setdefault(item.number, [[] for _ in range(spec.columns)])
+        row_cells[column].append(
             {
                 "location": item.location_name,
                 "location_slug": item.location_slug,
@@ -1735,28 +2820,72 @@ def build_start_numbers_plan(
             }
         )
     for row_cells in cells.values():
-        for week_cell in row_cells:
+        for column_index, week_cell in enumerate(row_cells):
             week_cell.sort(key=lambda entry: (str(entry["date"]), str(entry["location"])))
+            # Разрежённым челленджам до одного номера доходят десятки площадок в
+            # одну и ту же субботу — показываем ближайшие, иначе таблица
+            # превращается в простыню на несколько экранов.
+            del week_cell[spec.entries_per_cell :]
+            row_cells[column_index] = week_cell
 
     rows = [
         {
             "number": number,
             "done": number in done_numbers,
-            "weeks": cells.get(number) or [[] for _ in range(START_NUMBER_PLAN_WEEKS)],
+            "weeks": cells.get(number) or [[] for _ in range(spec.columns)],
         }
-        for number in range(low, high + 1)
+        for number in numbers
     ]
     return {
         "code": code,
         "platform_code": platform_code,
-        "low": low,
+        "low": min(numbers),
         "high": high,
         "generated_for": today.isoformat(),
-        # Только количество колонок: подписи «E / E+1 / E+2» строит фронт, а
-        # границы окна в интерфейсе не нужны — дата стоит у каждой записи.
-        "week_count": START_NUMBER_PLAN_WEEKS,
+        "week_count": spec.columns,
+        # Подписи колонок и горизонта задаёт бэк: у «Нумератора» это забеги
+        # локации (E, E+1, E+2), у остальных — одна колонка на полгода.
+        "column_titles": list(spec.column_titles),
+        "horizon_label": spec.horizon_label,
+        "tracks_done": spec.tracks_done,
+        "intro": spec.intro,
         "rows": rows,
     }
+
+
+def _resolve_home_country(db: Session, user_id: UUID, rows: list[RunRow]) -> str | None:
+    """Страна домашней локации — точка отсчёта «Международного туриста» (Ч51).
+
+    Домашняя локация та же, от которой считается «дальность от дома»
+    (resolve_home_location): выбранная человеком вручную либо посчитанная
+    автоматически. Это важно не ради красоты: у нас есть площадки в Сербии,
+    Беларуси, Грузии и Аргентине, и для бегуна из Белграда международным
+    стартом является российский, а не наоборот.
+
+    Пока страна у человека одна, тяжёлый разбор домашней локации не нужен —
+    дом заведомо в ней. Разбор включается только у тех, кто бегал больше чем в
+    одной стране (на прод-масштабной базе это 13% зарегистрированных).
+    """
+    counts = Counter(row.country for row in _finished_rows(rows) if row.country)
+    if len(counts) <= 1:
+        return next(iter(counts), None)
+
+    from app.services.home_location_service import resolve_home_location
+
+    user = db.get(User, user_id)
+    if user is not None:
+        candidate, _is_auto = resolve_home_location(db, user)
+        if candidate is not None:
+            home_country = next(
+                (row.country for row in rows if row.location_key == candidate.catalog_identity_key and row.country),
+                None,
+            )
+            if home_country is not None:
+                return home_country
+    # Домашняя локация не опознана (например, у неё не заполнена страна) —
+    # берём страну, где финишей больше всего: это тот же принцип «дом там, где
+    # бегаешь чаще», только огрублённый до страны.
+    return counts.most_common(1)[0][0]
 
 
 def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = None) -> dict[str, object]:
@@ -1765,9 +2894,18 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
     этим фильтром не затрагиваются и всегда считаются по полным данным."""
     rows = _collect_run_rows(db, user_id)
     vol_rows = _collect_volunteer_rows(db, user_id)
-    upcoming = _upcoming_event_numbers(db)
+    # Прогноз ближайших стартов строится ОДИН раз на полгода вперёд, а дальше
+    # режется на два представления: трёхнедельное для «Нумератора» и полное для
+    # числовых челленджей. Запрос по последним стартам всех площадок не из
+    # дешёвых, второй раз его гонять незачем.
+    predictions = _predict_upcoming_starts(db, weeks=PLANNING_WEEKS, max_number=PLANNING_MAX_NUMBER)
+    upcoming = _numbers_from_predictions(
+        predictions, weeks=START_NUMBER_PLAN_WEEKS, max_number=START_NUMBER_RANGES["start_numbers_pro"][1]
+    )
+    planned = _numbers_from_predictions(predictions, weeks=PLANNING_WEEKS, max_number=PLANNING_MAX_NUMBER)
     rating_rows = _collect_rating_rows(db, user_id)
     vol_role_rows = _collect_volunteer_role_rows(db, user_id)
+    weather_days = _collect_weather_days(db, user_id, rows)
 
     (
         scoped_rows,
@@ -1775,11 +2913,20 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
         scoped_upcoming,
         scoped_rating_rows,
         scoped_role_rows,
-    ) = _scope_by_platform(rows, vol_rows, upcoming, rating_rows, vol_role_rows, platform_code)
+        scoped_weather_days,
+    ) = _scope_by_platform(rows, vol_rows, upcoming, rating_rows, vol_role_rows, weather_days, platform_code)
+    # Прогноз для числовых челленджей сужается тем же фильтром систем: под
+    # «только 5 вёрст» подсказка не должна звать на старт S95.
+    scoped_planned = (
+        planned if platform_code is None else {key: value for key, value in planned.items() if key[0] == platform_code}
+    )
 
     # Каталог букв «Алфавита» зависит от того же фильтра систем — читаем его
     # один раз на оба прогона списка челленджей (второй считает recent_delta).
     alphabet_names = _alphabet_available_names(db, platform_code)
+    # Домашняя страна «Международного туриста» считается по ПОЛНЫМ пробежкам,
+    # а не по суженным фильтром: дом от выбора системы не переезжает.
+    home_country = _resolve_home_country(db, user_id, rows)
 
     challenges = _build_challenge_list(
         scoped_rows,
@@ -1787,8 +2934,11 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
         scoped_upcoming,
         scoped_rating_rows,
         scoped_role_rows,
+        scoped_weather_days,
         alphabet_names=alphabet_names,
         platform_code=platform_code,
+        home_country=home_country,
+        planned=scoped_planned,
     )
 
     rows_before = _rows_before_last_activity(scoped_rows)
@@ -1796,6 +2946,10 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
         # Тот самый последний день активности, относительно которого считается
         # recent_delta: «Детали» подсветят по нему свежие клетки.
         recent_date = scoped_rows[-1].event_date.isoformat()
+        # Тем же днём отсекаем и погодные выходы: иначе «+1 за последний старт»
+        # считался бы против списка, в котором этот старт уже учтён.
+        cutoff = scoped_rows[-1].event_date
+        weather_days_before = [day for day in scoped_weather_days if day.event_date < cutoff]
         previous: dict[str, int] = {
             str(c["code"]): int(c["current"])  # type: ignore[call-overload]
             for c in _build_challenge_list(
@@ -1804,8 +2958,11 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
                 scoped_upcoming,
                 scoped_rating_rows,
                 scoped_role_rows,
+                weather_days_before,
                 alphabet_names=alphabet_names,
                 platform_code=platform_code,
+                home_country=home_country,
+                planned=scoped_planned,
             )
         }
         for challenge in challenges:
@@ -1853,6 +3010,7 @@ def compute_challenges(db: Session, user_id: UUID, platform_code: str | None = N
 
 # ---------------------------------------------------------------------------
 # Цели на год
+
 
 @dataclass(frozen=True)
 class GoalPreset:
@@ -2005,8 +3163,7 @@ def _preset_current(
         return len(year_rows), None
     if goal_type == "volunteering_year":
         year_vol = {
-            code: [(d, key) for d, key in platform_rows if d.year == year]
-            for code, platform_rows in vol_rows.items()
+            code: [(d, key) for d, key in platform_rows if d.year == year] for code, platform_rows in vol_rows.items()
         }
         return _count_volunteering(year_vol), None
     if goal_type == "new_locations_year":
@@ -2030,13 +3187,14 @@ def _preset_current(
         return (best or 0), (_time_display(best) if best else None)
     if goal_type == "saturday_streak":
         year_dates = _year_activity_dates(year, rows, vol_rows)
-        return _max_saturday_streak(year_dates), None
+        return max_saturday_streak(year_dates), None
     if goal_type == "pr_count_year":
         return sum(1 for row in year_rows if row.is_pr), None
     if goal_type == "saturday_consistency_year":
         year_dates = _year_activity_dates(year, rows, vol_rows)
         all_saturdays = _saturdays_of_year(year)
-        active_saturdays = sum(1 for day in all_saturdays if day in year_dates)
+        active_weeks = saturday_weeks(year_dates)
+        active_saturdays = sum(1 for day in all_saturdays if day in active_weeks)
         # Текущий темп: доля АКТИВНЫХ суббот среди уже ПРОШЕДШИХ (не всего года) —
         # иначе в январе даже идеальная регулярность показывала бы единицы процентов.
         elapsed_saturdays = max(sum(1 for day in all_saturdays if day <= today), 1)
@@ -2090,11 +3248,12 @@ def _goal_progress(
         # плюс оставшиеся субботы года.
         live_streak = 0
         if not done:
+            year_saturdays = saturday_weeks(year_dates)
             last_saturday = today - timedelta(days=(today.weekday() - 5) % 7)
             expected = last_saturday
-            if expected not in year_dates:
+            if expected not in year_saturdays:
                 expected -= timedelta(days=7)
-            while expected in year_dates and expected.year == year:
+            while expected in year_saturdays and expected.year == year:
                 live_streak += 1
                 expected -= timedelta(days=7)
             on_track = live_streak + _saturdays_left(today) >= goal.target_value
@@ -2230,9 +3389,7 @@ def save_goals(
             raise GoalValidationError(f"Цель повторяется: {goal_type}")
         seen.add(goal_type)
         if not (preset.min <= target_value <= preset.max):
-            raise GoalValidationError(
-                f"Значение цели «{preset.title}» должно быть от {preset.min} до {preset.max}"
-            )
+            raise GoalValidationError(f"Значение цели «{preset.title}» должно быть от {preset.min} до {preset.max}")
 
     existing = {
         goal.goal_type: goal

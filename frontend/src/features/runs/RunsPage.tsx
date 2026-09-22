@@ -11,6 +11,7 @@ import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
 import { LocationNameLink } from "../../components/LocationNameLink";
 import { LocationPrLocationName } from "../../components/LocationPrLocationName";
 import { PlatformBadge } from "../../components/PlatformBadge";
+import { WeatherChip } from "../../components/WeatherChip";
 import { RateRunModal } from "../../components/RateRunModal";
 import { RunRatingStar } from "../../components/RunRatingStar";
 import { Snackbar } from "../../components/Snackbar";
@@ -32,6 +33,7 @@ import {
   runTopPercent,
   sortRuns,
   toggleDateSort,
+  toggleWeatherSort,
   toggleFinishSort,
   togglePaceSort,
   togglePositionSort,
@@ -66,14 +68,29 @@ const RUNS_COLUMNS: AdaptiveColumn[] = [
   // место темпу с «Топ %» они не должны (Дмитрий 02.09.2026).
   { key: "rating", width: 96, required: true },
   { key: "position", width: 104 },
+  // Погода в час старта: значок и градусы, подробности — в подсказке.
+  { key: "weather", width: 96 },
   { key: "platform", width: 112 },
   { key: "participants", width: 132 },
   { key: "gender_position", width: 136 },
+  // «Место (группа)» — соседняя по смыслу колонка: тот же старт, другой зачёт.
+  { key: "age_group_position", width: 168 },
   // «Топ %» — после «Участников»: процент без размера старта не читается, а
   // набор колонок всегда префикс этого списка, так что порядок это и гарантирует.
   { key: "top_percent", width: 112 },
   { key: "pace", width: 120 },
 ];
+
+/** Подсказка к месту в группе: сама категория в таблице колонки не имеет. */
+function ageGroupTitle(run: RunItem): string | undefined {
+  if (run.age_group_position == null) {
+    return run.age_category ? `${run.age_category} — места нет: в протоколе нет времени` : undefined;
+  }
+  const group = run.age_category ?? "возрастная группа";
+  return run.age_group_total != null
+    ? `${group} — ${run.age_group_position}-е место из ${run.age_group_total}`
+    : `${group} — ${run.age_group_position}-е место`;
+}
 
 function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const { listRuns, mode, cacheScope } = useAppDataSource();
@@ -217,6 +234,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const finishSortActive = filters.sort === "finish_asc" || filters.sort === "finish_desc";
   const paceSortActive = filters.sort === "pace_asc" || filters.sort === "pace_desc";
   const positionSortActive = filters.sort === "position_asc" || filters.sort === "position_desc";
+  const weatherSortActive = filters.sort === "weather_asc" || filters.sort === "weather_desc";
   const topPercentSortActive =
     filters.sort === "top_percent_asc" || filters.sort === "top_percent_desc";
 
@@ -333,9 +351,11 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                 {show("platform") && <col className="col-platform" />}
                 <col className="col-location" />
                 {show("position") && <col className="col-compact" />}
+                {show("weather") && <col className="col-weather" />}
                 {show("participants") && <col className="col-participants" />}
                 {show("top_percent") && <col className="col-top-percent" />}
                 {show("gender_position") && <col className="col-gender" />}
+                {show("age_group_position") && <col className="col-age-group" />}
                 <col className="col-time" />
                 {show("pace") && <col className="col-pace" />}
                 {show("rating") && showRating && <col className="col-rating" />}
@@ -409,6 +429,16 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       onSort={() => filters.setSort((current) => togglePositionSort(current))}
                     />
                   )}
+                  {show("weather") && (
+                    <ColumnHeader
+                      label="Погода"
+                      filterable={false}
+                      sortActive={weatherSortActive}
+                      sortAsc={filters.sort === "weather_asc"}
+                      onSort={() => filters.setSort((current) => toggleWeatherSort(current))}
+                      headerTitle="Погода в час старта по архиву Open-Meteo: температура, осадки, ветер. Клик по значению — подробности"
+                    />
+                  )}
                   {show("participants") && (
                     <ColumnHeader
                       label="Участников"
@@ -431,6 +461,13 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       label="Место (пол)"
                       filterable={false}
                       hint="Место среди своего пола"
+                    />
+                  )}
+                  {show("age_group_position") && (
+                    <ColumnHeader
+                      label="Место (группа)"
+                      filterable={false}
+                      hint="Место в своей возрастной группе на этом старте — как в протоколе"
                     />
                   )}
                   <ColumnHeader
@@ -507,9 +544,18 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       <td className="td-location">
                         <LocationPrLocationName isLocationPr={run.is_location_pr}>
                           <LocationNameLink name={run.location_name} slug={run.location_slug} />
+{/* У серии («Старты сообществ») локация одна на все старты, поэтому
+    имя самого старта подписываем второй строкой — иначе строка не
+    отвечает, что именно человек бежал. */}
+{run.event_title && <span className="activity-event-title">{run.event_title}</span>}
                         </LocationPrLocationName>
                       </td>
                       {show("position") && <td className="td-compact">{run.position ?? "—"}</td>}
+                      {show("weather") && (
+                        <td className="td-compact td-weather">
+                          <WeatherChip weather={run.weather} locationSlug={run.location_slug} locationName={run.location_name} />
+                        </td>
+                      )}
                       {show("participants") && (
                         <td className="td-compact">
                           {run.participants_total != null ? formatInt(run.participants_total) : "—"}
@@ -525,6 +571,11 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                       )}
                       {show("gender_position") && (
                         <td className="td-compact">{run.gender_position ?? "—"}</td>
+                      )}
+                      {show("age_group_position") && (
+                        <td className="td-compact" title={ageGroupTitle(run)}>
+                          {run.age_group_position ?? "—"}
+                        </td>
                       )}
                       <td className="td-time">
                         <GlobalPrFinishTime isGlobalPr={run.is_global_pr}>

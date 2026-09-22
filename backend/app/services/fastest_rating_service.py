@@ -47,6 +47,7 @@ from app.services.leaderboard_service import (
     REFRESH_INTERVAL_HOURS,
     _entity_key,
     _location_identity_maps,
+    _pid_scoped,
     _row_key,
     _site_links,
 )
@@ -213,11 +214,6 @@ def available_age_groups(db: Session) -> list[str]:
     return list(_load_options(db)["age_groups"])
 
 
-def available_years(db: Session, platform: str = ALL_PLATFORMS) -> list[int]:
-    years: dict[str, list[int]] = _load_options(db)["years_by_platform"]
-    return list(years.get(platform, ()))
-
-
 # --------------------------------------------------------------------------- #
 # Выборки
 # --------------------------------------------------------------------------- #
@@ -342,7 +338,11 @@ def _fetch_best_rows_for(
         + _slice_sql(where + "\n  AND rr.participant_id = ANY(:pids)")
         + "ORDER BY rr.participant_id, rr.finish_time_sec ASC, e.event_date ASC, rr.id ASC"
     )
-    return db.execute(text(sql), {**params, "pids": pids}).all()
+    # Выборка уже сужена до ANY(:pids) — допуск parkrun считаем отдельным
+    # дешёвым запросом, иначе CTE разворачивается в коррелированный SubPlan
+    # и пересчитывается на каждую строку (QRY-RATINGS-01).
+    sql, scoped_params = _pid_scoped(db, sql, {**params, "pids": pids})
+    return db.execute(text(sql), scoped_params).all()
 
 
 # --------------------------------------------------------------------------- #

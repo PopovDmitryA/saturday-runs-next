@@ -64,5 +64,5 @@
 02.08.2026) заливается разовым скриптом, все записи скрытые:
 
 ```bash
-docker compose exec api python scripts/seed_release_history.py --apply
+docker compose exec api python scripts/archive/seed_release_history.py --apply
 ```

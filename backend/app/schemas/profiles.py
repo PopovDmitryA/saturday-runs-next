@@ -121,3 +121,23 @@ class ParticipantSearchResponse(BaseModel):
 
 class LinkByParticipantRequest(BaseModel):
     participant_id: UUID
+
+class ProfileCompareLocationRow(BaseModel):
+    """Строка сравнения по общей локации: как её проходит каждый из двоих."""
+
+    identity_key: str
+    name: str
+    slug: str | None = None
+    my_runs: int = 0
+    my_best_sec: int | None = None
+    my_last_date: date | None = None
+    their_runs: int = 0
+    their_best_sec: int | None = None
+    their_last_date: date | None = None
+    # 0 — площадка общая, но на одном старте не стояли ни разу.
+    together_runs: int = 0
+
+
+class ProfileCompareLocationsResponse(BaseModel):
+    items: list[ProfileCompareLocationRow] = Field(default_factory=list)
+    shared_total: int = 0

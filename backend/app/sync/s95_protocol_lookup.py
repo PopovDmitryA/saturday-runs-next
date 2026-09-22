@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models import EventSummary, Location, Platform
 from app.platform_adapters.canonical import CanonicalEventSummary
 from app.s95.api_client import fetch_event_activities
+from app.sync.iteration_commit import commit_step
 
 ACTIVITY_URL_RE = re.compile(r"/activities/(\d+)")
 
@@ -69,6 +70,12 @@ def _lookup_summary_from_events_json(
 
     domain = _location_domain(location)
     event_url = f"{domain}/events/{location.external_key}.json"
+    # Локация могла быть только что создана (resolve_s95_protocol) — коммитим
+    # её до похода за списком стартов: фетч ждёт паузу между запросами и
+    # очередь за батчем, а прод рвёт сессии «idle in transaction» через 60 с
+    # (см. iteration_commit). После коммита к ORM-строке не обращаемся до
+    # ответа: всё для запроса уже в event_url.
+    commit_step(db)
     try:
         refs = fetch_event_activities(event_url)
     except Exception:

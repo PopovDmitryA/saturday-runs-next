@@ -10,9 +10,15 @@
 (на 07.09.2026 — 522 человека, 683 финиша). Отсюда и жалобы «у тебя на сайте
 на одну пробежку меньше».
 
-Собранный старт живёт как локация с флагом `is_community_event`: финиши идут в
-личные итоги, но в каталоге, на карте, в туризме и в рейтингах по локациям
-такой «площадки» нет (см. app/services/community_events.py).
+**Все такие старты живут одной локацией-серией «Старты сообществ»**, а
+собственное имя старта уходит в заголовок события. Сначала каждый заводился
+своей локацией, и каталог заполнялся однодневками вроде «Зелёные 5 км» —
+страница на один старт, с «рекордом трассы» по нему же. Серия отвечает на
+вопрос «что это за формат» одной строкой, а журнал внутри повторяет таблицу
+раздела: дата, название старта, финишёры, волонтёры, времена.
+
+Финиши идут в личные итоги, но в туризме, на карте и в рейтингах по локациям
+серии нет (см. app/services/series_locations.py).
 """
 
 from __future__ import annotations
@@ -25,10 +31,11 @@ from sqlalchemy.orm import Session
 
 from app.five_verst.errors import FiveVerstBanDetected
 from app.five_verst.fetch.protocol_pause import wait_between_protocols
-from app.models import Platform, SyncRun, SyncRunStatus
+from app.models import Location, Platform, SyncRun, SyncRunStatus
 from app.platform_adapters.canonical import CanonicalLocation
-from app.platform_adapters.five_verst import bulk_parser
+from app.platform_adapters.five_verst import bulk_parser, community_section
 from app.platform_adapters.five_verst.http import NotFoundError
+from app.services.series_locations import FIVE_VERST_SERIES_KEY, FIVE_VERST_SERIES_NAME
 from app.sync import upsert
 from app.sync.iteration_commit import commit_step, release_before_fetch, rollback_step
 
@@ -85,6 +92,28 @@ def _finish_sync_run(
     db.flush()
 
 
+def ensure_series_location(db: Session, platform: Platform) -> Location:
+    """Локация-серия «Старты сообществ» — одна на все тематические старты.
+
+    Флаг ставим здесь, а не в `upsert_location`: это единственное место, где
+    серия 5 вёрст заводится, и общий upsert о ней знать не должен.
+    """
+    location_row, _ = upsert.upsert_location(
+        db,
+        platform,
+        CanonicalLocation(
+            external_key=FIVE_VERST_SERIES_KEY,
+            name=FIVE_VERST_SERIES_NAME,
+            country="Россия",
+            source_url=community_section.section_url(),
+        ),
+    )
+    if not location_row.is_series:
+        location_row.is_series = True
+    db.flush()
+    return location_row
+
+
 def _sync_one(
     db: Session,
     platform: Platform,
@@ -104,22 +133,11 @@ def _sync_one(
         result.errors.append(f"{slug}: не разобрался заголовок с датой")
         return
 
-    location_row, _ = upsert.upsert_location(
-        db,
-        platform,
-        CanonicalLocation(
-            external_key=slug,
-            name=page.name,
-            source_url=page.source_url,
-        ),
-        source_hash=bulk_parser.source_hash(html),
-    )
-    # Флаг ставим здесь, а не в upsert_location: это единственное место, где
-    # заводятся старты сообществ, и общий upsert о них знать не должен.
-    if not location_row.is_community_event:
-        location_row.is_community_event = True
-    db.flush()
+    location_row = ensure_series_location(db, platform)
 
+    # Имя старта («Зелёные 5 км») — заголовок события, а не имя локации: сама
+    # локация одна на весь раздел. Хеш страницы держим на событии — у каждого
+    # старта своя страница, а у серии общей страницы с протоколом нет.
     event_row = upsert.upsert_event_for_profile(
         db,
         platform,
@@ -134,7 +152,12 @@ def _sync_one(
     result.events_upserted += 1
 
     runs = upsert.replace_event_run_results(db, event_row, platform, page.run_results)
-    vols = upsert.replace_event_volunteer_results(db, event_row, platform, page.volunteer_results)
+    # Волонтёров у страницы сообщества может и не быть; если результаты
+    # разобрались, страница настоящая — пустой список принимаем (сторож от
+    # пустого разбора — upsert.SuspectEmptyProtocolError).
+    vols = upsert.replace_event_volunteer_results(
+        db, event_row, platform, page.volunteer_results, allow_empty=bool(page.run_results)
+    )
     result.run_results_upserted += runs
     result.volunteer_results_upserted += vols
 

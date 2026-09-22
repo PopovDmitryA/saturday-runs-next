@@ -122,6 +122,27 @@ function splitNames(text: string | undefined): string[] {
   return dedupe(head.split(/\s*[,;]\s*/));
 }
 
+/**
+ * Имена раздела в любой из двух раскладок поста (переключатель «имена
+ * построчно» в кабинете): пункты «• Имя» или строка «А, Б. Хвост».
+ */
+function sectionNames(section: Section | undefined): string[] {
+  if (!section) return [];
+  return section.items.length > 0 ? dedupe(section.items) : splitNames(section.inline);
+}
+
+/** Пункты раздела с «;»-разделителем в строке: «А — 50-й; Б — 25-й.» или «• А — 50-й». */
+function sectionEntries(section: Section | undefined, sep = /;\s*/): string[] {
+  if (!section) return [];
+  if (section.items.length > 0) return dedupe(section.items);
+  return dedupe(
+    (section.inline ?? "")
+      .split(sep)
+      .map((item) => item.replace(/\.$/, "").trim())
+      .filter(Boolean),
+  );
+}
+
 function partBefore(text: string, sep = " — "): string {
   const index = text.indexOf(sep);
   return (index >= 0 ? text.slice(0, index) : text).trim();
@@ -216,9 +237,12 @@ function list(lists: ShareNameList[], title: string, items: string[]): void {
   }
 }
 
-/** «25-й: А, Б» → [«А · 25-й», «Б · 25-й»]. */
+/** «25-й: А, Б» → [«А · 25-й», «Б · 25-й»]; построчная раскладка «А — 25-й» → [«А · 25-й»]. */
 function levelledNames(items: string[]): string[] {
   return items.flatMap((item) => {
+    if (!item.includes(": ") && item.includes(" — ")) {
+      return [`${partBefore(item)} · ${partAfter(item)}`];
+    }
     const level = partBefore(item, ":");
     const names = splitNames(partAfter(item, ": "));
     return names.map((name) => `${name} · ${level}`);
@@ -294,20 +318,20 @@ function fullRecipe(parsed: ParsedPost): Recipe {
       // «100 пробежек в локации» → «Имя · 100-я», волонтёрства — «10-е».
       const count = section.label.split(" ")[0];
       const suffix = /пробежек/i.test(section.label) ? "я" : "е";
-      return splitNames(section.inline).map((name) => `${name} · ${count}-${suffix}`);
+      return sectionNames(section).map((name) => `${name} · ${count}-${suffix}`);
     }),
   );
   list(
     lists,
     "Клубы",
     sectionsOf(parsed, /^Клуб \d+/i).flatMap((section) =>
-      splitNames(section.inline).map((name) => `${name} · клуб ${section.label.split(" ")[1]}`),
+      sectionNames(section).map((name) => `${name} · клуб ${section.label.split(" ")[1]}`),
     ),
   );
   list(
     lists,
     "Юбилейные пробежки",
-    splitNames(sectionOf(parsed, /^Юбилейные пробежки$/i)?.inline).map(stripTrailingParen),
+    sectionNames(sectionOf(parsed, /^Юбилейные пробежки$/i)).map(stripTrailingParen),
   );
   // Все, кого пост называет по имени, должны быть и на постере (правило
   // Дмитрия): рекордсмены трассы и те, кому остался шаг до юбилея.
@@ -321,7 +345,7 @@ function fullRecipe(parsed: ParsedPost): Recipe {
     "Шаг до юбилея",
     sectionsOf(parsed, /^1 (пробежка|волонтёрство) до \d+ в локации$/i).flatMap((section) => {
       const target = /до (\d+)/.exec(section.label)?.[1] ?? "";
-      return splitNames(section.inline).map((name) => `${name} · до ${target}`);
+      return sectionNames(section).map((name) => `${name} · до ${target}`);
     }),
   );
   return {
@@ -336,18 +360,14 @@ function statsRecipe(parsed: ParsedPost): Recipe {
   const metrics: ShareMetric[] = [];
   const lists: ShareNameList[] = [];
   const { finishers, volunteers } = headerCounts(parsed);
-  const prs = splitNames(sectionOf(parsed, /^Личные рекорды/i)?.inline);
-  const newcomers = splitNames(sectionOf(parsed, /^Первый раз на старте/i)?.inline);
-  const guests = (sectionOf(parsed, /^Гости локации/i)?.items ?? []).map((item) => partBefore(item));
-  const jubilees = (sectionOf(parsed, /^Юбилеи$/i)?.inline ?? "")
-    .split(/;\s*/)
-    .map((item) => item.replace(/\.$/, "").trim())
-    .filter(Boolean)
-    .map((item) => {
-      const level = /(\d+-й)/.exec(item)?.[1];
-      const name = partBefore(item);
-      return level ? `${name} · ${level}` : name;
-    });
+  const prs = sectionNames(sectionOf(parsed, /^Личные рекорды/i));
+  const newcomers = sectionNames(sectionOf(parsed, /^Первый раз на старте/i));
+  const guests = sectionEntries(sectionOf(parsed, /^Гости локации/i)).map((item) => partBefore(item));
+  const jubilees = sectionEntries(sectionOf(parsed, /^Юбилеи$/i)).map((item) => {
+    const level = /(\d+-й)/.exec(item)?.[1];
+    const name = partBefore(item);
+    return level ? `${name} · ${level}` : name;
+  });
   countTile(metrics, "volunteers", volunteers, VOLUNTEER_FORMS);
   countTile(metrics, "prs", prs.length, PR_FORMS);
   countTile(metrics, "newcomers", newcomers.length, NEWCOMER_FORMS);
@@ -401,7 +421,7 @@ function newcomersRecipe(parsed: ParsedPost): Recipe {
   ];
   let total = 0;
   blocks.forEach((block, index) => {
-    const names = dedupe(sectionOf(parsed, block.label)?.items ?? []);
+    const names = sectionNames(sectionOf(parsed, block.label));
     if (names.length === 0) {
       return;
     }

@@ -4,6 +4,7 @@ import { useRestorableState } from "../../hooks/useRestorableState";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { LocationStatusBadge } from "../../components/LocationStatusBadge";
 import { PlatformBadge } from "../../components/PlatformBadge";
+import { WeatherChip } from "../../components/WeatherChip";
 import { PlatformFilter } from "../../components/filters/PlatformFilter";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import {
@@ -29,6 +30,7 @@ import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns
 const PLATFORM_FILTERS = ["five_verst", "s95", "runpark"] as const;
 
 type SortKey =
+  | "weather"
   | "event_number"
   | "name"
   | "city"
@@ -36,6 +38,8 @@ type SortKey =
   | "finishers"
   | "volunteers"
   | "debutants"
+  | "first_here"
+  | "guests"
   | "prs"
   | "best_male"
   | "best_female";
@@ -70,12 +74,18 @@ function sortValue(item: LastResultsItem, key: SortKey): number | string | null 
       return (item.city ?? "").toLowerCase();
     case "event_date":
       return item.event_date;
+    case "weather":
+      return item.weather?.temperature_c ?? null;
     case "finishers":
       return item.finishers;
     case "volunteers":
       return item.volunteers;
     case "debutants":
       return item.debutants;
+    case "first_here":
+      return item.first_at_location;
+    case "guests":
+      return item.guests;
     case "prs":
       return item.prs;
     case "best_male":
@@ -95,8 +105,11 @@ const LAST_RESULTS_COLUMNS: AdaptiveColumn[] = [
   { key: "finishers", width: 148, required: true },
   { key: "city", width: 160 },
   { key: "platform", width: 104 },
+  { key: "weather", width: 96 },
   { key: "volunteers", width: 148 },
   { key: "debutants", width: 148 },
+  { key: "first_here", width: 176 },
+  { key: "guests", width: 148 },
   { key: "best_male", width: 184 },
   { key: "best_female", width: 184 },
   { key: "prs", width: 184 },
@@ -175,9 +188,12 @@ function LastResultsTable({
             {show("city") && <col className="col-city" />}
             {show("platform") && <col className="col-platform" />}
             <col className="col-date" />
+            {show("weather") && <col className="col-weather" />}
             <col className="col-metric" />
             {show("volunteers") && <col className="col-metric" />}
             {show("debutants") && <col className="col-metric" />}
+            {show("first_here") && <col className="col-metric-wide" />}
+            {show("guests") && <col className="col-metric" />}
             {show("prs") && <col className="col-metric-wide" />}
             {show("best_male") && <col className="col-metric-wide" />}
             {show("best_female") && <col className="col-metric-wide" />}
@@ -197,6 +213,13 @@ function LastResultsTable({
                 hint="Дата последнего старта локации (клик по дате — протокол)"
                 {...sortProps("event_date")}
               />
+              {show("weather") && (
+                <ColumnHeader
+                  label="Погода"
+                  headerTitle="Погода в час старта по архиву Open-Meteo. Клик по значению — подробности"
+                  {...sortProps("weather")}
+                />
+              )}
               <ColumnHeader
                 label="Финишёров"
                 hint="Финишёров на последнем старте"
@@ -211,9 +234,25 @@ function LastResultsTable({
               )}
               {show("debutants") && (
                 <ColumnHeader
-                  label="Дебютантов"
-                  hint="Дебютантов: впервые вышли на субботний старт"
+                  label="Новичков"
+                  hint="Впервые вышли на субботний старт"
                   {...sortProps("debutants")}
+                />
+              )}
+              {/* Те же три расходящихся круга, что в журнале локации:
+                  новички → впервые здесь → гости (правка Дмитрия 17.09.2026). */}
+              {show("first_here") && (
+                <ColumnHeader
+                  label="Впервые здесь"
+                  hint="Уже бегали в системе, но на эту локацию приехали впервые. Часть колонки «Гостей»"
+                  {...sortProps("first_here")}
+                />
+              )}
+              {show("guests") && (
+                <ColumnHeader
+                  label="Гостей"
+                  hint="Все приезжие: финишёры, чья домашняя локация другая. Приезжать сюда они могут не первый раз, поэтому гостей всегда больше, чем «Впервые здесь». Прочерк — число ещё не пересчитано"
+                  {...sortProps("guests")}
                 />
               )}
               {show("prs") && (
@@ -289,9 +328,22 @@ function LastResultsTable({
                       formatDate(item.event_date)
                     )}
                   </td>
+                  {show("weather") && (
+                    <td className="td-compact td-weather">
+                      <WeatherChip weather={item.weather} locationSlug={item.slug} locationName={item.name} />
+                    </td>
+                  )}
                   <td className="td-compact">{item.finishers != null ? formatInt(item.finishers) : "—"}</td>
                   {show("volunteers") && <td className="td-compact">{item.volunteers != null ? formatInt(item.volunteers) : "—"}</td>}
                   {show("debutants") && <td className="td-compact">{item.debutants != null ? formatInt(item.debutants) : "—"}</td>}
+                  {show("first_here") && (
+                    <td className="td-compact">
+                      {item.first_at_location != null ? formatInt(item.first_at_location) : "—"}
+                    </td>
+                  )}
+                  {show("guests") && (
+                    <td className="td-compact">{item.guests != null ? formatInt(item.guests) : "—"}</td>
+                  )}
                   {show("prs") && <td className="td-compact">{item.prs != null ? formatInt(item.prs) : "—"}</td>}
                   {show("best_male") && (
                     <td className="td-compact">

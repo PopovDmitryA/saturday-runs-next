@@ -29,15 +29,8 @@ def s95_fetch_lock() -> Iterator[None]:
         time.sleep(1.0)
 
     if not acquired:
-        from app.debug_agent_log import agent_log
         from app.s95.errors import S95FetchTimeout
 
-        agent_log(
-            location="lock.py:s95_fetch_lock:timeout",
-            message="S95 fetch lock timeout",
-            data={"blocking_timeout": blocking_timeout},
-            hypothesis_id="B",
-        )
         raise S95FetchTimeout("Timed out waiting for S95 fetch lock")
 
     try:

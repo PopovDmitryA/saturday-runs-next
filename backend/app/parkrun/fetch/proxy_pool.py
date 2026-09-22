@@ -20,17 +20,20 @@
 from __future__ import annotations
 
 import logging
-import os
 import random
+
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-ENV_VAR = "PARKRUN_FETCH_PROXIES"
-
 
 def load_proxies(raw: str | None = None) -> list[str]:
-    """Разбирает список прокси. Пустые элементы и пробелы отбрасываем."""
-    source = raw if raw is not None else os.environ.get(ENV_VAR, "")
+    """Разбирает список прокси. Пустые элементы и пробелы отбрасываем.
+
+    Без аргумента — из настроек (PARKRUN_FETCH_PROXIES через Settings, а не
+    os.environ: так значение видно и из смонтированного .env).
+    """
+    source = raw if raw is not None else get_settings().parkrun_fetch_proxies
     return [item.strip() for item in source.split(",") if item.strip()]
 
 

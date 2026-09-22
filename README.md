@@ -26,17 +26,27 @@ docker compose exec api alembic upgrade head
 - API health: http://localhost:8000/health  
 - Auth API: `POST /api/auth/login-request`, `GET /api/auth/me`
 - Dashboard API: `GET /api/dashboard`, `GET /api/runs`, `GET /api/volunteering`
-- Sync API: `GET /api/sync/status`, `POST /api/sync/refresh` (1/min rate limit)
+- Sync API: `GET /api/sync/status`, `POST /api/sync/refresh` (не чаще раза в 30 минут на пользователя)
 - PostgreSQL (DBeaver, с Mac): `localhost:5433`, user/db `saturday_runs`, database `saturday_runs_lk`
 
-## Auth flow (Phase 1)
+## Способы входа
 
-1. Пользователь нажимает «Войти через Telegram» → `POST /api/auth/login-request`
-2. Открывается новый бот (`/start login_{token}`)
-3. Бот вызывает `POST /api/auth/bot/confirm` и отправляет magic link (5 мин, one-time)
-4. Пользователь переходит по ссылке → cookie `sr_session` (72ч) → `/dashboard`
+Одна сессия на все способы: cookie `sr_session`, 30 суток скользящих — каждый
+запрос продлевает срок и в Redis, и в куке (`session_ttl_seconds`).
 
-Legacy Telegram-бот **не используется**.
+1. **Telegram через бота** — `POST /api/auth/login-request` → deep link
+   `t.me/<бот>?start=login_{token}` → бот показывает, откуда вход, и после
+   «Подтвердить» вкладка сайта сама забирает сессию
+   (`POST /api/auth/login-request/{token}/claim`); страховка — magic link в боте
+   (5 мин, одноразовый).
+2. **Telegram Login Widget** — запасной путь, когда бот молчит
+   (`GET /api/auth/telegram/config` → `bot_login=false`); подпись виджета
+   проверяется на сервере.
+3. **Код на почту** — `POST /api/auth/email/request-code` → `POST /api/auth/email/verify`
+   (шестизначный код, 10 минут, 5 попыток).
+4. **VK ID / Яндекс ID** — `GET /api/auth/oauth/{provider}/start` → callback.
+
+Подробности (журнал входов, лимиты, объединение профилей) — в [AGENTS.md](AGENTS.md).
 
 ## Parkrun (Mac)
 
@@ -57,20 +67,10 @@ python -m bot_app.main
 cd frontend && npm run dev
 ```
 
-## Project phases
-
-See [architecture plan](.cursor/plans/lk_architecture_plan_f0bd90e1.plan.md).
-
-- **Phase 0:** foundation  
-- **Phase 1:** Telegram auth + new bot  
-- **Phase 2:** 5verst adapter + profile linking  
-- **Phase 3:** Global sync (5verst)  
-- **Phase 5:** User sync + Dashboard API
-
 ## Agent / maintainer docs
 
 **[AGENTS.md](AGENTS.md)** — единый справочник для AI-агентов: prod, Celery beat, VK-бот, dedup sync, user vs bulk sync, deploy, типичные задачи.
 
-Планы по платформам: [docs/five_verst_sync_plan.md](docs/five_verst_sync_plan.md), [docs/s95_sync_plan.md](docs/s95_sync_plan.md), [docs/deploy_and_migration_plan.md](docs/deploy_and_migration_plan.md).
+Планы по платформам: [docs/five_verst_sync_plan.md](docs/five_verst_sync_plan.md), [docs/s95_sync_plan.md](docs/s95_sync_plan.md); релизы — [docs/release_management.md](docs/release_management.md). Выполненный план переезда с легаси лежит в [docs/archive/](docs/archive/).
 
-Переключение доменов (run5k.run / grafana.run5k.run): [deploy/DOMAINS.md](deploy/DOMAINS.md).
+Домены (run5k.run, app.run5k.run, закрытая grafana.run5k.run): [deploy/DOMAINS.md](deploy/DOMAINS.md).

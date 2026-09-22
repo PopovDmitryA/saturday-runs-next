@@ -13,7 +13,7 @@ index.html, содержимое дорисовывает JavaScript уже в �
 * пререндер отдаёт роботу настоящий HTML с заголовком и текстом. Человека он
   не касается: ветка по User-Agent живёт в nginx/conf.d/default.conf.
 
-Мировой обход parkrun (/world, /hq/*) и личные страницы участников
+Личные страницы участников
 (/users/*) в sitemap не попадают и помечены noindex — решение Дмитрия
 02.08.2026.
 """
@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.services.location_page_service import build_location_page, build_locations_index
+from app.services.platform_titles import PLATFORM_TITLES
 from app.services.release_service import ReleasesPage, paginate_published_releases
 
 logger = logging.getLogger(__name__)
@@ -146,7 +147,7 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
     ),
     "/ratings/volunteer-roles": _meta(
         "Рейтинг по волонтёрским ролям — run5k.run",
-        "Сколько разных волонтёрских ролей освоили участники субботних пробежек.",
+        "В скольких разных волонтёрских ролях побывали участники субботних пробежек.",
         indexable=True,
     ),
     "/ratings/locations": _meta(
@@ -278,7 +279,6 @@ def _iso_to_ru_date(value: str) -> str | None:
         return None
 _LOCATION_PROTOCOL_RE = re.compile(r"^/locations/([^/]+)/protocol/([^/]+)/(\d{4}-\d{2}-\d{2})$")
 _LOCATION_RE = re.compile(r"^/locations/([^/]+)$")
-_SWEEP_HQ_RE = re.compile(r"^/hq/.+$")
 
 
 def normalize_path(raw_path: str) -> str:
@@ -309,15 +309,6 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
             "Кабинет организатора локации — run5k.run",
             "Свод по пробежке для отчёта оргкоманды и участники на долгой паузе.",
         )
-    if _SWEEP_HQ_RE.match(path):
-        return _meta("Обход parkrun — run5k.run", "Служебная витрина мирового обхода parkrun.")
-    if path == "/world":
-        # Публичное табло мирового обхода. В sitemap не идёт и закрыто от
-        # индексации по решению Дмитрия 02.08.2026.
-        return _meta(
-            "Мировой parkrun — run5k.run",
-            "Сколько площадок parkrun в мире и как идёт их обход.",
-        )
     profile = _PROFILE_RE.match(path)
     if profile:
         return _meta(
@@ -342,7 +333,7 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
         return _meta(
             "Протокол старта — run5k.run",
             "Полный протокол старта: места по полу и возрастным группам, "
-            "личные рекорды, дебютанты и волонтёры дня.",
+            "личные рекорды, новички и волонтёры дня.",
             indexable=True,
         )
     if _LOCATION_EVENTS_RE.match(path):
@@ -395,15 +386,6 @@ def _plural(count: int, one: str, few: str, many: str) -> str:
     return many
 
 
-# Как система называется в заголовке страницы. Зеркало platformCodeLabel из
-# frontend/src/lib/format.ts.
-PLATFORM_LABELS = {
-    "five_verst": "5 вёрст",
-    "s95": "С95",
-    "parkrun": "parkrun",
-    "runpark": "RunPark",
-}
-
 # Потолок заголовка. Яндекс и Google обрезают примерно здесь, а обрезанный
 # заголовок в выдаче выглядит как ошибка. Медиана наших локаций укладывается,
 # длинные («Чертаново Кировоградские пруды, Москва») ужимаются — см.
@@ -415,6 +397,8 @@ TITLE_BUDGET = 70
 DESCRIPTION_BUDGET = 160
 
 
+# Названия систем в заголовках — общий словарь app.services.platform_titles; он же
+# зеркало platformCodeLabel из frontend/src/lib/format.ts (тест сверяет с pageMeta.ts).
 def _active_platform_label(payload: dict[str, Any]) -> str | None:
     """Название текущей системы локации: «5 вёрст», «parkrun», …
 
@@ -428,7 +412,7 @@ def _active_platform_label(payload: dict[str, Any]) -> str | None:
 
     active = [p for p in platforms if p.get("is_active")]
     if active:
-        return PLATFORM_LABELS.get(str(active[0].get("platform_code") or ""))
+        return PLATFORM_TITLES.get(str(active[0].get("platform_code") or ""))
 
     # Действующей нет (локация закрыта) — называем ту систему, при которой она
     # работала последней: «parkrun Ekaterinburg» ищут и после закрытия.
@@ -436,7 +420,7 @@ def _active_platform_label(payload: dict[str, Any]) -> str | None:
         return str(platform.get("last_event_date") or "")
 
     newest = max(platforms, key=_last_date)
-    return PLATFORM_LABELS.get(str(newest.get("platform_code") or ""))
+    return PLATFORM_TITLES.get(str(newest.get("platform_code") or ""))
 
 
 def _strip_leading_hours(display: str | None) -> str | None:
@@ -707,7 +691,17 @@ def location_lead_sentences(payload: dict[str, Any]) -> list[str]:
     stats = payload.get("stats") or {}
 
     where = f"«{name}» ({city})" if city else f"«{name}»"
-    if platform:
+    # Серия — не площадка: старты проходят нерегулярно и каждый раз в новом
+    # месте. Назвать её «площадкой субботних пробежек» значило бы соврать и
+    # человеку, и роботу — предложение у них общее.
+    is_series = bool(payload.get("is_series"))
+    if is_series:
+        first = (
+            f"{where} — серия стартов {platform}, а не площадка."
+            if platform
+            else f"{where} — серия стартов, а не площадка."
+        )
+    elif platform:
         first = f"{where} — площадка субботних пробежек {platform}."
     else:
         first = f"{where} — площадка субботних пробежек."
@@ -716,10 +710,15 @@ def location_lead_sentences(payload: dict[str, Any]) -> list[str]:
     events_count = int(stats.get("events_count") or 0)
     finishers_total = int(stats.get("finishers_total") or 0)
     if events_count and finishers_total:
+        # Глагол согласуем с числом: «прошёл 31 старт», «финишировал 2 831
+        # участник» — иначе с единицей на конце фраза режет глаз (репорт
+        # Дмитрия 21.09.2026 по Люблино).
+        where_word = "В серии" if is_series else "Здесь"
         sentences.append(
-            f"Здесь прошло {_num(events_count)} "
+            f"{where_word} {_plural(events_count, 'прошёл', 'прошло', 'прошло')} {_num(events_count)} "
             f"{_plural(events_count, 'старт', 'старта', 'стартов')}, "
-            f"финишировали {_num(finishers_total)} "
+            f"{_plural(finishers_total, 'финишировал', 'финишировали', 'финишировали')} "
+            f"{_num(finishers_total)} "
             f"{_plural(finishers_total, 'участник', 'участника', 'участников')}."
         )
 
@@ -727,7 +726,7 @@ def location_lead_sentences(payload: dict[str, Any]) -> list[str]:
     # Прежние системы называем — их тоже ищут вместе с названием парка.
     platforms = payload.get("platforms") or []
     previous = [
-        PLATFORM_LABELS.get(str(p.get("platform_code") or ""))
+        PLATFORM_TITLES.get(str(p.get("platform_code") or ""))
         for p in platforms
         if not p.get("is_active") and int(p.get("events_count") or 0) > 0
     ]
@@ -839,7 +838,7 @@ def build_sitemap(db: Session) -> str:
     """sitemap.xml: публичные разделы + страница и журнал каждой локации.
 
     Сознательно НЕ включаем (решение Дмитрия 02.08.2026): мировой обход
-    parkrun (/world, /hq/*) и личные страницы участников (/users/*). Плюс
+    личные страницы участников (/users/*). Плюс
     всё, что за логином, служебное и редиректы.
     """
     base = site_base_url()
@@ -856,7 +855,12 @@ def build_sitemap(db: Session) -> str:
         urls.append(_sitemap_url(base, f"/updates?page={page}", lastmod=None, priority="0.3"))
 
     index = build_locations_index(db)
-    items: list[dict[str, Any]] = cast("list[dict[str, Any]]", index.get("items") or [])
+    # Серии («Старты сообществ», «С95 и друзья») каталог отдаёт отдельным
+    # списком, но страницы у них настоящие — в карту сайта идут наравне.
+    items: list[dict[str, Any]] = [
+        *cast("list[dict[str, Any]]", index.get("items") or []),
+        *cast("list[dict[str, Any]]", index.get("series") or []),
+    ]
     for item in items:
         slug = item.get("slug")
         if not slug:
@@ -894,8 +898,9 @@ def build_robots_txt() -> str:
     обхода ВКонтакте и Telegram показывают превью без картинки, а живое
     превью со статистикой — то, ради чего профилями делятся.
 
-    /world остаётся открытым для обхода: он один, бюджета не жжёт, а noindex
-    в самой странице сохраняет вес исходящих ссылок.
+    /world и /hq/* сняты 17.09.2026 (табло обхода погашено). Disallow: /hq/
+    в robots оставлен: по старым ссылкам ещё ходят, и пускать туда роботов
+    незачем.
     """
     base = site_base_url()
     lines = [
@@ -964,12 +969,6 @@ def location_og_image_url(payload: dict[str, Any]) -> str | None:
     return f"{site_base_url()}/og/locations/{slug}.png{suffix}"
 
 
-def profile_handle(user: Any) -> str:
-    """Хэндл для адресов профиля: vanity-slug, иначе номер участника."""
-    slug = (getattr(user, "public_slug", None) or "").strip()
-    return slug or str(getattr(user, "serial_id", "") or "")
-
-
 def profile_og_image_url(user: Any) -> str | None:
     """Адрес прегенерированной OG-картинки участника, если файл отрендерен.
 
@@ -1022,7 +1021,7 @@ def _og_image_tags(og_image_url: str | None, *, alt: str | None = None) -> list[
 def _last_event_block(last_event: dict[str, Any]) -> str:
     """«Последний старт: дата, финишёры, лучшие времена дня» — списком."""
     when = escape(str(last_event.get("event_date") or ""))
-    platform = PLATFORM_LABELS.get(str(last_event.get("platform_code") or ""), "")
+    platform = PLATFORM_TITLES.get(str(last_event.get("platform_code") or ""), "")
     title = f"Последний старт: {when}"
     if platform:
         title += f" ({escape(platform)})"
@@ -1322,7 +1321,7 @@ def _location_description_rows(payload: dict[str, Any]) -> list[str]:
     if not (schedule_text or course_text or travel_text or travel_sections):
         return []
 
-    platform = PLATFORM_LABELS.get(str(description.get("platform_code") or ""))
+    platform = PLATFORM_TITLES.get(str(description.get("platform_code") or ""))
     source_url = str(description.get("source_url") or "").strip()
     heading = f"Описание с официального сайта {platform}" if platform else "Описание с официального сайта системы"
     if source_url:
@@ -1565,10 +1564,10 @@ def _catalog_body(items: list[dict[str, Any]]) -> str:
         f"{_num(len(cities))} {_plural(len(cities), 'городе', 'городах', 'городах')}.</p>",
     ]
     platform_bits = [
-        f"{PLATFORM_LABELS[code]} — {_num(count)} "
+        f"{PLATFORM_TITLES[code]} — {_num(count)} "
         f"{_plural(count, 'площадка', 'площадки', 'площадок')}"
         for code, count in sorted(by_platform.items(), key=lambda kv: -kv[1])
-        if code in PLATFORM_LABELS
+        if code in PLATFORM_TITLES
     ]
     if platform_bits:
         rows.append(f"    <p>{escape('; '.join(platform_bits))}.</p>")
@@ -1702,13 +1701,13 @@ def is_known_path(raw_path: str) -> bool:
     path = normalize_path(raw_path)
     if path in STATIC_PAGE_META:
         return True
-    if path.startswith("/admin/") or path == "/world":
+    if path.startswith("/admin/"):
         return True
     unified = _UNIFIED_PROTOCOL_RE.match(path)
     if unified:
         # Только настоящая дата: «/protocol/2026-08-99» — не адрес сайта, а 404.
         return _iso_to_ru_date(unified.group(1)) is not None
-    for pattern in (_PROFILE_RE, _LOCATION_EVENTS_RE, _LOCATION_PARTICIPANTS_RE, _LOCATION_RE, _SWEEP_HQ_RE):
+    for pattern in (_PROFILE_RE, _LOCATION_EVENTS_RE, _LOCATION_PARTICIPANTS_RE, _LOCATION_RE):
         if pattern.match(path):
             return True
     return False
@@ -1727,7 +1726,7 @@ def build_protocol_meta(payload: dict[str, Any]) -> PageMeta:
     if event_date:
         parsed = date.fromisoformat(str(event_date)) if not isinstance(event_date, date) else event_date
         day = parsed.strftime("%d.%m.%Y")
-    platform = PLATFORM_LABELS.get(str(payload.get("platform_code") or ""), "")
+    platform = PLATFORM_TITLES.get(str(payload.get("platform_code") or ""), "")
     summary = cast("dict[str, Any]", payload.get("summary") or {})
     parts: list[str] = []
     finishers = int(summary.get("finishers") or 0)
@@ -1741,7 +1740,7 @@ def build_protocol_meta(payload: dict[str, Any]) -> PageMeta:
     description = f"Протокол старта {platform} «{name}» {day}".strip()
     if numbers:
         description += f": {numbers}"
-    description += ". Места по полу и возрастным группам, личные рекорды и дебютанты."
+    description += ". Места по полу и возрастным группам, личные рекорды и новички."
     return _meta(f"{title_head} — {SITE_NAME}", description, indexable=True)
 
 

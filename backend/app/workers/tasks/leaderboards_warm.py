@@ -20,6 +20,9 @@ from app.services.leaderboard_service import (
 )
 from app.services.location_records_rating_service import refresh_location_records_rating_cache
 from app.workers.celery_app import celery_app
+from app.workers.queues import WARM_QUEUE
+from app.workers.tasks.sync_task_reporting import run_reported_sync
+from app.workers.time_limits import LIMITS_WARM_LEADERBOARDS
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +65,7 @@ def schedule_leaderboards_warm() -> bool:
     warm_leaderboards_cache.apply_async(
         # Очередь — явно, как везде в репозитории: маршрут задачи не должен
         # зависеть от того, дотянулся ли до вызова task_routes.
-        queue="runpark",
+        queue=WARM_QUEUE,
         countdown=settings.leaderboards_warm_delay_seconds,
         # Просроченный прогрев догонять незачем: следующий синк или расписание
         # всё равно пересчитают сетку целиком (тот же приём, что у portal_cache).
@@ -75,9 +78,7 @@ def _acquire_running_lock() -> bool:
     try:
         from app.core.redis_client import get_redis_client
 
-        return bool(
-            get_redis_client().set(_RUNNING_KEY, "1", nx=True, ex=_RUNNING_TTL_SECONDS)
-        )
+        return bool(get_redis_client().set(_RUNNING_KEY, "1", nx=True, ex=_RUNNING_TTL_SECONDS))
     except Exception:
         logger.exception("leaderboards warm: lock failed, running without it")
         return True
@@ -94,8 +95,19 @@ def _release_running_lock() -> None:
 
 # Очередь runpark: её воркер самый свободный (5 коротких синков в день) и не
 # обслуживает user-очереди, так что долгий пересчёт не задержит пользовательский sync.
-@celery_app.task(name="leaderboards.warm_cache", queue="runpark")
+@celery_app.task(name="leaderboards.warm_cache", queue=WARM_QUEUE, **LIMITS_WARM_LEADERBOARDS)
 def warm_leaderboards_cache() -> dict[str, object]:
+    """Прогрев с записью в журнал прогонов.
+
+    Сколько на проде реально длится прогрев, до 21.09.2026 было неоткуда
+    узнать: в scheduled_run_logs он не писался, логи контейнера ротируются.
+    Решение, переписывать ли расчёт сетки рейтингов (аудит, QRY-RATINGS-02),
+    принимается по этим цифрам.
+    """
+    return run_reported_sync("прогрев кэша рейтингов", _warm_leaderboards_cache)
+
+
+def _warm_leaderboards_cache() -> dict[str, object]:
     """Пересчитывает и перезаписывает кэш всех рейтингов, не дожидаясь TTL.
 
     Без прогрева первый посетитель раздела после протухания кэша ждал бы
@@ -107,7 +119,7 @@ def warm_leaderboards_cache() -> dict[str, object]:
     """
     if not _acquire_running_lock():
         logger.info("leaderboards warm skipped: another run in progress")
-        return {"skipped": "already_running"}
+        return {"skipped": True, "reason": "already_running"}
     db = get_session_factory()()
     results: dict[str, object] = {}
     # Прогреваем всю сетку кнопок каждого рейтинга: зачёт (абсолют/женский) ×
@@ -119,9 +131,7 @@ def warm_leaderboards_cache() -> dict[str, object]:
     variants: list[tuple[LeaderboardMetric, str, int, str, str, bool]] = []
     for metric in LEADERBOARD_METRICS:
         genders = ("all", "female") if metric in GENDERED_METRICS else ("all",)
-        visits_options = (
-            range(1, MAX_MIN_VISITS + 1) if metric in MIN_VISITS_METRICS else range(1, 2)
-        )
+        visits_options = range(1, MAX_MIN_VISITS + 1) if metric in MIN_VISITS_METRICS else range(1, 2)
         # Единица зачёта (площадки/города/регионы) — ещё одно измерение сетки у
         # туристических рейтингов; у остальных вариант ровно один.
         units = count_by_values(metric) or ("locations",)
@@ -133,13 +143,9 @@ def warm_leaderboards_cache() -> dict[str, object]:
                         # дальности: без прогрева первый клик по нему ждал бы
                         # полный пересчёт прямо в запросе, как было с «2+ × 5
                         # вёрст» у туризма 31.07.2026.
-                        home_filters = (
-                            (False, True) if metric in AMBIGUOUS_HOME_METRICS else (False,)
-                        )
+                        home_filters = (False, True) if metric in AMBIGUOUS_HOME_METRICS else (False,)
                         for hide_home in home_filters:
-                            variants.append(
-                                (metric, gender, visits, platform, unit, hide_home)
-                            )
+                            variants.append((metric, gender, visits, platform, unit, hide_home))
 
     # Один источник на всю задачу: сырые выборки и справочники читаются из базы
     # один раз на рейтинг, а не на каждое сочетание фильтров (фильтры
@@ -179,20 +185,11 @@ def warm_leaderboards_cache() -> dict[str, object]:
                 # ним — прогреваем её базовый вариант тем же проходом. Своим
                 # try: карта — приятное дополнение к таблице, и её неудача не
                 # повод помечать ошибкой прогрев самого рейтинга.
-                if (
-                    metric in TOURIST_MAP_METRICS
-                    and min_visits == 1
-                    and platform == "all"
-                    and count_by == "locations"
-                ):
+                if metric in TOURIST_MAP_METRICS and min_visits == 1 and platform == "all" and count_by == "locations":
                     try:
-                        results[f"{key}:tmap"] = refresh_tourist_map_cache(
-                            db, metric, snapshot
-                        )
+                        results[f"{key}:tmap"] = refresh_tourist_map_cache(db, metric, snapshot)
                     except Exception:
-                        logger.warning(
-                            "tourist map warm failed for %s", key, exc_info=True
-                        )
+                        logger.warning("tourist map warm failed for %s", key, exc_info=True)
                 # Закрываем транзакцию сразу после варианта. Сетка одного
                 # рейтинга (до нескольких десятков сочетаний фильтров) считается
                 # в Python над уже прочитанными строками — база в это время не

@@ -5,6 +5,7 @@ import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
+import { WeatherChip } from "../../components/WeatherChip";
 import {
   getLocationProtocol,
   type LocationHistogramRow,
@@ -572,6 +573,11 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
             </StatHintTooltip>
           )}
         </p>
+        {data.weather && (
+          <p className="protocol-weather">
+            <WeatherChip weather={data.weather} locationSlug={data.slug} locationName={data.name} full />
+          </p>
+        )}
         <nav className="protocol-nav" aria-label="Соседние старты">
           {data.previous ? (
             <a href={protocolHref(data.slug, data.previous.platform_code, data.previous.event_date)}>
@@ -672,7 +678,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
         />
         <StatTile
           value={newcomers ? formatInt(newcomers) : summary.finishers ? "0" : null}
-          label={pluralFormRu(newcomers, COUNT_FORMS.newcomers)}
+          label={pluralFormRu(newcomers, COUNT_FORMS.newFaces)}
           delta={
             data.previous?.debutants != null || data.previous?.first_at_location != null
               ? newcomers -
@@ -681,10 +687,10 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           }
           sub={
             newcomers
-              ? `${pluralizeRu(summary.debutants, COUNT_FORMS.debuts)} · ${formatInt(summary.first_at_location)} впервые здесь`
+              ? `${pluralizeRu(summary.debutants, COUNT_FORMS.newcomers)} · ${formatInt(summary.first_at_location)} впервые здесь`
               : null
           }
-          hint="Дебютанты движения + участники, впервые пришедшие на эту локацию"
+          hint="Новички движения + участники, впервые пришедшие на эту локацию"
         />
         <StatTile
           value={summary.prs ? formatInt(summary.prs) : summary.finishers ? "0" : null}
@@ -981,7 +987,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                           <span>{row.name ?? "—"}</span>
                         )}
                         {row.is_me && <span className="protocol-row-badge protocol-badge-me">вы</span>}
-                        {row.is_first_run && <RowBadge text="дебют" title="Первый старт в системе" />}
+                        {row.is_first_run && <RowBadge text="новичок" title="Первый старт в системе" />}
                         {!row.is_first_run && row.is_first_run_at_location && (
                           <RowBadge text="впервые здесь" title="Первый старт на этой локации" />
                         )}
@@ -1205,7 +1211,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
                           <span className="protocol-row-badge protocol-badge-me">вы</span>
                         )}
                         {person.is_first_volunteering ? (
-                          <RowBadge text="дебют" title="Первое волонтёрство в системе" />
+                          <RowBadge text="новичок" title="Первое волонтёрство в системе" />
                         ) : (
                           person.is_first_here && (
                             <RowBadge

@@ -21,6 +21,7 @@ import {
 import { formatDate, formatInt, pluralFormRu } from "../lib/format";
 import { useOptionalUser } from "../lib/useOptionalUser";
 import { PlatformBadge } from "./PlatformBadge";
+import { WeatherChip } from "./WeatherChip";
 import { RateRunModal } from "./RateRunModal";
 import { ShareIcon } from "./ShareIcon";
 import { Snackbar } from "./Snackbar";
@@ -275,6 +276,11 @@ export function LastSaturdayCard({ data, own = false, user, historyHref }: LastS
           </div>
         )}
         {deltaChip}
+        {data.weather && (
+          <p className="last-saturday-weather">
+            <WeatherChip weather={data.weather} locationSlug={data.location_slug} locationName={data.location_name} full />
+          </p>
+        )}
         {data.notables.length > 0 && (
           <ul className="last-saturday-notables">
             {data.notables.map((note) => (

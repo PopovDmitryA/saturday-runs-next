@@ -4,6 +4,7 @@ import { useRestorableState } from "../../hooks/useRestorableState";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { PlatformBadge } from "../../components/PlatformBadge";
+import { WeatherChip } from "../../components/WeatherChip";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import {
@@ -29,6 +30,7 @@ import { PlatformFilter } from "../../components/filters/PlatformFilter";
 import { LocationAttendanceJournal } from "../journal/LocationAttendanceJournal";
 
 type SortKey =
+  | "weather"
   | "date"
   | "finishers"
   | "volunteers"
@@ -36,6 +38,8 @@ type SortKey =
   | "best_female"
   | "avg"
   | "debutants"
+  | "returned"
+  | "first_here"
   | "guests"
   | "prs";
 
@@ -45,6 +49,8 @@ function sortValue(row: LocationEventRow, key: SortKey): number | string | null 
   switch (key) {
     case "date":
       return row.event_date;
+    case "weather":
+      return row.weather?.temperature_c ?? null;
     case "finishers":
       return row.finishers;
     case "volunteers":
@@ -57,11 +63,26 @@ function sortValue(row: LocationEventRow, key: SortKey): number | string | null 
       return row.avg_time_sec;
     case "debutants":
       return row.debutants;
-    case "guests":
+    case "returned":
+      return row.debut_return_pct;
+    case "first_here":
       return row.first_at_location;
+    case "guests":
+      return row.guests;
     case "prs":
       return row.prs;
   }
+}
+
+// Подсказка колонки «Вернулись»: числитель и знаменатель словами, потому что
+// в ячейке они сжаты до «13% · 4 из 30».
+function returnedTitle(row: LocationEventRow): string | undefined {
+  if (!row.has_protocol) return undefined;
+  if (row.debut_return_pct === null) {
+    if (!row.debutants) return "Новичков на этом старте не было";
+    return "Это последний старт локации: следующей субботы у его новичков ещё не было";
+  }
+  return `Новичков на старте: ${row.debutants}. Прибежали сюда ещё раз: ${row.debut_returned}`;
 }
 
 // Колонки журнала в порядке важности; ширины — из CSS .loc-events-table
@@ -71,10 +92,13 @@ const EVENTS_COLUMNS: AdaptiveColumn[] = [
   { key: "date", width: 112, required: true },
   { key: "finishers", width: 148, required: true },
   { key: "platform", width: 104 },
+  { key: "weather", width: 96 },
   { key: "best_male", width: 184 },
   { key: "best_female", width: 184 },
   { key: "volunteers", width: 148 },
   { key: "debutants", width: 148 },
+  { key: "returned", width: 176 },
+  { key: "first_here", width: 176 },
   { key: "guests", width: 148 },
   { key: "avg", width: 184 },
   { key: "prs", width: 184 },
@@ -143,6 +167,10 @@ function LocationEventsContent({ slug }: { slug: string }) {
   // историю в одной системе, он просто повторяет цифру слева (просьба
   // Дмитрия 22.08.2026) — там колонка остаётся с одним номером.
   const showOverallNumber = platformCounts.size > 1;
+  // В серии («Старты сообществ») номера старта нет — есть имя: «Зелёные 5 км».
+  // Оно и стоит в первой колонке вместо «№», иначе весь столбец был бы из
+  // прочерков, а отличить старты друг от друга можно было бы только по дате.
+  const isSeries = data?.is_series ?? false;
 
   const rows = useMemo(() => {
     if (!data) {
@@ -316,12 +344,17 @@ function LocationEventsContent({ slug }: { slug: string }) {
             style={{ minWidth: tableColumns.minWidth }}
           >
             <colgroup>
-              <col className="col-number" />
+              {/* У серии в первой колонке имя старта («День физкультурника.
+                  Тула»), а не номер: ширина под номер обрезала бы его. */}
+              <col className={isSeries ? "col-series-start" : "col-number"} />
               <col className="col-date" />
               {show("platform") && <col className="col-platform" />}
+              {show("weather") && <col className="col-weather" />}
               <col className="col-compact" />
               {show("volunteers") && <col className="col-compact" />}
               {show("debutants") && <col className="col-compact" />}
+              {show("returned") && <col className="col-compact-wide" />}
+              {show("first_here") && <col className="col-compact-wide" />}
               {show("guests") && <col className="col-compact" />}
               {show("best_male") && <col className="col-time" />}
               {show("best_female") && <col className="col-time" />}
@@ -331,16 +364,25 @@ function LocationEventsContent({ slug }: { slug: string }) {
             <thead>
               <tr>
                 <ColumnHeader
-                  label="№"
+                  label={isSeries ? "Старт" : "№"}
                   headerTitle={
-                    showOverallNumber
-                      ? "Номер события в системе; в скобках — сквозной номер старта локации по всем системам"
-                      : "Номер события в системе"
+                    isSeries
+                      ? "Название старта, как его подписывает система"
+                      : showOverallNumber
+                        ? "Номер события в системе; в скобках — сквозной номер старта локации по всем системам"
+                        : "Номер события в системе"
                   }
                   filterable={false}
                 />
                 <ColumnHeader label="Дата" {...sortProps("date")} />
                 {show("platform") && <ColumnHeader label="Система" filterable={false} />}
+                {show("weather") && (
+                  <ColumnHeader
+                    label="Погода"
+                    headerTitle="Погода в час старта по архиву Open-Meteo. Клик по значению — подробности"
+                    {...sortProps("weather")}
+                  />
+                )}
                 <ColumnHeader
                   label="Финишёров"
                   hint="Финишёров на старте"
@@ -353,20 +395,35 @@ function LocationEventsContent({ slug }: { slug: string }) {
                     {...sortProps("volunteers")}
                   />
                 )}
-                {/* Новички разведены на две колонки: дебютанты показывают,
-                    сколько людей площадка привела в движение с нуля, гости —
-                    насколько хорошо она зазывает уже бегающих. */}
+                {/* Три расходящихся круга: новички — впервые в системе,
+                    «впервые здесь» — впервые на этой площадке, «гостей» — все
+                    приезжие, включая тех, кто ездит сюда годами. Каждый
+                    следующий шире предыдущего. */}
                 {show("debutants") && (
                   <ColumnHeader
-                    label="Дебютантов"
+                    label="Новичков"
                     hint="Первый старт в системе: этих людей площадка привела в движение с нуля"
                     {...sortProps("debutants")}
+                  />
+                )}
+                {show("returned") && (
+                  <ColumnHeader
+                    label="Вернулись"
+                    hint="Сколько новичков этого старта потом прибежало сюда ещё раз. У последнего старта прочерк: следующей субботы у его новичков ещё не было"
+                    {...sortProps("returned")}
+                  />
+                )}
+                {show("first_here") && (
+                  <ColumnHeader
+                    label="Впервые здесь"
+                    hint="Уже бегали в системе, но на эту площадку приехали впервые. Часть колонки «Гостей»"
+                    {...sortProps("first_here")}
                   />
                 )}
                 {show("guests") && (
                   <ColumnHeader
                     label="Гостей"
-                    hint="Уже бегали в системе, но на эту площадку приехали впервые"
+                    hint="Все приезжие: финишёры, чья домашняя локация другая. Приезжать сюда они могут не первый раз, поэтому гостей всегда больше, чем «Впервые здесь»"
                     {...sortProps("guests")}
                   />
                 )}
@@ -410,10 +467,14 @@ function LocationEventsContent({ slug }: { slug: string }) {
               ) : (
                 rows.map((row) => (
                   <tr key={`${row.platform_code}-${row.event_date}`}>
-                    <td className="td-compact">
+                    <td className={isSeries ? "td-location" : "td-compact"}>
                       <span className="loc-events-number">
-                        {row.event_number ?? "—"}
-                        {showOverallNumber && (
+                        {isSeries
+                          ? // У 5 вёрст старт подписан своим именем, у s95 имени
+                            // нет — там остаётся номер выезда.
+                            (row.title ?? (row.event_number != null ? `#${row.event_number}` : "—"))
+                          : (row.event_number ?? "—")}
+                        {!isSeries && showOverallNumber && (
                           <StatHintTooltip text="Сквозной номер старта — какой это по счёту старт локации за всю историю, по всем системам вместе">
                             <span className="muted">({row.overall_number})</span>
                           </StatHintTooltip>
@@ -447,10 +508,32 @@ function LocationEventsContent({ slug }: { slug: string }) {
                         <PlatformBadge code={row.platform_code} />
                       </td>
                     )}
+                    {show("weather") && (
+                      <td className="td-compact td-weather">
+                        <WeatherChip weather={row.weather} locationSlug={data.slug} locationName={data.name} />
+                      </td>
+                    )}
                     <td className="td-compact">{row.finishers ?? "—"}</td>
                     {show("volunteers") && <td className="td-compact">{row.volunteers ?? "—"}</td>}
                     {show("debutants") && <td className="td-compact">{row.debutants ?? "—"}</td>}
-                    {show("guests") && <td className="td-compact">{row.first_at_location ?? "—"}</td>}
+                    {show("returned") && (
+                      <td className="td-compact" title={returnedTitle(row)}>
+                        {row.debut_return_pct === null ? (
+                          "—"
+                        ) : (
+                          <span className="loc-events-number">
+                            {row.debut_return_pct}%
+                            <span className="loc-events-sub">
+                              {row.debut_returned} из {row.debutants}
+                            </span>
+                          </span>
+                        )}
+                      </td>
+                    )}
+                    {show("first_here") && (
+                      <td className="td-compact">{row.first_at_location ?? "—"}</td>
+                    )}
+                    {show("guests") && <td className="td-compact">{row.guests ?? "—"}</td>}
                     {show("best_male") && (
                       <td className="td-time">
                         <span className="loc-events-number">

@@ -432,6 +432,25 @@ def full_backfill(
                     event_number=numbers.get(ref.date),
                 )
 
+        # Флаги дебюта переживают массовую заливку только вместе с пересчётом:
+        # upsert протокола кладёт в is_first_run то, что дал адаптер, а API S95
+        # про дебют не говорит ничего — то есть False на каждой перезаписанной
+        # строке. Пересчитываем даже после раннего стопа (бан, yield): уже
+        # записанные протоколы иначе останутся с нулевыми «Новичками» до
+        # следующего полного обхода. Ровно так на проде к 17.09.2026 набежало
+        # 3004 потерянных строки на 538 протоколах.
+        if result.protocols_created or result.protocols_updated:
+            from app.services.personal_record_service import repair_first_run_flags
+
+            repaired = repair_first_run_flags(db, PLATFORM_CODE)
+            db.commit()
+            if repaired["runs_updated"]:
+                logger.info(
+                    "S95: флаги дебюта поправлены у %d участников (%d строк)",
+                    repaired["participants_repaired"],
+                    repaired["runs_updated"],
+                )
+
         # Recompute personal records once over the whole platform after the bulk load.
         if not result.errors and result.stopped_reason is None:
             from app.services.personal_record_service import (

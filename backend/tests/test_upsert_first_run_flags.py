@@ -211,3 +211,212 @@ def test_recalculate_participants_first_run_flags_skips_five_verst(
 
     # Untouched: recalculate_participants_first_run_flags is a no-op for five_verst.
     assert run.is_first_run is False
+
+
+def test_anonymous_participant_never_counts_as_debutant(
+    db_session: Session,
+    s95_platform: Platform,
+    s95_location: Location,
+) -> None:
+    """Безымянная строка протокола — одноразовая личность, и «впервые» она всегда.
+
+    Считать её дебютантом нельзя: на проде так набегала почти половина
+    «новичков» RunPark (см. app/participant_identity.py).
+    """
+    anonymous = Participant(
+        id=uuid4(),
+        platform_id=s95_platform.id,
+        external_user_id=f"unknown:zil:2022-01-01:{uuid4().hex[:6]}",
+        display_name="НЕИЗВЕСТНЫЙ",
+    )
+    db_session.add(anonymous)
+    db_session.flush()
+
+    run = _add_run(
+        db_session, platform=s95_platform, location=s95_location,
+        participant=anonymous, event_date=date(2022, 1, 1),
+    )
+    # Флаги могли остаться с прошлого правила — пересчёт обязан их снять.
+    run.is_first_run = True
+    run.is_first_run_at_location = True
+    db_session.flush()
+
+    recalculate_first_run_flags(db_session, "s95", participant_id=anonymous.id)
+    db_session.flush()
+
+    assert run.is_first_run is False
+    assert run.is_first_run_at_location is False
+
+
+def test_runpark_anonymous_prefix_also_excluded(
+    db_session: Session,
+) -> None:
+    """У RunPark безымянная личность зовётся «anon:<id строки>» — то же правило."""
+    from app.platform_adapters.canonical import CanonicalLocation
+
+    platform = upsert.get_platform(db_session, "runpark")
+    location, _ = upsert.upsert_location(
+        db_session,
+        platform,
+        CanonicalLocation(external_key="runpark-novgorod", name="Великий Новгород"),
+    )
+    db_session.flush()
+
+    anonymous = Participant(
+        id=uuid4(),
+        platform_id=platform.id,
+        external_user_id=f"anon:{uuid4()}",
+        display_name="Неизвестный бегун",
+    )
+    db_session.add(anonymous)
+    db_session.flush()
+
+    run = _add_run(
+        db_session, platform=platform, location=location,
+        participant=anonymous, event_date=date(2023, 4, 1),
+    )
+
+    recalculate_first_run_flags(db_session, "runpark", participant_id=anonymous.id)
+    db_session.flush()
+
+    assert run.is_first_run is False
+    assert run.is_first_run_at_location is False
+
+
+def test_real_account_named_unknown_is_not_a_debutant(
+    db_session: Session,
+) -> None:
+    """У 138 личностей RunPark настоящий GUID, но имя — «Неизвестный бегун».
+
+    По ключу их от живых не отличить, поэтому правило смотрит и на имя: на
+    страницах протокола такая строка и так показана заглушкой.
+    """
+    from app.platform_adapters.canonical import CanonicalLocation
+
+    platform = upsert.get_platform(db_session, "runpark")
+    location, _ = upsert.upsert_location(
+        db_session,
+        platform,
+        CanonicalLocation(external_key="runpark-mikhalkovo", name="Михалково"),
+    )
+    db_session.flush()
+
+    participant = Participant(
+        id=uuid4(),
+        platform_id=platform.id,
+        external_user_id=str(uuid4()).upper(),
+        display_name="Неизвестный бегун",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    run = _add_run(
+        db_session, platform=platform, location=location,
+        participant=participant, event_date=date(2023, 1, 1),
+    )
+
+    recalculate_first_run_flags(db_session, "runpark", participant_id=participant.id)
+    db_session.flush()
+
+    assert run.is_first_run is False
+    assert run.is_first_run_at_location is False
+
+
+def test_first_run_flag_mismatches_is_zero_after_recalculation(
+    db_session: Session,
+    s95_platform: Platform,
+    s95_location: Location,
+    s95_location_2: Location,
+) -> None:
+    """Сторож: сохранённый флаг обязан совпадать с правилом.
+
+    Флаг живёт в таблице, а upsert протокола затирает его в False — стоит
+    какому-нибудь пути синка забыть про пересчёт, и «Новички» тихо уезжают
+    вниз. Проверка считает расхождение одним запросом, тем же правилом.
+    """
+    from app.services.personal_record_service import first_run_flag_mismatches
+
+    named = Participant(
+        id=uuid4(),
+        platform_id=s95_platform.id,
+        external_user_id=f"s95-guard-{uuid4().hex[:8]}",
+        display_name="S95 Runner",
+    )
+    anonymous = Participant(
+        id=uuid4(),
+        platform_id=s95_platform.id,
+        external_user_id=f"unknown:zil:2022-05-01:{uuid4().hex[:6]}",
+        display_name="НЕИЗВЕСТНЫЙ",
+    )
+    db_session.add_all([named, anonymous])
+    db_session.flush()
+
+    for event_date, participant, location in (
+        (date(2022, 4, 1), named, s95_location),
+        (date(2022, 5, 1), named, s95_location_2),
+        (date(2022, 5, 1), anonymous, s95_location),
+    ):
+        _add_run(
+            db_session, platform=s95_platform, location=location,
+            participant=participant, event_date=event_date,
+        )
+
+    # По участникам, а не по платформе целиком: dev-база — копия боевой, и
+    # полный проход перебрал бы десятки тысяч чужих участников.
+    recalculate_participants_first_run_flags(db_session, "s95", {named.id, anonymous.id})
+    db_session.flush()
+
+    stats = first_run_flag_mismatches(
+        db_session, "s95", participant_ids=[named.id, anonymous.id]
+    )
+    assert stats["first_run_mismatch"] == 0, stats
+    assert stats["first_at_location_mismatch"] == 0, stats
+
+
+def test_repair_touches_only_the_participants_whose_flags_drifted(
+    db_session: Session,
+    s95_platform: Platform,
+    s95_location: Location,
+) -> None:
+    """После массовой заливки чинить всю платформу незачем — только разъехавшихся.
+
+    upsert протокола кладёт в is_first_run то, что дал адаптер (у s95 — всегда
+    False), поэтому перезалитый протокол теряет флаг. Ремонт обязан вернуть его,
+    не перебирая десятки тысяч участников платформы.
+    """
+    from app.services.personal_record_service import (
+        first_run_flag_mismatches,
+        repair_first_run_flags,
+    )
+
+    participant = Participant(
+        id=uuid4(),
+        platform_id=s95_platform.id,
+        external_user_id=f"s95-repair-{uuid4().hex[:8]}",
+        display_name="S95 Runner",
+    )
+    db_session.add(participant)
+    db_session.flush()
+
+    debut = _add_run(
+        db_session, platform=s95_platform, location=s95_location,
+        participant=participant, event_date=date(2022, 7, 2),
+    )
+    recalculate_first_run_flags(db_session, "s95", participant_id=participant.id)
+    db_session.flush()
+    assert debut.is_first_run is True
+
+    # Перезаливка протокола: флаг затёрт, пересчёта не было.
+    debut.is_first_run = False
+    debut.is_first_run_at_location = False
+    db_session.flush()
+    mine = [participant.id]
+    assert first_run_flag_mismatches(db_session, "s95", participant_ids=mine)["missing_first_run"] == 1
+
+    stats = repair_first_run_flags(db_session, "s95", participant_ids=mine)
+    db_session.flush()
+
+    assert stats["participants_repaired"] == 1
+    assert debut.is_first_run is True
+    assert debut.is_first_run_at_location is True
+    assert first_run_flag_mismatches(db_session, "s95", participant_ids=mine)["first_run_mismatch"] == 0

@@ -1,0 +1,56 @@
+# Воркеры, живущие на ДОМАШНЕМ сервере (saturday-run), а не на VPS.
+#
+# База и брокер остаются на проде и доступны по tailnet: DATABASE_URL смотрит
+# на прод-Postgres, REDIS_URL — на прод-Redis (он публикуется на REDIS_BIND,
+# см. docker-compose.prod.yml). Поэтому локальные postgres/redis здесь не
+# поднимаются, и depends_on на них сброшен.
+#
+# Запуск:
+#   docker compose -f docker-compose.yml -f docker-compose.home.yml \
+#     up -d worker-s95 worker-five-verst worker-runpark
+#
+# Почему именно эти трое: они ходят наружу по HTTP (или в чужой MSSQL) и от
+# задержки до базы почти не зависят — 4 мс на запрос против пауз в секунды
+# между фетчами. worker-parkrun сознательно остаётся на проде: на его очереди
+# висят задачи og_render, а они пишут картинки в ./data, которые раздаёт
+# прод-nginx.
+
+x-home-worker: &home-worker
+  environment:
+    DATABASE_URL: ${DATABASE_URL}
+    REDIS_URL: ${REDIS_URL}
+    # Питон пишет __pycache__ прямо в примонтированный backend/, а контейнер
+    # ходит root-ом: иначе в клоне заводятся root-овы файлы, которые потом
+    # мешают git pull.
+    PYTHONDONTWRITEBYTECODE: "1"
+  depends_on: !reset []
+  restart: unless-stopped
+
+services:
+  # Локальные postgres/redis тут не отключены профилем намеренно: на них ссылаются
+  # depends_on у остальных сервисов, и compose ругается на «undefined service».
+  # Дома мы просто никогда не поднимаем стек целиком — только три воркера
+  # поимённо, а у них depends_on сброшен.
+  worker-s95:
+    <<: *home-worker
+
+  # Свежесть 5 вёрст — своим контейнером: приоритет между очередями внутри
+  # одного воркера ненадёжен (см. docker-compose.yml, worker-five-verst-fresh).
+  worker-five-verst:
+    <<: *home-worker
+
+  worker-five-verst-fresh:
+    <<: *home-worker
+
+  worker-runpark:
+    <<: *home-worker
+
+  # Своя прокси до Telegram — дома она нужна ровно по той же причине, что и на
+  # VPS: api.telegram.org из России не виден. Без неё admin-уведомления
+  # домашних воркеров (отмена ближайшего старта, алерты синков) падают на
+  # `Temporary failure in name resolution` — имя `tg-proxy` в домашнем стеке
+  # просто не с кого резолвить — и уходят в ВК-фолбэк, который никто не читает.
+  # Профиль `telegram` тут сброшен: дома этот сервис нужен всегда, а бота
+  # (второй long-poll) мы по-прежнему не поднимаем.
+  tg-proxy:
+    profiles: !reset []

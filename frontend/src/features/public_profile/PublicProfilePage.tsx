@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readCached, writeCached } from "../../lib/dataCache";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { LastSaturdayCard } from "../../components/LastSaturdayCard";
@@ -14,11 +14,12 @@ import "../portal/portal.css";
 import "../portal/portalSection.css";
 import { AppDataSourceProvider, createPublicProfileDataSource } from "../../lib/appDataSource";
 import { AchievementsShowcase } from "../achievements/AchievementsPage";
-import { UserMapPanel } from "../maps/UserMapPanel";
+import { lazyPage } from "../../lib/lazyPage";
 import { RunsContent } from "../runs/RunsPage";
 import { VolunteeringContent } from "../volunteering/VolunteeringPage";
 import { HistoryContent } from "../history/HistoryPage";
 import { CoRunnersContent } from "../co_runners/CoRunnersPage";
+import { ProfileComparePanel } from "./ProfileComparePanel";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { platformProfileUrl } from "../../lib/platformProfileUrl";
 import {
@@ -39,6 +40,9 @@ import {
   type User,
 } from "../../lib/api";
 import { platformCodeLabel, runsCapLabel, volunteeringCapLabel } from "../../lib/format";
+
+// Карта (leaflet) нужна только на вкладке «карта» — грузится по обращению.
+const UserMapPanel = lazyPage(() => import("../maps/UserMapPanel"), (m) => m.UserMapPanel);
 
 type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "achievements" | "history" | "meetings";
 
@@ -219,6 +223,22 @@ function PublicProfileContent({
   const [forbidden, setForbidden] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null | undefined>(undefined);
+  // Какой вид открыт во вкладке «Встречи»: список встреч или сравнение со мной.
+  // Вид живёт в адресе (?view=compare) — на него ведёт кнопка сравнения из
+  // списка встреч, и такой ссылкой можно поделиться.
+  const [meetingsView, setMeetingsViewState] = useState<"meetings" | "compare">(() =>
+    new URLSearchParams(window.location.search).get("view") === "compare" ? "compare" : "meetings",
+  );
+  const setMeetingsView = useCallback((next: "meetings" | "compare") => {
+    setMeetingsViewState(next);
+    const url = new URL(window.location.href);
+    if (next === "compare") {
+      url.searchParams.set("view", "compare");
+    } else {
+      url.searchParams.delete("view");
+    }
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}`);
+  }, []);
 
   useEffect(() => {
     getCurrentUser()
@@ -251,7 +271,8 @@ function PublicProfileContent({
   }, [serialId, dashboardCacheKey]);
 
   useEffect(() => {
-    if (tab === "dashboard") void loadDashboard();
+    // Сравнению во «Встречах» нужны те же цифры участника, что и главной.
+    if (tab === "dashboard" || tab === "meetings") void loadDashboard();
   }, [tab, loadDashboard]);
 
   const [achievements, setAchievements] = useState<AchievementsResponse | null>(null);
@@ -317,6 +338,10 @@ function PublicProfileContent({
 
   // Иконки те же, что у одноимённых разделов своего кабинета: в свёрнутом
   // рельсе сайдбара подписи скрыты, и без иконок пункты были не видны вовсе.
+  // «Сравнение со мной» — второй вид вкладки «Встречи»: очный счёт там уже
+  // посчитан (заявка из бэклога сайта «Добавление в друзья, сравнения»).
+  // Гостю сравнивать не с чем, себя с собой — тем более.
+  const canCompare = Boolean(currentUser) && currentUser?.serial_id !== serialId;
   const TAB_LABELS: { key: ProfileTab; label: string }[] = [
     { key: "dashboard", label: "Главная" },
     { key: "runs", label: "Пробежки" },
@@ -470,12 +495,14 @@ function PublicProfileContent({
 
       {tab === "map" && (
         <section className="card admin-preview-map">
-          <UserMapPanel
-            loadVisitedMap={loadVisitedMap}
-            loadCatalogMap={getCatalogLocationsMap}
-            loadCatalogTable={loadCatalogTable}
-            visitedTabLabel="Визиты"
-          />
+          <Suspense fallback={<p className="muted">Загрузка…</p>}>
+            <UserMapPanel
+              loadVisitedMap={loadVisitedMap}
+              loadCatalogMap={getCatalogLocationsMap}
+              loadCatalogTable={loadCatalogTable}
+              visitedTabLabel="Визиты"
+            />
+          </Suspense>
         </section>
       )}
 
@@ -512,11 +539,47 @@ function PublicProfileContent({
       )}
 
       {tab === "meetings" && (
-        <CoRunnersContent
-          load={loadCoRunners}
-          loadMeetings={loadCoRunnerMeetings}
-          cacheScope={`profile:${serialId}`}
-        />
+        <>
+          {/* Второй вид вкладки: слева встречи участника, справа сравнение
+              его цифр с моими. Отдельной вкладкой сравнение выглядело
+              оторванным от очного счёта, который живёт именно здесь. */}
+          {canCompare && (
+            <div className="map-mode-tabs cmp-view-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={meetingsView === "meetings"}
+                className={meetingsView === "meetings" ? "map-mode-tab active" : "map-mode-tab"}
+                onClick={() => setMeetingsView("meetings")}
+              >
+                Встречи участника
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={meetingsView === "compare"}
+                className={meetingsView === "compare" ? "map-mode-tab active" : "map-mode-tab"}
+                onClick={() => setMeetingsView("compare")}
+              >
+                Сравнение со мной
+              </button>
+            </div>
+          )}
+          {canCompare && meetingsView === "compare" && currentUser ? (
+            <ProfileComparePanel
+              viewer={currentUser}
+              theirName={profileName ?? "Участник"}
+              theirSerialId={serialId}
+              theirStats={stats ?? null}
+            />
+          ) : (
+            <CoRunnersContent
+              load={loadCoRunners}
+              loadMeetings={loadCoRunnerMeetings}
+              cacheScope={`profile:${serialId}`}
+            />
+          )}
+        </>
       )}
     </ProfileShell>
   );

@@ -16,15 +16,16 @@ from app.five_verst.fetch.priority import five_verst_user_sync_context
 from app.s95.fetch.priority import s95_user_sync_context
 from app.services.admin_resync_service import run_admin_resync
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_MEDIUM
 
 
-@celery_app.task(name="user_sync.admin_resync", queue="five_verst_user")
+@celery_app.task(name="user_sync.admin_resync", queue="five_verst_user", **LIMITS_MEDIUM)
 def admin_resync_five_verst_task(request_id: str) -> dict[str, object]:
     with five_verst_user_sync_context(ttl_seconds=get_settings().five_verst_user_sync_active_ttl_seconds):
         return run_admin_resync(UUID(request_id))
 
 
-@celery_app.task(name="s95_sync.run_admin_resync", queue="s95_user")
+@celery_app.task(name="s95_sync.run_admin_resync", queue="s95_user", **LIMITS_MEDIUM)
 def admin_resync_s95_task(request_id: str) -> dict[str, object]:
     with s95_user_sync_context():
         return run_admin_resync(UUID(request_id))

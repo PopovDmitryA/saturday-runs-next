@@ -9,6 +9,8 @@ import {
   type DashboardAnalyticsGroup,
 } from "../lib/dashboardLayout";
 import { PlatformBadge } from "./PlatformBadge";
+import { formatTemp } from "../lib/weather";
+import { formatDate as fmtWeatherDate, formatInt } from "../lib/format";
 import { BestResultsModal } from "./BestResultsModal";
 import { PersonalRecordsModal } from "./PersonalRecordsModal";
 import { StatHintTooltip } from "./StatHintTooltip";
@@ -165,6 +167,28 @@ const NEAREST_UNVISITED_TOOLTIP = (
 
 const TOTAL_DISTANCE_TOOLTIP = (
   <span>Примерная суммарная дистанция: 5 км на каждую пробежку.</span>
+);
+
+const HOME_RATIO_TOOLTIP = (
+  <>
+    <span>Какая доля ваших пробежек прошла на домашней локации.</span>
+    <span className="stat-hint-tooltip-note">
+      Это не соревнование: 90% — столп своего парка, 20% — вечный турист. Обе роли
+      сообществу одинаково нужны. Домашняя локация меняется в настройках.
+    </span>
+  </>
+);
+
+const FINISH_SPREAD_TOOLTIP = (
+  <>
+    <span>
+      Насколько ровно вы бежите: среднее отклонение последних финишей от их же среднего.
+    </span>
+    <span className="stat-hint-tooltip-note">
+      Меньше — стабильнее. Считается по последним десяти финишам, поэтому форма
+      прошлых лет на цифру не влияет.
+    </span>
+  </>
 );
 
 function twelveMonthsAgoIso(): string {
@@ -412,6 +436,45 @@ function buildAnalyticsCards(
       clickable: true,
       modalTarget: "nearest_unvisited",
       tooltipContent: NEAREST_UNVISITED_TOOLTIP,
+    });
+  }
+
+  // «Луковица лояльности» (Ч9): доля пробежек на домашней локации. Плитка
+  // намеренно нейтральна — ни высокая, ни низкая доля не «лучше»: подпись
+  // просто называет вторую половину («в разъездах»), чтобы турист не читал
+  // свои 20% как двойку за лояльность.
+  const homeSharePct = analytics.home_runs_share_pct;
+  if (homeDistance?.home && homeSharePct != null && (analytics.home_runs_count ?? 0) > 0) {
+    const awayPct = Math.max(0, Math.round((100 - homeSharePct) * 10) / 10);
+    cards.push({
+      key: "home_ratio",
+      value: `${Math.round(homeSharePct)}%`,
+      label: "пробежек дома",
+      note: `${homeDistance.home.name} · ${Math.round(awayPct)}% в разъездах`,
+      category: "runs",
+      tooltipContent: HOME_RATIO_TOOLTIP,
+    });
+  }
+
+  // «Стабильность» (Ч25): не все гонятся за рекордом — многим интереснее
+  // метрономная ровность. Серию «финишей подряд в коридоре ±30 секунд»
+  // показываем уточнением и только когда она уже что-то значит (от трёх).
+  const finishSpread = analytics.finish_spread_sec;
+  if (finishSpread != null && (analytics.finish_spread_runs ?? 0) > 0) {
+    const metronome = analytics.metronome_streak ?? 0;
+    cards.push({
+      key: "finish_spread",
+      value: `±${formatNumber(finishSpread)} с`,
+      label: `разброс последних ${analytics.finish_spread_runs ?? 0} ${runsFormLabel(
+        analytics.finish_spread_runs ?? 0,
+      )}`,
+      note:
+        metronome >= 3
+          ? `метроном: ${metronome} ${runsFormLabel(metronome)} подряд в коридоре ±30 с`
+          : undefined,
+      category: "runs",
+      tooltipContent: FINISH_SPREAD_TOOLTIP,
+      labelMultiline: true,
     });
   }
 
@@ -1094,6 +1157,89 @@ export function DashboardAnalytics({
         </>
       ),
     });
+  }
+
+  // Погода: личные крайности и счётчики — только когда есть хоть одна
+  // пробежка с погодой (зарубежный parkrun и площадки без координат её не имеют).
+  const weather = analytics.weather;
+  if (weather && weather.runs_with_weather > 0) {
+    const runNote = (run: NonNullable<typeof weather.coldest>) =>
+      `${run.location_name} · ${fmtWeatherDate(run.event_date)}`;
+    if (weather.coldest) {
+      cards.push({
+        key: "weather_coldest",
+        value: `${weather.coldest.weather.icon} ${formatTemp(weather.coldest.weather.temperature_c)}`,
+        label: "самая холодная пробежка",
+        note: runNote(weather.coldest),
+        category: "runs",
+        tooltipContent: weather.coldest.weather.summary,
+      });
+    }
+    if (weather.hottest && weather.hottest.event_date !== weather.coldest?.event_date) {
+      cards.push({
+        key: "weather_hottest",
+        value: `${weather.hottest.weather.icon} ${formatTemp(weather.hottest.weather.temperature_c)}`,
+        label: "самая жаркая пробежка",
+        note: runNote(weather.hottest),
+        category: "runs",
+        tooltipContent: weather.hottest.weather.summary,
+      });
+    }
+    cards.push({
+      key: "weather_rain_runs",
+      value: formatInt(weather.rain_runs),
+      label: "пробежек под дождём",
+      note: `из ${formatInt(weather.runs_with_weather)} с погодой`,
+      category: "runs",
+      tooltipContent: "Дождём считаем от 0.3 мм за час забега. Снегопад — это снег, а не дождь.",
+    });
+    if (weather.frost_runs > 0) {
+      cards.push({
+        key: "weather_frost_runs",
+        value: formatInt(weather.frost_runs),
+        label: "пробежек в мороз",
+        note: "−10° и ниже в час старта",
+        category: "runs",
+      });
+    }
+    if (weather.wettest) {
+      cards.push({
+        key: "weather_wettest",
+        value: `${(weather.wettest.weather.precipitation_run_mm ?? 0).toFixed(1)} мм`,
+        label: "самый мокрый старт",
+        note: runNote(weather.wettest),
+        category: "runs",
+        tooltipContent: weather.wettest.weather.summary,
+      });
+    }
+    if (weather.windiest && (weather.windiest.weather.wind_gusts_ms ?? 0) >= 10) {
+      cards.push({
+        key: "weather_windiest",
+        value: `${Math.round(weather.windiest.weather.wind_gusts_ms ?? 0)} м/с`,
+        label: "самые сильные порывы",
+        note: runNote(weather.windiest),
+        category: "runs",
+        tooltipContent: weather.windiest.weather.summary,
+      });
+    }
+    if (weather.snow_runs > 0) {
+      cards.push({
+        key: "weather_snow_runs",
+        value: formatInt(weather.snow_runs),
+        label: "пробежек по снегу",
+        note: "снежный покров от 1 см",
+        category: "runs",
+      });
+    }
+    if (weather.heat_runs > 0) {
+      cards.push({
+        key: "weather_heat_runs",
+        value: formatInt(weather.heat_runs),
+        label: "пробежек в жару",
+        note: "+25° и выше в час старта",
+        category: "runs",
+      });
+    }
   }
 
   const cardByKey = new Map(cards.map((card) => [card.key, card]));

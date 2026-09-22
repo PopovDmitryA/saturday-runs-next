@@ -89,13 +89,60 @@ def test_parse_athlete_runs_modern_table_columns() -> None:
         profile_url="https://s95.ru/athletes/5207/",
     )
     assert len(runs) == 1
-    assert runs[0].event_number == 12
+    # «#» в профиле — счётчик пробежек человека, номером старта он не является.
+    assert runs[0].event_number is None
     assert runs[0].position == 1
     assert runs[0].finish_time_display == "00:23:41"
     assert runs[0].pace_display == "4:44"
     assert runs[0].pace_sec_per_km == 4 * 60 + 44
     assert runs[0].location_name == "Троицк"
     assert runs[0].external_result_key == "profile:5207:2026-05-23:troitsk"
+
+
+def test_parse_athlete_runs_ignores_personal_run_counter() -> None:
+    """Колонка «#» профиля — личный счётчик пробежек, а не номер старта.
+
+    Репорт 19.09.2026: в профиле с четырьмя пробежками стоят 1–4, а настоящие
+    номера тех стартов — 177, 60, 124 и 2. Число уезжало в events.event_number,
+    и «Нумератор» закрывал человеку клетку №4 вместо №2. Номер старта у S95
+    живёт только в реестре локации.
+    """
+
+    html = """
+    <table>
+      <tr><th>#</th><th>Дата</th><th>Время</th><th>Темп</th><th>Место</th><th>Мероприятие</th></tr>
+      <tr><td>4</td><td>19.09.2026</td><td>34:58</td><td>7:00</td><td>44</td><td><a href="/events/malakhovka">Малаховка</a></td></tr>
+      <tr><td>1</td><td>08.08.2026</td><td>42:32</td><td>8:30</td><td>26</td><td><a href="/events/troitsk">Троицк</a></td></tr>
+    </table>
+    """
+    runs = parse_athlete_runs_html(
+        html,
+        external_user_id="30340",
+        display_name="Test",
+        profile_url="https://s95.ru/athletes/30340/",
+    )
+
+    assert [run.event_number for run in runs] == [None, None]
+    assert [run.location_name for run in runs] == ["Малаховка", "Троицк"]
+
+
+def test_parse_athlete_runs_takes_number_from_event_link() -> None:
+    """Если номер старта всё-таки написан в ссылке — он настоящий, берём его."""
+
+    html = """
+    <table>
+      <tr><th>#</th><th>Дата</th><th>Время</th><th>Мероприятие</th></tr>
+      <tr><td>4</td><td>19.09.2026</td><td>34:58</td><td><a href="/events/malakhovka">Малаховка #2</a></td></tr>
+    </table>
+    """
+    runs = parse_athlete_runs_html(
+        html,
+        external_user_id="30340",
+        display_name="Test",
+        profile_url="https://s95.ru/athletes/30340/",
+    )
+
+    assert runs[0].event_number == 2
 
 
 def test_parse_athlete_runs_and_volunteering_fixture() -> None:

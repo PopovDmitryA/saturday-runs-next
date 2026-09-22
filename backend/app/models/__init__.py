@@ -83,13 +83,6 @@ class AuthProvider(str, enum.Enum):
     email = "email"
 
 
-class SyncLogLevel(str, enum.Enum):
-    info = "info"
-    warning = "warning"
-    error = "error"
-    debug = "debug"
-
-
 class LocationMergeRequestStatus(str, enum.Enum):
     pending = "pending"
     confirmed = "confirmed"
@@ -167,13 +160,14 @@ class Location(Base):
     # старты кончились, здесь их ещё не было (см. миграцию 064).
     is_upcoming: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_official_map: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
-    # Разовый старт сообщества (5 вёрст, раздел /starti-soobshchestv/), а не
-    # площадка: нет расписания, координат и второго старта. Финиши считаются в
-    # личных итогах — источник их тоже засчитывает, — но из каталога, карты,
-    # туризма и рейтингов по локациям такой «локации» быть не должно
-    # (миграция 082). Единственная точка правды — helpers в
-    # app/services/community_events.py.
-    is_community_event: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Серия стартов, а не площадка: «Старты сообществ» 5 вёрст, «С95 и друзья»,
+    # «S95 & Friends». Нет ни координат, ни расписания, ни повторяющейся
+    # трассы — каждый старт в новом месте. Финиши считаются в личных итогах
+    # (источник их тоже засчитывает), но в туризме, на карте, в рейтингах по
+    # локациям и в рекордах трасс таких «локаций» быть не должно, а в каталоге
+    # они стоят отдельным блоком. Единственная точка правды — helpers в
+    # app/services/series_locations.py (миграции 084 и 088).
+    is_series: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     # Смещение локации от Москвы в часах (Якутск +6, Калининград −1): время
     # старта в описаниях — местное, момент фиксации протокола — UTC.
     tz_offset_moscow: Mapped[int | None] = mapped_column(Integer)
@@ -618,6 +612,12 @@ class RunparkLocationMapping(Base):
 
 class LocationCoordinateRequest(Base):
     __tablename__ = "location_coordinate_requests"
+    __table_args__ = (
+        Index("ix_location_coord_req_location_status", "location_id", "status"),
+        # По id сообщения бот находит заявку, отвечая на свой же пост.
+        Index("ix_location_coord_req_request_msg", "request_telegram_message_id"),
+        Index("ix_location_coord_req_verify_msg", "verify_telegram_message_id"),
+    )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
@@ -641,7 +641,9 @@ class EventSummary(Base):
     __table_args__ = (
         UniqueConstraint("platform_id", "external_event_key", name="uq_event_summaries_platform_external_key"),
         Index("ix_event_summaries_location_event_date", "location_id", "event_date"),
-        Index("ix_event_summaries_summary_hash", "summary_hash"),
+        # summary_hash сравнивается в Python после выборки по внешнему ключу,
+        # в WHERE не попадает — индекса по нему нет (миграция 088).
+        Index("ix_event_summaries_event_id", "event_id"),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
@@ -685,7 +687,10 @@ class Event(Base):
     __table_args__ = (
         UniqueConstraint("platform_id", "external_event_key", name="uq_events_platform_external_key"),
         Index("ix_events_platform_event_date", "platform_id", "event_date"),
-        Index("ix_events_location_event_date", "location_id", "event_date"),
+        # Один старт на локацию в день И рабочий индекс для выборок по локации:
+        # локация принадлежит одной системе, поэтому platform_id в ключе лишний
+        # (миграция 088 схлопнула два индекса в этот).
+        Index("uq_events_location_event_date", "location_id", "event_date", unique=True),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
@@ -847,6 +852,10 @@ class AdminResyncRequest(Base):
 
 class ProfileFetchPending(Base):
     __tablename__ = "profile_fetch_pending"
+    __table_args__ = (
+        Index("ix_profile_fetch_pending_status_created", "status", "created_at"),
+        Index("ix_profile_fetch_pending_platform_external", "platform_code", "external_user_id"),
+    )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
@@ -882,8 +891,19 @@ class ProfileFetchPending(Base):
 class Participant(Base):
     __tablename__ = "participants"
     __table_args__ = (
+        # Обычного btree по тем же колонкам тут больше нет: он был побайтовым
+        # дублем уникалки и поддерживался впустую на каждом upsert (миграция 088).
         UniqueConstraint("platform_id", "external_user_id", name="uq_participants_platform_external_user_id"),
-        Index("ix_participants_platform_external_user_id", "platform_id", "external_user_id"),
+        Index("ix_participants_barcode_id", "barcode_id"),
+        # Частичный: пол заполнен не у всех, а ищем всегда «где пол известен».
+        Index("ix_participants_gender", "gender", postgresql_where=text("gender IS NOT NULL")),
+        # Поиск по ФИО в онбординге (миграция 068): trgm по lower(display_name).
+        Index(
+            "ix_participants_display_name_trgm",
+            text("lower(display_name)"),
+            postgresql_using="gin",
+            postgresql_ops={"lower(display_name)": "gin_trgm_ops"},
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
@@ -1145,6 +1165,7 @@ def _media_url(key: str | None) -> str | None:
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (Index("ix_users_serial_id", "serial_id", unique=True),)
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=False, nullable=True)
@@ -1200,10 +1221,17 @@ class User(Base):
     # Дмитрия 28.07.2026: «не будем их сжимать, а по клику раскрывать»).
     # NULL — аватарка загружена до появления оригиналов либо её нет.
     avatar_full_path: Mapped[str | None] = mapped_column(String(512))
+    # EXIF исходного снимка аватарки: {datetime_original, make, model, software,
+    # orientation, gps: {lat, lon, alt}} — только те теги, что были. Файл в
+    # публичном бакете кладётся БЕЗ метаданных (SEC-04, миграция 092), а теги
+    # остаются здесь, приватно: наружу через API поле не отдаётся — ни в
+    # UserResponse, ни в публичном профиле. NULL — аватарки нет или EXIF не было.
+    avatar_exif: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # unique=True здесь не ставим: в БД уникальность даёт именованный индекс
+    # ix_users_serial_id (миграция 031), он объявлен в __table_args__.
     serial_id: Mapped[int] = mapped_column(
         BigInteger,
         nullable=False,
-        unique=True,
         server_default=text("nextval('users_serial_id_seq')"),
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -1320,6 +1348,8 @@ class PlatformLink(Base):
         UniqueConstraint("platform_id", "external_user_id", name="uq_platform_links_platform_external_user_id"),
         UniqueConstraint("user_id", "platform_id", name="uq_platform_links_user_platform"),
         Index("ix_platform_links_user_id", "user_id"),
+        Index("ix_platform_links_participant_id", "participant_id"),
+        Index("ix_platform_links_link_method", "link_method"),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
@@ -1422,7 +1452,6 @@ class SyncRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     platform: Mapped["Platform"] = relationship()
-    log_entries: Mapped[list["SyncLogEntry"]] = relationship(back_populates="sync_run")
 
 
 class SyncJob(Base):
@@ -1443,23 +1472,6 @@ class SyncJob(Base):
 
     user: Mapped["User"] = relationship(back_populates="sync_jobs")
     platform_link: Mapped["PlatformLink | None"] = relationship(back_populates="sync_jobs")
-    log_entries: Mapped[list["SyncLogEntry"]] = relationship(back_populates="sync_job")
-
-
-class SyncLogEntry(Base):
-    __tablename__ = "sync_log_entries"
-
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
-    sync_run_id: Mapped[UUID | None] = mapped_column(ForeignKey("sync_runs.id"))
-    sync_job_id: Mapped[UUID | None] = mapped_column(ForeignKey("sync_jobs.id"))
-    level: Mapped[SyncLogLevel] = mapped_column(Enum(SyncLogLevel, name="sync_log_level_enum"), nullable=False)
-    message: Mapped[str] = mapped_column(Text, nullable=False)
-    source_url: Mapped[str | None] = mapped_column(String(1024))
-    raw_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    sync_run: Mapped["SyncRun | None"] = relationship(back_populates="log_entries")
-    sync_job: Mapped["SyncJob | None"] = relationship(back_populates="log_entries")
 
 
 class ScheduledRunLog(Base):
@@ -1496,23 +1508,19 @@ class ScheduledRunLog(Base):
 class LocationRating(Base):
     __tablename__ = "location_ratings"
     __table_args__ = (
-        # Уникальность по типу участия: два частичных индекса (см. миграцию 039).
+        # Уникальность — по естественному ключу отзыва, а не по строке
+        # результата (миграция 091): строку синк может удалить и завести заново
+        # с другим id, отзыв при этом должен остаться один.
         Index(
-            "uq_location_ratings_user_run",
+            "uq_location_ratings_user_location_date_type",
             "user_id",
-            "run_result_id",
+            "location_id",
+            "event_date",
+            "participation_type",
             unique=True,
-            postgresql_where=text("run_result_id IS NOT NULL"),
-        ),
-        Index(
-            "uq_location_ratings_user_volunteer",
-            "user_id",
-            "volunteer_result_id",
-            unique=True,
-            postgresql_where=text("volunteer_result_id IS NOT NULL"),
         ),
         CheckConstraint(
-            "(run_result_id IS NOT NULL) <> (volunteer_result_id IS NOT NULL)",
+            "NOT (run_result_id IS NOT NULL AND volunteer_result_id IS NOT NULL)",
             name="ck_location_ratings_one_source",
         ),
         CheckConstraint("score_overall BETWEEN 1 AND 5", name="ck_location_ratings_overall"),
@@ -1534,11 +1542,16 @@ class LocationRating(Base):
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    # Оценка привязана либо к пробежке (бегун), либо к волонтёрству — ровно одно
-    # из двух заполнено (CHECK ck_location_ratings_one_source).
-    run_result_id: Mapped[UUID | None] = mapped_column(ForeignKey("run_results.id", ondelete="CASCADE"), nullable=True)
+    # Оценка привязана либо к пробежке (бегун), либо к волонтёрству — не больше
+    # одного из двух (CHECK ck_location_ratings_one_source). Ссылка
+    # необязательная: синк удаляет строки результата штатно (перечитка протокола,
+    # дедуп, смена формата ключа, пересборка старта RunPark), и раньше CASCADE
+    # молча уносил отзыв вместе с ними. Теперь ON DELETE SET NULL — отзыв живёт
+    # на своих location_id/event_date/platform_code (миграция 091), а писатель
+    # по возможности перевешивает его на выжившую строку (sync/rating_relink.py).
+    run_result_id: Mapped[UUID | None] = mapped_column(ForeignKey("run_results.id", ondelete="SET NULL"), nullable=True)
     volunteer_result_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("volunteer_results.id", ondelete="CASCADE"), nullable=True
+        ForeignKey("volunteer_results.id", ondelete="SET NULL"), nullable=True
     )
     # 'run' | 'volunteer' — как участник был на старте.
     participation_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="run")
@@ -1597,7 +1610,18 @@ class PageViewEvent(Base):
     """
 
     __tablename__ = "page_view_events"
-    __table_args__ = (Index("ix_page_view_events_ts", "ts"),)
+    __table_args__ = (
+        Index("ix_page_view_events_ts", "ts"),
+        # Журнал визитов в админке: «когда человек был на сайте» — только по
+        # опознанным посетителям. Индекса по is_bot нет: читатели фильтруют
+        # is_bot IS FALSE, а частичный WHERE is_bot им не годился (миграция 088).
+        Index(
+            "ix_page_view_events_viewer_ts",
+            "viewer_user_id",
+            "ts",
+            postgresql_where=text("viewer_user_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     view_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), unique=True, nullable=False)
@@ -1709,9 +1733,7 @@ class EmailLoginRequest(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    requested_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     email_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     domain: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
     # login | link
@@ -1957,12 +1979,16 @@ class StartWeather(Base):
     location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), primary_key=True)
     obs_date: Mapped[date] = mapped_column(Date, primary_key=True)
     start_time_local: Mapped[time] = mapped_column(Time, nullable=False)
+    # Лестница: forecast (прогнозная модель субботним вечером) → archive
+    # (best_match, оперативная склейка) → era5 (чистый реанализ, окончательно,
+    # догоняет за ~5 суток). Каждый ночной прогон поднимает строку на ступень.
+    source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="archive")
 
     temperature_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
     apparent_temperature_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
     humidity_pct: Mapped[int | None] = mapped_column(SmallInteger)
     precipitation_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
-    # Сумма за старт−1ч…старт+2ч (8–11 при старте в 9:00) и за старт−4ч…старт−1ч (5–8).
+    # Жидкий дождь за час забега (9–10 при старте в 9:00) и за три часа до старта (6–9).
     precipitation_run_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
     precipitation_before_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
     snowfall_cm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
@@ -1982,4 +2008,32 @@ class StartWeather(Base):
     day_weather_code: Mapped[int | None] = mapped_column(SmallInteger)
     sunrise_local: Mapped[time | None] = mapped_column(Time)
     sunset_local: Mapped[time | None] = mapped_column(Time)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class StartWeatherForecast(Base):
+    """Прогноз погоды на ближайший старт локации (миграция 089).
+
+    Строка на локацию × дату старта, переписывается ежедневной задачей и
+    удаляется, когда суббота прошла: факт к тому моменту уже в start_weather.
+    """
+
+    __tablename__ = "start_weather_forecast"
+    __table_args__ = (Index("ix_start_weather_forecast_target_date", "target_date"),)
+
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), primary_key=True)
+    target_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    start_time_local: Mapped[time] = mapped_column(Time, nullable=False)
+    temperature_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    apparent_temperature_c: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    humidity_pct: Mapped[int | None] = mapped_column(SmallInteger)
+    precipitation_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    precipitation_probability_pct: Mapped[int | None] = mapped_column(SmallInteger)
+    snowfall_cm: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    weather_code: Mapped[int | None] = mapped_column(SmallInteger)
+    cloud_cover_pct: Mapped[int | None] = mapped_column(SmallInteger)
+    wind_speed_ms: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    wind_gusts_ms: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    # За сколько суток до старта снят прогноз — этим подписывается его надёжность.
+    horizon_days: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

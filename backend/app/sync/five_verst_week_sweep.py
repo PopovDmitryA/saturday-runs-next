@@ -220,6 +220,29 @@ def sweep_week_protocols(db: Session, options: WeekSweepOptions | None = None) -
                     )
 
                 persist_step_error(db, apply=_apply_missing)
+            except upsert.SuspectEmptyProtocolError as exc:
+                # 0 строк при непустой базе: протокол не перезаписан (откат),
+                # саммари — в error, чтобы попасть в отчёт; отметку проверки
+                # двигаем, как у 404, — иначе протокол занимал бы место в
+                # каждой пачке сверки, пока источник не починится.
+                result.errors.append(f"{label}: {exc}")
+
+                def _apply_suspect(
+                    session: Session,
+                    eid=summary_row.event_id,
+                    key=summary_row.external_event_key,
+                    message=str(exc),
+                ) -> None:
+                    if eid is not None:
+                        mark_protocol_check(session, eid)
+                    mark_event_summary_error(
+                        session,
+                        platform_id=platform.id,
+                        external_event_key=key,
+                        message=message,
+                    )
+
+                persist_step_error(db, apply=_apply_suspect)
             except Exception as exc:
                 rollback_step(db)
                 result.errors.append(f"{label}: {exc}")

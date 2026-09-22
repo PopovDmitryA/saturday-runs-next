@@ -32,12 +32,13 @@ from app.models import (
     VolunteerResult,
 )
 from app.services.location_catalog_service import normalize_platform_code
+from app.services.location_freshness import write_organizer_cache
 from app.services.location_page_service import (
     LocationIdentity,
     _location_event_ids,
     _platform_link_join,
     _read_json_cache,
-    _write_json_cache,
+    unknown_result_clause,
 )
 from app.volunteering_occasions import count_volunteering_for_platform
 
@@ -75,12 +76,36 @@ def build_location_absence(
     )
 
     if use_cache:
-        _write_json_cache(cache_key, payload, ABSENCE_CACHE_TTL_SECONDS)
+        write_organizer_cache(identity, cache_key, payload, ABSENCE_CACHE_TTL_SECONDS)
     return payload
 
 
+def _participant_ids_for_groups(db: Session, group_keys: list[Any]) -> list[Any]:
+    """Все participant_id, которые могут дать один из group_keys.
+
+    group_key — это coalesce(platform_links.user_id, participant_id), и фильтр
+    по нему планировщик протолкнуть не умеет: он материализует весь LEFT JOIN
+    (Seq Scan по run_results на 2.3 млн строк ради 398 строк ответа, ~2.5 с —
+    аудит 13.09.2026, QRY-USER-ADMIN-02). Поэтому тяжёлым выборкам добавляется
+    ВТОРОЕ условие — по самому participant_id, которое индекс
+    ix_run_results_participant_event уже понимает.
+
+    Ключи-участники годятся как есть, ключи-профилей разворачиваем в их
+    привязки — тем же правилом связки (platform_id, external_user_id), что и
+    _platform_link_join. Множество заведомо не уже нужного, а исходный
+    coalesce-фильтр остаётся на месте и режет лишнее: семантика не меняется.
+    """
+    linked = (
+        db.query(Participant.id)
+        .join(PlatformLink, _platform_link_join())
+        .filter(PlatformLink.user_id.in_(group_keys))
+        .all()
+    )
+    return list({*group_keys, *(row[0] for row in linked)})
+
+
 def _last_activity_anywhere(
-    db: Session, group_keys: list[Any]
+    db: Session, group_keys: list[Any], participant_ids: list[Any]
 ) -> dict[Any, tuple[date, str, str]]:
     """По каждому человеку — его последняя активность на любой площадке.
 
@@ -112,6 +137,8 @@ def _last_activity_anywhere(
             .outerjoin(PlatformLink, _platform_link_join())
             .filter(
                 key.in_(group_keys),
+                # Сарджабельный дубль того же условия, см. _participant_ids_for_groups.
+                model.participant_id.in_(participant_ids),
                 Event.is_test_event.is_(False),
                 # Волонтёрства parkrun-эпохи лежат на дате-заглушке 1970-01-01.
                 Event.event_date > date(1970, 1, 1),
@@ -203,6 +230,7 @@ def _compute_location_absence(
     # Дедуп RunPark-дублей здесь через NOT IN по кросслинкам: событий много,
     # IN-список всех event_id мира сюда не привезёшь.
     group_keys = [row.group_key for row in local_rows]
+    group_participant_ids = _participant_ids_for_groups(db, group_keys)
     secondary_events = select(EventCrosslink.secondary_event_id)
     total_rows = (
         db.query(
@@ -214,6 +242,8 @@ def _compute_location_absence(
         .outerjoin(PlatformLink, _platform_link_join())
         .filter(
             group_key.in_(group_keys),
+            # Сарджабельный дубль того же условия, см. _participant_ids_for_groups.
+            RunResult.participant_id.in_(group_participant_ids),
             Event.is_test_event.is_(False),
             Event.id.notin_(secondary_events),
         )
@@ -273,7 +303,7 @@ def _compute_location_absence(
         db, identity.identity_key, {pid for pids in participant_by_group.values() for pid in pids}
     )
 
-    elsewhere = _last_activity_anywhere(db, group_keys)
+    elsewhere = _last_activity_anywhere(db, group_keys, group_participant_ids)
 
     items: list[dict[str, Any]] = []
     for row in local_rows:
@@ -403,7 +433,7 @@ def build_location_milestones(
     payload = _compute_location_milestones(db, identity, absence_weeks)
 
     if use_cache:
-        _write_json_cache(cache_key, payload, MILESTONES_CACHE_TTL_SECONDS)
+        write_organizer_cache(identity, cache_key, payload, MILESTONES_CACHE_TTL_SECONDS)
     return payload
 
 
@@ -589,7 +619,8 @@ NEWCOMERS_DEFAULT_DAYS = 180
 
 
 def newcomers_cache_key(identity_key: str, days: int) -> str:
-    return f"organizer:newcomers:v1:{identity_key}:{days}"
+    # v2 — безымянные строки протокола больше не считаются дебютантами.
+    return f"organizer:newcomers:v2:{identity_key}:{days}"
 
 
 def build_location_newcomers(
@@ -609,7 +640,7 @@ def build_location_newcomers(
     payload = _compute_location_newcomers(db, identity, days=days)
 
     if use_cache:
-        _write_json_cache(cache_key, payload, NEWCOMERS_CACHE_TTL_SECONDS)
+        write_organizer_cache(identity, cache_key, payload, NEWCOMERS_CACHE_TTL_SECONDS)
     return payload
 
 
@@ -657,11 +688,21 @@ def _compute_location_newcomers(
     # десятков дебютантов. 03.09.2026 такой запрос шёл на проде 30-70 минут,
     # копии копились до 37 штук и выедали пул соединений: сайт отвечал
     # «QueuePool limit of size 5 overflow 10 reached».
+    # Безымянные строки протокола — не дебютанты. У каждой свой синтетический
+    # участник (s95: «unknown:slug:date:position», RunPark: отдельный профиль
+    # «Неизвестный бегун»), поэтому каждая навсегда остаётся новичком с одной
+    # пробежкой: они раздували счётчик дебютов и тянули удержание вниз
+    # (Дмитрий 13.09.2026).
+    known_runner = ~unknown_result_clause(
+        RunResult.status, RunResult.participant_id, Participant.display_name
+    )
     local_participants = (
         select(RunResult.participant_id)
+        .join(Participant, RunResult.participant_id == Participant.id)
         .where(
             RunResult.event_id.in_(event_ids),
             RunResult.participant_id.isnot(None),
+            known_runner,
             timed,
         )
         .scalar_subquery()
@@ -699,6 +740,7 @@ def _compute_location_newcomers(
             Event.event_date == firsts.c.first_date,
             Event.location_id.in_(location_ids),
             RunResult.event_id.in_(event_ids),
+            known_runner,
             timed,
             firsts.c.first_date >= cutoff,
         )
@@ -815,7 +857,7 @@ def build_location_volunteer_bench(
     payload = _compute_location_volunteer_bench(db, identity, min_runs=min_runs)
 
     if use_cache:
-        _write_json_cache(cache_key, payload, BENCH_CACHE_TTL_SECONDS)
+        write_organizer_cache(identity, cache_key, payload, BENCH_CACHE_TTL_SECONDS)
     return payload
 
 

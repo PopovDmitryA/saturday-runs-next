@@ -274,7 +274,9 @@ function OrganizerLocationContent({ slug }: { slug: string }) {
                   </span>
                 </header>
                 <TableWrap stickyFirstCol innerRef={attachRunnersHead}>
-                  <table className="data-table org-svod-table">
+                  {/* org-svod-runners: липнет колонка имени, а не «Место» —
+                      см. organizer.css. */}
+                  <table className="data-table org-svod-table org-svod-runners">
                     <thead>
                       <tr>
                         <th>Место</th>

@@ -64,3 +64,11 @@ def set_user_milestone_kind_enabled(user: User, kind: str, enabled: bool) -> dic
         info.kind for info in MILESTONE_KIND_REGISTRY if info.kind in disabled
     ]
     return {"kind": kind, "enabled": enabled}
+
+
+def set_user_disabled_milestone_kinds(user: User, kinds: list[str]) -> None:
+    """Задаёт набор скрытых видов целиком — модалка на «Моей истории» шлёт его разом."""
+    unknown = [kind for kind in kinds if kind not in MILESTONE_KINDS]
+    if unknown:
+        raise UnknownMilestoneKindError(unknown[0])
+    user.history_disabled_kinds = normalize_disabled_kinds(kinds)

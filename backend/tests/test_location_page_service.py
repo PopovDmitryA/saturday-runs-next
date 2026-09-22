@@ -373,3 +373,209 @@ def test_invalidate_location_page_cache_clears_all_three(
 
     for key in keys:
         assert not fake_redis.exists(key), key
+
+
+# --- Удержание новичков по каждому старту (колонка «Вернулись») ---------------
+# Запрос Егора (17.09.2026): на праздничный старт приходит толпа дебютантов, и
+# руками считать, кто из них вернулся, невозможно.
+
+
+def _seed_retention_location(db_session: Any) -> str:
+    """Три старта подряд: двое новичков на первом (вернулся один), один на втором."""
+    from uuid import uuid4
+
+    from app.models import Event, Location, Participant, Platform, RunResult
+
+    suffix = str(uuid4().int % 1_000_000)
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        platform = Platform(code="five_verst", name="5 вёрст")
+        db_session.add(platform)
+        db_session.flush()
+
+    external_key = f"retention-{suffix}"
+    location = Location(
+        platform_id=platform.id,
+        external_key=external_key,
+        name=f"Удержание {suffix}",
+        country="Россия",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    events = {}
+    for number, event_date in enumerate(
+        (date(2026, 8, 1), date(2026, 8, 8), date(2026, 8, 15)), start=1
+    ):
+        event = Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"{external_key}:{number}",
+            event_date=event_date,
+            event_number=number,
+            title="Старт",
+        )
+        db_session.add(event)
+        db_session.flush()
+        events[number] = event
+
+    def runner(tag: str) -> Participant:
+        participant = Participant(
+            platform_id=platform.id,
+            external_user_id=f"{external_key}-{tag}",
+            display_name=f"Бегун {tag}",
+        )
+        db_session.add(participant)
+        db_session.flush()
+        return participant
+
+    def run(participant: Participant, number: int, *, debut: bool) -> None:
+        db_session.add(
+            RunResult(
+                event_id=events[number].id,
+                participant_id=participant.id,
+                external_result_key=f"{external_key}-{participant.external_user_id}-{number}",
+                position=1,
+                finish_time_sec=1500,
+                is_first_run=debut,
+                is_first_run_at_location=debut,
+            )
+        )
+
+    came_back = runner("returned")
+    one_off = runner("one-off")
+    late = runner("late")
+
+    run(came_back, 1, debut=True)
+    run(came_back, 2, debut=False)
+    run(one_off, 1, debut=True)
+    run(late, 3, debut=True)
+    db_session.flush()
+    return external_key
+
+
+def test_journal_counts_returned_newcomers_per_start(db_session: Any) -> None:
+    """«Вернулись» — доля новичков старта, прибежавших сюда ещё раз."""
+    slug = _seed_retention_location(db_session)
+    payload = location_page_service._compute_location_events(db_session, slug)
+    assert payload is not None
+    by_date = {str(item["event_date"]): item for item in payload["items"]}
+
+    first = by_date["2026-08-01"]
+    assert first["debutants"] == 2
+    assert first["debut_returned"] == 1
+    assert first["debut_return_pct"] == 50
+
+    # На втором старте новичков не было — делить нечего.
+    second = by_date["2026-08-08"]
+    assert second["debutants"] == 0
+    assert second["debut_returned"] == 0
+    assert second["debut_return_pct"] is None
+
+
+def test_journal_leaves_the_last_start_without_a_retention_number(db_session: Any) -> None:
+    """У новичков последнего старта следующей субботы ещё не было — прочерк.
+
+    Ноль здесь читался бы как «никто не вернулся», хотя вернуться было некуда.
+    """
+    slug = _seed_retention_location(db_session)
+    payload = location_page_service._compute_location_events(db_session, slug)
+    assert payload is not None
+    last = max(payload["items"], key=lambda item: str(item["event_date"]))
+
+    assert str(last["event_date"]) == "2026-08-15"
+    assert last["debutants"] == 1
+    assert last["debut_returned"] is None
+    assert last["debut_return_pct"] is None
+
+
+def _seed_unknown_rows_location(db_session: Any) -> str:
+    """Один живой участник на двух стартах и две безымянные строки протокола."""
+    from uuid import uuid4
+
+    from app.models import Event, Location, Participant, Platform, RunResult
+
+    suffix = str(uuid4().int % 1_000_000)
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        platform = Platform(code="five_verst", name="5 вёрст")
+        db_session.add(platform)
+        db_session.flush()
+
+    external_key = f"unknown-rows-{suffix}"
+    location = Location(
+        platform_id=platform.id,
+        external_key=external_key,
+        name=f"Безымянные {suffix}",
+        country="Россия",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    events = []
+    for number, event_date in enumerate((date(2026, 8, 1), date(2026, 8, 8)), start=1):
+        event = Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"{external_key}:{number}",
+            event_date=event_date,
+            event_number=number,
+            title="Старт",
+            finishers_count=2,
+        )
+        db_session.add(event)
+        db_session.flush()
+        events.append(event)
+
+    def participant(external_user_id: str, display_name: str) -> Participant:
+        row = Participant(
+            platform_id=platform.id,
+            external_user_id=external_user_id,
+            display_name=display_name,
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row
+
+    runner = participant(f"{external_key}-runner", "Живой БЕГУН")
+    # Заглушки: у каждой безымянной строки протокола своя одноразовая личность.
+    unknown_first = participant(f"unknown:{external_key}:2026-08-01:2", "НЕИЗВЕСТНЫЙ")
+    unknown_second = participant(f"unknown:{external_key}:2026-08-08:2", "НЕИЗВЕСТНЫЙ")
+
+    rows = (
+        (runner, 0, 1, 1500),
+        (unknown_first, 0, 2, None),
+        (runner, 1, 1, 1490),
+        (unknown_second, 1, 2, None),
+    )
+    for person, event_index, place, finish_time in rows:
+        db_session.add(
+            RunResult(
+                event_id=events[event_index].id,
+                participant_id=person.id,
+                external_result_key=f"{external_key}-{person.external_user_id}-{event_index}",
+                position=place,
+                finish_time_sec=finish_time,
+            )
+        )
+    db_session.flush()
+    return external_key
+
+
+def test_unique_participants_skips_unknown_protocol_rows(db_session: Any) -> None:
+    """«Уникальных участников» — люди, а не безымянные строки протокола.
+
+    Репорт 20.09.2026 из Шадринска: на карточке локации стояло 1104 участника,
+    а 5 вёрст показывали 922. Разницу давали 183 строки «НЕИЗВЕСТНЫЙ»: под
+    каждую заводится одноразовая личность с ключом unknown:<локация>:<дата>:<место>,
+    и счётчик считал её отдельным человеком.
+    """
+    slug = _seed_unknown_rows_location(db_session)
+
+    payload = location_page_service.build_location_page(db_session, slug, use_cache=False)
+
+    assert payload is not None
+    stats = payload["stats"]
+    assert stats["unique_participants"] == 1
+    # Число финишей не трогаем: оно считается по протоколу и сходится с 5 вёрст.
+    assert stats["finishers_total"] == 4

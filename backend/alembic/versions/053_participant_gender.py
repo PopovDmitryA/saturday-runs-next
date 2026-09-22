@@ -15,7 +15,7 @@
 
 Данные заливает отдельный батчевый скрипт (свои коммиты, сайт живой):
 
-    docker compose exec api python scripts/backfill_participant_gender.py
+    docker compose exec api python scripts/archive/backfill_participant_gender.py
 
 До бэкфилла колонка пустая, и агрегаты главной покажут всех как «пол неизвестен»
 — поэтому скрипт надо прогнать сразу после миграции.

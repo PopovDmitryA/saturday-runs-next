@@ -45,8 +45,8 @@
 | **этот файл** `docs/runpark/README.md` | Обзор для агентов |
 | [`database_views.md`](./database_views.md) | Контракт view v1.0 (поля, типы, связи) |
 | [`database_views.sql`](./database_views.sql) | DDL-шаблоны view `runpark_export.*` |
-| [`../legacy_etl_mapping.md`](../legacy_etl_mapping.md) § | «RunPark events/runs — только локации» |
-| [`../deploy_and_migration_plan.md`](../deploy_and_migration_plan.md) | RunPark не в legacy БД; import scripts |
+| [`../archive/legacy_etl_mapping.md`](../archive/legacy_etl_mapping.md) § | «RunPark events/runs — только локации» |
+| [`../archive/deploy_and_migration_plan.md`](../archive/deploy_and_migration_plan.md) | RunPark не в legacy БД; import scripts |
 
 ### Данные (исходники маппинга)
 

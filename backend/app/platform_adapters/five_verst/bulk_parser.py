@@ -17,15 +17,21 @@ from app.platform_adapters.canonical import (
     CanonicalRunResult,
     CanonicalVolunteerResult,
 )
+from app.platform_adapters.five_verst import community_section
 from app.platform_adapters.five_verst.http import BASE_URL, NotFoundError, fetch_html, source_hash  # noqa: F401
 from app.platform_adapters.five_verst.location_description import (
     parse_course_description,
     parse_schedule_text,
 )
+from app.platform_adapters.five_verst.result_keys import (
+    normalize_role_key,
+    run_result_key,
+    unregistered_volunteer_result_key,
+    volunteer_result_key,
+)
 
 DATE_IN_URL_RE = re.compile(r"/results/(\d{2}\.\d{2}\.\d{4})/")
 USERSTATS_ID_RE = re.compile(r"/userstats/(\d+)")
-PARK_HOME_RE = re.compile(r"^https://5verst\.ru/([a-z0-9]+)/$", re.I)
 FIVE_VERST_SLUG_RE = re.compile(r"^https://5verst\.ru/([a-z0-9]+)/?$", re.I)
 EVENTS_PAGE_URL = f"{BASE_URL}/events/"
 LATEST_RESULTS_URL = f"{BASE_URL}/results/latest/"
@@ -67,15 +73,6 @@ class LocationRegistryStatus(str, enum.Enum):
 
 
 @dataclass(frozen=True)
-class ParsedLocationRef:
-    slug: str
-    name: str
-    city: str | None
-    country: str | None
-    source_url: str
-
-
-@dataclass(frozen=True)
 class ParsedRegistryEntry:
     slug: str
     name: str
@@ -83,21 +80,16 @@ class ParsedRegistryEntry:
     city_group: str | None
     status: LocationRegistryStatus
     status_note: str | None = None
+    # Текст организатора из блока отмен на /events/ («Проведение регионального
+    # мероприятия в это время»). У s95 причина живёт плашкой на странице
+    # площадки, у 5 вёрст — одной строкой в общем списке отмен.
+    cancel_reason: str | None = None
 
 
 @dataclass(frozen=True)
 class ParsedEventsPage:
     entries: list[ParsedRegistryEntry]
     saturday_cancellations: list[ParsedRegistryEntry]
-
-
-@dataclass(frozen=True)
-class ParsedEventRow:
-    event_number: int | None
-    event_date: date
-    finishers_count: int | None
-    volunteers_count: int | None
-    source_url: str
 
 
 def _parse_ru_date(value: str) -> date:
@@ -130,6 +122,63 @@ def slug_from_href(href: str) -> str | None:
     return slug
 
 
+# Строка блока отмен на /events/: «<a>Пенза</a> отменён по причине: Проведение
+# регионального мероприятия в это время.<br>». Причина необязательна — бывает и
+# просто «отменён». Её мы и достаём: в списке площадок (li с пометкой «(отмена)»)
+# текста причины нет вовсе.
+CANCEL_REASON_RE = re.compile(r"по\s+причин[еы]\s*:?\s*(.+)", re.I | re.S)
+# Причина — свободный текст организатора; на странице локации это одна строка.
+CANCEL_REASON_MAX_LEN = 400
+
+
+def _cancel_reason_from_tail(text: str) -> str | None:
+    match = CANCEL_REASON_RE.search(text)
+    if not match:
+        return None
+    reason = re.sub(r"\s+", " ", match.group(1)).strip(" .;—-")
+    if not reason:
+        return None
+    return reason[:CANCEL_REASON_MAX_LEN].strip()
+
+
+def _parse_cancel_list(soup: BeautifulSoup) -> dict[str, tuple[str, str | None]]:
+    """Блок отмен ближайшей субботы: slug → (название, причина).
+
+    Разбираем по узлам, а не по тексту целиком: площадок в блоке бывает
+    несколько, они разделены <br>, и причина одной не должна утечь к соседней.
+    """
+    block = soup.select_one("div.cancel-list")
+    if block is None:
+        return {}
+
+    found: dict[str, tuple[str, str | None]] = {}
+    slug: str | None = None
+    name = ""
+    tail: list[str] = []
+
+    def flush() -> None:
+        nonlocal slug, tail
+        if slug is not None:
+            found[slug] = (name, _cancel_reason_from_tail(" ".join(tail)))
+        slug = None
+        tail = []
+
+    for node in block.children:
+        if isinstance(node, Tag) and node.name == "a" and node.get("href"):
+            flush()
+            slug = slug_from_href(node["href"])
+            name = node.get_text(strip=True)
+            continue
+        if isinstance(node, Tag) and node.name == "br":
+            flush()
+            continue
+        text = node.get_text(" ", strip=True) if isinstance(node, Tag) else str(node).strip()
+        if text and slug is not None:
+            tail.append(text)
+    flush()
+    return found
+
+
 def _registry_status_from_li_text(text: str) -> tuple[LocationRegistryStatus, str | None]:
     lowered = text.lower()
     if "(отмена)" in lowered:
@@ -152,6 +201,7 @@ def parse_events_page_html(html: str) -> ParsedEventsPage:
     soup = BeautifulSoup(html, "html.parser")
     entries_by_slug: dict[str, ParsedRegistryEntry] = {}
     saturday_cancellations: list[ParsedRegistryEntry] = []
+    cancel_list = _parse_cancel_list(soup)
 
     for block in soup.select("div.events-columns div.event-block"):
         city_group: str | None = None
@@ -175,25 +225,21 @@ def parse_events_page_html(html: str) -> ParsedEventsPage:
                 city_group=city_group,
                 status=status,
                 status_note=status_note,
+                cancel_reason=cancel_list.get(slug, (None, None))[1],
             )
 
-    cancel_list = soup.select_one("div.cancel-list")
-    if cancel_list is not None:
-        for link in cancel_list.find_all("a", href=True):
-            slug = slug_from_href(link["href"])
-            if slug is None:
-                continue
-            name = link.get_text(strip=True)
-            saturday_cancellations.append(
-                ParsedRegistryEntry(
-                    slug=slug,
-                    name=name,
-                    source_url=_location_url(slug),
-                    city_group=None,
-                    status=LocationRegistryStatus.cancelled,
-                    status_note="отмена на ближайшую субботу",
-                )
+    for slug, (name, reason) in cancel_list.items():
+        saturday_cancellations.append(
+            ParsedRegistryEntry(
+                slug=slug,
+                name=name,
+                source_url=_location_url(slug),
+                city_group=None,
+                status=LocationRegistryStatus.cancelled,
+                status_note="отмена на ближайшую субботу",
+                cancel_reason=reason,
             )
+        )
 
     entries = sorted(entries_by_slug.values(), key=lambda item: item.slug)
     return ParsedEventsPage(entries=entries, saturday_cancellations=saturday_cancellations)
@@ -448,22 +494,6 @@ def fetch_event_summaries(
     return parse_event_summaries_html(html, slug, location_name, limit=limit), html
 
 
-def parse_events_all_html(html: str, slug: str, location_name: str, limit: int | None = None) -> list[CanonicalEvent]:
-    summaries = parse_event_summaries_html(html, slug, location_name, limit=limit)
-    return [
-        CanonicalEvent(
-            external_event_key=summary.external_event_key,
-            event_date=summary.event_date,
-            location_external_key=summary.location_external_key,
-            location_name=summary.location_name,
-            title=f"{summary.location_name} #{summary.event_number}",
-            event_number=summary.event_number,
-            source_url=summary.source_url,
-        )
-        for summary in summaries
-    ]
-
-
 def fetch_events(slug: str, location_name: str, limit: int | None = None) -> tuple[list[CanonicalEvent], str]:
     summaries, html = fetch_event_summaries(slug, location_name, limit=limit)
     events = [
@@ -677,7 +707,7 @@ def parse_run_protocol_html(
         # показывался как 193 вместо 195. По всей базе 5 вёрст не хватало 4473
         # строк в 2972 протоколах.
         is_unknown = external_user_id is None
-        if is_unknown:
+        if external_user_id is None:
             external_user_id = f"unknown:{slug}:{event_date.isoformat()}:{position}"
             participant_name = participant_name or "НЕИЗВЕСТНЫЙ"
         elif participant_name is None:
@@ -690,7 +720,7 @@ def parse_run_protocol_html(
 
         results.append(
             CanonicalRunResult(
-                external_result_key=f"{slug}:{event_date.isoformat()}:{external_user_id}",
+                external_result_key=run_result_key(slug, event_date, external_user_id),
                 event_date=event_date,
                 external_user_id=external_user_id,
                 participant_name=participant_name,
@@ -745,10 +775,12 @@ def fetch_event_protocol(
 # --- Старты сообществ (/starti-soobshchestv/) -------------------------------
 # Разовые старты, которых нет ни в реестре /events/, ни среди площадок: у них
 # нет страницы /{slug}/results/all/, только один протокол. 5 вёрст засчитывает
-# их финиши в личный счётчик человека, поэтому мы их собираем — но площадками
-# не считаем (см. app/services/community_events.py).
-COMMUNITY_SECTION = "starti-soobshchestv"
-COMMUNITY_URL_RE = re.compile(rf"/{COMMUNITY_SECTION}/([a-z0-9-]+)/?", re.I)
+# их финиши в личный счётчик человека, поэтому мы их собираем — но площадкой
+# ни один из них не считаем: все они живут одной локацией-серией «Старты
+# сообществ», а собственное имя старта уходит в заголовок события
+# (см. app/services/series_locations.py).
+COMMUNITY_SECTION = community_section.SECTION_SLUG
+COMMUNITY_URL_RE = community_section.SECTION_URL_RE
 RU_MONTHS = {
     "января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6,
     "июля": 7, "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12,
@@ -770,7 +802,7 @@ class CommunityEventPage:
 
 
 def community_event_url(slug: str) -> str:
-    return f"{BASE_URL}/{COMMUNITY_SECTION}/{slug}"
+    return community_section.event_url(slug)
 
 
 def parse_community_entries_html(html: str) -> dict[str, str]:
@@ -922,10 +954,6 @@ def fetch_run_protocol(
     ), html
 
 
-def _normalize_role_key(role: str) -> str:
-    return re.sub(r"[^\w]+", "_", role.lower(), flags=re.UNICODE).strip("_") or "volunteer"
-
-
 def parse_volunteers_from_event_html(
     html: str,
     *,
@@ -997,9 +1025,11 @@ def _parse_volunteer_table(
             participant_name = _unregistered_volunteer_name(unregistered_cell)
 
         role = cells[-1].get_text(" ", strip=True) or "volunteer"
-        role_key = _normalize_role_key(role)
 
-        if unregistered:
+        # «or ... is None» — тождественно `if unregistered`: строки без id и без
+        # пометки отсечены выше. Написано явно, чтобы в ветке else было видно,
+        # что id уже не пустой.
+        if unregistered or external_user_id is None:
             # «НЕИЗВЕСТНЫЙ (Нужна регистрация)» — волонтёр без профиля на
             # 5 вёрст. Раньше такие строки выбрасывались, и роль просто
             # исчезала из протокола: у Видного 15.08.2026 в списке не было
@@ -1011,12 +1041,12 @@ def _parse_volunteer_table(
             unregistered_seen += 1
             # Ключ по имени, когда оно есть: переставили строки местами — запись
             # осталась той же. Безымянных различаем только порядковым номером.
-            who = _normalize_role_key(participant_name) if participant_name else f"n{unregistered_seen}"
-            external_result_key = (
-                f"{slug}:{event_date.isoformat()}:vol:unregistered:{who}:{role_key}"
+            who = normalize_role_key(participant_name) if participant_name else f"n{unregistered_seen}"
+            external_result_key = unregistered_volunteer_result_key(
+                slug, event_date, who, role
             )
         else:
-            external_result_key = f"{slug}:{event_date.isoformat()}:vol:{external_user_id}:{role_key}"
+            external_result_key = volunteer_result_key(slug, event_date, external_user_id, role)
 
         results.append(
             CanonicalVolunteerResult(
@@ -1139,8 +1169,3 @@ def parse_latest_results_html(html: str, *, limit: int | None = None) -> list[Ca
 def fetch_latest_results(*, limit: int | None = None) -> tuple[list[CanonicalEventSummary], str]:
     html = fetch_html(LATEST_RESULTS_URL)
     return parse_latest_results_html(html, limit=limit), html
-
-
-def list_park_slugs(limit: int | None = None) -> list[str]:
-    """Deprecated alias: registry slugs from /events/ (not /parks/)."""
-    return list_location_slugs(limit=limit)

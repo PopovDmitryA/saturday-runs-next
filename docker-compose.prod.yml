@@ -1,12 +1,22 @@
 # Production on server: host PostgreSQL, no published DB/Redis ports, LK nginx on 127.0.0.1:8080.
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# depends_on у api и воркеров переопределяется целиком через `!override`
+# (Compose ≥ 2.24.4): postgres на проде живёт на хосте, ждать надо только
+# redis. До 13.09.2026 стоял `!reset` — он обнуляет атрибут, а мапу под ним
+# Compose отбрасывает: в итоговом конфиге (`docker compose … config`) у api и
+# воркеров depends_on не было вовсе, и после перезагрузки они стартовали
+# наперегонки с redis.
 
 services:
   postgres:
     profiles: ["dev-db"]
 
   redis:
-    ports: !override []
+    # Брокер общий с воркерами домашнего сервера, поэтому публикуем — но только
+    # на адрес из REDIS_BIND (у нас это tailnet-адрес прода), не на 0.0.0.0.
+    ports: !override
+      - "${REDIS_BIND:-127.0.0.1}:6379:6379"
 
   api:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
@@ -20,13 +30,16 @@ services:
       # в ~2 минуты, так что 180s не мешает живым страницам, но не даёт одному
       # сорвавшемуся запросу держать слот пула часами (см. app/db/session.py).
       DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-180s}
-    ports: []
+    # !override обязателен: голый `ports: []` списки не затирает, а склеивает,
+    # поэтому базовый "8000:8000" оставался и api висел на 0.0.0.0 мимо nginx
+    # (проверено 17.09.2026 снаружи: http://<прод>:8000/health отдавал 200).
+    ports: !override []
     volumes:
       - ./.env:/app/.env:ro
       - ./data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -48,7 +61,7 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -60,7 +73,7 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -72,7 +85,24 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
+      redis:
+        condition: service_healthy
+
+  # Свежесть 5 вёрст — свой воркер, чтобы latest не ждал фон (см.
+  # docker-compose.yml, worker-five-verst-fresh). Живёт на домашнем сервере,
+  # прод его гасит вместе с остальными домашними (HOME_SERVICES в
+  # scripts/remote_deploy.sh), но описание нужно здесь: без него Compose не
+  # соберёт проект вовсе.
+  worker-five-verst-fresh:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./.env:/app/.env:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -86,7 +116,7 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -99,7 +129,7 @@ services:
       - ./data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy
 
@@ -110,6 +140,18 @@ services:
     volumes:
       - ./.env:/app/.env:ro
       - ./data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !override
+      redis:
+        condition: service_healthy
+
+  worker-warm:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on: !reset
@@ -124,6 +166,6 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    depends_on: !override
       redis:
         condition: service_healthy

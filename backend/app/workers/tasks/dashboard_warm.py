@@ -28,6 +28,7 @@ from app.services.dashboard_service import (
 )
 from app.services.location_records_service import warm_location_progressions
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_WARM_DASHBOARDS
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ def _save_watermark(covered_through: datetime) -> None:
         logger.exception("dashboard warm: watermark write failed")
 
 
-@celery_app.task(name="dashboard_warm.after_sync")
+@celery_app.task(name="dashboard_warm.after_sync", **LIMITS_WARM_DASHBOARDS)
 def warm_dashboards_after_sync(since_iso: str) -> dict[str, object]:
     """Пересчитать дашборды тех, кого затронул синк.
 

@@ -49,77 +49,43 @@ def _fetch(
     JSON-клиент ходил мимо: без паузы, без охлаждения и без учёта банов, то
     есть примерно две трети наших запросов к s95 никем не сдерживались.
     """
-    from app.debug_agent_log import agent_log
-
-    started = time.time()
-    agent_log(
-        location="coordinator.py:_fetch:entry",
-        message="s95 fetch entry",
-        data={"reason": reason, "url_host": url.split("/")[2] if "://" in url else "unknown"},
-        hypothesis_id="A",
-    )
-    try:
+    check_cancelled()
+    check_yield_for_user_sync()
+    _check_ban_cooldown()
+    # Пауза ДО замка — оптимизация: ждать свой интервал, не занимая очередь,
+    # чтобы пользовательский синк не стоял за спящим батчем.
+    wait_for_turn(reason=reason)
+    check_yield_for_user_sync()
+    check_cancelled()
+    with s95_fetch_lock():
         check_cancelled()
-        check_yield_for_user_sync()
-        _check_ban_cooldown()
+        # И ещё раз ПОД замком. Два процесса, отстоявшие паузу одновременно
+        # (воркер и API-превью профиля), по очереди берут замок и без этой
+        # проверки уходили на s95.ru с разницей в секунды — пока первый
+        # качал, второй ждал только замок, а не интервал. Обещанные «15–30 с
+        # между запросами на весь кластер» на деле держались только при
+        # одиночном клиенте; после бана 25.08.2026 это самый вероятный путь
+        # получить его снова. TTL замка (180 с) сон в 30 с покрывает; уступка
+        # пользователю (check_yield) внутри — исключение, замок отпустится.
         wait_for_turn(reason=reason)
-        check_yield_for_user_sync()
         check_cancelled()
-        agent_log(
-            location="coordinator.py:_fetch:after_wait",
-            message="passed ban check and rate wait",
-            data={"reason": reason, "elapsed_ms": int((time.time() - started) * 1000)},
-            hypothesis_id="B",
-        )
-        with s95_fetch_lock():
-            check_cancelled()
-            agent_log(
-                location="coordinator.py:_fetch:lock_acquired",
-                message="s95 fetch lock acquired",
-                data={"reason": reason, "elapsed_ms": int((time.time() - started) * 1000)},
-                hypothesis_id="B",
-            )
-            logger.info("s95 fetch start: %s (%s)", url, reason)
-            try:
-                payload = fetcher(url)
-            except S95BanDetected:
-                until = escalate_ban_cooldown()
-                logger.warning("s95 отказал на %s — охлаждение до %.0f", url, until)
-                raise
-            if is_ban_payload is not None and is_ban_payload(payload):
-                until = escalate_ban_cooldown()
-                agent_log(
-                    location="coordinator.py:_fetch:ban",
-                    message="ban page detected",
-                    data={"reason": reason, "cooldown_until": until},
-                    hypothesis_id="F",
-                )
-                raise S95BanDetected(f"HTTP 403 Forbidden from S95 for {url}")
-            mark_fetch_completed()
-            # Дверь открыта — лестница эскалации обнуляется, иначе один давний
-            # отказ держал бы следующий на ступень выше без причины.
-            clear_ban_cooldown()
-            logger.info("s95 fetch done: %s (%s)", url, reason)
-            agent_log(
-                location="coordinator.py:_fetch:success",
-                message="s95 fetch success",
-                data={"reason": reason, "elapsed_ms": int((time.time() - started) * 1000)},
-                hypothesis_id="A",
-            )
-            return payload
-    except Exception as exc:
-        agent_log(
-            location="coordinator.py:_fetch:error",
-            message="s95 fetch failed",
-            data={
-                "reason": reason,
-                "error_type": type(exc).__name__,
-                "error_msg": str(exc)[:300],
-                "elapsed_ms": int((time.time() - started) * 1000),
-            },
-            hypothesis_id="D",
-        )
-        raise
+        logger.info("s95 fetch start: %s (%s)", url, reason)
+        try:
+            payload = fetcher(url)
+        except S95BanDetected:
+            until = escalate_ban_cooldown()
+            logger.warning("s95 отказал на %s — охлаждение до %.0f", url, until)
+            raise
+        if is_ban_payload is not None and is_ban_payload(payload):
+            until = escalate_ban_cooldown()
+            logger.warning("s95 отдал страницу защиты на %s — охлаждение до %.0f", url, until)
+            raise S95BanDetected(f"HTTP 403 Forbidden from S95 for {url}")
+        mark_fetch_completed()
+        # Дверь открыта — лестница эскалации обнуляется, иначе один давний
+        # отказ держал бы следующий на ступень выше без причины.
+        clear_ban_cooldown()
+        logger.info("s95 fetch done: %s (%s)", url, reason)
+        return payload
 
 
 def fetch_page_html(url: str, *, reason: str = "fetch") -> str:

@@ -9,19 +9,15 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.core.abuse_store import is_telegram_banned
 from app.core.admin import is_admin_user
+
+# Единственная реализация — в core/client_ip.py; здесь только реэкспорт для
+# роутов, которые импортируют её отсюда. До 13.09.2026 тут жила вторая копия,
+# бравшая ПЕРВЫЙ элемент X-Forwarded-For, то есть адрес, который клиент
+# написал сам, — подробности в docstring core/client_ip.py.
+from app.core.client_ip import get_client_ip as get_client_ip
 from app.core.session import get_session_user_id
 from app.db.session import get_db
 from app.models import User
-from app.schemas.auth import UserResponse
-
-
-def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client is None:
-        return "unknown"
-    return request.client.host
 
 
 def get_optional_session_user_id(
@@ -55,10 +51,6 @@ def get_current_user(
         if is_telegram_banned(user.telegram_id) and not is_admin_user(user, settings):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account temporarily suspended")
     return user
-
-
-def get_current_user_response(user: Annotated[User, Depends(get_current_user)]) -> UserResponse:
-    return UserResponse.model_validate(user)
 
 
 def get_optional_user(

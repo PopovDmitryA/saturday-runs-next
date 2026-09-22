@@ -11,7 +11,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 from app.config import get_settings
-from app.parkrun.errors import ParkrunBanDetected
+from app.parkrun.errors import ParkrunBanDetected, ParkrunExitUnavailable
 from app.parkrun.fetch.captcha_state import (
     clear_captcha_pending,
     escalate_ban_cooldown,
@@ -90,6 +90,10 @@ class ParkrunDaemonSession:
         self.use_httpx = use_httpx
         self.fast_delay_seconds = fast_delay_seconds
         self.httpx_aborted = False
+        # Почему пачка остановлена: "protection" (нас не пустили) или "exits"
+        # (наши выходы молчат). Демон печатает разные сообщения — иначе мёртвый
+        # VPN выглядит в логе как бан parkrun, и лечат не то.
+        self.abort_reason: str | None = None
         self._httpx_client: httpx_module.Client | None = None
         # httpx + решатель капчи (CLIP): при WAF поднимаем headless-браузер,
         # решаем капчу, снимаем aws-waf-token и продолжаем httpx с ним. Так
@@ -403,24 +407,59 @@ class ParkrunDaemonSession:
         # при защите зовём решателя и повторяем. Не помогло — берём следующий
         # выход. Раньше здесь всегда останавливалась вся пачка, из-за чего
         # очередь и требовала человека.
+        import httpx
+
         tries = max(1, len(self._proxies))
         inspection = None
+        protection_seen = False
+        transport_errors: list[str] = []
         for proxy_try in range(tries):
-            html, inspection = self._fetch_via_current_proxy(url)
-            if html is not None:
-                return html
+            exit_label = self._proxies.current() or "прямое подключение"
+            dead_exit = False
+            try:
+                html, inspection = self._fetch_via_current_proxy(url)
+            except httpx.TransportError as exc:
+                # Выход не ответил: туннель локально слушает, а наружу не ходит
+                # (мёртвая нода VPN, протухший ключ, отвалившийся провайдер).
+                # Это НЕ защита parkrun — он этого запроса не видел. Раньше
+                # такая ошибка летела наружу мимо пула: строка падала в ошибку,
+                # выход не менялся, и весь остаток пачки шёл через тот же
+                # мёртвый туннель («ошибки: 53» при нуле обработанных).
+                dead_exit = True
+                transport_errors.append(f"{exit_label}: {exc}")
+                logger.warning("parkrun httpx: выход %s не ответил: %s", exit_label, exc)
+            else:
+                if html is not None:
+                    return html
+                protection_seen = True
             if proxy_try + 1 < tries:
                 self._proxies.rotate()
                 self._rebuild_transport()
+                reason = "Выход не отвечает" if dead_exit else "Защита на выходе"
                 self.show_status(
-                    f"Защита на выходе — меняю на {self._proxies.current()} "
+                    f"{reason} — меняю на {self._proxies.current()} "
                     f"({proxy_try + 2} из {tries})…"
                 )
+
+        if transport_errors and not protection_seen:
+            # Ни один выход не ответил, и защиты мы при этом не видели — дело в
+            # нашей сети. Капчу не поднимаем и лестницу банов не двигаем: иначе
+            # прогон уходит в кулдаун из-за собственного мёртвого VPN.
+            self.httpx_aborted = True
+            self.abort_reason = "exits"
+            logger.warning(
+                "parkrun httpx: ни один из %d выходов не ответил на %s", tries, url
+            )
+            raise ParkrunExitUnavailable(
+                f"Ни один из {tries} выходов не ответил на {url}. "
+                f"Первые отказы: {'; '.join(transport_errors[:3])}"
+            )
 
         summary = inspection.summary if inspection is not None else "unknown"
         set_captcha_pending(f"httpx:{summary}")
         escalate_ban_cooldown()
         self.httpx_aborted = True
+        self.abort_reason = "protection"
         logger.warning(
             "parkrun httpx: protection on %s (%s) — %s",
             url,

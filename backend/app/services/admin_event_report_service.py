@@ -16,7 +16,9 @@ from uuid import UUID
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.age_groups import age_group_sql  # noqa: F401 — реэкспорт: его берёт records_digest_service
 from app.models import Event, LocationCatalogLink
+from app.services.start_weather_service import weather_for_event, weather_line
 from app.volunteer_role_taxonomy import canonical_volunteer_role, platform_role_label, strip_role_counters
 
 # Глобальные клубные уровни (пробежки и волонтёрства в системе платформы).
@@ -56,6 +58,7 @@ def _counted_unit_sql(table: str) -> str:
     """Что считаем в count(DISTINCT …): пробежки — события, волонтёрства — дни."""
     return volunteer_occasion_sql() if table == "volunteer_results" else "x.event_id"
 
+
 # Подпись в конце поста для рассылок — ссылка на канал автора, не на сайт: кто
 # перейдёт в канал по ссылке, увидит там и новости о сайте run5k.run.
 POST_SIGNATURE = "📊 Статистика подготовлена каналом t.me/popov_way"
@@ -63,16 +66,6 @@ POST_SIGNATURE = "📊 Статистика подготовлена канал�
 # Подпись поста из кабинета организатора: посты пишут оргкоманды от себя,
 # поэтому ссылка на сайт, а не на канал автора (решение Дмитрия 16.08.2026).
 SITE_POST_SIGNATURE = "📊 Статистика подготовлена сайтом run5k.run"
-
-
-def age_group_sql(column: str) -> str:
-    """Чистая возрастная группа без места в группе.
-
-    Протокол 5 вёрст кладёт в run_results.age_category строку вида «М40-44 (2)»,
-    где (2) — место внутри группы на этом забеге. Для ранжирования и вывода
-    нужна только сама группа; parkrun-категории (SM25-29) остаются как есть.
-    """
-    return rf"NULLIF(regexp_replace(coalesce({column}, ''), '\s*\(\d+\)\s*$', ''), '')"
 
 
 def gender_sql(column: str) -> str:
@@ -90,6 +83,7 @@ def gender_sql(column: str) -> str:
 
 
 # ===== Русская морфология для текста поста =====
+
 
 def ru_plural(n: int, forms: tuple[str, str, str]) -> str:
     n_abs = abs(n) % 100
@@ -133,30 +127,6 @@ def fmt_date_ru(value: date) -> str:
 
 # ===== Списки для формы =====
 
-def list_report_locations(db: Session) -> list[dict[str, Any]]:
-    """Локации с хотя бы одним не-тестовым событием, для выпадающего списка."""
-    rows = db.execute(
-        text(
-            f"""
-            SELECT l.id AS location_id,
-                   l.name AS location_name,
-                   l.city AS city,
-                   p.code AS platform_code,
-                   p.name AS platform_name,
-                   count(e.id) AS events_count,
-                   max(e.event_date) AS last_event_date
-            FROM locations l
-            JOIN platforms p ON p.id = l.platform_id
-            JOIN events e ON e.location_id = l.id
-            WHERE NOT e.is_test_event
-              AND e.{NOT_SECONDARY_SQL}
-            GROUP BY l.id, l.name, l.city, p.code, p.name
-            ORDER BY l.name, p.code
-            """
-        )
-    ).mappings()
-    return [dict(row) for row in rows]
-
 
 def list_report_event_dates(db: Session, location_id: UUID) -> list[dict[str, Any]]:
     """Даты событий локации (новые сверху) для выпадающего списка."""
@@ -188,16 +158,13 @@ def list_report_event_dates(db: Session, location_id: UUID) -> list[dict[str, An
 
 # ===== Основной отчёт =====
 
+
 def _catalog_location_ids(db: Session, event: Event) -> tuple[list[UUID], list[UUID], str | None]:
     """Локации той же физической точки: (та же платформа, все платформы, канон. имя).
 
     Через location_catalog_links; если локация не в каталоге — только она сама.
     """
-    own_link = (
-        db.query(LocationCatalogLink)
-        .filter(LocationCatalogLink.location_id == event.location_id)
-        .first()
-    )
+    own_link = db.query(LocationCatalogLink).filter(LocationCatalogLink.location_id == event.location_id).first()
     if own_link is None:
         return [event.location_id], [event.location_id], None
 
@@ -344,9 +311,7 @@ def _volunteer_stat_rows(db: Session, params: dict[str, Any]) -> list[dict[str, 
     )
 
 
-def _new_canonical_roles(
-    roles: list[str] | None, prev_roles: list[str] | None, platform_code: str = ""
-) -> list[str]:
+def _new_canonical_roles(roles: list[str] | None, prev_roles: list[str] | None, platform_code: str = "") -> list[str]:
     """Ярлыки сегодняшних ролей, которых не было в истории волонтёра.
 
     Сравнение по каноническим ключам таксономии, а не по сырым строкам:
@@ -370,9 +335,7 @@ def _new_canonical_roles(
     return new_labels
 
 
-def _event_context(
-    db: Session, event_id: UUID
-) -> tuple[Event, dict[str, Any], str | None] | None:
+def _event_context(db: Session, event_id: UUID) -> tuple[Event, dict[str, Any], str | None] | None:
     """Событие + параметры исторических запросов (общие для отчёта и свода)."""
     event = (
         db.query(Event)
@@ -394,7 +357,11 @@ def _event_context(
 
 
 def build_event_report(
-    db: Session, event_id: UUID, *, post_signature: str = POST_SIGNATURE
+    db: Session,
+    event_id: UUID,
+    *,
+    post_signature: str = POST_SIGNATURE,
+    names_layout: str = "inline",
 ) -> dict[str, Any] | None:
     context = _event_context(db, event_id)
     if context is None:
@@ -488,42 +455,25 @@ def build_event_report(
                 "name": r["display_name"],
                 "profile_url": r["profile_url"],
             }
-            for r in sorted(rows, key=lambda r: (r["display_name"] or ""))
+            for r in sorted(rows, key=lambda r: r["display_name"] or "")
         ]
 
     newcomers = _people([r for r in runner_rows if r["first_in_system"]])
-    guests = _people(
-        [r for r in runner_rows if r["first_at_location"] and not r["first_in_system"]]
-    )
+    guests = _people([r for r in runner_rows if r["first_at_location"] and not r["first_in_system"]])
     personal_bests = _people([r for r in runner_rows if r["is_pb"] and not r["first_in_system"]])
-    location_bests = _people(
-        [r for r in runner_rows if r["is_location_pb"] and not r["first_at_location"]]
-    )
+    location_bests = _people([r for r in runner_rows if r["is_location_pb"] and not r["first_at_location"]])
     comebacks = _people(
-        [
-            r
-            for r in runner_rows
-            if r["last_run_date"] is not None and r["last_run_date"] <= comeback_threshold
-        ]
+        [r for r in runner_rows if r["last_run_date"] is not None and r["last_run_date"] <= comeback_threshold]
     )
 
     # --- Статистика мероприятия: волонтёры ---
     volunteer_rows = _volunteer_stat_rows(db, params)
     first_volunteers = _people([r for r in volunteer_rows if r["first_volunteering"]])
     first_volunteers_at_location = _people(
-        [
-            r
-            for r in volunteer_rows
-            if r["first_volunteering_at_location"] and not r["first_volunteering"]
-        ]
+        [r for r in volunteer_rows if r["first_volunteering_at_location"] and not r["first_volunteering"]]
     )
     new_role_volunteers = _people(
-        [
-            r
-            for r in volunteer_rows
-            if not r["first_volunteering"]
-            and _new_canonical_roles(r["roles"], r["prev_roles"])
-        ]
+        [r for r in volunteer_rows if not r["first_volunteering"] and _new_canonical_roles(r["roles"], r["prev_roles"])]
     )
 
     # --- Юбилеи в локации и «1 шаг до юбилея» ---
@@ -571,8 +521,7 @@ def build_event_report(
                 "count": r["total"],
             }
             for r in rows
-            if r["participated_today"]
-            and (r["total"] == 10 or (r["total"] >= 25 and r["total"] % 25 == 0))
+            if r["participated_today"] and (r["total"] == 10 or (r["total"] >= 25 and r["total"] % 25 == 0))
         ]
         one_step = [
             {
@@ -722,9 +671,7 @@ def build_event_report(
     prior_max_finishers = max((r["finishers"] for r in prior_events), default=None)
     previous_event = max(prior_events, key=lambda r: r["event_date"], default=None)
     today_finishers = header_row["finishers"] or 0
-    attendance_record = (
-        prior_max_finishers is not None and today_finishers > prior_max_finishers
-    )
+    attendance_record = prior_max_finishers is not None and today_finishers > prior_max_finishers
 
     telegram_contacts = _query(
         db,
@@ -746,6 +693,7 @@ def build_event_report(
             "location_id": event.location_id,
             "location_name": event.location.name,
             "canonical_name": canonical_name,
+            "weather_line": weather_line(weather_for_event(db, event.location_id, event.event_date)),
             "platform_code": event.platform.code,
             "platform_name": event.platform.name,
             "source_url": event.source_url,
@@ -803,20 +751,35 @@ def build_event_report(
         "clubs": {"runs": run_clubs, "volunteering": vol_clubs},
         "global_run_jubilees": global_run_jubilees,
     }
-    report["post_text"] = _build_post_text(report, location_title, signature=post_signature)
+    report["post_text"] = _build_post_text(
+        report, location_title, signature=post_signature, names_layout=names_layout
+    )
     return report
 
 
 # ===== Текст поста для Telegram =====
+
 
 def _join_names(items: list[dict[str, Any]]) -> str:
     return ", ".join(item["name"] or "Неизвестный участник" for item in items)
 
 
 def _build_post_text(
-    report: dict[str, Any], location_title: str, *, signature: str = POST_SIGNATURE
+    report: dict[str, Any],
+    location_title: str,
+    *,
+    signature: str = POST_SIGNATURE,
+    names_layout: str = "inline",
 ) -> str:
+    """Текст поста. names_layout: «inline» — имена в строку через запятую
+    («Клуб 50: А, Б»), «lines» — заголовок и каждое имя своей строкой
+    («Клуб 50:» / «• А» / «• Б») — переключатель кабинета организатора."""
     event = report["event"]
+
+    def _named(title: str, people: list[dict[str, Any]]) -> list[str]:
+        if names_layout == "lines":
+            return [f"{title}:", *(f"• {item['name'] or 'Неизвестный участник'}" for item in people)]
+        return [f"{title}: {_join_names(people)}"]
     header_stats = report["header"]
     platform_label = event["platform_name"]
 
@@ -838,6 +801,8 @@ def _build_post_text(
     ]
     if header_stats["volunteers"]:
         header_lines.append(f"🤝Волонтёров: **{header_stats['volunteers']}**")
+    if event.get("weather_line"):
+        header_lines.append(f"Погода на старте: {event['weather_line']}")
     header = "\n".join(header_lines)
 
     # Рекорды локации
@@ -867,9 +832,7 @@ def _build_post_text(
             )
         if item["gender_qualified"]:
             gender_word = "мужчинам" if item["gender"] == "M" else "женщинам"
-            parts.append(
-                f"{item['gender_rank']}-й результат среди {item['gender_total']} пробежек по {gender_word}"
-            )
+            parts.append(f"{item['gender_rank']}-й результат среди {item['gender_total']} пробежек по {gender_word}")
         if not parts:
             continue
         name = item["name"] or "Неизвестный участник"
@@ -887,9 +850,7 @@ def _build_post_text(
         )
     n = len(stats["guests"])
     if n:
-        stats_lines.append(
-            f"+{n} {ru_plural(n, ('гость', 'гостя', 'гостей'))}, кто ранее не бегал в данной локации"
-        )
+        stats_lines.append(f"+{n} {ru_plural(n, ('гость', 'гостя', 'гостей'))}, кто ранее не бегал в данной локации")
     n = len(stats["personal_bests"])
     if n:
         stats_lines.append(
@@ -916,8 +877,7 @@ def _build_post_text(
     n = len(stats["new_role_volunteers"])
     if n:
         stats_lines.append(
-            f"+{n} {ru_plural(n, ('человек', 'человека', 'человек'))}, "
-            f"кто волонтёрил на новой для себя роли"
+            f"+{n} {ru_plural(n, ('человек', 'человека', 'человек'))}, кто волонтёрил на новой для себя роли"
         )
     stats_block = "**📊Статистика мероприятия:**\n" + "\n".join(stats_lines) if stats_lines else ""
 
@@ -927,8 +887,9 @@ def _build_post_text(
         for item in items:
             by_count.setdefault(item["count"], []).append(item)
         return [
-            f"{count} {word} в локации: {_join_names(people)}"
+            line
             for count, people in sorted(by_count.items(), reverse=True)
+            for line in _named(f"{count} {word} в локации", people)
         ]
 
     jub_lines = _milestone_lines(report["location_milestones"]["runs"], "пробежек")
@@ -941,16 +902,15 @@ def _build_post_text(
         for item in items:
             by_next.setdefault(item["next_milestone"], []).append(item)
         return [
-            f"1 {word} до {next_n} в локации: {_join_names(people)}"
+            line
             for next_n, people in sorted(by_next.items(), reverse=True)
+            for line in _named(f"1 {word} до {next_n} в локации", people)
         ]
 
     one_step_lines = _one_step_lines(report["one_step"]["runs"], "пробежка")
     one_step_lines += _one_step_lines(report["one_step"]["volunteering"], "волонтёрство")
     one_step_block = (
-        "**✌1 шаг до юбилейного участия внутри локации:**\n" + "\n".join(one_step_lines)
-        if one_step_lines
-        else ""
+        "**✌1 шаг до юбилейного участия внутри локации:**\n" + "\n".join(one_step_lines) if one_step_lines else ""
     )
 
     # Клубы
@@ -959,8 +919,7 @@ def _build_post_text(
         for item in items:
             by_level.setdefault(item["count"], []).append(item)
         return [
-            f"🌟Клуб {level} {label}: {_join_names(people)}"
-            for level, people in sorted(by_level.items())
+            line for level, people in sorted(by_level.items()) for line in _named(f"🌟Клуб {level} {label}", people)
         ]
 
     club_lines = _club_lines(report["clubs"]["runs"], f"пробежек в системе {platform_label}")
@@ -969,7 +928,10 @@ def _build_post_text(
 
     # Глобальные юбилейные пробежки (кратные 25, кроме клубных уровней)
     jubilee_items = [f"{item['name']} ({item['count']} пробежек)" for item in report["global_run_jubilees"]]
-    jub_extra_block = "🎖️**Юбилейные пробежки:**\n" + ", ".join(jubilee_items) if jubilee_items else ""
+    jubilee_body = (
+        "\n".join(f"• {item}" for item in jubilee_items) if names_layout == "lines" else ", ".join(jubilee_items)
+    )
+    jub_extra_block = "🎖️**Юбилейные пробежки:**\n" + jubilee_body if jubilee_items else ""
 
     blocks = [
         header,
@@ -1028,9 +990,7 @@ def _volunteer_role_counts(db: Session, params: dict[str, Any]) -> dict[str, dic
         if canonical is None:
             continue
         participant_key = str(row["participant_id"])
-        events_by_role.setdefault(participant_key, {}).setdefault(canonical.key, set()).add(
-            str(row["event_id"])
-        )
+        events_by_role.setdefault(participant_key, {}).setdefault(canonical.key, set()).add(str(row["event_id"]))
     return {
         participant_key: {role_key: len(event_ids) for role_key, event_ids in roles.items()}
         for participant_key, roles in events_by_role.items()
@@ -1070,9 +1030,7 @@ def build_event_svod(db: Session, event_id: UUID) -> dict[str, Any] | None:
     )[0]["cnt"]
 
     runners: list[dict[str, Any]] = []
-    for row in sorted(
-        runner_rows, key=lambda r: (r["position"] is None, r["position"] or 0)
-    ):
+    for row in sorted(runner_rows, key=lambda r: (r["position"] is None, r["position"] or 0)):
         location_runs = int(row["location_runs_count"])
         platform_runs = int(row["platform_runs_count"])
         runners.append(
@@ -1088,10 +1046,7 @@ def build_event_svod(db: Session, event_id: UUID) -> dict[str, Any] | None:
                 "first_at_location": bool(row["first_at_location"]),
                 "is_pb": bool(row["is_pb"]),
                 "is_location_pb": bool(row["is_location_pb"]),
-                "comeback": (
-                    row["last_run_date"] is not None
-                    and row["last_run_date"] <= comeback_threshold
-                ),
+                "comeback": (row["last_run_date"] is not None and row["last_run_date"] <= comeback_threshold),
                 "location_runs_count": location_runs,
                 "platform_runs_count": platform_runs,
                 "location_milestone": _milestone_value(location_runs),
@@ -1103,7 +1058,7 @@ def build_event_svod(db: Session, event_id: UUID) -> dict[str, Any] | None:
 
     platform_code = event.platform.code if event.platform else ""
     volunteers: list[dict[str, Any]] = []
-    for row in sorted(volunteer_rows, key=lambda r: (r["display_name"] or "")):
+    for row in sorted(volunteer_rows, key=lambda r: r["display_name"] or ""):
         location_vols = int(row["location_vol_count"])
         platform_vols = int(row["platform_vol_count"])
         participant_key = str(row["participant_id"])
@@ -1162,9 +1117,7 @@ def build_event_svod(db: Session, event_id: UUID) -> dict[str, Any] | None:
     from app.services.location_catalog_service import LocationCatalogIndex
     from app.services.organizer_service import home_participant_ids
 
-    identity_key = LocationCatalogIndex(db).canonical_identity_key(
-        event.location, event.platform.code
-    )
+    identity_key = LocationCatalogIndex(db).canonical_identity_key(event.location, event.platform.code)
     candidate_ids = {row["participant_id"] for row in runners if row["participant_id"]} | {
         row["participant_id"] for row in volunteers if row["participant_id"]
     }
@@ -1188,6 +1141,7 @@ def build_event_svod(db: Session, event_id: UUID) -> dict[str, Any] | None:
             "platform_code": event.platform.code,
             "platform_name": event.platform.name,
             "source_url": event.source_url,
+            "weather_line": weather_line(weather_for_event(db, event.location_id, event.event_date)),
             "finishers_count": finishers_total,
             "volunteers_count": volunteers_total,
         },

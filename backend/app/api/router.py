@@ -27,7 +27,6 @@ from app.api.routes import (
     runs,
     settings,
     stats,
-    sweep_hq,
     sync,
     unified_protocol,
 )
@@ -61,4 +60,3 @@ api_router.include_router(settings.router)
 api_router.include_router(public_profiles.router)
 api_router.include_router(internal_bot.router)
 api_router.include_router(reports.router)
-api_router.include_router(sweep_hq.router)

@@ -7,9 +7,10 @@ from app.models import SyncJob, SyncJobTrigger
 from app.services.sync_job_service import fail_sync_job
 from app.sync.parkrun_user_sync import run_parkrun_user_sync
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_MEDIUM
 
 
-@celery_app.task(name="parkrun_sync.run_user_sync", queue="parkrun")
+@celery_app.task(name="parkrun_sync.run_user_sync", queue="parkrun", **LIMITS_MEDIUM)
 def parkrun_user_sync_task(
     user_id: str,
     trigger: str,
@@ -43,7 +44,7 @@ def parkrun_user_sync_task(
         db.close()
 
 
-@celery_app.task(name="parkrun_sync.process_pending_queue", queue="parkrun")
+@celery_app.task(name="parkrun_sync.process_pending_queue", queue="parkrun", **LIMITS_MEDIUM)
 def parkrun_process_pending_queue_task() -> dict[str, object]:
     """Серверный разбор очереди profile_fetch_pending (parkrun).
 

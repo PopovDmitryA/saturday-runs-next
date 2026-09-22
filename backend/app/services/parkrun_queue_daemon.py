@@ -276,12 +276,20 @@ def run_parkrun_queue_daemon(
                 db_connection_failures = 0  # обычная ошибка фетча — не в счёт
 
         if getattr(session, "httpx_aborted", False):
-            # --no-browser словил защиту WAF — дальше пачку не гоняем, нет
-            # смысла добивать оставшиеся N строк той же блокировкой.
-            cline(
-                f"[parkrun queue] --no-browser: обнаружена защита, "
-                f"эксперимент остановлен на {index}/{total}."
-            )
+            # --no-browser упёрся: либо защита WAF, либо молчат наши выходы.
+            # Дальше пачку не гоняем — нет смысла добивать оставшиеся N строк
+            # тем же отказом. Причину называем явно: лечатся они по-разному.
+            if getattr(session, "abort_reason", None) == "exits":
+                cline(
+                    f"[parkrun queue] ОСТАНОВКА: ни один выход не ответил "
+                    f"(мёртвые туннели VPN), прогон прерван на {index}/{total}. "
+                    f"parkrun тут ни при чём — проверь выходы."
+                )
+            else:
+                cline(
+                    f"[parkrun queue] --no-browser: обнаружена защита, "
+                    f"эксперимент остановлен на {index}/{total}."
+                )
             break
 
         if index < total:

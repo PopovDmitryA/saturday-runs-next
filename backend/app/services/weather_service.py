@@ -15,8 +15,9 @@ API −47…−48°, станция −49.0° — сетке можно вери
   площадок субботы кончаются через INACTIVE_TAIL_DAYS после последнего старта;
 * час старта — по расписанию локации (schedule_parsed описания 5 вёрст),
   иначе 09:00 местного (S95 всегда 9:00, у parkrun РФ расписания нет);
-* окна осадков вокруг старта: «бежали под дождём» старт−1ч…старт+2ч,
-  «трасса мокрая» старт−4ч…старт−1ч.
+* окна осадков вокруг старта: «бежали под дождём» — час забега (старт…старт+1ч),
+  «трасса мокрая» — три часа до старта. В обоих считается ЖИДКИЙ дождь: снег
+  из суммы вычитается (см. liquid_window).
 
 Лимиты API считаются по весу: 1 вызов = 1 локация × 2 недели × 10 переменных,
 год с 23 переменными стоил ~60, и 10 000 в сутки кончались на 30 локациях.
@@ -48,10 +49,30 @@ from app.services.location_schedule_service import start_time_for_date
 logger = logging.getLogger(__name__)
 
 OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
-MODEL = "best_match"
+# Прогнозная модель отдаёт и прошедшие дни (до 92 суток): из неё берём
+# субботу в саму субботу, пока архив не догнал.
+OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+# Лестница источников: чем ниже строка, тем окончательнее.
+#   forecast — прогнозная модель, снимок субботним вечером;
+#   archive  — best_match, склейка ERA5 с оперативной моделью (доступна сразу);
+#   era5     — чистый реанализ, догоняет с отставанием ~5 суток и на этом
+#              останавливается: дальше строка не меняется.
+# Замер 17.09.2026 на 30 локациях (станция ближе 6 км, 4086 сверок): средняя
+# ошибка era5 0.98° против 1.20° у best_match, и era5 точнее на 28 локациях
+# из 30. По осадкам разницы нет — их сетка размазывает у обеих моделей.
+FINAL_MODEL = "era5"
+MODEL_FORECAST_NAME = "best_match"
+FALLBACK_MODEL = "best_match"
+SOURCE_ERA5 = "era5"
+SOURCE_ARCHIVE = "archive"
+SOURCE_FORECAST = "forecast"
 DEFAULT_START_TIME = time(9, 0)
-# Реанализ догоняет реальность с задержкой ~2 суток (05.09 был доступен 07.09).
+# Оперативная склейка (best_match) доступна почти сразу: 2 суток хватает.
 ARCHIVE_LAG_DAYS = 2
+# Чистый ERA5 отстаёт на 5 суток (проверено 17.09.2026: при «сегодня» 16.09
+# последние данные за 11.09). Пока он не догнал, держим строку на best_match и
+# перезаписываем её следующим прогоном.
+ERA5_LAG_DAYS = 6
 # Площадка без стартов дольше этого срока считается закрытой: субботы после
 # последнего старта + хвост не собираем.
 INACTIVE_TAIL_DAYS = 45
@@ -90,10 +111,28 @@ class CollectStats:
     rows_written: int = 0
     api_calls: int = 0
     skipped_no_data: int = 0
+    #: Вес запросов в единицах Open-Meteo (см. call_weight) — по нему считается
+    #: суточный лимит, а не по числу HTTP-запросов.
+    weighted_calls: int = 0
+    #: Прогон упёрся не в лимит сервиса, а в наш собственный дневной бюджет.
+    stopped_by_budget: bool = False
 
 
 class RateLimitDaily(RuntimeError):
     """Суточный лимит Open-Meteo исчерпан — продолжать сегодня бессмысленно."""
+
+
+# Open-Meteo считает лимит не запросами, а «вызовами»: один вызов — это две
+# недели по десяти переменным. Запрос на год стоит 27 вызовов, поэтому счётчик
+# HTTP-запросов о расходе суточного лимита не говорит ничего.
+DAYS_PER_CALL = 14
+
+
+def call_weight(start: date, end: date) -> int:
+    """Во сколько вызовов Open-Meteo обойдётся запрос за этот диапазон дат."""
+
+    days = (end - start).days + 1
+    return max(1, -(-days // DAYS_PER_CALL))
 
 
 # --------------------------------------------------------------------------- scope
@@ -149,9 +188,24 @@ def event_dates_for_location(db: Session, location_id: UUID) -> list[date]:
     return [row[0] for row in db.execute(stmt).all()]
 
 
-def stored_dates_for_location(db: Session, location_id: UUID) -> set[date]:
-    stmt = select(StartWeather.obs_date).where(StartWeather.location_id == location_id)
-    return {row[0] for row in db.execute(stmt).all()}
+def stored_dates_for_location(db: Session, location_id: UUID) -> dict[date, str]:
+    """Даты, уже лежащие в таблице, → источник строки (archive / forecast)."""
+
+    stmt = select(StartWeather.obs_date, StartWeather.source).where(StartWeather.location_id == location_id)
+    return {row[0]: row[1] for row in db.execute(stmt).all()}
+
+
+def dates_to_fetch(dates: Sequence[date], stored: dict[date, str], *, preliminary: bool) -> list[date]:
+    """Что просить у API при докачке.
+
+    Архивный прогон берёт всё, что ещё не окончательно: пустые даты,
+    предварительные строки и строки best_match, до которых ERA5 уже дошёл.
+    Предварительный прогон — только даты, которых нет вовсе.
+    """
+
+    if preliminary:
+        return [d for d in dates if d not in stored]
+    return [d for d in dates if stored.get(d) != SOURCE_ERA5]
 
 
 # --------------------------------------------------------------------------- dates & time
@@ -175,17 +229,21 @@ def observation_dates(
     today: date,
     since: date | None = None,
     events_only: bool = False,
+    upper: date | None = None,
 ) -> list[date]:
     """Все субботы с первого старта по границу архива + внесубботние даты стартов.
 
-    У закрытой площадки (последний старт раньше, чем INACTIVE_TAIL_DAYS назад)
-    субботы кончаются через хвост после последнего старта.
+    upper — верхняя граница вместо «сегодня минус лаг архива» (предварительный
+    прогон просит до сегодняшнего дня включительно). У закрытой площадки
+    (последний старт раньше, чем INACTIVE_TAIL_DAYS назад) субботы кончаются
+    через хвост после последнего старта.
     """
 
     events = sorted(set(event_dates))
     if not events:
         return []
-    upper = today - timedelta(days=ARCHIVE_LAG_DAYS)
+    if upper is None:
+        upper = today - timedelta(days=ARCHIVE_LAG_DAYS)
     tail_end = events[-1] + timedelta(days=INACTIVE_TAIL_DAYS)
     if tail_end < upper:
         upper = tail_end
@@ -254,9 +312,14 @@ def fetch_archive(
     *,
     retries: int = 5,
     wait_hourly_reset: bool = True,
+    endpoint: str = OPEN_METEO_ARCHIVE_URL,
+    model: str = FINAL_MODEL,
+    extra_params: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Один вызов архива. wait_hourly_reset=False — часовой лимит считать концом
-    прогона (для beat-задачи: не держать воркер час в ожидании)."""
+    """Один вызов архива (или прогнозной модели, endpoint=OPEN_METEO_FORECAST_URL).
+
+    wait_hourly_reset=False — часовой лимит считать концом прогона (для
+    beat-задачи: не держать воркер час в ожидании)."""
 
     params = {
         "latitude": f"{latitude:.6f}",
@@ -266,14 +329,16 @@ def fetch_archive(
         "hourly": ",".join(HOURLY_VARS),
         "timezone": "auto",
         "wind_speed_unit": "ms",
-        "models": MODEL,
+        "models": model,
     }
+    if extra_params:
+        params.update(extra_params)
     delay = 2.0
     hourly_waits = 0
     attempt = 0
     while True:
         try:
-            response = client.get(OPEN_METEO_ARCHIVE_URL, params=params, timeout=60)
+            response = client.get(endpoint, params=params, timeout=60)
         except httpx.TransportError as exc:
             # Случайный обрыв сети (таймаут TLS-рукопожатия 08.09.2026 на проде):
             # повторяем с нарастающей паузой, как и 5xx.
@@ -326,6 +391,36 @@ def _int(value: Any) -> int | None:
     return int(round(float(value)))
 
 
+# Снегопад Open-Meteo отдаёт в сантиметрах, осадки — в миллиметрах воды, и в
+# сумму осадков снег входит наравне с дождём. Коэффициент перевода у сервиса
+# фиксированный: 1 мм воды = 0.7 см снега. Проверено на реальных строках —
+# Мещерский 17.12.2022: осадки 0.9 мм, снег 0.63 см, жидкого дождя ровно 0.
+SNOW_CM_PER_MM_OF_WATER = Decimal("0.7")
+
+
+def liquid_window(
+    precipitation: list[Any] | None,
+    snowfall: list[Any] | None,
+    hour_index: dict[str, int],
+    obs_date: date,
+    hours: range,
+) -> Decimal | None:
+    """Жидкий дождь за окно: осадки минус водный эквивалент снега.
+
+    Зимний старт под снегопадом не должен попадать в «дождливые» — вопрос
+    Наталии Тумковской 18.09.2026, и она права: в декабре на Мещерском «дождь
+    2.6 мм» был снегом при −5.7°.
+    """
+
+    total = window_sum(precipitation, hour_index, obs_date, hours)
+    if total is None:
+        return None
+    snow = window_sum(snowfall, hour_index, obs_date, hours)
+    if snow:
+        total -= snow / SNOW_CM_PER_MM_OF_WATER
+    return max(round(total, 2), Decimal("0"))
+
+
 def window_sum(values: list[Any] | None, hour_index: dict[str, int], obs_date: date, hours: range) -> Decimal | None:
     """Сумма часовых значений за окно. Значение с меткой HH:00 у Open-Meteo — за час (HH−1, HH].
 
@@ -360,6 +455,7 @@ def build_rows(
     dates: Iterable[date],
     *,
     fetched_at: datetime,
+    source: str = SOURCE_ARCHIVE,
 ) -> tuple[list[dict[str, Any]], int]:
     """Ответ API → строки start_weather. Второе значение — даты без данных (архив ещё не догнал)."""
 
@@ -382,9 +478,10 @@ def build_rows(
             continue
         snow_depth_m = h("snow_depth", hi)
         precipitation = hourly.get("precipitation")
+        snowfall = hourly.get("snowfall")
         day_temp = _day_values(hourly.get("temperature_2m"), hour_index, obs_date)
         day_precip = _day_values(precipitation, hour_index, obs_date)
-        day_snow = _day_values(hourly.get("snowfall"), hour_index, obs_date)
+        day_snow = _day_values(snowfall, hour_index, obs_date)
         day_wind = _day_values(hourly.get("wind_speed_10m"), hour_index, obs_date)
         day_gusts = _day_values(hourly.get("wind_gusts_10m"), hour_index, obs_date)
         day_codes = _day_values(hourly.get("weather_code"), hour_index, obs_date)
@@ -394,17 +491,23 @@ def build_rows(
                 "location_id": location.id,
                 "obs_date": obs_date,
                 "start_time_local": start_time,
+                "source": source,
                 "temperature_c": _dec(h("temperature_2m", hi), 1),
                 "apparent_temperature_c": _dec(h("apparent_temperature", hi), 1),
                 "humidity_pct": _int(h("relative_humidity_2m", hi)),
                 "precipitation_mm": _dec(h("precipitation", hi), 2),
-                # Дождь между старт−1ч и старт+2ч: метки start..start+2.
-                "precipitation_run_mm": window_sum(
-                    precipitation, hour_index, obs_date, range(start_hour, start_hour + 3)
+                # Дождь на самой дистанции: час от старта, метка start+1.
+                # Раньше окно было вчетверо шире (старт−1ч…старт+2ч), и ливень,
+                # прошедший за час до сбора или через два часа после финиша,
+                # объявлял старт дождливым. Наталия Тумковская проверила восемь
+                # своих «дождливых» стартов по фотографиям — дождь был на одном
+                # (18.09.2026). Час забега — ровно то, что человек помнит.
+                "precipitation_run_mm": liquid_window(
+                    precipitation, snowfall, hour_index, obs_date, range(start_hour + 1, start_hour + 2)
                 ),
-                # Дождь между старт−4ч и старт−1ч: метки start−3..start−1.
-                "precipitation_before_mm": window_sum(
-                    precipitation, hour_index, obs_date, range(max(start_hour - 3, 0), start_hour)
+                # Мокрая трасса: три часа до старта, метки start−2..start.
+                "precipitation_before_mm": liquid_window(
+                    precipitation, snowfall, hour_index, obs_date, range(max(start_hour - 2, 0), start_hour + 1)
                 ),
                 "snowfall_cm": _dec(h("snowfall", hi), 2),
                 "snow_depth_cm": _dec(snow_depth_m * 100, 1) if snow_depth_m is not None else None,
@@ -453,11 +556,21 @@ def remember_timezone(db: Session, location_id: UUID, timezone_name: str | None)
         location.timezone = timezone_name
 
 
+# Вес вызова считается по длине периода: две недели = один вызов. Просить год
+# ради одной свежей субботы — впустую жечь суточный лимит, поэтому режем не
+# только по годам, но и по разрывам: подряд идущие даты собираются в диапазон,
+# а одинокая суббота стоит своим коротким запросом.
+CHUNK_GAP_DAYS = 45
+
+
 def _year_chunks(dates: Sequence[date]) -> list[tuple[date, date, list[date]]]:
-    chunks: dict[int, list[date]] = {}
-    for d in dates:
-        chunks.setdefault(d.year, []).append(d)
-    return [(min(ds), max(ds), ds) for _, ds in sorted(chunks.items())]
+    chunks: list[list[date]] = []
+    for day in sorted(dates):
+        if chunks and day.year == chunks[-1][-1].year and (day - chunks[-1][-1]).days <= CHUNK_GAP_DAYS:
+            chunks[-1].append(day)
+        else:
+            chunks.append([day])
+    return [(group[0], group[-1], group) for group in chunks]
 
 
 def collect_location_weather(
@@ -471,42 +584,80 @@ def collect_location_weather(
     resume: bool = True,
     pause_seconds: float = 0.3,
     wait_hourly_reset: bool = True,
+    preliminary: bool = False,
+    weight_budget: int | None = None,
 ) -> CollectStats:
     """Собрать погоду одной локации: по вызову API на календарный год, upsert построчно.
 
     resume — не трогать даты, которые уже лежат в таблице (докачка после
     остановки по лимиту); год просится целиком, если в нём есть хоть одна
-    недостающая дата.
+    недостающая дата. Архивный прогон заодно заменяет предварительные строки.
+
+    preliminary — предварительная погода из прогнозной модели за дни, до
+    которых архив ещё не дошёл (сегодня и лаг архива); строки помечаются
+    source='forecast'.
     """
 
     stats = CollectStats()
     # Дата — по часам машины, не UTC: вечером в Москве 07.09 по UTC ещё 06.09,
     # и субботу 05.09 при лаге в 2 дня скрипт бы пропустил.
     today = today or date.today()
-    dates = observation_dates(
-        event_dates_for_location(db, location.id), today=today, since=since, events_only=events_only
-    )
+    archive_upper = today - timedelta(days=ARCHIVE_LAG_DAYS)
+    event_dates = event_dates_for_location(db, location.id)
+    if preliminary:
+        dates = [d for d in observation_dates(event_dates, today=today, since=since, upper=today) if d > archive_upper]
+    else:
+        dates = observation_dates(event_dates, today=today, since=since, events_only=events_only)
     stats.dates_requested = len(dates)
-    if resume:
+    if resume or preliminary:
         stored = stored_dates_for_location(db, location.id)
-        missing = [d for d in dates if d not in stored]
+        missing = dates_to_fetch(dates, stored, preliminary=preliminary)
         stats.dates_already = len(dates) - len(missing)
         dates = missing
     # Закрыть транзакцию чтения до похода в сеть: ожидание лимита длится до часа,
     # а Postgres рвёт idle-in-transaction через 60 секунд.
     db.rollback()
-    for start, end, chunk_dates in _year_chunks(dates):
-        payload = fetch_archive(
-            client, location.latitude, location.longitude, start, end, wait_hourly_reset=wait_hourly_reset
-        )
-        stats.api_calls += 1
-        remember_timezone(db, location.id, payload.get("timezone"))
-        rows, skipped = build_rows(payload, location, chunk_dates, fetched_at=datetime.now(UTC))
-        stats.skipped_no_data += skipped
-        stats.rows_written += upsert_rows(db, rows)
-        db.commit()
-        if pause_seconds:
-            _time.sleep(pause_seconds)
+    endpoint = OPEN_METEO_FORECAST_URL if preliminary else OPEN_METEO_ARCHIVE_URL
+    era5_upper = today - timedelta(days=ERA5_LAG_DAYS)
+    for _start, _end, chunk_dates in _year_chunks(dates):
+        # Даты, до которых ERA5 дошёл, берём у него — это окончательная строка;
+        # свежие добираем best_match и помечаем как промежуточные.
+        groups: list[tuple[str, str, list[date]]] = []
+        if preliminary:
+            groups.append((MODEL_FORECAST_NAME, SOURCE_FORECAST, chunk_dates))
+        else:
+            final_dates = [d for d in chunk_dates if d <= era5_upper]
+            fresh_dates = [d for d in chunk_dates if d > era5_upper]
+            if final_dates:
+                groups.append((FINAL_MODEL, SOURCE_ERA5, final_dates))
+            if fresh_dates:
+                groups.append((FALLBACK_MODEL, SOURCE_ARCHIVE, fresh_dates))
+        for model, source, group_dates in groups:
+            weight = call_weight(group_dates[0], group_dates[-1])
+            if weight_budget is not None and stats.weighted_calls + weight > weight_budget:
+                # Бюджет кончился — уходим по-хорошему, недобранное доберём
+                # завтра: строки предыдущих групп уже закоммичены.
+                stats.stopped_by_budget = True
+                return stats
+            payload = fetch_archive(
+                client,
+                location.latitude,
+                location.longitude,
+                group_dates[0],
+                group_dates[-1],
+                wait_hourly_reset=wait_hourly_reset,
+                endpoint=endpoint,
+                model=model,
+            )
+            stats.api_calls += 1
+            stats.weighted_calls += weight
+            remember_timezone(db, location.id, payload.get("timezone"))
+            rows, skipped = build_rows(payload, location, group_dates, fetched_at=datetime.now(UTC), source=source)
+            stats.skipped_no_data += skipped
+            stats.rows_written += upsert_rows(db, rows)
+            db.commit()
+            if pause_seconds:
+                _time.sleep(pause_seconds)
     return stats
 
 
@@ -530,12 +681,21 @@ class ScopeRunSummary:
     stopped_by_limit: bool = False
     limit_reason: str = ""
     error: str = ""
+    preliminary: bool = False
+    weighted_calls: int = 0
+    #: Прогон остановлен нашим дневным бюджетом, а не лимитом сервиса.
+    stopped_by_budget: bool = False
 
     @property
     def finished(self) -> bool:
         """Все локации периметра собраны до границы архива и прогон не прерван."""
 
-        return not self.stopped_by_limit and not self.error and self.locations_complete == self.scope_locations
+        return (
+            not self.stopped_by_limit
+            and not self.stopped_by_budget
+            and not self.error
+            and self.locations_complete == self.scope_locations
+        )
 
 
 def collect_scope(
@@ -548,17 +708,29 @@ def collect_scope(
     resume: bool = True,
     pause_seconds: float = 0.5,
     wait_hourly_reset: bool = True,
+    preliminary: bool = False,
     on_location: Any = None,
+    max_weighted_calls: int | None = None,
 ) -> ScopeRunSummary:
     """Прогон по всему периметру с остановкой на суточном лимите.
+
+    max_weighted_calls — наш собственный потолок расхода за прогон, в вызовах
+    Open-Meteo (см. call_weight). Нужен, пока идёт пересборка архива: без него
+    ночной прогон выгребает все 10 000 суточных вызовов до последнего, и
+    дневные обновления прогноза (в пятницу их три) упираются в лимит и не
+    собираются вовсе. Ночь ждёт до завтра спокойно, прогноз на субботу — нет.
 
     on_location(location, stats) — колбэк для построчного лога скрипта.
     """
 
-    summary = ScopeRunSummary()
+    summary = ScopeRunSummary(preliminary=preliminary)
     locations = list_scope_locations(db, name_filters)
     summary.scope_locations = len(locations)
     for location in locations:
+        budget = None if max_weighted_calls is None else max_weighted_calls - summary.weighted_calls
+        if budget is not None and budget <= 0:
+            summary.stopped_by_budget = True
+            break
         try:
             stats = collect_location_weather(
                 db,
@@ -569,6 +741,8 @@ def collect_scope(
                 resume=resume,
                 pause_seconds=pause_seconds,
                 wait_hourly_reset=wait_hourly_reset,
+                preliminary=preliminary,
+                weight_budget=budget,
             )
         except RateLimitDaily as exc:
             db.rollback()
@@ -584,6 +758,7 @@ def collect_scope(
             break
         summary.rows_written += stats.rows_written
         summary.api_calls += stats.api_calls
+        summary.weighted_calls += stats.weighted_calls
         summary.skipped_no_data += stats.skipped_no_data
         if stats.api_calls:
             summary.locations_touched += 1
@@ -592,17 +767,33 @@ def collect_scope(
             summary.locations_complete += 1
         if on_location is not None:
             on_location(location, stats)
+        if stats.stopped_by_budget:
+            summary.stopped_by_budget = True
+            break
     summary.rows_total, summary.locations_total = coverage_summary(db)
     return summary
 
 
-def format_run_report(summary: ScopeRunSummary, *, when: datetime) -> str:
-    """Текст отчёта в Telegram: за прогон, всего, и что дальше."""
+def format_run_report(summary: ScopeRunSummary, *, when: datetime, backfill_reported: bool = False) -> str:
+    """Текст отчёта в Telegram: за прогон, всего, и что дальше.
 
+    backfill_reported — «сбор завершён» уже объявляли: дальше это еженедельная
+    докачка суббот, а не финиш бэкфила.
+    """
+
+    if summary.preliminary:
+        lines = [f"🌦 Погода на стартах — предварительно, {when.strftime('%d.%m.%Y %H:%M')}"]
+        lines.append(
+            f"Из прогнозной модели: {summary.rows_written} строк по {summary.locations_touched} локациям, "
+            f"вызовов Open-Meteo {summary.api_calls}; архив заменит их в понедельник"
+        )
+        if summary.error:
+            lines.append(f"⚠️ Прогон прерван ошибкой: {summary.error}")
+        return "\n".join(lines)
     lines = [f"🌦 Погода на стартах — сбор {when.strftime('%d.%m.%Y %H:%M')}"]
     lines.append(
         f"За прогон: записано {summary.rows_written} строк по {summary.locations_touched} локациям, "
-        f"вызовов Open-Meteo {summary.api_calls}"
+        f"вызовов Open-Meteo {summary.weighted_calls or summary.api_calls}"
     )
     lines.append(
         f"Всего в таблице: {summary.rows_total} строк, {summary.locations_total} локаций; "
@@ -612,7 +803,11 @@ def format_run_report(summary: ScopeRunSummary, *, when: datetime) -> str:
         lines.append(f"⚠️ Прогон прерван ошибкой: {summary.error}")
     elif summary.stopped_by_limit:
         lines.append("Остановлено лимитом Open-Meteo, продолжу завтра")
-    elif summary.finished:
+    elif summary.stopped_by_budget:
+        lines.append("Остановлено дневным бюджетом — остаток суток оставлен прогнозу, продолжу завтра")
+    elif summary.finished and not backfill_reported:
         lines.append("✅ Сбор всего периметра завершён — можно обрабатывать данные")
         lines.append("Сессия Claude: «Погода на стартах» (ветка historical-weather-starts)")
+    elif summary.finished:
+        lines.append("Еженедельная докачка: все локации периметра закрыты до границы архива")
     return "\n".join(lines)

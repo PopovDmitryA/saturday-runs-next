@@ -8,13 +8,13 @@ from typing import cast
 import pytest
 
 from app.core.abuse_protection import RouteTier, classify_route
+from app.services.platform_titles import PLATFORM_TITLES
 from app.services.release_service import ReleasesPage
 from app.services.seo_service import (
     _SITEMAP_STATIC,
     DEFAULT_DESCRIPTION,
     DEFAULT_TITLE,
     DESCRIPTION_BUDGET,
-    PLATFORM_LABELS,
     STATIC_PAGE_META,
     TITLE_BUDGET,
     PageMeta,
@@ -136,7 +136,7 @@ def test_frontend_mirror_keeps_location_wording_in_sync() -> None:
     """
     src = (_frontend_src() / "lib" / "pageMeta.ts").read_text(encoding="utf-8")
 
-    for code, label in PLATFORM_LABELS.items():
+    for code, label in PLATFORM_TITLES.items():
         assert f'{code}: "{label}"' in src, f"Название системы {code} разошлось с бэкендом"
 
     assert f"TITLE_BUDGET = {TITLE_BUDGET}" in src
@@ -144,7 +144,9 @@ def test_frontend_mirror_keeps_location_wording_in_sync() -> None:
 
     for phrase in (
         "площадка субботних пробежек",
-        "Здесь прошло",
+        # Глагол согласуется с числом на обеих сторонах: «прошёл 31 старт».
+        '"прошёл", "прошло", "прошло"',
+        '"финишировал", "финишировали", "финишировали"',
         "старты здесь проводили",
         "журнал протоколов",
         " — результаты и статистика",
@@ -399,6 +401,17 @@ def test_location_lead_reads_as_sentences() -> None:
     assert len(sentences) == 2
 
 
+def test_location_lead_agrees_verb_with_count() -> None:
+    """«Здесь прошёл 31 старт, финишировал 2 831 участник» — репорт Дмитрия
+    21.09.2026 по Люблино: с единицей на конце «прошло» и «финишировали»
+    режут глаз."""
+    sentences = location_lead_sentences(_location_payload(stats={"events_count": 31, "finishers_total": 2831}))
+    assert sentences[1] == "Здесь прошёл 31 старт, финишировал 2\u00a0831 участник."
+    # 11 и 111 — не единица: «прошло 111 стартов».
+    sentences = location_lead_sentences(_location_payload(stats={"events_count": 111, "finishers_total": 12}))
+    assert sentences[1] == "Здесь прошло 111 стартов, финишировали 12 участников."
+
+
 def test_location_lead_names_previous_systems() -> None:
     sentences = location_lead_sentences(
         _location_payload(
@@ -559,7 +572,8 @@ def test_catalog_body_lists_locations_with_links() -> None:
         ("/locations/kuzminki/participants", True),
         ("/users/ivan", True),
         ("/admin/users", True),
-        ("/world", True),
+        # Табло обхода погашено 17.09.2026 — адрес перестал быть страницей.
+        ("/world", False),
         ("/protocol", True),
         ("/protocol/2026-08-15", True),
         # Форму даты регулярка пропускает, а недели такой нет — это 404, а не 500.

@@ -358,7 +358,7 @@ def fetch_five_verst_protocol_for_profile(
 ) -> None:
     from app.platform_adapters.five_verst import bulk_parser
     from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
-    from app.sync.iteration_commit import commit_step
+    from app.sync.iteration_commit import commit_step, release_before_fetch
 
     platform = upsert.get_platform(db, "five_verst")
     if is_protocol_fully_loaded(db, platform, location_slug=location_slug, event_date=event_date):
@@ -373,6 +373,10 @@ def fetch_five_verst_protocol_for_profile(
         .one_or_none()
     )
     if location is None:
+        # Пока только читали — отпускаем транзакцию перед походом за страницей
+        # локации: прод рвёт сессии «idle in transaction» через 60 с, а фетч
+        # ждёт общий лок загрузок и до пяти попыток по 30 с (см. iteration_commit).
+        release_before_fetch(db)
         location_data, location_html = bulk_parser.fetch_location(location_slug)
         location, _ = upsert.upsert_location(
             db,
@@ -391,7 +395,13 @@ def fetch_five_verst_protocol_for_profile(
         .one_or_none()
     )
     if summary_row is None:
-        summaries, _ = bulk_parser.fetch_event_summaries(location_slug, location.name)
+        # Имя — в локальную переменную ДО коммита: после него поля ORM-строки
+        # протухают, и обращение к location.name открыло бы новую транзакцию
+        # ровно перед фетчем. Коммит, а не release: локация могла быть только
+        # что создана из скачанной страницы, и терять её незачем.
+        location_name_for_fetch = location.name
+        commit_step(db)
+        summaries, _ = bulk_parser.fetch_event_summaries(location_slug, location_name_for_fetch)
         for summary in summaries:
             if summary.event_date == event_date:
                 summary_row, _ = upsert.upsert_event_summary(db, platform, location, summary)

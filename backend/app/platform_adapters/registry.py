@@ -23,11 +23,6 @@ def get_adapter(platform_code: str) -> PlatformAdapter:
     return _adapters[platform_code]
 
 
-def list_adapters() -> list[PlatformAdapter]:
-    ensure_adapters_registered()
-    return list(_adapters.values())
-
-
 def ensure_adapters_registered() -> None:
     for platform_code, class_path in _PLATFORM_ADAPTER_CLASSES:
         if platform_code in _adapters:

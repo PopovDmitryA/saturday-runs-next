@@ -11,6 +11,7 @@ from app.parkrun.age_category import normalize_parkrun_age_group
 from app.parkrun.parsers.athlete import volunteer_summary_to_canonical
 from app.platform_adapters.parkrun import parser as parkrun_parser
 from app.sync import upsert
+from app.sync.iteration_commit import release_before_fetch
 
 
 def _utcnow() -> datetime:
@@ -116,6 +117,12 @@ def import_parkrun_participant_activity(
                 expected_runs=None,
             )
 
+    # Проверка свежести выше — SELECT, транзакция открыта; фетч профиля
+    # parkrun — браузер, 60-90 с и больше. На сервере (очередь pending и
+    # пользовательский синк) прод рвёт сессии «idle in transaction» через
+    # 60 с, и падал первый запрос после фетча. Писать ещё нечего — просто
+    # отпускаем транзакцию (см. iteration_commit.release_before_fetch).
+    release_before_fetch(db)
     try:
         profile, runs, _volunteering, profile_extra = parkrun_parser.fetch_athlete_by_id(athlete_id)
     except ParkrunBanDetected as exc:

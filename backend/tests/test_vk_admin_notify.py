@@ -66,3 +66,46 @@ def test_daily_summary_pluralizes_runs() -> None:
     assert "1 запуск" in format_daily_summary("18.07.2026", [_platform(runs=1, metrics=[])])
     assert "3 запуска" in format_daily_summary("18.07.2026", [_platform(runs=3, metrics=[])])
     assert "11 запусков" in format_daily_summary("18.07.2026", [_platform(runs=11, metrics=[])])
+
+
+def test_daily_summary_collapses_repeated_problems() -> None:
+    """Одна залипшая вещь не должна занимать собой весь раздел.
+
+    Плотинка №225 падала в каждом обходе и 13.09.2026 дала пять одинаковых
+    строк подряд — вторая, настоящая ошибка дня до сводки бы не доехала.
+    """
+    stuck = {
+        "pipeline_label": "5v week sweep W-2",
+        "errors": ["plotinka:225:2026-08-29: '<' not supported between 'NoneType' and 'int'"],
+    }
+    text = format_daily_summary(
+        "13.09.2026",
+        [_platform(problems=5)],
+        problems=[stuck, stuck, stuck, stuck, stuck, {"pipeline_label": "s95: реестр", "errors": ["HTTP 503"]}],
+    )
+
+    assert text.count("plotinka:225") == 1
+    assert "(× 5)" in text
+    # Вторая поломка не вытеснена повторами первой.
+    assert "s95: реестр: HTTP 503" in text
+
+
+def test_daily_summary_caps_problem_list() -> None:
+    problems = [
+        {"pipeline_label": f"пайплайн {index}", "errors": [f"ошибка {index}"]}
+        for index in range(8)
+    ]
+    text = format_daily_summary("13.09.2026", [_platform(problems=8)], problems=problems)
+
+    assert "пайплайн 4: ошибка 4" in text
+    assert "пайплайн 5: ошибка 5" not in text
+    assert "…и ещё 3 поломки" in text
+
+
+def test_daily_summary_problem_without_error_text() -> None:
+    text = format_daily_summary(
+        "13.09.2026",
+        [_platform(problems=1)],
+        problems=[{"pipeline_label": "5v latest", "errors": []}],
+    )
+    assert "5v latest: без текста ошибки" in text

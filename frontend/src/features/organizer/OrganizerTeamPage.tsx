@@ -7,6 +7,7 @@ import {
   type OrganizerTeamRole,
 } from "../../lib/api";
 import { formatInt, pluralizeRu } from "../../lib/format";
+import { FilterSelect } from "../../components/filters/FilterPanel";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { locationHintFor } from "../../lib/locationHint";
 import { TableWrap } from "../../components/tableUx/TableWrap";
@@ -18,6 +19,21 @@ import { DirectorRotationCard } from "./DirectorRotationCard";
 import { OrganizerBreadcrumbs } from "./OrganizerBreadcrumbs";
 import { OrganizerDenied } from "./OrganizerDenied";
 import "./organizer.css";
+
+// Период выборки — тот же словарь, что у портрета участника и «Мы и соседей»
+// (просьба Дмитрия 17.09.2026: год против всей истории показывает, кто ушёл из
+// команды, а кто пришёл). 0 — текущий календарный год, 120 — «всё время».
+const PERIOD_OPTIONS = [
+  { months: 0, label: "текущий год" },
+  { months: 6, label: "полгода" },
+  { months: 12, label: "12 месяцев" },
+  { months: 36, label: "3 года" },
+  { months: 120, label: "всё время" },
+];
+
+function periodLabel(months: number): string {
+  return PERIOD_OPTIONS.find((option) => option.months === months)?.label ?? String(months);
+}
 
 // Насколько роль устойчива: bus-фактор — сколько человек закрывают
 // 80% волонтёрств в роли. Слово «смена» в проекте запрещено (18.08.2026).
@@ -99,6 +115,7 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
   // «Только чистые волонтёрства»: не засчитывать дни, когда человек в этот же день
   // где-то бежал — здесь или на соседней площадке.
   const [pureOnly, setPureOnly] = useState(false);
+  const [months, setMonths] = useState(12);
 
   // В этом режиме и число, и доля, и порядок считаются по чистым волонтёрствам:
   // иначе список остался бы отсортированным по общему счёту, и первым стоял бы
@@ -120,7 +137,8 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    getOrganizerTeamLoad(slug)
+    setData(null);
+    getOrganizerTeamLoad(slug, months)
       .then((payload) => {
         if (!cancelled) {
           setData(payload);
@@ -141,7 +159,7 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, months]);
 
   const roles = useMemo(() => {
     const items = [...(data?.roles ?? [])];
@@ -194,7 +212,7 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
         </div>
         <p className="muted">
           Насколько устойчива оргкоманда: какие ключевые роли держатся на одном-двух людях и кто
-          тянет непропорционально много. Данные за последние 12 месяцев.
+          тянет непропорционально много.
         </p>
       </header>
 
@@ -208,7 +226,7 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
 
       {!error && data !== null && data.roles.length === 0 && (
         <div className="card">
-          <p className="muted">За последний год волонтёрств на локации не зафиксировано.</p>
+          <p className="muted">За выбранный период волонтёрств на локации не зафиксировано.</p>
         </div>
       )}
 
@@ -216,8 +234,21 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
         <>
           <section className="card org-toolbar-card">
             <div className="org-toolbar-row">
+              <label className="org-toolbar-label">
+                Период{" "}
+                <FilterSelect
+                  ariaLabel="Период выборки"
+                  title="За какой срок считаем нагрузку на команду"
+                  value={months}
+                  onChange={setMonths}
+                  options={PERIOD_OPTIONS.map((option) => ({
+                    value: option.months,
+                    label: option.label,
+                  }))}
+                />
+              </label>
               <span className="muted">
-                За 12 месяцев: {pluralizeRu(data.events_total, ["старт", "старта", "стартов"])} ·{" "}
+                {periodLabel(months)}: {pluralizeRu(data.events_total, ["старт", "старта", "стартов"])} ·{" "}
                 {pluralizeRu(data.volunteers_total, ["волонтёр закрыл", "волонтёра закрыли", "волонтёров закрыли"])}{" "}
                 {pluralizeRu(data.slots_total, ["волонтёрство", "волонтёрства", "волонтёрств"])}
                 {data.avg_per_event != null && (
@@ -231,6 +262,57 @@ function OrganizerTeamContent({ slug }: { slug: string }) {
 
           {data.director_rotation && (
             <DirectorRotationCard rotation={data.director_rotation} />
+          )}
+
+          {/* Поимённо, кто вёл старт: светофор ротации называет только самого
+              частого, а организатору нужен весь список — по нему видно, кого
+              давно не было (просьба Дмитрия 17.09.2026). */}
+          {data.organizers.length > 0 && (
+            <section className="card org-table-card">
+              <header className="org-table-head">
+                <h2 className="section-title">
+                  <span className="org-table-emoji" aria-hidden="true">
+                    🎬
+                  </span>
+                  Кто вёл старт
+                </h2>
+                <span className="muted org-table-count">
+                  {pluralizeRu(data.organizers.length, ["организатор", "организатора", "организаторов"])}{" "}
+                  за {periodLabel(months)}
+                </span>
+              </header>
+              <TableWrap stickyFirstCol>
+                <table className="data-table org-svod-table">
+                  <thead>
+                    <tr>
+                      <th>Организатор</th>
+                      <th>
+                        Вёл старт
+                        <HeaderHint text="Сколько раз человек выходил в роли организатора за выбранный период" />
+                      </th>
+                      <th>
+                        Доля
+                        <HeaderHint text="Какая часть всех организаторских выходов локации пришлась на этого человека" />
+                      </th>
+                      <th>
+                        Бегал здесь
+                        <HeaderHint text="Пробежки на этой локации за тот же период: видно, кто только помогает, а кто и бегает" />
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.organizers.map((person) => (
+                      <tr key={person.participant_id}>
+                        <td>{person.name ?? "Без имени"}</td>
+                        <td className="td-compact">{formatInt(person.slots)}</td>
+                        <td className="td-compact">{person.share_pct}%</td>
+                        <td className="td-compact">{formatInt(person.runs_here)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableWrap>
+            </section>
           )}
 
           <section className="card org-table-card">

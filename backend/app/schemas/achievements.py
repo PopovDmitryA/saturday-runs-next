@@ -39,7 +39,7 @@ class ChallengeResponse(BaseModel):
     title: str
     icon: str
     description: str
-    # collection | coincidence | scale | community
+    # collection | coincidence | scale | community | weather
     category: str
     current: int
     unit: str | None = None
@@ -190,6 +190,16 @@ class StartNumberPlanResponse(BaseModel):
     low: int
     high: int
     generated_for: str
-    # Сколько колонок в строке; подписи строит фронт
+    # Сколько колонок в строке
     week_count: int
+    # Подписи колонок: у «Нумератора» это забеги локации (E, E+1, E+2), у
+    # числовых челленджей одна колонка «Где и когда» на весь горизонт
+    column_titles: list[str] = Field(default_factory=list)
+    # Горизонт прогноза словами — «ближайшие 3 недели» / «ближайшие полгода»
+    horizon_label: str = ""
+    # Есть ли смысл в отметке «закрыто»: у челленджей-счётчиков (юбилеи,
+    # совпадение номеров) один и тот же номер идёт в зачёт сколько угодно раз
+    tracks_done: bool = True
+    # Пояснение конкретного челленджа поверх общего текста про прогноз
+    intro: str | None = None
     rows: list[StartNumberPlanRowResponse]

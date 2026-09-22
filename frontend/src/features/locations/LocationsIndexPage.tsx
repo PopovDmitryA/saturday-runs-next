@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCachedResource } from "../../hooks/useCachedResource";
 import { useRestorableState } from "../../hooks/useRestorableState";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
@@ -13,7 +13,8 @@ import {
   FilterSearch,
 } from "../../components/filters/FilterPanel";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
-import { getLocationsIndex, type LocationIndexItem } from "../../lib/api";
+import { getHomeLocation, getLocationsIndex, type LocationIndexItem } from "../../lib/api";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import {
   formatDate,
   formatFinishTimeValue,
@@ -74,9 +75,9 @@ function formatAvgFinishers(item: LocationIndexItem): string {
   if (value === null) {
     return "—";
   }
-  // Меньше десяти человек — один знак после запятой: разница 4,2 и 4,8
-  // для маленькой площадки существенна, для сотенной — шум.
-  return value < 10 ? value.toFixed(1).replace(".", ",") : formatInt(value);
+  // Всегда с десятыми (просьба Дмитрия 21.09.2026): у соседних локаций явка
+  // часто различается меньше чем на человека, целые их не разводят.
+  return value.toFixed(1).replace(".", ",");
 }
 
 function matchesQuery(item: LocationIndexItem, query: string): boolean {
@@ -141,14 +142,19 @@ const LOCATIONS_COLUMNS: AdaptiveColumn[] = [
 function LocationsTable({
   items,
   tableColumns,
+  homeIdentityKey,
 }: {
   items: LocationIndexItem[];
   tableColumns: TableColumns;
+  homeIdentityKey: string | null;
 }) {
   const [sort, setSort] = useRestorableState<SortState>("locations.sort", {
     key: "events_count",
     asc: false,
   });
+  // Пока человек не трогал столбцы, «моя» локация приколота сверху. Как только
+  // он сортирует сам — открепляем: он смотрит на порядок, а не на свою строку.
+  const [homePinned, setHomePinned] = useRestorableState<boolean>("locations.homePinned", true);
   const showFull = tableColumns.showFull;
   const show = tableColumns.show;
 
@@ -174,10 +180,23 @@ function LocationsTable({
             : 1;
       return sort.asc ? compare : -compare;
     });
+    // «Моя» локация поднята наверх и на виду — как своя строка в рейтингах
+    // (просьба из бэклога сайта). Только если она проходит текущие фильтры:
+    // при поиске по другому названию поднимать её наверх было бы враньём.
+    // И только пока порядок наш: сортировку человек задал сам — не мешаем.
+    const homeIndex =
+      homeIdentityKey && homePinned
+        ? copy.findIndex((item) => item.identity_key === homeIdentityKey)
+        : -1;
+    if (homeIndex > 0) {
+      const [home] = copy.splice(homeIndex, 1);
+      copy.unshift(home);
+    }
     return copy;
-  }, [items, sort]);
+  }, [items, sort, homeIdentityKey, homePinned]);
 
   const toggleSort = (key: SortKey) => {
+    setHomePinned(false);
     setSort((current) =>
       current.key === key ? { key, asc: !current.asc } : { key, asc: ASC_FIRST_KEYS.includes(key) },
     );
@@ -292,9 +311,24 @@ function LocationsTable({
             </tr>
           ) : (
             sorted.map((item) => (
-              <tr key={item.identity_key}>
+              <tr
+                key={item.identity_key}
+                className={item.identity_key === homeIdentityKey ? "loc-index-row-home" : undefined}
+              >
                 <td className="td-location">
                   <a href={`/locations/${item.slug}`}>{item.name}</a>
+                  {item.identity_key === homeIdentityKey && (
+                    // Плашка — ссылка в настройки: «моя» вызывает вопрос «а
+                    // почему эта?», и ответ вместе с возможностью сменить
+                    // лежат в одном месте (правка Дмитрия 17.09.2026).
+                    <a
+                      className="location-status-badge loc-index-home-badge"
+                      href="/settings#home-location"
+                      title="Ваша домашняя локация: от неё считается дальность стартов, по ней вы «свой» на локации. Выбирается по вашим пробежкам автоматически — нажмите, чтобы посмотреть или сменить в настройках"
+                    >
+                      🏠 моя
+                    </a>
+                  )}
                   <LocationStatusBadge isPaused={item.is_paused} isCancelled={item.is_cancelled} />
                 </td>
                 {show("city") && (
@@ -373,6 +407,64 @@ function LocationsTable({
   );
 }
 
+/**
+ * Серии стартов — формат, а не место: «Старты сообществ» 5 вёрст, «С95 и
+ * друзья», «S95 & Friends». Координат у них нет, трасса каждый раз новая, и в
+ * алфавите площадок они стояли однодневками вроде «Зелёные 5 км». Отдельный
+ * блок отвечает на вопрос «что это вообще» одной строкой, а финиши оттуда
+ * по-прежнему считаются людям в личные итоги.
+ */
+function SeriesBlock({ items }: { items: LocationIndexItem[] }) {
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <section className="loc-series">
+      <h2 className="loc-series-title">Серии стартов</h2>
+      <p className="muted loc-series-note">
+        Не площадки, а форматы: старты проходят нерегулярно и каждый раз в новом месте.
+        Финиши с них идут в личный счёт, но в карту, туризм и рейтинги локаций не попадают.
+      </p>
+      <TableWrap>
+        <table className="data-table loc-series-table">
+          <thead>
+            <tr>
+              <ColumnHeader label="Серия" filterable={false} />
+              <ColumnHeader label="Система" filterable={false} />
+              <ColumnHeader label="Стартов" filterable={false} />
+              <ColumnHeader label="Финишей" filterable={false} />
+              <ColumnHeader label="Первый старт" filterable={false} />
+              <ColumnHeader label="Последний" filterable={false} />
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.identity_key}>
+                <td className="td-location">
+                  <a href={`/locations/${item.slug}`}>{item.name}</a>
+                </td>
+                <td>
+                  <span className="loc-index-platforms">
+                    {item.platform_codes.map((code) => (
+                      <PlatformBadge key={code} code={code} />
+                    ))}
+                  </span>
+                </td>
+                <td className="td-compact">{item.events_count ? formatInt(item.events_count) : "—"}</td>
+                <td className="td-compact">
+                  {item.finishers_total ? formatInt(item.finishers_total) : "—"}
+                </td>
+                <td>{item.first_event_date ? formatDate(item.first_event_date) : "—"}</td>
+                <td>{item.last_event_date ? formatDate(item.last_event_date) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableWrap>
+    </section>
+  );
+}
+
 function LocationsIndexContent() {
   // «Полно» — весь набор с горизонтальным скроллом. «Кратко» — столько колонок,
   // сколько влезает в ширину блока (решение Дмитрия 11.08.2026). Состояние
@@ -386,6 +478,7 @@ function LocationsIndexContent() {
     errorText: "Не удалось загрузить локации",
   });
   const items = index.data?.items ?? null;
+  const series = index.data?.series ?? [];
   const error = index.error;
   const [query, setQuery] = useRestorableState("locations.query", "");
   // Мультивыбор: систем можно отметить сколько угодно, пустое множество —
@@ -394,6 +487,30 @@ function LocationsIndexContent() {
   // и S95 вместе» — мультивыбор здесь только путал (Дмитрий 02.09.2026).
   const [platform, setPlatform] = useRestorableState("locations.platform", "all");
   const [showPaused, setShowPaused] = useRestorableState("locations.paused", false);
+  // Домашняя локация зрителя — её строка поднимается наверх и подсвечивается.
+  // Спрашиваем отдельным запросом: каталог кэшируется одним блобом на всех,
+  // личным данным в этом кэше не место.
+  const viewer = useOptionalUser();
+  const [homeIdentityKey, setHomeIdentityKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!viewer) {
+      setHomeIdentityKey(null);
+      return;
+    }
+    let cancelled = false;
+    getHomeLocation()
+      .then((payload) => {
+        if (!cancelled) {
+          setHomeIdentityKey(payload.location?.catalog_identity_key ?? null);
+        }
+      })
+      .catch(() => {
+        // Не смогли — каталог просто останется без отметки «моя».
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewer]);
 
   const filtered = useMemo(() => {
     if (!items) {
@@ -413,6 +530,21 @@ function LocationsIndexContent() {
       return true;
     });
   }, [items, query, platform, showPaused]);
+
+  // Серии фильтруем тем же поиском и той же системой: «покажи мне s95» не
+  // должно оставлять внизу «Старты сообществ».
+  const filteredSeries = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return series.filter((item) => {
+      if (normalizedQuery && !matchesQuery(item, normalizedQuery)) {
+        return false;
+      }
+      if (platform !== "all" && !item.platform_codes.includes(platform)) {
+        return false;
+      }
+      return true;
+    });
+  }, [series, query, platform]);
 
   return (
     <PortalSectionShell sidebar={{ active: "locations" }}>
@@ -471,7 +603,12 @@ function LocationsIndexContent() {
             <p className="muted loc-index-count">
               {pluralizeRu(filtered.length, ["локация", "локации", "локаций"])}
             </p>
-            <LocationsTable items={filtered} tableColumns={tableColumns} />
+            <LocationsTable
+              items={filtered}
+              tableColumns={tableColumns}
+              homeIdentityKey={homeIdentityKey}
+            />
+            <SeriesBlock items={filteredSeries} />
           </>
         )}
       </section>

@@ -11,15 +11,6 @@ from app.models import Platform, SyncWatermark
 S95_PROTOCOLS_RECONCILED_THROUGH = "s95:protocols_reconciled_through"
 
 
-def get_watermark(db: Session, platform: Platform, key: str) -> datetime | None:
-    row = (
-        db.query(SyncWatermark)
-        .filter(SyncWatermark.platform_id == platform.id, SyncWatermark.key == key)
-        .one_or_none()
-    )
-    return row.value_at if row is not None else None
-
-
 def set_watermark(
     db: Session,
     platform: Platform,

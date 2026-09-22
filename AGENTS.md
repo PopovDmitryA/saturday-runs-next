@@ -1,7 +1,7 @@
 # Saturday Runs — справочник для агентов
 
 Документ для AI-агентов и разработчиков: архитектура, prod, синхронизация, типичные задачи.  
-Обновлено: **июнь 2026**.
+Обновлено: **21 сентября 2026**.
 
 **Секреты и пароли:** локальный файл [`PROJECT_HANDOFF.local.md`](PROJECT_HANDOFF.local.md) (в `.gitignore`, не коммитить). Там SSH, prod PG, OAuth, нюансы деплоя.
 
@@ -13,10 +13,10 @@
 | [PROJECT_HANDOFF.local.md](PROJECT_HANDOFF.local.md) | **Credentials, SSH, prod нюансы** (gitignored) |
 | [docs/five_verst_sync_plan.md](docs/five_verst_sync_plan.md) | Конвейеры 5 вёрst |
 | [docs/s95_sync_plan.md](docs/s95_sync_plan.md) | Конвейеры S95 |
-| [docs/deploy_and_migration_plan.md](docs/deploy_and_migration_plan.md) | Legacy ETL |
 | [docs/parkrun_pipeline.md](docs/parkrun_pipeline.md) | Parkrun (Mac + Chromium) |
-| [docs/legacy_etl_mapping.md](docs/legacy_etl_mapping.md) | Маппинг legacy → новая схема |
-| [deploy/DOMAINS.md](deploy/DOMAINS.md) | run5k.run / grafana.run5k.run |
+| [docs/release_management.md](docs/release_management.md) | Версии и записи релизов |
+| [deploy/DOMAINS.md](deploy/DOMAINS.md) | Домены: run5k.run, app.run5k.run, закрытая grafana.run5k.run |
+| [docs/archive/](docs/archive/) | Выполненный план переезда с легаси и маппинг ETL — история |
 | [docs/runpark/README.md](docs/runpark/README.md) | **RunPark** — локации, маппинг, контракт view |
 
 ---
@@ -29,7 +29,8 @@
 
 - **5 вёрst** (`five_verst`) — 5verst.ru
 - **S95** (`s95`) — s95.ru / s95.by
-- **parkrun** — parkrun.org.uk (fetch с Mac, не из prod API)
+- **parkrun** — parkrun.org.uk (fetch не из prod API: очередь профилей разбирает домашний сервер)
+- **RunPark** (`runpark`) — внешняя БД, см. [docs/runpark/README.md](docs/runpark/README.md)
 
 Стек: Python 3.12, FastAPI, SQLAlchemy, Alembic, Celery, Redis, PostgreSQL 16, React 19, Vite, Nginx, Docker Compose.
 
@@ -45,19 +46,22 @@ backend/
   app/s95/fetch/          # Playwright + Redis lock + priority yield
   app/services/           # dashboard, location_catalog, sync_job, personal_record
   bot_app/                # Telegram: вход + admin-бот (/stats, /status, /sweep, /sync)
-  scripts/                # CLI, backfill, check_failed_sync_jobs.py
+  scripts/                # CLI: синки, перечитки, релизы; archive/ — отработавшие бэкфилы
   tests/
-  alembic/versions/       # миграции (027 — profile_private)
+  alembic/versions/       # миграции (голова — 090+; см. `ls backend/alembic/versions | tail`)
 frontend/src/
   features/               # runs, admin, settings, queue, about, …
   components/             # ActivityDateCell, PlatformBadge, …
 data/
-  location_catalog.json   # cross-platform location mapping (105 parkrun RU)
+  location_catalog.json   # cross-platform location mapping (русские названия parkrun)
 docs/
 docker-compose.yml        # Dev
 docker-compose.prod.yml   # Prod overlay (host PG)
+docker-compose.home.yml   # Воркеры синков на домашнем сервере (база и Redis — прод по tailnet)
+docker-compose.home-site.yml # Боевой стек целиком на домашнем сервере (переезд)
 docker-compose.dev.yml    # VK OAuth на :80
-scripts/deploy_prod.sh
+scripts/deploy_prod.sh    # git-based деплой (см. remote_deploy.sh)
+scripts/archive/          # отработавшие скрипты Grafana и переезда доменов
 Makefile
 AGENTS.md                 # этот файл
 PROJECT_HANDOFF.local.md  # credentials (gitignored)
@@ -74,7 +78,7 @@ GitHub: `PopovDmitryA/saturday-runs-next`, branch `main`.
 | Хост | `195.58.34.112` |
 | Путь | `/opt/saturday-runs-next` |
 | **Основной сайт** | **https://run5k.run** |
-| Legacy Grafana | **https://grafana.run5k.run** |
+| grafana.run5k.run | заглушка «дашборды переехали»; Grafana закрыта 04.09.2026 |
 | Старый URL ЛK | `app.run5k.run` → 301 на run5k.run |
 | SSH user | `viewer` (пароль в PROJECT_HANDOFF.local.md) |
 | Compose | `docker compose -f docker-compose.yml -f docker-compose.prod.yml` |
@@ -85,16 +89,33 @@ GitHub: `PopovDmitryA/saturday-runs-next`, branch `main`.
 
 | Сервис | Назначение |
 |--------|------------|
+Команды — в `docker-compose.yml`, тест `tests/test_celery_beat_schedule.py` и
+`tests/test_worker_queue_isolation.py` читают их оттуда же.
+
+| Сервис | Назначение |
+|--------|------------|
 | `api` | FastAPI, 2 uvicorn workers |
 | `nginx` | React `frontend/dist` + proxy `/api` |
-| `redis` | Sessions, Celery, locks, cooldown — **не публиковать :6379** |
+| `redis` | Sessions, Celery, locks, cooldown — **не публиковать :6379** (на проде публикуется только на tailnet-адрес для домашних воркеров) |
 | `beat` | Celery Beat (Europe/Moscow) |
-| `worker-five-verst` | `-Q five_verst --concurrency=1` (батчи) |
+| `worker` | `-Q celery,warm --concurrency=2`: наблюдатель протоколов, прогрев главной, агрегаты популярности, погода, admin-дайджест |
+| `worker-warm` | `-Q warm --concurrency=1`: прогрев рейтингов и страниц локаций (рядом с базой) |
 | `worker-five-verst-user` | `-Q five_verst_user --concurrency=1` (синки по кнопке) |
-| `worker-s95` | `-Q s95_user,s95 --concurrency=1` |
-| `worker-parkrun` | `-Q parkrun` |
-| `bot` | Telegram long poll (вход + admin: /stats /status /sweep /sync) |
-| `worker` | default очередь: прогрев главной, агрегаты популярности, admin-дайджест |
+| `worker-parkrun` | `-Q parkrun --max-tasks-per-child=100`: очередь parkrun + og_render (Chromium; пишет картинки в `./data`, которые раздаёт nginx) |
+| `bot` | Telegram long poll (вход + admin: /stats /status /sweep /sync); профиль `telegram` |
+| `tg-proxy` | xray, выход к api.telegram.org (см. §10) |
+
+Воркеры, которые ходят наружу по HTTP, с 17.09.2026 живут **на домашнем
+сервере** (`docker-compose.home.yml`; база и Redis — прод по tailnet). На проде
+`remote_deploy.sh` их гасит (`HOME_SERVICES`), а домашний сервер поднимает
+`scripts/home_workers_sync.sh` по маркеру деплоя:
+
+| Сервис (дом) | Назначение |
+|--------|------------|
+| `worker-five-verst` | `-Q five_verst --concurrency=1 --prefetch-multiplier=1` (фон: сверка, ротация, реестр, клубы) |
+| `worker-five-verst-fresh` | `-Q five_verst_fresh --concurrency=1` (свежесть: latest) — отдельный контейнер, потому что порядок очередей в `-Q` kombu не гарантирует |
+| `worker-s95` | `-Q s95_user,s95 --concurrency=1 --prefetch-multiplier=1 -O fair` |
+| `worker-runpark` | `-Q runpark --concurrency=1 --max-tasks-per-child=1` |
 
 ### Деплой
 
@@ -125,6 +146,9 @@ Git-based (не rsync, см. scripts/remote_deploy.sh): прод перевод�
 80 и 443, SSH намеренно не проброшен. Поэтому направление — изнутри:
 
 - `remote_deploy.sh` после успешного health-check пишет на проде `.deployed_sha`;
+- на домашнем сервере ДВЕ копии кода: `~/saturday-runs-next` (разбор очереди
+  профилей) и `~/srs-prod` (docker-контейнеры воркеров сбора — 5 вёрст, S95,
+  RunPark, см. `docker-compose.home.yml`). Обе обязаны совпадать с продом;
 - на домашнем сервере таймер `pm-home-sync` запускает `scripts/home_sync.sh`:
   читает маркер, и если коммит сменился — останавливает разбор очереди,
   подтягивает код, при изменении `pyproject.toml` обновляет venv, запускает
@@ -184,13 +208,25 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 
 Конфиг: `backend/app/workers/celery_app.py`, timezone `Europe/Moscow`.
 
+Имена очередей — `backend/app/workers/queues.py`; маршруты `task_routes` — в
+`celery_app.py`. Новая задача по умолчанию едет в ФОН своей системы.
+
 | Очередь | Worker | Задачи |
 |---------|--------|--------|
-| `five_verst_user` | worker-five-verst-user | user profile sync (приоритетная) |
-| `five_verst` | worker-five-verst | registry, latest, rotation, reconcile |
-| `s95_user` | worker-s95 | user profile sync (приоритетная) |
-| `s95` | worker-s95 | batch S95 + athletes_registry |
-| `parkrun` | worker-parkrun | parkrun user sync |
+| `five_verst_user` | worker-five-verst-user | `user_sync.*` — синк профиля по кнопке (приоритетная) |
+| `five_verst_fresh` | worker-five-verst-fresh | `sync_latest_results` — сегодняшние протоколы |
+| `five_verst` | worker-five-verst | остальные `five_verst_sync.*`: registry, rotation, reconcile, обход недели, клубы, сообщества |
+| `s95_user` | worker-s95 | `run_user_sync`, `run_admin_resync` (приоритетная, уступка через LLEN) |
+| `s95` | worker-s95 | остальные `s95_sync.*`: реестр, JSON-протоколы, отмены, описания |
+| `parkrun` | worker-parkrun | `parkrun_sync.*` (очередь профилей), `og_render.*` |
+| `runpark` | worker-runpark | `runpark_sync.*`: latest, кросслинки, user_sync |
+| `warm` | worker-warm, worker | `leaderboards.warm_cache`, `locations.warm_cache` |
+| `celery` (default) | worker | наблюдатель протоколов, прогрев главной, page_stats, погода, user_names, sync_runs.close_stale, дайджест |
+
+У **каждой** записи beat есть `expires`: не взяли вовремя — задача умирает, а не
+копится долгом после простоя воркера. Где срок не задан руками, он считается из
+расписания (`schedule_interval_seconds` в `celery_app.py`, потолок 6 ч); тест
+`test_expires_never_outlives_the_interval` не даст задать срок длиннее интервала.
 
 ### S95 user priority (cooperative yield)
 
@@ -216,25 +252,38 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 
 ### Beat schedule (MSK)
 
-**5 verst**:
+Источник истины — `beat_schedule` в `celery_app.py` (там же комментарии, почему
+именно так). Сводка на 21.09.2026:
+
+**5 вёрст**:
 
 | Task | Расписание |
 |------|------------|
-| registry | 20:50 daily |
-| latest | пн–пт 0,5,10,15,20 (`:00`); сб/вс hourly |
+| registry | 20:50 ежедневно |
+| latest | пн–пт 0,5,10,15,20 (`:00`); сб/вс ежечасно |
+| protocol_upload_watch (очередь `celery`) | сб — каждую минуту, вс — каждые 5 мин, пн–пт — каждые 30 мин |
 | rotation | `:30` каждые 4 ч |
-| reconcile | `:10` каждые 3 ч, **только пн–пт**; 200 протоколов цепочкой 2×100 |
+| reconcile | `:10` каждые 3 ч, **только пн–пт** |
+| week sweep | 02:20 пн/ср/чт/пт (окна w0/w1/w2) |
+| clubs registry / details | пн, чт 21:30 / `:45` каждые 3 ч по 8 клубов |
+| community events | ср, сб 22:40 |
 
-**S95** — **+30 мин** к 5verst:
+**S95** (JSON-API, Playwright-батчи сняты):
 
 | Task | Расписание |
 |------|------------|
-| registry | 20:30 |
-| latest | :30 (аналогично дням) |
-| rotation | :30 каждые 4 ч |
-| reconcile | :30 каждые 3 ч |
-| athletes_registry | :30 каждые 2 ч, batch 50 |
-| location_descriptions | :50 каждые 4 ч, batch 5 |
+| registry | 20:30 раз в 3 дня |
+| api_new_protocols | сб, вс 11:00, 17:00, 23:00 |
+| api_sync_updated | пн, ср, пт 03:00 |
+| reconcile_events | вт 04:10 |
+| cancellations watch | `:40` каждые 6 ч |
+| location_descriptions | `:50` каждые 4 ч |
+
+**RunPark**: latest 3,8,13,18,23 (`:00`); backfill crosslinks 03:30.
+**parkrun**: очередь профилей `:07`/`:37`; og_render — выходные и понедельник.
+**Прогревы**: главная — выходные ежечасно `:15`, будни 4,9,14,19; рейтинги `:20`
+и локации `:40` каждые 2 ч. **Служебное**: page_stats `:35`, sync_runs.close_stale
+`:05`, статусы локаций 21:10, дайджест 21:50, погода 03:05/03:20 (+ пятница 8,14,20).
 
 ---
 
@@ -528,7 +577,9 @@ cd backend && ruff check app tests
 
 - Коммиты — **только по просьбе** пользователя
 - Prod `.env` не в git; локальный `.env` и `PROJECT_HANDOFF.local.md` — gitignored
-- Перед `git pull` на сервере — сверка с rsync-состоянием
+- На сервере руками `git pull` не делать: прод переводится на вершину `origin/main`
+  только деплоем (`scripts/deploy_prod.sh` → `remote_deploy.sh`), иначе код на
+  диске и в контейнерах разъедутся
 
 ---
 
@@ -548,9 +599,12 @@ Prod API **не** fetch'ит parkrun.org.uk. Очередь `profile_fetch_pendi
 | `scripts/recalculate_personal_records.py` | backfill PR |
 | `scripts/import_location_catalog.py` | catalog → DB |
 | `scripts/backfill_location_descriptions.py` | первый сбор описаний площадок (5 вёрст, S95) |
-| `scripts/deploy_prod.sh` | rsync + prod deploy |
+| `scripts/deploy_prod.sh` | git-based деплой на прод (одним SSH, см. `remote_deploy.sh`) |
 | `scripts/dev_prod_db.sh` | локальный сайт на prod DB (read-only tunnel) |
-| `make parkrun` | Mac parkrun fetch daemon |
+| `scripts/add_release.py` / `update_release.py` | записи релизов для «Обновлений» |
+| `scripts/prune_server_disk.sh` | чистка диска на сервере (образы без `-a`, кэш сборки, journald) |
+| `make parkrun` | parkrun fetch daemon (Mac; на домашнем сервере — `scripts/home_queue_run.sh`) |
+| `backend/scripts/archive/` | отработавшие бэкфилы — не запускать, см. README там |
 
 ---
 

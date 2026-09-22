@@ -77,7 +77,7 @@ type CabinetNavItem = {
  * публичном адресе /users/{хендл}/…, а служебные (Поделиться, Настройки)
  * остаются на собственных путях — публиковать их незачем.
  */
-function navHref(user: User | null | undefined, item: CabinetNavItem): string {
+export function navHref(user: User | null | undefined, item: CabinetNavItem): string {
   if (item.key === "share" || item.key === "settings") {
     return item.href;
   }
@@ -199,6 +199,15 @@ const REGULARS_ICON = icon(
 );
 
 // «Результаты последней субботы»: секундомер — свежие результаты стартов.
+// «Топы бегунов» локации: подиум — кто здесь быстрее всех и кто чаще выигрывал.
+const PODIUM_ICON = icon(
+  <>
+    <path d="M9.5 11.5h5V20h-5z" />
+    <path d="M4 15h5.5v5H4zM14.5 13.5H20V20h-5.5z" />
+    <path d="M12 4l1.1 2.3 2.4.3-1.8 1.7.5 2.4L12 9.6 9.8 10.7l.5-2.4L8.5 6.6l2.4-.3z" />
+  </>,
+);
+
 const LAST_RESULTS_ICON = icon(
   <>
     <circle cx="12" cy="13" r="7" />
@@ -286,6 +295,13 @@ export function locationSectionLinks(location: { slug: string; name: string }): 
       label: "Постоянный состав",
       icon: REGULARS_ICON,
       isCurrent: (pathname) => pathname === `${base}/participants`,
+    },
+    {
+      key: "tops",
+      href: `${base}/tops`,
+      label: "Топы бегунов",
+      icon: PODIUM_ICON,
+      isCurrent: (pathname) => pathname === `${base}/tops`,
     },
     {
       key: "events",

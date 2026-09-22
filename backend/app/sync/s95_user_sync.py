@@ -15,6 +15,7 @@ from app.models import (
 from app.platform_adapters.s95 import parser as s95_parser
 from app.platform_adapters.s95.url import parse_athlete_url
 from app.sync import upsert as sync_upsert
+from app.sync.iteration_commit import release_before_fetch
 from app.sync.profile_check_limits import profile_activity_check_limit
 from app.sync.profile_protocol_queue import (
     enqueue_mismatched_protocols_for_profile,
@@ -51,7 +52,15 @@ def sync_s95_platform_link(
     if platform.code != "s95":
         raise UserSyncError(f"Expected s95 platform, got {platform.code}")
 
+    # Вызывающий только что закоммитил статус «syncing», и поля ORM-строки
+    # протухли: обращение к link.external_url открывает новую транзакцию —
+    # и она висела бы «idle in transaction» весь фетч профиля s95 (пауза
+    # между запросами, очередь за батчем, повторы). Прод рвёт такие сессии
+    # через 60 с, а падает первый запрос ПОСЛЕ фетча. Поэтому всё нужное
+    # для похода в сеть берём в локальные переменные и отпускаем транзакцию
+    # (см. iteration_commit.release_before_fetch).
     parsed = parse_athlete_url(link.external_url)
+    release_before_fetch(db)
     profile, runs, volunteering = s95_parser.fetch_athlete_activity(
         parsed.external_user_id,
         domain=parsed.domain,
