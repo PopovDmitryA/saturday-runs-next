@@ -40,6 +40,7 @@ from app.services.gender_position_service import resolve_participant_gender
 from app.services.location_catalog_service import backfill_city_from_catalog, backfill_region_from_catalog
 from app.services.location_freshness import mark_location_results_changed
 from app.sync.rating_relink import relink_ratings_before_delete
+from app.volunteer_role_taxonomy import canonical_volunteer_role
 
 PARSER_VERSION = "0.3.2"
 logger = logging.getLogger(__name__)
@@ -1549,14 +1550,37 @@ def import_profile_run_results(
 
 
 def _volunteer_role_dedupe_key(role: str | None, *, platform_code: str | None = None) -> str:
+    """Ключ схлопывания: одна работа — один ключ, как бы её ни подписали.
+
+    Раньше сравнивались сырые ярлыки, и переименование роли внутри системы
+    рождало дубль: в сентябре 2026 у 5 вёрст «Сканирование штрих-кодов» стало
+    «Сканером», протокол хранил старое имя, синк профиля приносил новое — и за
+    одну субботу у человека оказывались две строки (131 случай на проде к
+    22.09.2026). Поэтому берём канонический ключ таксономии: незнакомая роль
+    получает там свой raw:*-ключ, то есть поведение «сырых» ярлыков для новых
+    ролей сохраняется.
+    """
     if not role:
         return "volunteer"
     if platform_code == "s95":
         from app.s95.parsers.volunteer_roles import s95_volunteer_role_key
 
         return s95_volunteer_role_key(role)
+    canonical = canonical_volunteer_role(role)
+    if canonical is not None:
+        return canonical.key
     normalized = re.sub(r"[^\w]+", "_", role.lower(), flags=re.UNICODE).strip("_")
     return normalized or "volunteer"
+
+
+def _role_freshness(vol: VolunteerResult) -> tuple[bool, datetime]:
+    """Когда роль этой строки последний раз видели у источника."""
+    stamp = vol.fetched_at or vol.updated_at
+    if stamp is None:
+        return (False, datetime.min.replace(tzinfo=timezone.utc))
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return (True, stamp)
 
 
 def _volunteer_result_completeness(vol: VolunteerResult) -> tuple[int, int, int, int]:
@@ -1609,6 +1633,18 @@ def dedupe_participant_volunteer_results(
                 canonical_role = prefer_s95_volunteer_role(canonical_role, vol.role)
             if canonical_role:
                 keeper.role = canonical_s95_volunteer_role(canonical_role) or canonical_role
+        else:
+            # Группа собралась из разных подписей одной работы — оставляем ту,
+            # которую у источника видели последней: после переименования роли
+            # это новое имя, и следующая перечитка протокола попадёт в ту же
+            # строку, а не заведёт ещё одну.
+            latest = max(
+                (vol for vol, _event in group if vol.role),
+                key=_role_freshness,
+                default=None,
+            )
+            if latest is not None and latest.role:
+                keeper.role = latest.role
         # Отзывы с удаляемых дублей — на keeper (sync/rating_relink.py).
         relink_ratings_before_delete(
             db,
