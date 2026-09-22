@@ -30,6 +30,8 @@ dependencies = [
     "boto3>=1.35.0",
     # Экспорт таблиц кабинета организатора в .xlsx (свод по пробежке).
     "openpyxl>=3.1.0",
+    # Разбор FIT-файлов с часов: чистый python, бинарных зависимостей нет.
+    "fitdecode>=0.10.0",
 ]
 
 [project.optional-dependencies]

@@ -162,6 +162,12 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
       "RunPark в одной таблице, зарубежье — по странам.",
     indexable: true,
   },
+  "/ratings/courses": {
+    title: "Трассы локаций — run5k.run",
+    description:
+      "Перепад высот и извилистость трасс субботних пятёрок по трекам участников.",
+    indexable: false,
+  },
   "/backlog": {
     title: "Бэклог — run5k.run",
     description: "Что участники предлагают добавить на сайт и за что голосуют.",

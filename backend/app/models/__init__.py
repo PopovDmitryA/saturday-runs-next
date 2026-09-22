@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -960,6 +961,143 @@ class RunResult(Base):
     participant: Mapped["Participant | None"] = relationship(back_populates="run_results")
 
 
+class AdminTrackImport(Base):
+    """Сессия импорта треков из админки: загрузили, посмотрели, подтвердили.
+
+    Разбор идёт порциями (`pending` — очередь необработанного), потому что
+    выгрузка Garmin за несколько лет — это сотни файлов, и в один HTTP-запрос
+    они не укладываются.
+    """
+
+    __tablename__ = "admin_track_imports"
+    __table_args__ = (Index("ix_admin_track_imports_created_at", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    created_by_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    target_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="collecting")
+    total_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    processed_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    imported_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    skipped_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    problems: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    pending: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LocationCourseProfile(Base):
+    """Паспорт трассы локации: агрегаты по её годным трекам.
+
+    У локации может быть несколько версий: трассу переносят или перекладывают,
+    и тогда прежние измерения перестают описывать то, что бегут сейчас.
+    Текущая версия одна (is_current), остальные остаются историей.
+    """
+
+    __tablename__ = "location_course_profiles"
+    __table_args__ = (
+        UniqueConstraint("location_id", "course_version", name="uq_location_course_version"),
+        Index("ix_location_course_current", "location_id", "is_current"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    location_id: Mapped[UUID] = mapped_column(ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)
+    course_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    tracks_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    unique_user_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    distance_m: Mapped[float | None] = mapped_column(Float)
+    distance_min_m: Mapped[float | None] = mapped_column(Float)
+    distance_max_m: Mapped[float | None] = mapped_column(Float)
+    elevation_gain_m: Mapped[float | None] = mapped_column(Float)
+    elevation_span_m: Mapped[float | None] = mapped_column(Float)
+    turn_sum_deg: Mapped[float | None] = mapped_column(Float)
+    u_turn_count: Mapped[float | None] = mapped_column(Float)
+    longest_straight_m: Mapped[float | None] = mapped_column(Float)
+    lap_count: Mapped[int | None] = mapped_column(Integer)
+    uphill_share: Mapped[float | None] = mapped_column(Float)
+    downhill_share: Mapped[float | None] = mapped_column(Float)
+    climb_length_m: Mapped[float | None] = mapped_column(Float)
+    climb_rise_m: Mapped[float | None] = mapped_column(Float)
+    climb_grade_percent: Mapped[float | None] = mapped_column(Float)
+    elevation_profile: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    geometry_cells: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    # Линия трассы для карты: [[широта, долгота], ...] — прорежённый трек
+    # с медианной длиной среди годных.
+    geometry: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    first_track_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_track_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class RunTrack(Base):
+    """Трек пробежки, загруженный участником: файл с часов или ссылка на Garmin.
+
+    Точки хранятся обрезанными окрестностью старта, набор высоты берётся из
+    прибора (у равнинных трасс высотные модели врут сильнее барометра —
+    проверено на треках Лихославля 09.09.2026).
+    """
+
+    __tablename__ = "run_tracks"
+    __table_args__ = (
+        UniqueConstraint("user_id", "source", "source_ref", name="uq_run_tracks_user_source_ref"),
+        Index("ix_run_tracks_user_started", "user_id", "started_at"),
+        Index("ix_run_tracks_run_result", "run_result_id"),
+        Index("ix_run_tracks_location_started", "location_id", "started_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    run_result_id: Mapped[UUID | None] = mapped_column(ForeignKey("run_results.id", ondelete="SET NULL"))
+    event_id: Mapped[UUID | None] = mapped_column(ForeignKey("events.id", ondelete="SET NULL"))
+    location_id: Mapped[UUID | None] = mapped_column(ForeignKey("locations.id", ondelete="SET NULL"))
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(512), nullable=False)
+    source_url: Mapped[str | None] = mapped_column(String(1024))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_sec: Mapped[int | None] = mapped_column(Integer)
+    device_distance_m: Mapped[float | None] = mapped_column(Float)
+    distance_m: Mapped[float | None] = mapped_column(Float)
+    elevation_gain_m: Mapped[float | None] = mapped_column(Float)
+    elevation_loss_m: Mapped[float | None] = mapped_column(Float)
+    min_elevation_m: Mapped[float | None] = mapped_column(Float)
+    max_elevation_m: Mapped[float | None] = mapped_column(Float)
+    device_name: Mapped[str | None] = mapped_column(String(128))
+    device_firmware: Mapped[str | None] = mapped_column(String(64))
+    has_barometer: Mapped[bool | None] = mapped_column(Boolean)
+    point_count: Mapped[int | None] = mapped_column(Integer)
+    sample_interval_sec: Mapped[float | None] = mapped_column(Float)
+    quality_class: Mapped[str | None] = mapped_column(String(1))
+    quality: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    points: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    protocol_delta_sec: Mapped[int | None] = mapped_column(Integer)
+    # Годится ли трек как измерение трассы: класс записи — про качество GPS,
+    # а это — про доверие к самим данным (см. track_validation).
+    is_course_eligible: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    exclusion_reason: Mapped[str | None] = mapped_column(String(48))
+    exclusion_note: Mapped[str | None] = mapped_column(Text)
+    start_distance_m: Mapped[float | None] = mapped_column(Float)
+    # Версия трассы локации, к которой относится трек (трассы иногда меняют).
+    course_version: Mapped[int | None] = mapped_column(Integer)
+    # preview — трек загружен админом и ждёт подтверждения, в кабинет участника
+    # такие не попадают; ok — обычный трек.
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="ok")
+    import_batch_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("admin_track_imports.id", ondelete="SET NULL")
+    )
+    imported_by_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class VolunteerResult(Base):
     __tablename__ = "volunteer_results"
     __table_args__ = (
@@ -1113,6 +1251,9 @@ class User(Base):
         default=list,
         server_default="[]",
     )
+    # Согласие на обработку GPS-треков: спрашиваем один раз перед первой
+    # загрузкой, дальше только показываем в настройках.
+    track_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     platform_links: Mapped[list["PlatformLink"]] = relationship(back_populates="user")
     dashboard_cache: Mapped["DashboardCache | None"] = relationship(back_populates="user", uselist=False)

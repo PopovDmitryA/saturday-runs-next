@@ -24,6 +24,8 @@ import { PortalUpdatesPage } from "./features/portal/PortalUpdatesPage";
 import { AdminBlogPage } from "./features/admin/AdminBlogPage";
 import { AdminReleasesPage } from "./features/admin/AdminReleasesPage";
 import { AdminBacklogPage } from "./features/admin/AdminBacklogPage";
+import { AdminTrackImportsPage } from "./features/admin/AdminTrackImportsPage";
+import { CourseRatingPage } from "./features/leaderboards/CourseRatingPage";
 import { BacklogPage } from "./features/backlog/BacklogPage";
 import {
   cabinetTabHref,
@@ -265,6 +267,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
   "/ratings/location-records": () => <LocationRecordsRatingPage />,
   "/ratings/regions": () => <RegionsRatingPage />,
+  "/ratings/courses": () => <CourseRatingPage />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,
@@ -290,6 +293,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/blog": () => <AdminBlogPage />,
   "/admin/releases": () => <AdminReleasesPage />,
   "/admin/backlog": () => <AdminBacklogPage />,
+  "/admin/track-imports": () => <AdminTrackImportsPage />,
 
 };
 

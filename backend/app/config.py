@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # Домен сайта должен быть прописан боту через /setdomain у @BotFather,
     # иначе Telegram виджет не покажет.
     telegram_login_enabled: bool = True
+    # Треки пробежек: первая итерация — сбор через админку, участникам ничего
+    # не показываем. Переключение на всех делается этим флагом, кода это не
+    # касается (вторая итерация фичи, см. Ч33).
+    tracks_public_enabled: bool = False
     telegram_login_bot_token: str = ""
     telegram_login_bot_username: str = ""
     # Сколько живёт подпись виджета. Сутки — как в примерах Telegram: человек

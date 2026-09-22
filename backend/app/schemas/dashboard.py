@@ -356,6 +356,8 @@ class RunItemResponse(BaseModel):
     club_name: str | None = None
     achievement_labels: list[str] = Field(default_factory=list)
     status: str | None = None
+    # Загруженный трек этой пробежки, если он есть.
+    track_id: UUID | None = None
     is_test_event: bool = False
     event_url: str | None = None
 
