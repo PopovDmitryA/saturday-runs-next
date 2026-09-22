@@ -2026,6 +2026,14 @@ export function getHistoryMilestoneSettings() {
   return apiFetch<HistoryMilestoneSettings>("/settings/history-milestones");
 }
 
+// Скрытые виды целиком — модалка «Какие вехи показывать» применяет набор разом.
+export function setHistoryMilestoneDisabledKinds(disabledKinds: string[]) {
+  return apiFetch<HistoryMilestoneSettings>("/settings/history-milestones", {
+    method: "PUT",
+    body: JSON.stringify({ disabled_kinds: disabledKinds }),
+  });
+}
+
 export function setHistoryMilestoneEnabled(kind: string, enabled: boolean) {
   return apiFetch<HistoryMilestoneSettings>(`/settings/history-milestones/${kind}`, {
     method: "PUT",
