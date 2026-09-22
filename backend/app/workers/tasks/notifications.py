@@ -16,6 +16,7 @@ from sqlalchemy import and_
 from app.db.session import get_session_factory
 from app.models import NotificationDelivery, Participant, PlatformLink, RunResult, UserNotificationChannel
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_MEDIUM, LIMITS_SHORT
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ WATERMARK_KEY = "notifications:scan:covered_through"
 WATERMARK_FALLBACK = timedelta(hours=2)
 
 
-@celery_app.task(name="notifications.deliver")
+@celery_app.task(name="notifications.deliver", **LIMITS_SHORT)
 def deliver(delivery_id: str) -> str:
     from app.services.notification_service import deliver_now
 
@@ -47,7 +48,7 @@ def deliver(delivery_id: str) -> str:
         db.close()
 
 
-@celery_app.task(name="notifications.scan_activity")
+@celery_app.task(name="notifications.scan_activity", **LIMITS_MEDIUM)
 def scan_activity(user_ids: list[str]) -> dict[str, int]:
     """Новые пробежки, рейтинги, уровни и вехи у перечисленных людей."""
     from app.services.activity_notification_service import scan_user_activity
@@ -117,7 +118,7 @@ def _save_watermark(value: datetime) -> None:
         logger.exception("notify: watermark write failed")
 
 
-@celery_app.task(name="notifications.scan_new_results")
+@celery_app.task(name="notifications.scan_new_results", **LIMITS_SHORT)
 def scan_new_results() -> dict[str, int]:
     """Раз в десять минут: у кого из включивших уведомления появились
     результаты после водяного знака — независимо от того, кто их записал.
@@ -161,7 +162,7 @@ def scan_new_results() -> dict[str, int]:
     return result
 
 
-@celery_app.task(name="notifications.weekly_ratings")
+@celery_app.task(name="notifications.weekly_ratings", **LIMITS_MEDIUM)
 def weekly_ratings() -> dict[str, int]:
     """Воскресенье днём: движение в рейтингах за неделю всем, у кого включены
     уведомления. Протоколы субботы к этому времени догружены."""
@@ -195,7 +196,7 @@ def weekly_ratings() -> dict[str, int]:
     return summary
 
 
-@celery_app.task(name="notifications.retry_queued")
+@celery_app.task(name="notifications.retry_queued", **LIMITS_MEDIUM)
 def retry_queued() -> dict[str, int]:
     """Подобрать застрявшие доставки: queued без задачи (брокер моргнул) и
     failed по временной ошибке, у которых не исчерпаны попытки."""
