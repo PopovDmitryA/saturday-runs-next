@@ -91,6 +91,7 @@ function PortalHistoryBody() {
       cacheScope="me"
       shareBase={PORTAL_CABINET_SHARE_HREF}
       siteUrl={siteUrl}
+      milestoneSettings
     />
   );
 }

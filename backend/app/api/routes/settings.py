@@ -13,6 +13,7 @@ from app.schemas.settings import (
     AutoSyncPlatformPreference,
     AutoSyncSettingsResponse,
     AutoSyncSettingsUpdateRequest,
+    HistoryMilestoneBulkUpdateRequest,
     HistoryMilestoneKindUpdateRequest,
     HistoryMilestoneSettingsResponse,
     HomeLocationCandidateResponse,
@@ -51,6 +52,7 @@ from app.services.user_auto_sync_service import (
 from app.services.user_history_milestone_service import (
     UnknownMilestoneKindError,
     list_user_milestone_kind_settings,
+    set_user_disabled_milestone_kinds,
     set_user_milestone_kind_enabled,
 )
 
@@ -255,6 +257,25 @@ def update_tourism_platforms(
 def get_history_milestone_settings(
     user: Annotated[User, Depends(get_current_user)],
 ) -> HistoryMilestoneSettingsResponse:
+    return HistoryMilestoneSettingsResponse.model_validate(
+        {"kinds": list_user_milestone_kind_settings(user)}
+    )
+
+
+@router.put("/history-milestones", response_model=HistoryMilestoneSettingsResponse)
+def replace_history_milestone_settings(
+    body: HistoryMilestoneBulkUpdateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> HistoryMilestoneSettingsResponse:
+    try:
+        set_user_disabled_milestone_kinds(user, body.disabled_kinds)
+    except UnknownMilestoneKindError as err:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Неизвестный вид вехи"
+        ) from err
+    db.commit()
+    db.refresh(user)
     return HistoryMilestoneSettingsResponse.model_validate(
         {"kinds": list_user_milestone_kind_settings(user)}
     )
