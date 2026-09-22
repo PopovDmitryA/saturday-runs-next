@@ -1873,3 +1873,103 @@ class StartWeatherForecast(Base):
     # За сколько суток до старта снят прогноз — этим подписывается его надёжность.
     horizon_days: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class UserNotificationPrefs(Base):
+    """Настройки уведомлений человека — одна строка на пользователя.
+
+    Главного выключателя нет: уведомления идут, пока включён хотя бы один
+    канал (см. UserNotificationChannel). Здесь — основной канал, переключатели
+    видов и служебные снимки сканера активности.
+    """
+
+    __tablename__ = "user_notification_prefs"
+
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    # Канал, куда пробуем первым; NULL — порядок по умолчанию
+    # (см. notification_channels_service.CHANNEL_ORDER).
+    primary_channel: Mapped[str | None] = mapped_column(String(16))
+    # {код вида: bool}; отсутствующий ключ = умолчание реестра.
+    kinds: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    # Снимки сканера активности; NULL — снимка ещё не было, первый скан
+    # только запоминает и молчит.
+    challenge_levels: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    ratings_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    milestones_seen: Mapped[list[str] | None] = mapped_column(JSONB)
+    # Докуда разобраны run_results.created_at для уведомлений о пробежках.
+    runs_notified_through: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Человек сам менял настройки: колокольчик и баннеры не включают
+    # уведомления тому, кто их выключил осознанно.
+    settings_touched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    nudge_dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class UserNotificationChannel(Base):
+    """Куда доставлять: Telegram (chat_id), VK (id пользователя), почта (адрес).
+
+    Строка появляется, когда человек включил уведомления на этом способе
+    входа. `enabled` — его выбор; `check_ok` — результат проверки, что
+    доставка возможна (бот не заблокирован, VK разрешил сообщения): без
+    сообщения человеку, через sendChatAction и isMessagesFromGroupAllowed.
+    """
+
+    __tablename__ = "user_notification_channels"
+    __table_args__ = (UniqueConstraint("user_id", "channel", name="uq_user_notification_channels_user_channel"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    check_ok: Mapped[bool | None] = mapped_column(Boolean)
+    check_error: Mapped[str | None] = mapped_column(Text)
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class NotificationDelivery(Base):
+    """Одно сообщение одному человеку: что, о чём и куда в итоге ушло.
+
+    Заводится в статусе queued в той же транзакции, что и событие (комментарий,
+    пробежка), доставляется celery-задачей `notifications.deliver` перебором
+    каналов: основной, потом резервные. Уникальность (user, kind, dedupe_key)
+    — защита от повторов, когда событие обрабатывается дважды.
+    """
+
+    __tablename__ = "notification_deliveries"
+    __table_args__ = (
+        UniqueConstraint("user_id", "kind", "dedupe_key", name="uq_notification_deliveries_dedupe"),
+        Index("ix_notification_deliveries_user_created", "user_id", "created_at"),
+        Index("ix_notification_deliveries_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued", server_default="queued")
+    channel: Mapped[str | None] = mapped_column(String(16))
+    attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BacklogCardSubscription(Base):
+    """Кто следит за карточкой бэклога: автор и комментаторы — автоматически,
+    остальные — колокольчиком на карточке."""
+
+    __tablename__ = "backlog_card_subscriptions"
+    __table_args__ = (Index("ix_backlog_card_subscriptions_user", "user_id"),)
+
+    card_id: Mapped[UUID] = mapped_column(ForeignKey("backlog_cards.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

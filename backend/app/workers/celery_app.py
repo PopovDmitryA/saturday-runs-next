@@ -50,6 +50,7 @@ celery_app.conf.update(
         "app.workers.tasks.weather_collect",
         "app.workers.tasks.weather_forecast",
         "app.workers.tasks.sync_runs_maintenance",
+        "app.workers.tasks.notifications",
     ),
     task_routes={
         # Точные имена идут до шаблона `five_verst_sync.*` — первое совпадение
@@ -172,6 +173,27 @@ celery_app.conf.update(
             "task": "locations.refresh_activity_status",
             "schedule": crontab(hour=21, minute=10),
             "options": {"queue": "celery"},
+        },
+        # Уведомления, застрявшие в queued/failed (брокер моргнул, канал лежал):
+        # подметальщик раз в 10 минут, внутри базы и сети каналов.
+        "notifications-retry-queued": {
+            "task": "notifications.retry_queued",
+            "schedule": crontab(minute="*/10"),
+            "options": {"queue": "celery", "expires": 9 * 60},
+        },
+        # Результаты, записанные мимо воркеров (parkrun с Mac-демона): раз в
+        # десять минут ищем у включивших уведомления новые строки run_results.
+        "notifications-scan-new-results": {
+            "task": "notifications.scan_new_results",
+            "schedule": crontab(minute="3-59/10"),
+            "options": {"queue": "celery", "expires": 9 * 60},
+        },
+        # Движение в рейтингах — раз в неделю, в воскресенье в 14:00 МСК:
+        # протоколы субботы к этому часу догружены, место уже не прыгает.
+        "notifications-weekly-ratings": {
+            "task": "notifications.weekly_ratings",
+            "schedule": crontab(hour=14, minute=0, day_of_week="0"),
+            "options": {"queue": "celery", "expires": 6 * 3600},
         },
         "five-verst-registry-daily": {
             "task": "five_verst_sync.sync_locations_registry",

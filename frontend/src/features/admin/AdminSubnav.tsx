@@ -16,6 +16,7 @@ const LINKS = [
   { href: "/admin/blog", label: "Блог" },
   { href: "/admin/releases", label: "Релизы" },
   { href: "/admin/backlog", label: "Бэклог" },
+  { href: "/admin/notifications", label: "Уведомления" },
   { href: "/admin/abuse", label: "Блокировки" },
   { href: "/admin/profile-slugs", label: "Резерв ссылок" },
 ] as const;

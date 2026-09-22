@@ -21,11 +21,14 @@ from app.models import (
     BacklogCard,
     BacklogCardPhoto,
     BacklogCardStatus,
+    BacklogCardSubscription,
     BacklogCardType,
     BacklogComment,
     BacklogVote,
     User,
+    UserNotificationPrefs,
 )
+from app.notification_markup import bold
 from app.schemas.backlog import (
     BacklogCardAdminResponse,
     BacklogCardResponse,
@@ -34,6 +37,7 @@ from app.schemas.backlog import (
     BacklogVoteAdminListResponse,
 )
 from app.schemas.photo import PhotoResponse
+from app.services import notification_service as notifications
 from app.services.admin_notify import notify_admin
 from app.services.photo_service import PhotoPayload, delete_backlog_photo, list_backlog_photos
 
@@ -94,6 +98,168 @@ def _notify_new_comment(card: BacklogCard, comment: BacklogComment) -> None:
     notify_admin(text)
 
 
+# ---------------------------------------------------------------------------
+# Подписки на карточки: кому писать о новых комментариях
+
+
+def _subscribe(db: Session, card_id: UUID, user_id: UUID) -> bool:
+    """Подписать без коммита. False — уже подписан."""
+    exists = db.get(BacklogCardSubscription, (card_id, user_id))
+    if exists is not None:
+        return False
+    db.add(BacklogCardSubscription(card_id=card_id, user_id=user_id))
+    db.flush()
+    return True
+
+
+def _my_subscriptions(db: Session, card_ids: list[UUID], viewer_id: UUID | None) -> set[UUID]:
+    if viewer_id is None or not card_ids:
+        return set()
+    rows = (
+        db.query(BacklogCardSubscription.card_id)
+        .filter(BacklogCardSubscription.user_id == viewer_id, BacklogCardSubscription.card_id.in_(card_ids))
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def set_card_subscription(db: Session, card_id: UUID, *, user_id: UUID, subscribed: bool) -> BacklogCardResponse:
+    """Колокольчик на карточке. Первое явное «следить» у человека, не
+    трогавшего настройки, включает ему уведомления целиком — иначе колокольчик
+    молчал бы, а понять почему можно только в настройках."""
+    _get_card(db, card_id)
+    if subscribed:
+        _subscribe(db, card_id, user_id)
+        user = db.get(User, user_id)
+        if user is not None:
+            notifications.enable_if_untouched(db, user)
+    else:
+        db.query(BacklogCardSubscription).filter(
+            BacklogCardSubscription.card_id == card_id, BacklogCardSubscription.user_id == user_id
+        ).delete(synchronize_session=False)
+    db.commit()
+    return get_card(db, card_id, viewer_id=user_id)
+
+
+_STATUS_LABELS = {
+    BacklogCardStatus.pending: "На рассмотрении",
+    BacklogCardStatus.in_progress: "В реализации",
+    BacklogCardStatus.rejected: "Отклонено",
+    BacklogCardStatus.done: "Реализовано",
+}
+_STATUS_ICONS = {
+    BacklogCardStatus.pending: "🕐",
+    BacklogCardStatus.in_progress: "🛠",
+    BacklogCardStatus.rejected: "🚫",
+    BacklogCardStatus.done: "✅",
+}
+
+
+def _card_subscribers(db: Session, card_id: UUID, *, exclude: UUID | None = None) -> list[User]:
+    query = (
+        db.query(User)
+        .join(BacklogCardSubscription, BacklogCardSubscription.user_id == User.id)
+        .filter(BacklogCardSubscription.card_id == card_id)
+    )
+    if exclude is not None:
+        query = query.filter(User.id != exclude)
+    return query.all()
+
+
+def _queue_for(
+    db: Session,
+    users: list[User],
+    *,
+    kind: str,
+    title: str,
+    text: str,
+    dedupe_key: str,
+    url: str,
+    url_label: str,
+) -> None:
+    """Личные уведомления пачке людей одной транзакцией, затем в воркер."""
+    queued = []
+    for user in users:
+        delivery = notifications.notify_user(
+            db, user, kind, title=title, text=text, dedupe_key=dedupe_key, url=url, url_label=url_label, commit=False
+        )
+        if delivery is not None:
+            queued.append(delivery.id)
+    db.commit()
+    for delivery_id in queued:
+        notifications.enqueue_delivery(delivery_id)
+
+
+def _notify_subscribers(db: Session, card: BacklogCard, comment: BacklogComment) -> None:
+    """Новый комментарий — всем следящим за карточкой, кроме автора реплики."""
+    author = "аноним" if comment.is_anonymous else _author_display(comment.author)[0]
+    _queue_for(
+        db,
+        _card_subscribers(db, card.id, exclude=comment.author_user_id),
+        kind="backlog",
+        title=f"💬 Новый комментарий к «{card.title}»",
+        text=f"{bold(author + ':')} {_truncate(comment.body, _COMMENT_PREVIEW_LIMIT)}",
+        dedupe_key=f"comment:{comment.id}",
+        url=_card_link(card.id),
+        url_label="Открыть обсуждение",
+    )
+
+
+def _notify_card_created(db: Session, card: BacklogCard) -> None:
+    """Автору — карточка принята; следящим за новыми карточками — что появилась."""
+    author = card.author
+    _queue_for(
+        db,
+        [author],
+        kind="backlog",
+        title=f"✅ Карточка «{card.title}» принята в бэклог",
+        text="Спасибо за идею! Будем сообщать сюда о новых комментариях и о том, как меняется статус карточки: "
+        f"{bold('на рассмотрении')} → {bold('в реализации')} → {bold('реализовано')}.",
+        dedupe_key=f"created:{card.id}",
+        url=_card_link(card.id),
+        url_label="Открыть карточку",
+    )
+    watchers = (
+        db.query(User)
+        .join(UserNotificationPrefs, UserNotificationPrefs.user_id == User.id)
+        .filter(User.id != card.author_user_id)
+        .all()
+    )
+    author_label = "аноним" if card.is_anonymous else _author_display(author)[0]
+    _queue_for(
+        db,
+        watchers,
+        kind="backlog_new_cards",
+        title=f"🆕 Новая карточка в бэклоге: «{card.title}»",
+        text=f"{bold(_TYPE_LABELS[card.type].capitalize())} от {author_label}\n"
+        f"{_truncate(card.description, _DESCRIPTION_PREVIEW_LIMIT)}",
+        dedupe_key=f"new-card:{card.id}",
+        url=_card_link(card.id),
+        url_label="Открыть карточку",
+    )
+
+
+def _notify_status_changed(db: Session, card: BacklogCard, status: BacklogCardStatus) -> None:
+    """Смена статуса — автору и всем следящим."""
+    label = _STATUS_LABELS[status]
+    tail = {
+        BacklogCardStatus.done: "Спасибо, что предложили — это уже на сайте.",
+        BacklogCardStatus.in_progress: "Взяли в работу.",
+        BacklogCardStatus.rejected: "Причина — в комментариях к карточке.",
+        BacklogCardStatus.pending: "Карточка снова ждёт решения.",
+    }[status]
+    _queue_for(
+        db,
+        _card_subscribers(db, card.id),
+        kind="backlog",
+        title=f"{_STATUS_ICONS[status]} Карточка «{card.title}»: {label.lower()}",
+        text=f"Новый статус — {bold(label)}. {tail}",
+        dedupe_key=f"status:{card.id}:{status.value}:{datetime.now(UTC).strftime('%Y%m%d%H%M')}",
+        url=_card_link(card.id),
+        url_label="Открыть карточку",
+    )
+
+
 def _get_card(db: Session, card_id: UUID, *, for_update_author: bool = False) -> BacklogCard:
     query = select(BacklogCard).where(BacklogCard.id == card_id)
     if for_update_author:
@@ -133,6 +299,7 @@ def _card_to_response(
     comment_count: int,
     viewer_id: UUID | None,
     photos: list[PhotoPayload] | None = None,
+    is_subscribed: bool = False,
 ) -> BacklogCardResponse:
     author_name, author_handle = (None, None) if card.is_anonymous else _author_display(card.author)
     return BacklogCardResponse(
@@ -154,6 +321,7 @@ def _card_to_response(
         comment_count=comment_count,
         done_at=card.done_at,
         is_mine=viewer_id is not None and card.author_user_id == viewer_id,
+        is_subscribed=is_subscribed,
         photos=[
             PhotoResponse(id=photo.id, url=photo.url, width=photo.width, height=photo.height)
             for photo in (photos or [])
@@ -170,6 +338,7 @@ def _cards_to_responses(
     comment_counts = _comment_counts(db, card_ids)
     my_votes = _my_votes(db, card_ids, viewer_id)
     photos = list_backlog_photos(db, card_ids)
+    subscribed = _my_subscriptions(db, card_ids, viewer_id)
     return [
         _card_to_response(
             card,
@@ -177,6 +346,7 @@ def _cards_to_responses(
             comment_count=comment_counts.get(card.id, 0),
             viewer_id=viewer_id,
             photos=photos.get(card.id),
+            is_subscribed=card.id in subscribed,
         )
         for card in cards
     ]
@@ -235,10 +405,14 @@ def create_card(
         author_user_id=author_id,
     )
     db.add(card)
+    db.flush()
+    # Автор следит за своей карточкой по умолчанию — отписаться можно колокольчиком.
+    _subscribe(db, card.id, author_id)
     db.commit()
     db.refresh(card)
     card = _get_card(db, card.id, for_update_author=True)
     _notify_new_card(card)
+    _notify_card_created(db, card)
     return _cards_to_responses(db, [card], author_id)[0]
 
 
@@ -284,13 +458,18 @@ def _apply_card_update(
     if is_anonymous is not None:
         # _resolve_anonymous снимет анонимность, если карточку ведёт админ.
         card.is_anonymous = _resolve_anonymous(db, card.author_user_id, is_anonymous)
+    status_changed = False
     if status is not None:
         if not admin:
             raise BacklogError("Статус карточки меняет только администратор", status_code=403)
+        status_changed = card.status != status
         card.status = status
 
     db.commit()
-    return _get_card(db, card_id, for_update_author=True)
+    card = _get_card(db, card_id, for_update_author=True)
+    if status_changed and status is not None:
+        _notify_status_changed(db, card, status)
+    return card
 
 
 def update_card(
@@ -467,12 +646,16 @@ def create_comment(
         is_anonymous=_resolve_anonymous(db, author_id, is_anonymous),
     )
     db.add(comment)
+    db.flush()
+    # Написавший начинает следить за обсуждением — отписаться можно колокольчиком.
+    _subscribe(db, card_id, author_id)
     db.commit()
     db.refresh(comment)
     comment = db.execute(
         select(BacklogComment).options(joinedload(BacklogComment.author)).where(BacklogComment.id == comment.id)
     ).scalar_one()
     _notify_new_comment(card, comment)
+    _notify_subscribers(db, card, comment)
     return _comment_to_response(comment, viewer_id=author_id)
 
 
@@ -526,10 +709,13 @@ def update_card_status(db: Session, card_id: UUID, *, status: BacklogCardStatus)
         card.done_at = datetime.now(UTC)
     elif card.status == BacklogCardStatus.done:
         card.done_at = None
+    changed = card.status != status
     card.status = status
     db.commit()
     db.refresh(card)
     card = _get_card(db, card_id, for_update_author=True)
+    if changed:
+        _notify_status_changed(db, card, status)
     comment_count = _comment_counts(db, [card.id]).get(card.id, 0)
     return _card_to_admin_response(card, comment_count=comment_count)
 

@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 LOGIN_CONFIRM_PREFIX = "login_confirm:"
 LOGIN_CONSENT_PREFIX = "login_consent:"
 LOGIN_DECLINE_PREFIX = "login_decline:"
+# Подключение уведомлений из настроек сайта: сначала спрашиваем, потом
+# сообщаем сайту chat_id — молча подписывать человека нельзя.
+NOTIFY_CONFIRM_PREFIX = "notify_confirm:"
+NOTIFY_DECLINE_PREFIX = "notify_decline:"
 
 # Раз в полминуты бот отмечается в api после удачного запроса к Bot API: пока
 # метка жива, сайт ведёт людей сюда, а не в виджет (core/bot_heartbeat.py).
@@ -383,7 +387,61 @@ async def on_cmd_admin_help(message: Message) -> None:
     await _send_admin_reply(message.chat.id, ADMIN_HELP_TEXT)
 
 
+async def _confirm_notify_channel(token: str, telegram_id: int, chat_id: int) -> str | None:
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.post(
+            f"{settings.api_base_url.rstrip('/')}/api/auth/bot/notify-confirm",
+            json={"token": token, "telegram_id": telegram_id, "telegram_chat_id": chat_id},
+            headers=_bot_headers(),
+        )
+    if response.status_code != 200:
+        logger.warning("notify-confirm failed: %s %s", response.status_code, response.text)
+        return None
+    data = response.json()
+    return str(data.get("message")) if isinstance(data, dict) and data.get("message") else None
+
+
+def _notify_keyboard(token: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Подключить", callback_data=f"{NOTIFY_CONFIRM_PREFIX}{token}"),
+                InlineKeyboardButton(text="Не сейчас", callback_data=f"{NOTIFY_DECLINE_PREFIX}{token}"),
+            ]
+        ]
+    )
+
+
+NOTIFY_ASK_MESSAGE = (
+    "Подключить уведомления run5k.run в этот чат?\n\n"
+    "Сюда будут приходить сообщения сайта: пробежка попала на сайт, движение в рейтингах "
+    "по воскресеньям, комментарии и статус ваших карточек в бэклоге. "
+    "Что именно присылать — настраивается на сайте, отписка в один клик."
+)
+
+
+async def on_notify_callback(callback: CallbackQuery) -> None:
+    if callback.data is None or callback.from_user is None or callback.message is None:
+        return
+    if callback.data.startswith(NOTIFY_DECLINE_PREFIX):
+        await callback.answer()
+        await callback.message.edit_text("Хорошо, не подключаем. Включить можно в любой момент в настройках сайта.")
+        return
+    token = callback.data.removeprefix(NOTIFY_CONFIRM_PREFIX)
+    reply = await _confirm_notify_channel(token, callback.from_user.id, callback.message.chat.id)
+    await callback.answer()
+    await callback.message.edit_text(reply or "Сайт сейчас не отвечает. Попробуйте ещё раз через минуту.")
+
+
 async def on_start(message: Message, command: CommandObject) -> None:
+    # Подключение уведомлений из настроек сайта: t.me/<bot>?start=notify_<token>.
+    # Сначала вопрос с кнопкой — chat_id уходит на сайт только после «Подключить».
+    if command.args and command.args.startswith("notify_"):
+        if message.from_user is None or message.chat is None:
+            return
+        await message.answer(NOTIFY_ASK_MESSAGE, reply_markup=_notify_keyboard(command.args.removeprefix("notify_")))
+        return
+
     if command.args and command.args.startswith("login_"):
         request_token = command.args.removeprefix("login_")
         if message.from_user is None:
@@ -402,7 +460,8 @@ async def on_start(message: Message, command: CommandObject) -> None:
         "Привет! Я бот личного кабинета Saturday Runs.\n\n"
         "Saturday Runs собирает статистику из разных беговых систем в одном месте — "
         "чтобы проще решиться на первую пробежку там, где вы ещё не начинали.\n\n"
-        "Чтобы войти на сайт, нажмите «Войти через Telegram» на странице входа.\n\n"
+        "Чтобы войти на сайт, нажмите «Войти через Telegram» на странице входа. "
+        "Уведомления сайта (комментарии, пробежки, челленджи) включаются в настройках профиля.\n\n"
         "Координаты локаций с95: Reply на сообщение бота — latitude:longitude, "
         "затем Reply «ок» на сообщение с проверкой карты."
     )
@@ -491,6 +550,10 @@ async def main() -> None:
     dispatcher.message.register(on_cmd_sync, Command("sync"))
     dispatcher.message.register(on_cmd_admin_help, Command("admin_help"))
     dispatcher.message.register(on_text, F.text & ~F.text.startswith("/"))
+    dispatcher.callback_query.register(
+        on_notify_callback,
+        F.data.startswith(NOTIFY_CONFIRM_PREFIX) | F.data.startswith(NOTIFY_DECLINE_PREFIX),
+    )
     dispatcher.callback_query.register(
         on_login_callback,
         F.data.startswith(LOGIN_CONSENT_PREFIX)

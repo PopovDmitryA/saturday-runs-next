@@ -53,6 +53,7 @@ def build_message(
     subject: str,
     text_body: str,
     html_body: str | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> EmailMessage:
     """Собрать письмо.
 
@@ -73,6 +74,11 @@ def build_message(
     if reply_to and reply_to != sender_email(settings):
         message["Reply-To"] = reply_to
 
+    # Служебные заголовки вызывающего кода — например List-Unsubscribe у
+    # уведомлений: почтовики рисуют по нему кнопку «Отписаться» рядом с темой.
+    for name, value in (extra_headers or {}).items():
+        message[name] = value
+
     message.set_content(text_body)
     if html_body:
         message.add_alternative(html_body, subtype="html")
@@ -86,6 +92,7 @@ def send_email(
     subject: str,
     text_body: str,
     html_body: str | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> None:
     """Отправить письмо. Бросает MailerError, если не вышло."""
     if not is_configured(settings):
@@ -97,6 +104,7 @@ def send_email(
         subject=subject,
         text_body=text_body,
         html_body=html_body,
+        extra_headers=extra_headers,
     )
 
     try:

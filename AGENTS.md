@@ -440,6 +440,74 @@ Scheduled sync → лог в `scheduled_run_logs` через `run_reported_sync(
 
 ---
 
+## 10a. Уведомления сайта (Telegram, VK, почта)
+
+Основа: `app/notification_kinds.py` (реестр видов — в коде, без миграции),
+`app/notification_markup.py` (разметка `**жирный**` и `[подпись](url)` → HTML
+Telegram / HTML письма / текст VK), `services/notification_service.py`
+(настройки, очередь, доставка, отписка, копия админу),
+`services/notification_channels_service.py` (каналы и проверка
+доставляемости), `services/notification_senders.py` (отправители),
+`services/activity_notification_service.py` (единое сообщение о пробежке),
+`services/admin_notifications_service.py` (админка), `workers/tasks/notifications.py`.
+Миграция `094_notifications`: `user_notification_prefs`, `user_notification_channels`,
+`notification_deliveries`, `backlog_card_subscriptions`.
+
+Правила:
+
+- **Канал = способ входа.** Тумблер «Уведомления» стоит в карточке каждой
+  привязки (Telegram, VK, почта; адрес от Яндекса — в его карточке). Нет ни
+  одного включённого канала — сайт молчит: **умолчание выключено**. Первое
+  включение взводит водяные знаки на «сейчас»: о прошлом не рассказываем.
+  Виды («о чём присылать») — в модалке, по умолчанию все включены, кроме
+  «Новые карточки в бэклоге».
+- **Проверка доставляемости без сообщения человеку:** Telegram —
+  `sendChatAction` (403/400 = бот заблокирован или не запущен), VK —
+  `messages.isMessagesFromGroupAllowed`; результат на строке канала
+  (`check_ok`), перепроверка не чаще 10 минут. Не доходит — в настройках
+  красная подсказка «откройте бота и нажмите Start».
+- **Призывы включить:** баннер в кабинете (один раз на профиль,
+  `nudge_dismissed_at`), модалка после создания карточки бэклога; кнопка
+  включает лучший доступный канал (`POST /settings/notifications/enable`).
+  Колокольчик на карточке включает уведомления только тому, кто настроек
+  не трогал (`settings_touched_at`).
+- **Событие → `notify_user(db, user, kind, title=…, text=…, dedupe_key=…, url=…)`.**
+  Кладёт строку `notification_deliveries` (queued) и ставит
+  `notifications.deliver`. Повтор по `dedupe_key` отбрасывается. Из
+  транзакции события — `commit=False` и `enqueue_delivery()` после commit.
+- **Резерв.** Основной канал из настроек, потом остальные (`CHANNEL_ORDER`:
+  telegram → vk → email). Постоянная ошибка — канал пропускается; временная —
+  строка failed, `notifications.retry_queued` (beat, каждые 10 мин) повторит
+  до 3 раз в течение суток.
+- **Единое сообщение о пробежке** (`kind=runs`): новые `run_results` после
+  водяного знака и не старше `NOTIFICATIONS_RUNS_WINDOW_DAYS` + уровни
+  челленджей (`challenge_levels`) + новые вехи «Моей истории»
+  (`milestones_seen`) + ссылка на постер (`/share`). Первый снимок каждой
+  части молчит. Сканер зовётся из `dashboard_warm.after_sync` (с задержкой
+  20 мин), из user sync и раз в 10 минут по beat
+  (`notifications.scan_new_results` — ловит результаты, записанные мимо
+  воркеров, в т.ч. parkrun с Mac-демона).
+- **Рейтинги отдельно** (`kind=ratings`): раз в неделю, воскресенье 14:00 МСК
+  (`notifications.weekly_ratings`) — место в рейтингах runs/locations/wins
+  против `ratings_snapshot` недельной давности, вверх и вниз. Сразу после
+  пробежки не пишем: протоколы субботы догружаются до воскресенья, и место
+  за день меняется. Снимок сеется при включении уведомлений.
+- **Бэклог** (`kind=backlog`): автору — «карточка принята», следящим —
+  комментарии и смена статуса; автор и комментаторы следят автоматически,
+  остальные — колокольчиком (`PUT /backlog/cards/{id}/subscription`).
+  `kind=backlog_new_cards` — каждая новая карточка тем, кто включил.
+- **Отписка без входа:** `/api/notifications/unsubscribe?token=…` (HMAC на
+  `app_secret_key`, внутри user_id и вид или `all`); первый клик выключает
+  вид, «выключить всё» гасит все каналы. В письмах — `List-Unsubscribe`.
+- **Копия админу** каждого доставленного сообщения («📨 Сообщение направлено
+  @ник · канал» + тот же HTML) — пока `NOTIFICATIONS_ADMIN_COPY=true`.
+- Админка: `/admin/notifications` — подписчики по каналам, сводка по
+  статусам/видам/каналам, лента доставок с ошибками.
+- Под pytest отправители и проверки молчат (`is_test_run()`), тесты подменяют
+  `SENDERS`, `CHECKERS` и `enqueue_delivery` — см. `tests/test_notification_service.py`.
+
+---
+
 ## 11. Fetch locks
 
 | Платформа | Lock | Интервал |

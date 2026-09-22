@@ -36,6 +36,9 @@ export type BacklogCard = {
   done_at: string | null;
   // Своя ли карточка для текущего зрителя — по нему рисуем «Редактировать».
   is_mine: boolean;
+  // Следит ли зритель за карточкой (колокольчик): автор и комментаторы —
+  // автоматически, остальные — по клику.
+  is_subscribed: boolean;
   photos: BacklogPhoto[];
   created_at: string;
   updated_at: string;
@@ -224,6 +227,13 @@ export async function uploadBacklogPhoto(cardId: string, file: File): Promise<Ba
 
 export function deleteBacklogPhoto(photoId: string) {
   return backlogFetch<void>(`/backlog/photos/${photoId}`, { method: "DELETE" });
+}
+
+export function setBacklogCardSubscription(cardId: string, subscribed: boolean) {
+  return backlogFetch<BacklogCard>(`/backlog/cards/${cardId}/subscription`, {
+    method: "PUT",
+    body: JSON.stringify({ subscribed }),
+  });
 }
 
 export function listBacklogComments(cardId: string) {

@@ -103,3 +103,50 @@ def login_code_email(code: str, *, minutes: int, subscribe_url: str | None = Non
         )
 
     return text_body, _shell(inner)
+
+
+def notification_email(
+    *,
+    title: str,
+    body_html: str,
+    text_body: str,
+    url: str | None,
+    url_label: str,
+    unsubscribe_url: str,
+    settings_url: str,
+) -> str:
+    """HTML письма-уведомления сайта.
+
+    body_html — тело, уже переведённое из разметки уведомления в <b>/<a>/<br>
+    (app/notification_markup.to_email_html); text_body — готовая текстовая
+    версия, её собирает отправитель. Ссылка «Отписаться» обязательна в
+    каждом письме — без неё почтовики считают его спамом, а человек не
+    найдёт, как это выключить.
+    """
+    del text_body  # текстовая версия уходит отдельной частью письма
+    inner = (
+        f'<tr><td style="padding:18px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;'
+        f'font-size:17px;font-weight:bold;line-height:1.4;color:{_TEXT};">'
+        f"{escape(title)}"
+        "</td></tr>"
+        f'<tr><td style="padding:12px 28px 6px 28px;font-family:Arial,Helvetica,sans-serif;'
+        f'font-size:15px;line-height:1.55;color:{_TEXT};">'
+        f"{body_html}"
+        "</td></tr>"
+    )
+    if url:
+        inner += (
+            f'<tr><td style="padding:14px 28px 18px 28px;font-family:Arial,Helvetica,sans-serif;">'
+            f'<a href="{escape(url, quote=True)}" style="display:inline-block;padding:10px 18px;'
+            f"background:{_ACCENT};color:#ffffff;text-decoration:none;border-radius:8px;"
+            f'font-size:15px;font-weight:bold;">{escape(url_label)}</a>'
+            "</td></tr>"
+        )
+    inner += (
+        f'<tr><td style="padding:0 28px 20px 28px;font-family:Arial,Helvetica,sans-serif;'
+        f'font-size:13px;line-height:1.55;color:{_MUTED};">'
+        f'<a href="{escape(unsubscribe_url, quote=True)}" style="color:{_MUTED};">Отписаться</a> от таких писем '
+        f'&middot; <a href="{escape(settings_url, quote=True)}" style="color:{_MUTED};">Настроить уведомления</a>'
+        "</td></tr>"
+    )
+    return _shell(inner)

@@ -18,8 +18,18 @@ import {
   type MergePreview,
   type MergeStrategy,
 } from "../../lib/api";
+import {
+  checkNotificationChannel,
+  getNotificationSettings,
+  requestTelegramNotificationLink,
+  toggleNotificationChannel,
+  type NotificationChannelCode,
+  type NotificationSettingsState,
+} from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
 import { TelegramBotLogin } from "../auth/TelegramBotLogin";
+import { NotificationChannelProblem, NotificationChannelToggle } from "./NotificationChannelToggle";
+import { NotificationPrefsModal } from "./NotificationPrefsModal";
 
 const PROVIDERS: Array<{ id: "vk" | "yandex" | "telegram"; title: string; hint: string }> = [
   { id: "vk", title: "VK", hint: "Вход через VK ID" },
@@ -58,6 +68,186 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
   // редирект в виджет Telegram, как у OAuth-провайдеров.
   const [telegramBotLogin, setTelegramBotLogin] = useState(false);
   const [telegramBotFlow, setTelegramBotFlow] = useState(false);
+  // Уведомления живут прямо в карточках способов входа: у каждого канала свой
+  // тумблер, «о чём присылать» — в модалке. Загружаются отдельно от привязок:
+  // проверка доставляемости ходит к боту и VK и не должна тормозить список.
+  const [notifyState, setNotifyState] = useState<NotificationSettingsState | null>(null);
+  const [notifyBusy, setNotifyBusy] = useState(false);
+  const [notifyError, setNotifyError] = useState<string | null>(null);
+  const [prefsOpen, setPrefsOpen] = useState(false);
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      setNotifyState(await getNotificationSettings());
+    } catch (err) {
+      setNotifyError(err instanceof Error ? err.message : "Не удалось загрузить настройки уведомлений");
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadNotifications();
+  }, [loadNotifications]);
+
+  // Пришли по якорю #notifications (модалка, письмо, страница отписки):
+  // раздел внизу длинных настроек, а браузер сам к нему не прокручивает —
+  // контент дорисовывается после загрузки. Прокручиваем, когда всё готово.
+  useEffect(() => {
+    if (loading || !notifyState || window.location.hash !== "#notifications") {
+      return;
+    }
+    const node = document.getElementById("notifications");
+    if (node) {
+      window.setTimeout(() => node.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    }
+  }, [loading, notifyState]);
+
+  // Включаем канал, до которого бот или сообщество пока не дотягиваются:
+  // окно открываем синхронно в клике (иначе браузер сочтёт его всплывающим),
+  // адрес подставляем после ответа сервера и ждём, пока человек нажмёт Start.
+  const [awaitingChannel, setAwaitingChannel] = useState<NotificationChannelCode | null>(null);
+
+  const handleNotifyToggle = async (channel: NotificationChannelCode, enabled: boolean) => {
+    const current = notifyChannel(channel);
+    const needsPermission = enabled && current?.deliverable === false && channel !== "email";
+    const popup = needsPermission ? window.open("", "_blank") : null;
+    setNotifyBusy(true);
+    setNotifyError(null);
+    try {
+      const next = await toggleNotificationChannel(channel, enabled);
+      setNotifyState(next);
+      const updated = next.channels.find((item) => item.channel === channel);
+      if (popup) {
+        let target: string | null = null;
+        if (channel === "telegram") {
+          try {
+            target = (await requestTelegramNotificationLink()).connect_url;
+          } catch {
+            target = updated?.bot_url ?? null;
+          }
+        } else {
+          target = updated?.allow_url ?? null;
+        }
+        if (target) {
+          popup.location.href = target;
+          setAwaitingChannel(channel);
+        } else {
+          popup.close();
+        }
+      }
+    } catch (err) {
+      popup?.close();
+      setNotifyError(err instanceof Error ? err.message : "Не удалось сохранить уведомления");
+    } finally {
+      setNotifyBusy(false);
+    }
+  };
+
+  // Ждём подтверждения в боте/сообществе: перепроверяем каждые несколько секунд
+  // и при возврате во вкладку, пока проверка не позеленеет или не пройдёт минута.
+  useEffect(() => {
+    if (!awaitingChannel) {
+      return;
+    }
+    let attempts = 0;
+    let stopped = false;
+    const poll = async () => {
+      if (stopped) return;
+      attempts += 1;
+      try {
+        const result = await checkNotificationChannel(awaitingChannel);
+        if (result.ok) {
+          stopped = true;
+          setAwaitingChannel(null);
+          await loadNotifications();
+          return;
+        }
+      } catch {
+        // сеть моргнула — попробуем ещё
+      }
+      if (attempts >= 20) {
+        stopped = true;
+        setAwaitingChannel(null);
+        await loadNotifications();
+      }
+    };
+    const timer = window.setInterval(() => void poll(), 4000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [awaitingChannel, loadNotifications]);
+
+  const handleNotifyRecheck = async (channel: NotificationChannelCode) => {
+    setNotifyBusy(true);
+    setNotifyError(null);
+    try {
+      await checkNotificationChannel(channel);
+      await loadNotifications();
+    } catch (err) {
+      setNotifyError(err instanceof Error ? err.message : "Не удалось проверить канал");
+    } finally {
+      setNotifyBusy(false);
+    }
+  };
+
+  const notifyChannel = (code: NotificationChannelCode) =>
+    notifyState?.channels.find((item) => item.channel === code) ?? null;
+
+  const renderNotifyToggle = (code: NotificationChannelCode) => {
+    const channel = notifyChannel(code);
+    if (!channel || !channel.linked) {
+      return null;
+    }
+    return (
+      <NotificationChannelToggle
+        state={channel}
+        busy={notifyBusy}
+        onToggle={(enabled) => void handleNotifyToggle(code, enabled)}
+      />
+    );
+  };
+
+  const renderNotifyProblem = (code: NotificationChannelCode) => {
+    const channel = notifyChannel(code);
+    if (!channel || !channel.linked) {
+      return null;
+    }
+    if (awaitingChannel === code) {
+      return (
+        <p className="notify-row-problem notify-row-waiting">
+          {code === "telegram"
+            ? "Без разрешения в боте писать вам мы не можем. Бот открыт в отдельном окне — нажмите там «Start», и уведомления заработают."
+            : "Без разрешения сообщества писать вам мы не можем. Диалог открыт в отдельном окне — нажмите там «Разрешить сообщения», и уведомления заработают."}{" "}
+          <span className="muted">Ждём подтверждения…</span>
+        </p>
+      );
+    }
+    return (
+      <NotificationChannelProblem
+        state={channel}
+        busy={notifyBusy}
+        onRecheck={() => void handleNotifyRecheck(code)}
+      />
+    );
+  };
+
+  // Какой канал даёт тумблер у этого способа входа: Яндекс — почтовый, если
+  // отдельной почты нет (адрес берётся из него).
+  const providerChannel = (providerId: "vk" | "yandex" | "telegram"): NotificationChannelCode | null => {
+    if (providerId === "yandex") {
+      return !emailIdentity && notifyChannel("email")?.email_source === "yandex" ? "email" : null;
+    }
+    return providerId;
+  };
+
+  const enabledChannelTitles = (notifyState?.channels ?? [])
+    .filter((item) => item.enabled)
+    .map((item) => item.title);
 
   const linkedProviders = useMemo(
     () => new Set(identities.map((item) => item.provider)),
@@ -73,6 +263,7 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
     setError(null);
     try {
       setIdentities(await getAuthIdentities());
+      void loadNotifications();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить способы входа");
     } finally {
@@ -230,14 +421,30 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
   };
 
   return (
-    <section className="card">
-      <h2 className="section-title">Способы входа</h2>
+    <section className="card" id="notifications">
+      <h2 className="section-title">Способы входа и уведомления</h2>
       <p className="muted settings-lead">
         Можно войти через VK, Яндекс или по коду на почту и привязать все способы к одному профилю —
         тогда любой из них приведёт в этот аккаунт. Если способ входа уже занят вторым
         аккаунтом, профили можно объединить: учётки 5 вёрст / S95 / parkrun при этом либо
         соберутся вместе, либо останутся только у текущего профиля — выбор спросим.
       </p>
+      {notifyState && (
+        <div className="notify-summary">
+          <div className="notify-summary-text">
+            <span className="settings-platform-name">🔔 Уведомления</span>
+            <span className="muted settings-platform-hint">
+              {enabledChannelTitles.length > 0
+                ? `Включены: ${enabledChannelTitles.join(", ")}. Приходят туда, где вы вошли на сайт.`
+                : "Выключены. Включите тумблером у способа входа — сообщения придут туда же, где вы вошли."}
+            </span>
+          </div>
+          <button type="button" className="btn secondary btn-sm" onClick={() => setPrefsOpen(true)}>
+            О чём присылать
+          </button>
+        </div>
+      )}
+      {notifyError && <p className="error-text">{notifyError}</p>}
 
       {loading && <p className="muted">Загрузка…</p>}
       {error && <p className="error-text">{error}</p>}
@@ -260,6 +467,8 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
                     {linked ? "Привязан" : "Не привязан"}
                   </span>
                 </div>
+                {linked && providerChannel(provider.id) && renderNotifyToggle(providerChannel(provider.id)!)}
+                {linked && providerChannel(provider.id) && renderNotifyProblem(providerChannel(provider.id)!)}
                 <div className="auth-provider-actions">
                   {linked ? (
                     identities.length > 1 && (
@@ -323,6 +532,8 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
               {emailIdentity ? "Привязана" : "Не привязана"}
             </span>
           </div>
+          {emailIdentity && renderNotifyToggle("email")}
+          {emailIdentity && renderNotifyProblem("email")}
 
           {emailIdentity ? (
             identities.length > 1 && (
@@ -400,6 +611,15 @@ export function AuthProvidersSection({ initialMergeToken = null }: AuthProviders
             <EmailSpamHint sender={emailSender} />
           )}
         </div>
+      )}
+
+      {notifyState && (
+        <NotificationPrefsModal
+          open={prefsOpen}
+          state={notifyState}
+          onClose={() => setPrefsOpen(false)}
+          onChange={setNotifyState}
+        />
       )}
 
       <ConfirmModal

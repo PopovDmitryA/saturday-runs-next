@@ -19,21 +19,6 @@ class AutoSyncSettingsUpdateRequest(BaseModel):
     auto_sync_by_platform: dict[str, bool] = Field(default_factory=dict)
 
 
-class NotificationSettingsResponse(BaseModel):
-    enabled: bool
-    description: str = (
-        "Редкие письма о крупных обновлениях сайта и итогах сезона. "
-        "Отписаться можно здесь или ссылкой в самом письме."
-    )
-    # Куда придут письма. None — почта к профилю не привязана, и включать
-    # рассылку не на что: сначала нужно добавить почту в «Способах входа».
-    email: str | None = None
-
-
-class NotificationSettingsUpdateRequest(BaseModel):
-    enabled: bool
-
-
 class PrivacySettingsResponse(BaseModel):
     enabled: bool
     description: str = (

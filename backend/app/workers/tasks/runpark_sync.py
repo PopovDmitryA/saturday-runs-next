@@ -159,6 +159,9 @@ def runpark_user_sync_task(
         job.finished_at = datetime.now(timezone.utc)
         job.error_message = "; ".join(errors) if errors else None
         db.commit()
+        from app.workers.tasks.notifications import schedule_activity_scan
+
+        schedule_activity_scan({UUID(user_id)})
         return {"job_id": str(job.id), "status": job.status.value, "errors": errors}
 
     except Exception as exc:

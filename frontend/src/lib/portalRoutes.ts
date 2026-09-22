@@ -30,6 +30,8 @@ export const PORTAL_CABINET_SETTINGS_HREF = "/settings";
 // сразу к нему, а не в начало длинных настроек. Значение после «#» совпадает с
 // DISPLAY_NAME_ANCHOR в DisplayNameSection.
 export const PORTAL_DISPLAY_NAME_SETTINGS_HREF = "/settings#display-name";
+// Уведомления живут внутри «Способов входа»: якорь ведёт к карточкам каналов.
+export const PORTAL_NOTIFICATIONS_SETTINGS_HREF = "/settings#notifications";
 
 /**
  * Публичный адрес участника — он же адрес его кабинета (решение Дмитрия

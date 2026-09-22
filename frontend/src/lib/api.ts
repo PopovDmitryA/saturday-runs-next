@@ -3431,21 +3431,160 @@ export function updateAutoSyncSettings(autoSyncByPlatform: Record<string, boolea
   });
 }
 
-export type NotificationSettings = {
+export type NewsletterSettings = {
   enabled: boolean;
   description: string;
   email: string | null;
 };
 
-export function getNotificationSettings() {
-  return apiFetch<NotificationSettings>("/settings/notifications");
+export function getNewsletterSettings() {
+  return apiFetch<NewsletterSettings>("/settings/newsletter");
 }
 
-export function updateNotificationSettings(enabled: boolean) {
-  return apiFetch<NotificationSettings>("/settings/notifications", {
+export function updateNewsletterSettings(enabled: boolean) {
+  return apiFetch<NewsletterSettings>("/settings/newsletter", {
     method: "PUT",
     body: JSON.stringify({ enabled }),
   });
+}
+
+// Уведомления сайта: каналы привязаны к способам входа (Telegram / VK /
+// почта), включаются по одному; переключатели видов и основной канал — в
+// модалке «о чём присылать». См. backend app/services/notification_service.py.
+export type NotificationChannelCode = "telegram" | "vk" | "email";
+
+export type NotificationChannelState = {
+  channel: NotificationChannelCode;
+  title: string;
+  available: boolean;
+  linked: boolean;
+  enabled: boolean;
+  // Проверка «дойдёт ли»: null — не проверяли (нет привязки).
+  deliverable: boolean | null;
+  // Что сделать, если не дойдёт (красным).
+  problem: string | null;
+  label: string | null;
+  email_source: string | null;
+  allow_url: string | null;
+  bot_url: string | null;
+  last_error: string | null;
+};
+
+export type NotificationKindState = {
+  code: string;
+  title: string;
+  description: string;
+  enabled: boolean;
+  available: boolean;
+};
+
+export type NotificationSettingsState = {
+  enabled: boolean;
+  primary_channel: NotificationChannelCode | null;
+  channels: NotificationChannelState[];
+  kinds: NotificationKindState[];
+};
+
+export type NotificationSettingsUpdate = {
+  primary_channel?: NotificationChannelCode | null;
+  kinds?: Record<string, boolean>;
+};
+
+export type NotificationNudgeState = {
+  show: boolean;
+  enabled: boolean;
+  linked_channels: NotificationChannelCode[];
+};
+
+export function getNotificationSettings() {
+  return apiFetch<NotificationSettingsState>("/settings/notifications");
+}
+
+export function updateNotificationSettings(body: NotificationSettingsUpdate) {
+  return apiFetch<NotificationSettingsState>("/settings/notifications", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function toggleNotificationChannel(channel: NotificationChannelCode, enabled: boolean) {
+  return apiFetch<NotificationSettingsState>(`/settings/notifications/channels/${channel}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export function checkNotificationChannel(channel: NotificationChannelCode) {
+  return apiFetch<{ ok: boolean; error: string | null }>(`/settings/notifications/channels/${channel}/check`, {
+    method: "POST",
+  });
+}
+
+export function requestTelegramNotificationLink() {
+  return apiFetch<{ connect_url: string }>("/settings/notifications/channels/telegram/connect", {
+    method: "POST",
+  });
+}
+
+export function getNotificationNudge() {
+  return apiFetch<NotificationNudgeState>("/settings/notifications/nudge");
+}
+
+export function dismissNotificationNudge() {
+  return apiFetch<NotificationNudgeState>("/settings/notifications/nudge/dismiss", { method: "POST" });
+}
+
+export function enableNotifications() {
+  return apiFetch<{ channel: NotificationChannelCode | null; state: NotificationSettingsState }>(
+    "/settings/notifications/enable",
+    { method: "POST" },
+  );
+}
+
+export type AdminNotificationCount = { key: string; count: number };
+
+export type AdminNotificationDelivery = {
+  id: string;
+  user_serial_id: number | null;
+  user_label: string;
+  kind: string;
+  status: "queued" | "sent" | "failed" | "skipped";
+  channel: string | null;
+  attempts: number;
+  title: string;
+  error: string | null;
+  created_at: string;
+  sent_at: string | null;
+};
+
+export type AdminNotificationsResponse = {
+  period_days: number;
+  generated_at: string;
+  total: number;
+  by_status: AdminNotificationCount[];
+  by_kind: AdminNotificationCount[];
+  by_channel: AdminNotificationCount[];
+  subscribers_by_channel: AdminNotificationCount[];
+  items: AdminNotificationDelivery[];
+  items_total: number;
+  limit: number;
+  offset: number;
+};
+
+export function getAdminNotifications(params: {
+  periodDays?: number;
+  status?: string | null;
+  kind?: string | null;
+  limit?: number;
+  offset?: number;
+} = {}) {
+  const query = new URLSearchParams();
+  query.set("period_days", String(params.periodDays ?? 7));
+  if (params.status) query.set("status", params.status);
+  if (params.kind) query.set("kind", params.kind);
+  query.set("limit", String(params.limit ?? 100));
+  query.set("offset", String(params.offset ?? 0));
+  return apiFetch<AdminNotificationsResponse>(`/admin/notifications?${query.toString()}`);
 }
 
 export type PrivacySettings = {

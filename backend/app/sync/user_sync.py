@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -27,6 +28,8 @@ from app.platform_adapters.five_verst.url import normalize_profile_url, userstat
 from app.platform_adapters.registry import ensure_adapters_registered, get_adapter
 from app.services.dashboard_service import recompute_dashboard_cache
 from app.sync import upsert as sync_upsert
+
+logger = logging.getLogger(__name__)
 
 
 class UserSyncError(Exception):
@@ -230,4 +233,16 @@ def run_user_sync(
     job.error_message = "; ".join(errors) if errors else None
     db.commit()
     db.refresh(job)
+    _schedule_activity_notifications(user_id)
     return job
+
+
+def _schedule_activity_notifications(user_id: UUID) -> None:
+    """Синк по кнопке мог принести свежий протокол — сканер уведомлений
+    посмотрит, есть ли о чём рассказать. Отдельной задачей: доставка — сеть."""
+    try:
+        from app.workers.tasks.notifications import schedule_activity_scan
+
+        schedule_activity_scan({user_id})
+    except Exception:  # noqa: BLE001 — уведомления не должны ломать синк
+        logger.exception("user sync: failed to schedule activity notifications for %s", user_id)

@@ -28,6 +28,7 @@ from app.services.dashboard_service import (
 )
 from app.services.location_records_service import warm_location_progressions
 from app.workers.celery_app import celery_app
+from app.workers.tasks.notifications import BATCH_SCAN_DELAY_SECONDS, schedule_activity_scan
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,9 @@ def warm_dashboards_after_sync(since_iso: str) -> dict[str, object]:
         # Двигаем знак только после успешного сброса кэша: пересчёт ниже — это
         # уже оптимизация, его падение чинится ленивым пересчётом при заходе.
         _save_watermark(cursor)
+        # Те же люди — кандидаты на «новая пробежка» и «новый уровень»; сканер
+        # сам отсеет тех, у кого уведомления выключены.
+        schedule_activity_scan(user_ids, delay_seconds=BATCH_SCAN_DELAY_SECONDS)
 
         ordered = order_users_by_recent_login(db, user_ids)
         skipped = max(0, len(ordered) - MAX_USERS_PER_RUN)

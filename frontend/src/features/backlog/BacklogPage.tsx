@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type MouseEvent } from "react";
+import { ConfirmModal } from "../../components/ConfirmModal";
+import { enableNotifications, getNotificationNudge } from "../../lib/api";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { DetailModal } from "../../components/DetailModal";
 import { ImageLightbox } from "../../components/ImageLightbox";
@@ -13,6 +15,7 @@ import {
   MAX_BACKLOG_PHOTOS,
   createBacklogCard,
   createBacklogComment,
+  setBacklogCardSubscription,
   deleteBacklogPhoto,
   listBacklogCards,
   listBacklogComments,
@@ -152,6 +155,38 @@ function formatTime(iso: string): string {
 
 function categoryLabel(key: string): string {
   return BACKLOG_CATEGORIES.find((item) => item.key === key)?.label ?? key;
+}
+
+// Колокольчик «следить за карточкой»: серый контур, золотой — когда следим.
+function BellButton({
+  active,
+  disabled,
+  onClick,
+}: {
+  active: boolean;
+  disabled: boolean;
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`backlog-bell ${active ? "active" : ""}`}
+      disabled={disabled}
+      aria-pressed={active}
+      aria-label={active ? "Перестать следить за карточкой" : "Следить за карточкой"}
+      title={
+        active
+          ? "Вы следите за карточкой: сообщим о комментариях и смене статуса"
+          : "Следить за карточкой: сообщать о комментариях и смене статуса"
+      }
+      onClick={onClick}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3a6 6 0 0 0-6 6v3.6L4.4 15.3A1 1 0 0 0 5.2 17h13.6a1 1 0 0 0 .8-1.7L18 12.6V9a6 6 0 0 0-6-6Z" />
+        <path d="M9.5 19a2.5 2.5 0 0 0 5 0" />
+      </svg>
+    </button>
+  );
 }
 
 function pluralComments(count: number): string {
@@ -389,6 +424,11 @@ function BacklogContent() {
       setDraftPhotos([]);
       setFormOpen(false);
       await load();
+      void getNotificationNudge()
+        .then((nudge) => {
+          if (nudge.show) setNudgeOpen(true);
+        })
+        .catch(() => undefined);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Не удалось сохранить карточку");
     } finally {
@@ -402,8 +442,11 @@ function BacklogContent() {
     try {
       const comment = await createBacklogComment(cardId, { body: commentDraft, is_anonymous: commentAnon });
       setComments((prev) => ({ ...prev, [cardId]: [...(prev[cardId] ?? []), comment] }));
+      // Написавший начинает следить за обсуждением — так решает бэкенд.
       setCards((prev) =>
-        prev.map((item) => (item.id === cardId ? { ...item, comment_count: item.comment_count + 1 } : item)),
+        prev.map((item) =>
+          item.id === cardId ? { ...item, comment_count: item.comment_count + 1, is_subscribed: true } : item,
+        ),
       );
       setCommentDraft("");
       setCommentAnon(false);
@@ -411,6 +454,42 @@ function BacklogContent() {
       setError(err instanceof Error ? err.message : "Не удалось отправить комментарий");
     } finally {
       setCommentSaving(false);
+    }
+  };
+
+  const [subscriptionSaving, setSubscriptionSaving] = useState(false);
+  // После создания карточки: если уведомления выключены — предлагаем включить,
+  // иначе комментарии и статус пройдут мимо автора.
+  const [nudgeOpen, setNudgeOpen] = useState(false);
+  const [nudgeBusy, setNudgeBusy] = useState(false);
+  const [nudgeNotice, setNudgeNotice] = useState<string | null>(null);
+  const handleNudgeEnable = async () => {
+    setNudgeBusy(true);
+    try {
+      const result = await enableNotifications();
+      if (result.channel) {
+        setNudgeOpen(false);
+        setNudgeNotice(null);
+      } else {
+        setNudgeNotice("Пока писать некуда: разрешите боту или сообществу отправлять вам сообщения в настройках.");
+      }
+    } catch (err) {
+      setNudgeNotice(err instanceof Error ? err.message : "Не удалось включить уведомления");
+    } finally {
+      setNudgeBusy(false);
+    }
+  };
+  // Колокольчик: следить за комментариями к карточке. Ответ сервера кладём в
+  // список целиком — там же приходит актуальный is_subscribed.
+  const handleSubscription = async (cardId: string, subscribed: boolean) => {
+    setSubscriptionSaving(true);
+    try {
+      const updated = await setBacklogCardSubscription(cardId, subscribed);
+      setCards((prev) => prev.map((item) => (item.id === cardId ? { ...item, ...updated } : item)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось изменить подписку");
+    } finally {
+      setSubscriptionSaving(false);
     }
   };
 
@@ -497,6 +576,19 @@ function BacklogContent() {
               />
             </svg>
           </span>
+          {isLoggedIn && (
+            <>
+              {" · "}
+              <BellButton
+                active={card.is_subscribed}
+                disabled={subscriptionSaving}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleSubscription(card.id, !card.is_subscribed);
+                }}
+              />
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -720,6 +812,16 @@ function BacklogContent() {
               {" · "}
               <b>{openedCard.score}</b> голосов
               {openedCard.status === "done" && " · голосование закрыто"}
+              {isLoggedIn && (
+                <>
+                  {" · "}
+                  <BellButton
+                    active={openedCard.is_subscribed}
+                    disabled={subscriptionSaving}
+                    onClick={() => void handleSubscription(openedCard.id, !openedCard.is_subscribed)}
+                  />
+                </>
+              )}
             </div>
 
             {editDraft ? (
@@ -916,6 +1018,25 @@ function BacklogContent() {
           </div>
         )}
       </DetailModal>
+
+      <ConfirmModal
+        open={nudgeOpen}
+        title="Узнавать, что с карточкой?"
+        confirmLabel="Включить уведомления"
+        cancelLabel="Не сейчас"
+        confirmLoading={nudgeBusy}
+        onConfirm={() => void handleNudgeEnable()}
+        onCancel={() => {
+          setNudgeOpen(false);
+          setNudgeNotice(null);
+        }}
+      >
+        <p>
+          Карточка принята. Сайт может написать вам, когда появится комментарий или изменится статус
+          — в Telegram, VK или на почту. Уведомления сейчас выключены.
+        </p>
+        {nudgeNotice && <p className="error-text">{nudgeNotice}</p>}
+      </ConfirmModal>
     </>
   );
 }

@@ -74,6 +74,7 @@ from app.schemas.location_openings import (
     LocationOpeningResponse,
     LocationOpeningUpdateRequest,
 )
+from app.schemas.notifications import AdminNotificationsResponse
 from app.schemas.rating import (
     AdminLocationRatingsResponse,
     AdminRatingsResponse,
@@ -522,6 +523,23 @@ def admin_site_stats(
 ) -> AdminSiteStatsResponse:
     payload = get_admin_site_stats(db, period_days=period_days)
     return AdminSiteStatsResponse.model_validate(payload)
+
+
+@router.get("/notifications", response_model=AdminNotificationsResponse)
+def admin_notifications(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int, Query(ge=1, le=365)] = 7,
+    status_: Annotated[str | None, Query(alias="status", pattern="^(queued|sent|failed|skipped)$")] = None,
+    kind: Annotated[str | None, Query(max_length=32)] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> AdminNotificationsResponse:
+    """Журнал уведомлений: сколько ушло по видам и каналам, кто подписан, лента доставок."""
+    from app.services.admin_notifications_service import get_admin_notifications
+
+    payload = get_admin_notifications(db, period_days=period_days, status=status_, kind=kind, limit=limit, offset=offset)
+    return AdminNotificationsResponse.model_validate(payload)
 
 
 @router.get("/email-login", response_model=AdminEmailLoginResponse)

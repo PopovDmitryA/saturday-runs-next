@@ -54,6 +54,7 @@ from app.schemas.auth import (
     TelegramWidgetLoginResponse,
     UserResponse,
 )
+from app.schemas.notifications import BotNotifyConfirmRequest, BotNotifyConfirmResponse
 from app.services.auth_identity_service import (
     find_user_by_telegram_id,
     identity_response_payload,
@@ -467,6 +468,34 @@ def bot_deny(
     bot_deny_login(db, settings, body.request_token)
     logger.info("telegram login denied in bot by telegram_id=%s", body.telegram_id)
     return MessageResponse(message="denied")
+
+
+@router.post(
+    "/bot/notify-confirm", response_model=BotNotifyConfirmResponse, dependencies=[Depends(_verify_bot_secret)]
+)
+def bot_notify_confirm(
+    body: BotNotifyConfirmRequest,
+    db: Annotated[Session, Depends(get_db)],
+) -> BotNotifyConfirmResponse:
+    """/start notify_<token>: бот сообщает chat_id — канал уведомлений подключён."""
+    from app.services.notification_channels_service import confirm_telegram_channel
+
+    user = confirm_telegram_channel(db, body.token, telegram_id=body.telegram_id, chat_id=body.telegram_chat_id)
+    if user is None:
+        return BotNotifyConfirmResponse(
+            ok=False,
+            message="Ссылка устарела. Откройте настройки на сайте и нажмите «Подключить Telegram» ещё раз.",
+        )
+    logger.info("notify: telegram channel confirmed for user %s", user.id)
+    return BotNotifyConfirmResponse(
+        ok=True,
+        message=(
+            "Уведомления подключены ✅\n"
+            "Сюда будут приходить сообщения сайта: комментарии к вашим карточкам в бэклоге, "
+            "новые пробежки в протоколах и уровни челленджей.\n\n"
+            "Что именно присылать — в настройках профиля на сайте."
+        ),
+    )
 
 
 @router.post("/bot/login-status", response_model=BotLoginStatusResponse, dependencies=[Depends(_verify_bot_secret)])

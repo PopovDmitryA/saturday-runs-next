@@ -68,9 +68,9 @@ def _authenticated_client(client: TestClient) -> TestClient:
     return client
 
 
-def test_notification_settings_default_disabled(client: TestClient) -> None:
+def test_newsletter_settings_default_disabled(client: TestClient) -> None:
     auth_client = _authenticated_client(client)
-    response = auth_client.get("/api/settings/notifications")
+    response = auth_client.get("/api/settings/newsletter")
     assert response.status_code == 200
     data = response.json()
     assert data["enabled"] is False
@@ -80,22 +80,26 @@ def test_notification_settings_default_disabled(client: TestClient) -> None:
     assert data["email"] is None
 
 
-def test_notification_settings_update(client: TestClient) -> None:
+def test_newsletter_settings_update(client: TestClient) -> None:
     auth_client = _authenticated_client(client)
 
-    enable_response = auth_client.put("/api/settings/notifications", json={"enabled": True})
+    enable_response = auth_client.put("/api/settings/newsletter", json={"enabled": True})
     assert enable_response.status_code == 200
     assert enable_response.json()["enabled"] is True
 
-    get_response = auth_client.get("/api/settings/notifications")
+    get_response = auth_client.get("/api/settings/newsletter")
     assert get_response.status_code == 200
     assert get_response.json()["enabled"] is True
 
-    disable_response = auth_client.put("/api/settings/notifications", json={"enabled": False})
+    disable_response = auth_client.put("/api/settings/newsletter", json={"enabled": False})
     assert disable_response.status_code == 200
     assert disable_response.json()["enabled"] is False
 
 
-def test_notification_settings_requires_auth(client: TestClient) -> None:
+def test_newsletter_and_notification_settings_require_auth(client: TestClient) -> None:
+    assert client.get("/api/settings/newsletter").status_code == 401
+    assert client.put("/api/settings/newsletter", json={"enabled": True}).status_code == 401
+    # Уведомления сайта живут по соседству (routes/settings.py, «Уведомления»)
+    # и так же закрыты для анонима.
     assert client.get("/api/settings/notifications").status_code == 401
     assert client.put("/api/settings/notifications", json={"enabled": True}).status_code == 401

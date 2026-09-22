@@ -16,6 +16,7 @@ from app.schemas.backlog import (
     BacklogCardCreateRequest,
     BacklogCardListResponse,
     BacklogCardResponse,
+    BacklogCardSubscriptionRequest,
     BacklogCardUpdateRequest,
     BacklogCommentCreateRequest,
     BacklogCommentListResponse,
@@ -30,6 +31,7 @@ from app.services.backlog_service import (
     get_card,
     list_cards,
     list_comments,
+    set_card_subscription,
     update_card,
     vote_card,
 )
@@ -124,6 +126,20 @@ def backlog_vote(
 ) -> BacklogCardResponse:
     try:
         return vote_card(db, card_id, user_id=user.id, value=body.value)
+    except BacklogError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.put("/cards/{card_id}/subscription", response_model=BacklogCardResponse)
+def backlog_set_subscription(
+    card_id: UUID,
+    body: BacklogCardSubscriptionRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> BacklogCardResponse:
+    """Колокольчик: следить за комментариями к карточке или перестать."""
+    try:
+        return set_card_subscription(db, card_id, user_id=user.id, subscribed=body.subscribed)
     except BacklogError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
