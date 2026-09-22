@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import {
   cabinetTabHref,
@@ -8,14 +7,28 @@ import {
 } from "../../lib/portalRoutes";
 import { userLabel } from "../../lib/userLabel";
 import { useOptionalUser } from "../../lib/useOptionalUser";
+import { SEARCH_ICON } from "./nav/navIcons";
+import { SiteBottomNav } from "./nav/SiteBottomNav";
+import { openSiteSearch } from "./nav/siteSearchBus";
 
-export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
+/**
+ * Шапка сайта. С 23.09.2026 (вариант В навигации) бургера на телефоне нет:
+ * его роль играет единая нижняя панель с «Меню», и шапка рисует её сама —
+ * так панель есть на любой странице с шапкой, включая главную и блог.
+ */
+export function PortalHeader({
+  hideLogin = false,
+  bottomNav = true,
+}: {
+  hideLogin?: boolean;
+  /** Нижняя панель телефона; выключают страницы входа, где уходить некуда. */
+  bottomNav?: boolean;
+}) {
   // Кэшированная сессия (sessionStorage): между переходами по MPA-страницам
   // ник не мигает кнопкой «Войти» — стартуем с последнего известного статуса.
   const optionalUser = useOptionalUser();
   const user = optionalUser ?? null;
   const authResolved = optionalUser !== undefined;
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const authed = user !== null;
   // Текущий раздел подсвечивается по адресу страницы: главная — точное
@@ -94,6 +107,17 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
             ссылка на Telegram живёт в подвале, а шапка на телефоне и так
             переполнялась. */}
         <div className="portal-header-actions">
+          <button
+            type="button"
+            className="portal-header-search"
+            onClick={() => openSiteSearch()}
+            aria-label="Поиск по сайту"
+            title="Поиск по сайту"
+          >
+            <span className="portal-header-search-icon">{SEARCH_ICON}</span>
+            <span className="portal-header-search-label">Поиск</span>
+            <kbd className="portal-header-search-kbd">/</kbd>
+          </button>
           <ThemeToggle />
           {!hideLogin &&
             authResolved &&
@@ -113,28 +137,9 @@ export function PortalHeader({ hideLogin = false }: { hideLogin?: boolean }) {
                 Войти
               </a>
             ))}
-          <button
-            type="button"
-            className="portal-header-burger"
-            aria-label={menuOpen ? "Закрыть меню" : "Открыть меню"}
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              {menuOpen ? (
-                <path d="M6 6l12 12M18 6L6 18" strokeWidth="2" strokeLinecap="round" />
-              ) : (
-                <path d="M4 7h16M4 12h16M4 17h16" strokeWidth="2" strokeLinecap="round" />
-              )}
-            </svg>
-          </button>
         </div>
       </div>
-      {menuOpen && (
-        <nav className="portal-header-nav-mobile" aria-label="Разделы портала (мобильное меню)">
-          {navLinks}
-        </nav>
-      )}
+      {bottomNav && <SiteBottomNav user={optionalUser} />}
     </header>
   );
 }

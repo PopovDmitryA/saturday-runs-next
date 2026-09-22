@@ -1,26 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { logout, type User } from "../../../lib/api";
-import { PORTAL_LOGIN_HREF } from "../../../lib/portalRoutes";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import type { User } from "../../../lib/api";
 import { PortalFooter } from "../PortalFooter";
 import { PortalHeader } from "../PortalHeader";
-import { clearCachedUser } from "../../../lib/useOptionalUser";
-import {
-  CABINET_NAV,
-  CabinetUserCard,
-  SECONDARY_NAV,
-  SITE_SECTIONS_NAV,
-  SiteSidebar,
-  icon,
-  type CabinetTabKey,
-} from "../SiteSidebar";
+import { CabinetUserCard, SiteSidebar, type CabinetTabKey } from "../SiteSidebar";
+import { SectionChips } from "../nav/SectionChips";
 import "../portal.css";
 import "./cabinet.css";
 
 // Обратная совместимость: раньше эти сущности жили здесь.
 export { userLabel, type CabinetTabKey } from "../SiteSidebar";
-
-// Нижняя навигация телефона: 4 главных раздела + «Ещё» (остальное в шторке).
-const BOTTOM_NAV_KEYS: CabinetTabKey[] = ["dashboard", "runs", "volunteering", "achievements"];
 
 type PortalCabinetShellProps = {
   active: CabinetTabKey;
@@ -60,10 +48,6 @@ export function PortalCabinetShell({
   hideSecondaryNav = false,
   children,
 }: PortalCabinetShellProps) {
-  const tabHref = (item: (typeof CABINET_NAV)[number]) =>
-    hrefForTab ? hrefForTab(item.key, item.href) : item.href;
-  const [moreOpen, setMoreOpen] = useState(false);
-
   const mainRef = useRef<HTMLElement>(null);
 
   const measureModalOffset = () => {
@@ -104,16 +88,6 @@ export function PortalCabinetShell({
     };
   }, []);
 
-  const handleLogout = async () => {
-    await logout();
-    clearCachedUser();
-    window.location.href = PORTAL_LOGIN_HREF;
-  };
-
-  const bottomItems = CABINET_NAV.filter((item) => BOTTOM_NAV_KEYS.includes(item.key));
-  const moreItems = CABINET_NAV.filter((item) => !BOTTOM_NAV_KEYS.includes(item.key));
-  const moreActive = moreItems.some((item) => item.key === active);
-
   return (
     <div className="portal-cab">
       {/* Та же шапка, что и на главной портала — с этого экрана вы уже
@@ -138,6 +112,10 @@ export function PortalCabinetShell({
           <div className="portal-cab-user-mobile">
             <CabinetUserCard initialUser={user} />
           </div>
+          {/* Вкладки кабинета на телефоне — чипами из общего дерева навигации.
+              Своя нижняя панель кабинета ушла 23.09.2026: панель одна на весь
+              сайт, её рисует шапка. */}
+          <SectionChips active={active} user={user} hrefForTab={hrefForTab} />
           {title && (
             <div className="portal-cab-pagehead">
               <h1>{title}</h1>
@@ -149,95 +127,6 @@ export function PortalCabinetShell({
       </div>
 
       <PortalFooter />
-
-      {moreOpen && (
-        <div
-          className="portal-cab-more-backdrop"
-          onClick={() => setMoreOpen(false)}
-          role="presentation"
-        >
-          <div
-            className="portal-cab-more-sheet"
-            role="dialog"
-            aria-label="Ещё разделы"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="portal-cab-more-grabber" aria-hidden="true" />
-            {moreItems.map((item) => (
-              <a
-                key={item.key}
-                href={tabHref(item)}
-                className={`portal-cab-more-item${item.key === active ? " active" : ""}`}
-              >
-                <span className="portal-cab-nav-icon">{item.icon}</span>
-                {item.label}
-              </a>
-            ))}
-            {/* Публичные разделы сайта: на десктопе они в сайдбаре, а на
-                телефоне сайдбар скрыт — без них «Локации» и «Рейтинги» с
-                телефона было не открыть вовсе. */}
-            <div className="portal-cab-more-sep" />
-            {SITE_SECTIONS_NAV.map((item) => (
-              <a key={item.href} href={item.href} className="portal-cab-more-item">
-                <span className="portal-cab-nav-icon">{item.icon}</span>
-                {item.label}
-              </a>
-            ))}
-            {!hideSecondaryNav && (
-              <>
-                <div className="portal-cab-more-sep" />
-                {SECONDARY_NAV.filter((item) => !item.adminOnly || user.is_admin).map((item) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    className={`portal-cab-more-item portal-cab-more-item-secondary${item.adminOnly ? " portal-cab-nav-item-admin" : ""}`}
-                  >
-                    {item.label}
-                  </a>
-                ))}
-                <button
-                  type="button"
-                  className="portal-cab-more-item portal-cab-more-item-secondary portal-cab-logout"
-                  onClick={() => void handleLogout()}
-                >
-                  Выйти
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      <nav className="portal-cab-bottomnav" aria-label="Разделы личного кабинета (телефон)">
-        {bottomItems.map((item) => (
-          <a
-            key={item.key}
-            href={tabHref(item)}
-            className={`portal-cab-bottomnav-item${item.key === active ? " active" : ""}`}
-            aria-current={item.key === active ? "page" : undefined}
-          >
-            <span className="portal-cab-nav-icon">{item.icon}</span>
-            <span className="portal-cab-bottomnav-label">{item.label}</span>
-          </a>
-        ))}
-        <button
-          type="button"
-          className={`portal-cab-bottomnav-item${moreActive || moreOpen ? " active" : ""}`}
-          aria-expanded={moreOpen}
-          onClick={() => setMoreOpen((open) => !open)}
-        >
-          <span className="portal-cab-nav-icon">
-            {icon(
-              <>
-                <circle cx="5" cy="12" r="1.6" />
-                <circle cx="12" cy="12" r="1.6" />
-                <circle cx="19" cy="12" r="1.6" />
-              </>,
-            )}
-          </span>
-          <span className="portal-cab-bottomnav-label">Ещё</span>
-        </button>
-      </nav>
     </div>
   );
 }

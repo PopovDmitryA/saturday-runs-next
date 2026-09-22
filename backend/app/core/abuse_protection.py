@@ -15,6 +15,10 @@ class RouteTier(str, Enum):
     public_read = "public_read"
     auth = "auth"
     expensive = "expensive"
+    # Поиск по сайту: открыт анониму и ищет по всей базе участников — удобная
+    # мишень для выкачивания имён перебором. Своё ведро, чтобы потолок был
+    # ниже общего и поиск не съедал лимит остального сайта.
+    search = "search"
     default = "default"
 
 
@@ -96,6 +100,9 @@ def classify_route(path: str, method: str) -> RouteTier:
     if normalized.startswith("/api/sync/refresh"):
         return RouteTier.expensive
 
+    if normalized == "/api/search" or normalized.startswith("/api/search/"):
+        return RouteTier.search
+
     if normalized.startswith("/api/"):
         return RouteTier.default
 
@@ -111,6 +118,8 @@ def _tier_limits(tier: RouteTier, settings: Settings) -> tuple[int, int] | None:
         return settings.abuse_auth_limit_per_ip, settings.abuse_auth_window_seconds
     if tier is RouteTier.expensive:
         return settings.abuse_expensive_limit_per_ip, settings.abuse_expensive_window_seconds
+    if tier is RouteTier.search:
+        return settings.abuse_search_limit_per_ip, settings.abuse_search_window_seconds
     return settings.abuse_default_limit_per_ip, settings.abuse_default_window_seconds
 
 

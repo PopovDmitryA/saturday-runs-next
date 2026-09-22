@@ -9,7 +9,6 @@ import { PortalFooter } from "../portal/PortalFooter";
 import { PortalHeader } from "../portal/PortalHeader";
 import { CABINET_TAB_SEGMENTS, profileTabHref } from "../../lib/portalRoutes";
 import { NAV_ICONS, SiteSidebar, type SidebarExtraGroup } from "../portal/SiteSidebar";
-import { PortalSectionBottomNav } from "../portal/PortalSectionBottomNav";
 import "../portal/portal.css";
 import "../portal/portalSection.css";
 import { AppDataSourceProvider, createPublicProfileDataSource } from "../../lib/appDataSource";
@@ -130,10 +129,6 @@ function ProfileShell({
         </main>
       </div>
       <PortalFooter />
-      {/* На телефоне сайдбар скрыт, и профиль оставался вообще без навигации
-          сайта: уйти отсюда было не по чему. Панель та же, что у Локаций и
-          Рейтингов, плюс страницы этого участника в шторке «Ещё». */}
-      <PortalSectionBottomNav active={null} extraGroup={tabsGroup} />
     </div>
   );
 }

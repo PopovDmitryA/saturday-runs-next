@@ -85,6 +85,7 @@ from app.schemas.releases import (
     ReleaseCreateRequest,
     ReleaseUpdateRequest,
 )
+from app.schemas.search import AdminSearchLogResponse
 from app.services import admin_resync_service as resync
 from app.services.abuse_admin_service import (
     AbuseAdminError,
@@ -173,6 +174,7 @@ from app.services.release_service import (
 from app.services.scheduled_run_log_service import list_runs as list_scheduled_runs
 from app.services.scheduled_run_log_service import resolve_period as resolve_runs_period
 from app.services.scheduled_run_log_service import summarize as summarize_scheduled_runs
+from app.services.search_log_service import get_search_log_report
 from app.services.sync_enqueue_service import enqueue_manual_platform_sync, enqueue_sync_for_all_platforms
 from app.services.user_visits_service import get_user_visits
 
@@ -537,6 +539,17 @@ def admin_email_login_funnel(
     """
     payload = get_email_login_funnel(db, period_days=period_days)
     return AdminEmailLoginResponse.model_validate(payload)
+
+
+@router.get("/search-log", response_model=AdminSearchLogResponse)
+def admin_search_log(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int, Query(ge=1, le=365)] = 7,
+) -> AdminSearchLogResponse:
+    """Что ищут на сайте: топ запросов, пустые выдачи, переходы, последние поиски."""
+    payload = get_search_log_report(db, period_days=period_days)
+    return AdminSearchLogResponse.model_validate(payload)
 
 
 @router.get("/stats/geography", response_model=AdminUsersGeographyResponse)

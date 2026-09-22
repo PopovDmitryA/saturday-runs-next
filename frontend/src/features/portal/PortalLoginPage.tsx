@@ -351,7 +351,7 @@ export function PortalLoginPage() {
   if (checkingAuth) {
     return (
       <>
-        <PortalHeader hideLogin />
+        <PortalHeader hideLogin bottomNav={false} />
         <main className="portal-home portal-login">
           <p className="portal-loading">Проверяем сессию…</p>
         </main>
@@ -361,7 +361,7 @@ export function PortalLoginPage() {
 
   return (
     <>
-      <PortalHeader hideLogin />
+      <PortalHeader hideLogin bottomNav={false} />
       <main className="portal-home portal-login">
         <div className={returning ? "portal-login-single" : "portal-login-split"}>
           {!returning && (

@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/admin/sync-runs", label: "Автообновление" },
   { href: "/admin/stats", label: "Статистика" },
   { href: "/admin/page-analytics", label: "Популярность" },
+  { href: "/admin/search", label: "Поиск" },
   { href: "/admin/ratings", label: "Рейтинг" },
   { href: "/admin/resync", label: "Обновить по ссылке" },
   { href: "/admin/records-digest", label: "Рекорды локаций" },

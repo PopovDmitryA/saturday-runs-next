@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
 import { SiteSidebar, type SiteSidebarProps } from "./SiteSidebar";
-import { PortalSectionBottomNav } from "./PortalSectionBottomNav";
+import { SectionChips } from "./nav/SectionChips";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import "./portal.css";
 import "./portalSection.css";
 
@@ -10,9 +11,11 @@ import "./portalSection.css";
  * Каркас для разделов портала верхнего уровня (Локации, Рейтинги, Бэклог,
  * публичный профиль). Общая шапка `<PortalHeader/>` + контейнер 1440px.
  *
- * С пропом `sidebar` рендерится ЕДИНЫЙ сайдбар сайта (SiteSidebar) в том же
- * лейауте, что и личный кабинет (.portal-cab-layout) — сворачивание и стили
- * общие. Без пропа — просто центрированный контейнер (публичный профиль).
+ * С пропом `sidebar` рендерится навигация сайта (SiteSidebar: рельс разделов
+ * и колонка подразделов) в том же лейауте, что и личный кабинет
+ * (.portal-cab-layout), а на телефоне — чипы подразделов над контентом.
+ * Нижнюю панель телефона рисует сама шапка. Без пропа — просто
+ * центрированный контейнер.
  *
  * Легаси-контент страниц (.card, .data-table, .lb-*, .loc-*) живёт внутри
  * `.portal-section` и рескинится scoped-правилами в portalSection.css — сами
@@ -26,6 +29,7 @@ export function PortalSectionShell({
   /** Параметры единого сайдбара; не передан — страница без сайдбара. */
   sidebar?: Pick<SiteSidebarProps, "active" | "location">;
 }) {
+  const user = useOptionalUser();
   if (!sidebar) {
     return (
       <div className="portal-section-page">
@@ -40,12 +44,12 @@ export function PortalSectionShell({
       <PortalHeader />
       <div className="portal-cab-layout">
         <SiteSidebar active={sidebar.active} location={sidebar.location} />
-        <main className="portal-cab-main portal-section">{children}</main>
+        <main className="portal-cab-main portal-section">
+          <SectionChips active={sidebar.active} location={sidebar.location} user={user} />
+          {children}
+        </main>
       </div>
       <PortalFooter />
-      {/* На телефоне сайдбар скрыт: без этой панели раздел оставался вообще
-          без навигации — вернуться в кабинет было не по чему. */}
-      <PortalSectionBottomNav active={sidebar.active} location={sidebar.location} />
     </div>
   );
 }

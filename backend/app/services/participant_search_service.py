@@ -88,6 +88,25 @@ def _query_words(raw_query: str) -> list[str]:
     return [word for word in raw_query.split() if word]
 
 
+def normalize_query_text(raw_query: str) -> str:
+    """Запрос без крайних и сдвоенных пробелов — то, что реально ищем и показываем."""
+    return " ".join(_query_words(raw_query or ""))
+
+
+def apply_name_filters(query, words: list[str]):
+    """Каждое слово запроса — подстрока имени (регистронезависимо, порядок не важен).
+
+    Условие написано ровно над lower(display_name), чтобы его подхватил
+    GIN-индекс pg_trgm ix_participants_display_name_trgm. Общее для онбординга
+    и публичного поиска на сайте.
+    """
+    for word in words:
+        query = query.filter(
+            func.lower(Participant.display_name).like(f"%{_escape_like(word.lower())}%", escape="\\")
+        )
+    return query
+
+
 def _apply_query_filters(query, words: list[str]):
     """Общие условия поиска: код участника (точно) или все слова имени (подстроки)."""
     identifier = _IDENTIFIER_RE.match(words[0]) if len(words) == 1 else None
@@ -104,11 +123,7 @@ def _apply_query_filters(query, words: list[str]):
                 Participant.external_user_id == digits,
             )
         )
-    for word in words:
-        query = query.filter(
-            func.lower(Participant.display_name).like(f"%{_escape_like(word.lower())}%", escape="\\")
-        )
-    return query
+    return apply_name_filters(query, words)
 
 
 def search_participants(db: Session, user: User, raw_query: str) -> ParticipantSearchPage:
@@ -117,7 +132,7 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
             "Сначала примите условия обработки персональных данных — после этого можно искать и привязывать профили.",
             403,
         )
-    query_text = " ".join(_query_words(raw_query))
+    query_text = normalize_query_text(raw_query)
     if len(query_text) < MIN_QUERY_LENGTH:
         raise ParticipantSearchError("Введите минимум 3 символа имени или фамилии", 422)
     if len(query_text) > MAX_QUERY_LENGTH:
@@ -173,10 +188,10 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
         )
 
     participant_ids = [participant.id for participant, _ in candidates]
-    run_stats = _load_run_stats(db, participant_ids)
-    volunteering_counts = _load_volunteering_counts(db, candidates)
+    run_stats = load_run_stats(db, participant_ids)
+    volunteering_counts = load_volunteering_counts(db, candidates)
     home_locations = _load_home_locations(db, participant_ids)
-    linked_owners = _load_linked_owners(db, candidates)
+    linked_owners = load_linked_owners(db, candidates)
 
     results: list[ParticipantSearchResult] = []
     for participant, platform in candidates:
@@ -332,7 +347,7 @@ def _load_recent_activities(
     }
 
 
-def _load_run_stats(db: Session, participant_ids: list[UUID]) -> dict[UUID, tuple[int, date | None]]:
+def load_run_stats(db: Session, participant_ids: list[UUID]) -> dict[UUID, tuple[int, date | None]]:
     rows = (
         db.query(
             RunResult.participant_id,
@@ -350,7 +365,7 @@ def _load_run_stats(db: Session, participant_ids: list[UUID]) -> dict[UUID, tupl
     return {participant_id: (count, last_date) for participant_id, count, last_date in rows}
 
 
-def _load_volunteering_counts(
+def load_volunteering_counts(
     db: Session, candidates: list[tuple[Participant, Platform]]
 ) -> dict[UUID, int]:
     """Волонтёрств у каждого кандидата поиска.
@@ -385,35 +400,69 @@ def _load_volunteering_counts(
     return counts
 
 
-def _load_home_locations(db: Session, participant_ids: list[UUID]) -> dict[UUID, tuple[str, str | None]]:
-    """Домашняя локация = где у участника больше всего пробежек (при равенстве — свежее)."""
-    rows = (
+@dataclass(frozen=True)
+class TopLocation:
+    name: str
+    city: str | None
+    count: int
+    last_date: date | None
+
+
+def load_top_locations(
+    db: Session,
+    participant_ids: list[UUID],
+    *,
+    source: str = "run",
+) -> dict[UUID, TopLocation]:
+    """Локация, где у участника больше всего пробежек (source="run") или
+    волонтёрств (source="volunteer"); при равенстве — где был последним.
+
+    Волонтёрства parkrun на дате-заглушке 1970-01-01 (сводка ролей из профиля,
+    а не события) не считаем: у них нет настоящей площадки, это псевдолокация
+    «parkrun (сводка ролей)».
+    """
+    if not participant_ids:
+        return {}
+    model = RunResult if source == "run" else VolunteerResult
+    query = (
         db.query(
-            RunResult.participant_id,
+            model.participant_id,
             Location.name,
             Location.city,
-            func.count(RunResult.id).label("runs_count"),
+            func.count(model.id).label("items_count"),
             func.max(Event.event_date).label("last_date"),
         )
-        .join(Event, RunResult.event_id == Event.id)
+        .join(Event, model.event_id == Event.id)
         .join(Location, Event.location_id == Location.id)
         .filter(
-            RunResult.participant_id.in_(participant_ids),
+            model.participant_id.in_(participant_ids),
             Event.is_test_event.is_(False),
         )
-        .group_by(RunResult.participant_id, Location.name, Location.city)
-        .all()
     )
-    best: dict[UUID, tuple[int, date | None, str, str | None]] = {}
-    for participant_id, name, city, runs_count, last_date in rows:
+    if model is VolunteerResult:
+        query = query.filter(Event.event_date > date(1970, 1, 1))
+    rows = query.group_by(model.participant_id, Location.name, Location.city).all()
+    best: dict[UUID, TopLocation] = {}
+    for participant_id, name, city, items_count, last_date in rows:
         current = best.get(participant_id)
-        candidate = (runs_count, last_date, name, city)
-        if current is None or (candidate[0], candidate[1] or date.min) > (current[0], current[1] or date.min):
+        candidate = TopLocation(name=name, city=city, count=items_count, last_date=last_date)
+        if current is None or (candidate.count, candidate.last_date or date.min) > (
+            current.count,
+            current.last_date or date.min,
+        ):
             best[participant_id] = candidate
-    return {participant_id: (name, city) for participant_id, (_, _, name, city) in best.items()}
+    return best
 
 
-def _load_linked_owners(
+def _load_home_locations(db: Session, participant_ids: list[UUID]) -> dict[UUID, tuple[str, str | None]]:
+    """Домашняя локация = где у участника больше всего пробежек (при равенстве — свежее)."""
+    return {
+        participant_id: (top.name, top.city)
+        for participant_id, top in load_top_locations(db, participant_ids).items()
+    }
+
+
+def load_linked_owners(
     db: Session,
     candidates: list[tuple[Participant, Platform]],
 ) -> dict[UUID, UUID]:

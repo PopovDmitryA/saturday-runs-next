@@ -1,381 +1,56 @@
 /**
- * Единый сайдбар сайта (решение Дмитрия 25.07.2026): один и тот же компонент
- * в личном кабинете, Локациях, Рейтингах и Бэклоге. На главной портала
- * сайдбара нет. Устройство:
+ * Навигация сайта на компьютере — вариант В (решение Дмитрия 23.09.2026):
+ * узкий рельс разделов с иконками и колонка со ВСЕМИ страницами текущего
+ * раздела. Раньше был один длинный сайдбар, где подпункты появлялись и
+ * исчезали, 14 рейтингов прятались за одним пунктом, а кабинет организатора
+ * жил подпунктом «Локаций».
  *
- * - группа «Личный кабинет» раскрывается по клику и автоматически при
- *   переходе в любой его раздел; анониму — задизейблена, не скрыта;
- * - «Локации» — каталог площадок; на странице локации под ним появляется сама
- *   площадка и её срезы («Постоянный состав», «Журнал протоколов»), а для
- *   оргкоманд и админа — подпункт «Кабинет организатора»;
- * - «Результаты» — свой раздел (решение Дмитрия 25.08.2026: последние
- *   пробежки и протоколы — это не каталог площадок): заголовок ведёт на
- *   витрину раздела, подпункты — «Последние пробежки» и «Единый протокол».
- *   Журнал протоколов уехал отсюда под локацию (правка Дмитрия 28.08.2026):
- *   он про конкретную площадку, а в «Результатах» — общесайтовые сущности;
- * - «Рейтинги» — один пункт без перечня лидербордов (их будут десятки);
- * - служебный блок (Настройки/Бэклог/Админка/Выйти) виден на всех страницах;
- * - сворачивание в рельс-иконки работает везде (общий localStorage-ключ).
+ * Состав пунктов — не здесь, а в nav/siteNav.ts: оттуда же рисуются нижняя
+ * панель телефона, чипы, шторка «Меню» и поиск по страницам.
+ *
+ * Интерфейс компонента прежний (active, location, user, extraGroup…), поэтому
+ * три десятка страниц менять не пришлось.
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { logout, type User } from "../../lib/api";
-import {
-  cabinetTabHref,
-  type CabinetTabSegmentKey,
-  PORTAL_ABOUT_HREF,
-  PORTAL_CABINET_ACHIEVEMENTS_HREF,
-  PORTAL_CABINET_HISTORY_HREF,
-  PORTAL_CABINET_HREF,
-  PORTAL_CABINET_MAP_HREF,
-  PORTAL_CABINET_MEETINGS_HREF,
-  PORTAL_CABINET_RUNS_HREF,
-  PORTAL_CABINET_SETTINGS_HREF,
-  PORTAL_DISPLAY_NAME_SETTINGS_HREF,
-  PORTAL_CABINET_SHARE_HREF,
-  PORTAL_CABINET_VOLUNTEERING_HREF,
-  PORTAL_LOGIN_HREF,
-} from "../../lib/portalRoutes";
+import { PORTAL_DISPLAY_NAME_SETTINGS_HREF, PORTAL_LOGIN_HREF, cabinetTabHref } from "../../lib/portalRoutes";
 import { ImageLightbox } from "../../components/ImageLightbox";
 import { clearCachedUser, useOptionalUser } from "../../lib/useOptionalUser";
+import {
+  CABINET_ICONS,
+  CHEVRON_LEFT_ICON,
+  CHEVRON_RIGHT_ICON,
+  LOCATIONS_ICON,
+  ME_ICON,
+  ORGANIZER_ICON,
+  PROFILE_ICON,
+  PROJECT_ICON,
+  RATINGS_ICON,
+  RESULTS_ICON,
+  SEARCH_ICON,
+} from "./nav/navIcons";
+import { resolveNavState, type SiteSidebarActive } from "./nav/navState";
+import { OrganizerSwitcher } from "./nav/OrganizerSwitcher";
+import { openSiteSearch } from "./nav/siteSearchBus";
+import { isLinkCurrent, type CabinetTabKey, type NavSection, type NavSectionKey, type NavPlace } from "./nav/siteNav";
 import "./cabinet/cabinet.css";
+import "./nav/siteNav.css";
 
-// "settings" — служебная страница без пункта в основной навигации (живёт под
-// разделительной линией), поэтому её ключ не участвует в NAV_ICONS/CABINET_NAV.
-export type CabinetTabKey =
-  | "dashboard"
-  | "runs"
-  | "volunteering"
-  | "meetings"
-  | "achievements"
-  | "history"
-  | "map"
-  | "share"
-  | "settings";
+export { icon } from "./nav/navIcons";
+export { isCabinetTab, type SiteSidebarActive } from "./nav/navState";
+export type { CabinetTabKey } from "./nav/siteNav";
 
-/** Что подсвечивать: вкладка ЛК, раздел сайта или ничего. */
-export type SiteSidebarActive =
-  | CabinetTabKey
-  | "locations"
-  | "results"
-  | "last-results"
-  | "unified-protocol"
-  | "organizer"
-  | "ratings"
-  | "backlog"
-  | null;
+/** Иконки вкладок кабинета — ими же рисует вкладки чужой профиль. */
+export const NAV_ICONS = CABINET_ICONS;
 
-type CabinetNavItem = {
-  key: CabinetTabKey;
-  /** Служебный адрес (fallback, пока хендл участника неизвестен). */
-  href: string;
-  label: string;
-  icon: ReactNode;
+export const SECTION_ICONS: Record<NavSectionKey, ReactNode> = {
+  me: ME_ICON,
+  organizer: ORGANIZER_ICON,
+  results: RESULTS_ICON,
+  locations: LOCATIONS_ICON,
+  ratings: RATINGS_ICON,
+  project: PROJECT_ICON,
 };
-
-/**
- * Адрес вкладки для конкретного пользователя: разделы кабинета живут на его
- * публичном адресе /users/{хендл}/…, а служебные (Поделиться, Настройки)
- * остаются на собственных путях — публиковать их незачем.
- */
-function navHref(user: User | null | undefined, item: CabinetNavItem): string {
-  if (item.key === "share" || item.key === "settings") {
-    return item.href;
-  }
-  return cabinetTabHref(user ?? null, item.key as CabinetTabSegmentKey);
-}
-
-// Иконки — инлайн-SVG в stroke-стиле (как в шапке портала), 20×20.
-export function icon(paths: ReactNode) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {paths}
-    </svg>
-  );
-}
-
-export const NAV_ICONS: Record<Exclude<CabinetTabKey, "settings">, ReactNode> = {
-  dashboard: icon(
-    <>
-      <rect x="3" y="3" width="7.5" height="9" rx="1.6" />
-      <rect x="13.5" y="3" width="7.5" height="5.5" rx="1.6" />
-      <rect x="13.5" y="12" width="7.5" height="9" rx="1.6" />
-      <rect x="3" y="15.5" width="7.5" height="5.5" rx="1.6" />
-    </>,
-  ),
-  runs: icon(<polyline points="3,17 8,12 11,15 16,8 18.5,10.5 21,5" />),
-  volunteering: icon(
-    <path d="M12 20.5c-4.6-3.4-8-6.3-8-9.9C4 7.9 6 6 8.4 6c1.5 0 2.8.8 3.6 2 .8-1.2 2.1-2 3.6-2C18 6 20 7.9 20 10.6c0 3.6-3.4 6.5-8 9.9Z" />,
-  ),
-  meetings: icon(
-    <>
-      <circle cx="8.5" cy="8.5" r="3.2" />
-      <path d="M2.8 20c.6-3 2.9-4.8 5.7-4.8s5.1 1.8 5.7 4.8" />
-      <circle cx="16.8" cy="9.8" r="2.6" />
-      <path d="M15.2 15.6c.5-.2 1-.3 1.6-.3 2.4 0 4.3 1.5 4.9 4" />
-    </>,
-  ),
-  achievements: icon(
-    <>
-      <circle cx="12" cy="9" r="5.2" />
-      <path d="M8.8 13.4 7 21l5-2.6L17 21l-1.8-7.6" />
-    </>,
-  ),
-  history: icon(
-    <>
-      <circle cx="12" cy="12" r="8.5" />
-      <polyline points="12,7 12,12 15.5,14" />
-    </>,
-  ),
-  map: icon(
-    <>
-      <path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6 9 4Z" />
-      <path d="M9 4v14M15 6v14" />
-    </>,
-  ),
-  share: icon(
-    <>
-      <circle cx="6" cy="12" r="2.6" />
-      <circle cx="17.5" cy="5.5" r="2.6" />
-      <circle cx="17.5" cy="18.5" r="2.6" />
-      <path d="M8.4 10.7 15.1 6.8M8.4 13.3l6.7 3.9" />
-    </>,
-  ),
-};
-
-const CABINET_ICON = icon(
-  <>
-    <circle cx="12" cy="8" r="3.6" />
-    <path d="M5 20c.8-3.6 3.6-5.7 7-5.7s6.2 2.1 7 5.7" />
-  </>,
-);
-
-const LOCATIONS_ICON = icon(
-  <>
-    <path d="M12 21s-7-5.6-7-11a7 7 0 0 1 14 0c0 5.4-7 11-7 11Z" />
-    <circle cx="12" cy="10" r="2.6" />
-  </>,
-);
-
-const PROFILE_ICON = icon(
-  <>
-    <circle cx="12" cy="8" r="3.4" />
-    <path d="M5.5 20a6.8 6.8 0 0 1 13 0" />
-    <path d="M17.5 3.5 19 5l2.5-2.5" />
-  </>,
-);
-
-// Подпункты открытой локации: сама площадка и её журнал протоколов.
-const LOCATION_PIN_ICON = icon(
-  <>
-    <circle cx="12" cy="12" r="3.2" />
-    <path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21" />
-  </>,
-);
-
-// Кабинет организатора — планшет оргкоманды.
-const ORGANIZER_ICON = icon(
-  <>
-    <path d="M9 4.5h6M8 6.5h8a1 1 0 0 1 1 1V20a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 7 20V7.5a1 1 0 0 1 1-1Z" />
-    <path d="M10 11h4M10 14.5h4" />
-  </>,
-);
-
-const PROTOCOL_ICON = icon(
-  <>
-    <path d="M6 3.5h9L19 7.5V20a.5.5 0 0 1-.5.5h-12A.5.5 0 0 1 6 20V4a.5.5 0 0 1 .5-.5Z" />
-    <path d="M14.5 3.5V8H19" />
-    <path d="M9 12.5h6M9 16h4" />
-  </>,
-);
-
-// «Постоянный состав» локации: двое рядом — регулярные участники площадки.
-const REGULARS_ICON = icon(
-  <>
-    <circle cx="9.5" cy="8.5" r="3" />
-    <path d="M3.5 19.5c.7-3.1 3.1-4.9 6-4.9s5.3 1.8 6 4.9" />
-    <circle cx="17.5" cy="7.5" r="2.2" />
-    <path d="M16 13.6c2.3-.4 4.1 1.2 4.5 3.6" />
-  </>,
-);
-
-// «Результаты последней субботы»: секундомер — свежие результаты стартов.
-// «Топы бегунов» локации: подиум — кто здесь быстрее всех и кто чаще выигрывал.
-const PODIUM_ICON = icon(
-  <>
-    <path d="M9.5 11.5h5V20h-5z" />
-    <path d="M4 15h5.5v5H4zM14.5 13.5H20V20h-5.5z" />
-    <path d="M12 4l1.1 2.3 2.4.3-1.8 1.7.5 2.4L12 9.6 9.8 10.7l.5-2.4L8.5 6.6l2.4-.3z" />
-  </>,
-);
-
-const LAST_RESULTS_ICON = icon(
-  <>
-    <circle cx="12" cy="13" r="7" />
-    <path d="M12 9.5V13l2.5 2" />
-    <path d="M10 3h4M12 3v3" />
-  </>,
-);
-
-// «Единый протокол»: список-стопка — вся страна одной таблицей.
-const UNIFIED_PROTOCOL_ICON = icon(
-  <>
-    <path d="M4 6.5h16M4 12h16M4 17.5h16" />
-    <circle cx="7" cy="6.5" r="1.4" />
-    <circle cx="7" cy="12" r="1.4" />
-    <circle cx="7" cy="17.5" r="1.4" />
-  </>,
-);
-
-const RATINGS_ICON = icon(
-  <>
-    <path d="M7.5 4h9v4.5a4.5 4.5 0 0 1-9 0V4Z" />
-    <path d="M7.5 5.5H5a3 3 0 0 0 2.8 3.9M16.5 5.5H19a3 3 0 0 1-2.8 3.9" />
-    <path d="M12 13v3.5M8.5 21h7M10 21l.7-4.5h2.6l.7 4.5" />
-  </>,
-);
-
-export const CABINET_NAV: CabinetNavItem[] = [
-  { key: "dashboard", href: PORTAL_CABINET_HREF, label: "Обзор", icon: NAV_ICONS.dashboard },
-  { key: "runs", href: PORTAL_CABINET_RUNS_HREF, label: "Пробежки", icon: NAV_ICONS.runs },
-  {
-    key: "volunteering",
-    href: PORTAL_CABINET_VOLUNTEERING_HREF,
-    label: "Волонтёрство",
-    icon: NAV_ICONS.volunteering,
-  },
-  {
-    key: "achievements",
-    href: PORTAL_CABINET_ACHIEVEMENTS_HREF,
-    label: "Достижения",
-    icon: NAV_ICONS.achievements,
-  },
-  { key: "meetings", href: PORTAL_CABINET_MEETINGS_HREF, label: "Встречи", icon: NAV_ICONS.meetings },
-  { key: "history", href: PORTAL_CABINET_HISTORY_HREF, label: "Моя история", icon: NAV_ICONS.history },
-  { key: "map", href: PORTAL_CABINET_MAP_HREF, label: "Карта", icon: NAV_ICONS.map },
-  { key: "share", href: PORTAL_CABINET_SHARE_HREF, label: "Поделиться", icon: NAV_ICONS.share },
-];
-
-/**
- * Подпункты разделов сайта — одним списком на сайдбар и на шторку «Ещё»
- * телефона. Раньше это дерево жило только в разметке сайдбара, а на телефоне
- * сайдбар скрыт: «Последние пробежки», «Единый протокол» и срезы открытой
- * площадки с телефона были недостижимы вовсе (репорт Дмитрия 07.09.2026).
- */
-export type SiteSectionLink = {
-  key: string;
-  href: string;
-  label: string;
-  icon: ReactNode;
-  /**
-   * Текущая ли это страница. У срезов площадки сверяем адрес (ключ раздела у
-   * них общий — «locations»), у общесайтовых хватает ключа.
-   */
-  isCurrent: (pathname: string, active: string | null) => boolean;
-};
-
-/**
- * Срезы открытой площадки. Живут под самой локацией, а не в «Результатах»
- * (правки Дмитрия 27–28.08.2026): это срезы конкретной площадки, тогда как
- * «Результаты» — общесайтовая витрина. Потому и появляются только тогда,
- * когда локация открыта.
- */
-export function locationSectionLinks(location: { slug: string; name: string }): SiteSectionLink[] {
-  const base = `/locations/${location.slug}`;
-  return [
-    {
-      key: "location",
-      href: base,
-      label: location.name,
-      icon: LOCATION_PIN_ICON,
-      isCurrent: (pathname) => pathname === base,
-    },
-    {
-      key: "participants",
-      href: `${base}/participants`,
-      label: "Постоянный состав",
-      icon: REGULARS_ICON,
-      isCurrent: (pathname) => pathname === `${base}/participants`,
-    },
-    {
-      key: "tops",
-      href: `${base}/tops`,
-      label: "Топы бегунов",
-      icon: PODIUM_ICON,
-      isCurrent: (pathname) => pathname === `${base}/tops`,
-    },
-    {
-      key: "events",
-      href: `${base}/events`,
-      label: "Журнал протоколов",
-      icon: PROTOCOL_ICON,
-      isCurrent: (pathname) => pathname.endsWith("/events"),
-    },
-  ];
-}
-
-/**
- * «Результаты» — про то, что было на выходных, а не про каталог площадок.
- * Заголовок раздела ведёт на витрину, но «Последние пробежки» перечислены и
- * своим пунктом (просьба Дмитрия 25.08.2026): по одному заголовку не понять,
- * что за ним.
- */
-export const RESULTS_SECTION_LINKS: SiteSectionLink[] = [
-  {
-    key: "last-results",
-    href: "/results",
-    label: "Последние пробежки",
-    icon: LAST_RESULTS_ICON,
-    isCurrent: (_pathname, active) => active === "last-results",
-  },
-  {
-    key: "unified-protocol",
-    href: "/protocol",
-    label: "Единый протокол",
-    icon: UNIFIED_PROTOCOL_ICON,
-    isCurrent: (_pathname, active) => active === "unified-protocol",
-  },
-];
-
-export type SecondaryNavItem = { href: string; label: string; adminOnly?: boolean; authOnly?: boolean };
-
-/**
- * Публичные разделы сайта. В сайдбаре они рисуются отдельными ссылками (у
- * «Локаций» бывает подпункт с текущей площадкой), но список нужен и нижней
- * навигации телефона: без него «Локации» и «Рейтинги» не попадали в шторку
- * «Ещё» и на телефоне были недостижимы вовсе.
- */
-export const SITE_SECTIONS_NAV: {
-  key: "locations" | "results" | "ratings";
-  href: string;
-  label: string;
-  icon: ReactNode;
-}[] = [
-  { key: "locations", href: "/locations", label: "Локации", icon: LOCATIONS_ICON },
-  { key: "results", href: "/results", label: "Результаты", icon: LAST_RESULTS_ICON },
-  { key: "ratings", href: "/ratings", label: "Рейтинги", icon: RATINGS_ICON },
-];
-
-/**
- * К какому разделу верхнего уровня относится подсвеченный пункт сайдбара.
- * Нижняя навигация телефона и шапка кабинета показывают только сами разделы,
- * а `active` приходит от страницы и бывает подпунктом («Единый протокол»
- * живёт в «Результатах»).
- */
-export function siteSectionKey(active: string | null | undefined): string | null {
-  if (active === "last-results" || active === "unified-protocol") {
-    return "results";
-  }
-  return active ?? null;
-}
-
-// Служебные разделы — видны на всех страницах с сайдбаром.
-// «Админка» подсвечена янтарным (см. .portal-cab-nav-item-admin).
-export const SECONDARY_NAV: SecondaryNavItem[] = [
-  { href: PORTAL_CABINET_SETTINGS_HREF, label: "Настройки", authOnly: true },
-  { href: PORTAL_ABOUT_HREF, label: "О проекте" },
-  { href: "/backlog", label: "Бэклог" },
-  { href: "/admin/users", label: "Админка", adminOnly: true },
-];
 
 // Экспорт: имя пользователя нужно и герою дашборда.
 // display_name с 25.08.2026 считается на сервере из профилей беговых систем,
@@ -403,14 +78,13 @@ function userInitials(label: string): string {
 
 /**
  * Карточка участника: аватар, имя и «✎» — правка отображаемого имени.
- * Экспортируется, потому что на телефоне сайдбар скрыт целиком, и кабинет
- * рисует эту же карточку над контентом (иначе имя правилось только с
- * компьютера — баг, 29.07.2026).
+ * Экспортируется, потому что на телефоне колонки нет, и кабинет рисует эту же
+ * карточку над контентом (иначе имя правилось только с компьютера — баг,
+ * 29.07.2026).
  */
-export function CabinetUserCard({ initialUser, collapsed = false }: { initialUser: User; collapsed?: boolean }) {
+export function CabinetUserCard({ initialUser }: { initialUser: User }) {
   const [avatarZoomed, setAvatarZoomed] = useState(false);
   const user = initialUser;
-
   const label = userLabel(user);
 
   // Аватарка кликабельна: открывает оригинал без пережатия (просьба Дмитрия
@@ -440,26 +114,15 @@ export function CabinetUserCard({ initialUser, collapsed = false }: { initialUse
     </span>
   );
 
-  if (collapsed) {
-    return (
-      <div className="portal-cab-user portal-cab-user-collapsed" title={label}>
-        {avatar}
-      </div>
-    );
-  }
-
   return (
     <div className="portal-cab-user">
       {avatar}
       <div className="portal-cab-user-info">
-        {/* Имя — ссылка в обзор кабинета (просьба Дмитрия 26.07.2026):
-            раньше по нему кликали и ничего не происходило. */}
+        {/* Имя — ссылка в обзор кабинета (просьба Дмитрия 26.07.2026). */}
         <a className="portal-cab-user-name" href={cabinetTabHref(user, "dashboard")} title={label}>
           {label}
         </a>
-        {/* Настройка имени живёт в «Настройках»: форма выбора источника и вида
-            записи в узкий сайдбар не помещалась (решение Дмитрия 25.08.2026).
-            Ведём сразу на раздел, а не в начало длинной страницы. */}
+        {/* Настройка имени живёт в «Настройках» (решение Дмитрия 25.08.2026). */}
         <a
           className="portal-cab-user-edit"
           href={PORTAL_DISPLAY_NAME_SETTINGS_HREF}
@@ -473,50 +136,26 @@ export function CabinetUserCard({ initialUser, collapsed = false }: { initialUse
   );
 }
 
-
-const SIDEBAR_COLLAPSED_KEY = "portalCabSidebarCollapsed";
-// Раскрыта ли группа «Личный кабинет». По умолчанию раскрыта; выбор помнится
-// между страницами (сайт — MPA, без этого свёрнутая группа раскрывалась
-// заново на каждом переходе).
-const CABINET_GROUP_OPEN_KEY = "portalCabGroupOpen";
-
-const CABINET_TAB_KEYS: readonly SiteSidebarActive[] = [
-  "dashboard",
-  "runs",
-  "volunteering",
-  "meetings",
-  "achievements",
-  "history",
-  "map",
-  "share",
-  "settings",
-];
-
-export function isCabinetTab(active: SiteSidebarActive): active is CabinetTabKey {
-  return active !== null && CABINET_TAB_KEYS.includes(active);
-}
+// Свёрнута ли колонка (остаётся только рельс) — помнится между страницами:
+// широким таблицам протоколов и рейтингов место нужнее, чем меню.
+const COLUMN_COLLAPSED_KEY = "portalCabSidebarCollapsed";
 
 export type SidebarExtraGroup = {
   /** Заголовок группы (например, имя участника на публичном профиле). */
   title: string;
   /** Аватарка участника — вместо родовой иконки профиля в заголовке группы. */
   avatarUrl?: string | null;
-  /**
-   * Клик по заголовку. Задан — заголовок становится кнопкой: на публичном
-   * профиле имя участника ведёт на его главную, как ожидается от «шапки»
-   * раздела (репорт Дмитрия 04.08.2026 — раньше клик не делал ничего).
-   */
+  /** Клик по заголовку: на публичном профиле имя ведёт на его главную. */
   onTitleClick?: () => void;
   items: { key: string; label: string; icon?: ReactNode; active: boolean; onClick: () => void }[];
 };
 
 export type SiteSidebarProps = {
   active: SiteSidebarActive;
-  /** User — залогинен, null — аноним, undefined — определить самостоятельно
-      (публичные разделы, где нет своего гейта). */
+  /** User — залогинен, null — аноним, undefined — определить самостоятельно. */
   user?: User | null;
-  /** Открытая локация — под пунктом «Локации» появляются её подпункты. */
-  location?: { slug: string; name: string };
+  /** Открытая локация (или локация кабинета организатора). */
+  location?: NavPlace;
   /** Превью ЛК: подменить адреса вкладок (?tab=…). */
   hrefForTab?: (key: CabinetTabKey, defaultHref: string) => string;
   /** Превью ЛК: скрыть служебные пункты и «Выйти». */
@@ -526,6 +165,10 @@ export type SiteSidebarProps = {
   /** Доп. группа вкладок текущей страницы (публичный профиль участника). */
   extraGroup?: SidebarExtraGroup;
 };
+
+function isMac(): boolean {
+  return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+}
 
 export function SiteSidebar({
   active,
@@ -538,42 +181,15 @@ export function SiteSidebar({
 }: SiteSidebarProps) {
   // Хук вызывается всегда (правила хуков); если user передан пропом — он главнее.
   const detectedUser = useOptionalUser();
-  // undefined — сессия ещё проверяется (первый заход без кэша): рисуем
-  // нейтральное состояние, чтобы залогиненному не мигало «Войти» и дизейблы.
   const user = userProp !== undefined ? userProp : detectedUser;
-  const authed = user != null;
-  const anon = user === null;
-  // Пункт «Кабинет организатора» показываем только оргкомандам (и админу):
-  // остальным он вёл бы в пустой раздел.
-  const organizer = user != null && (user.is_organizer || user.is_admin);
 
   const [collapsed, setCollapsed] = useState(() => {
     try {
-      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+      return localStorage.getItem(COLUMN_COLLAPSED_KEY) === "1";
     } catch {
       return false;
     }
   });
-  // На чужой странице (публичный профиль участника) свой кабинет сворачивается
-  // сам: иначе в сайдбаре подряд шли два одинаковых списка разделов — свой и
-  // чужой — и получалась «колбаса» на два экрана (репорт Дмитрия 25.08.2026).
-  // Выбор при этом НЕ запоминается: вернувшись в свой кабинет, человек снова
-  // видит группу такой, какой оставил её там.
-  const hasExtraGroup = Boolean(extraGroup);
-  // Группа ЛК по умолчанию РАЗВЁРНУТА (решение Дмитрия 25.07.2026), но выбор
-  // запоминается: свернул — остаётся свёрнутой и на других страницах.
-  const [cabinetOpen, setCabinetOpen] = useState(() => {
-    if (hasExtraGroup) {
-      return false;
-    }
-    try {
-      return localStorage.getItem(CABINET_GROUP_OPEN_KEY) !== "0";
-    } catch {
-      return true;
-    }
-  });
-  // Группа чужого профиля раскрыта: ради неё человек сюда и пришёл.
-  const [extraOpen, setExtraOpen] = useState(true);
 
   useEffect(() => {
     onCollapsedChange?.(collapsed);
@@ -583,7 +199,7 @@ export function SiteSidebar({
     setCollapsed((current) => {
       const next = !current;
       try {
-        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+        localStorage.setItem(COLUMN_COLLAPSED_KEY, next ? "1" : "0");
       } catch {
         // localStorage недоступен — просто не запоминаем
       }
@@ -591,324 +207,177 @@ export function SiteSidebar({
     });
   };
 
-  const setCabinetOpenPersisted = (next: boolean) => {
-    setCabinetOpen(next);
-    if (hasExtraGroup) {
-      // Свернули/развернули свой кабинет на чужой странице — это разовое
-      // решение для этой страницы, общую настройку сайта оно не меняет.
-      return;
-    }
-    try {
-      localStorage.setItem(CABINET_GROUP_OPEN_KEY, next ? "1" : "0");
-    } catch {
-      // localStorage недоступен — просто не запоминаем
-    }
-  };
-
-  const toggleCabinetOpen = () => setCabinetOpenPersisted(!cabinetOpen);
-
-  const handleLogout = async () => {
-    await logout();
-    clearCachedUser();
-    window.location.href = PORTAL_LOGIN_HREF;
-  };
-
-  const tabHref = (item: CabinetNavItem) =>
-    hrefForTab ? hrefForTab(item.key, item.href) : navHref(user, item);
-  const pathname = typeof window !== "undefined" ? window.location.pathname : "";
+  const { pathname, sections, current, organizerPlace } = resolveNavState({ active, user, location, hrefForTab });
+  const visibleSections = hideSecondaryNav ? sections.filter((section) => section.key === "me") : sections;
+  // Колонка чужого профиля показывает его вкладки; иначе — текущий раздел, а
+  // если раздела нет (например, 404) — свой кабинет.
+  const columnSection = current ?? (extraGroup ? null : sections[0]);
 
   return (
-    <aside className={`portal-cab-sidebar${collapsed ? " collapsed" : ""}`}>
-      {authed && <CabinetUserCard initialUser={user} collapsed={collapsed} />}
-      {anon && (
-        <div className={`portal-cab-user portal-cab-login-card${collapsed ? " portal-cab-user-collapsed" : ""}`}>
-          {collapsed ? (
-            <a className="portal-cab-user-avatar portal-cab-login-avatar" href={PORTAL_LOGIN_HREF} title="Войти">
-              →
-            </a>
-          ) : (
-            <a className="btn primary btn-sm portal-cab-login-btn" href={PORTAL_LOGIN_HREF}>
-              Войти
-            </a>
-          )}
-        </div>
-      )}
-      {user === undefined && (
-        <div className="portal-cab-user portal-cab-user-pending" aria-hidden="true" />
-      )}
-
-      <nav className="portal-cab-nav" aria-label="Разделы сайта">
-        {/* Группа «Личный кабинет»: клик по тексту — переход в обзор (группа
-            раскроется сама на странице ЛК), клик по стрелке — только
-            раскрыть/скрыть. Анониму видна, но задизейблена. */}
-        <a
-          href={
-            authed
-              ? hrefForTab
-                ? hrefForTab("dashboard", PORTAL_CABINET_HREF)
-                : cabinetTabHref(user, "dashboard")
-              : undefined
-          }
-          className={`portal-cab-nav-item portal-cab-group-head${
-            isCabinetTab(active) ? " portal-cab-group-head-current" : ""
-          }${anon ? " portal-cab-nav-item-disabled" : ""}`}
-          aria-disabled={anon || undefined}
-          onClick={() => {
-            // Клик по названию ведёт в обзор и заодно раскрывает группу —
-            // чтобы после перехода разделы кабинета были видны сразу.
-            if (authed && !cabinetOpen) {
-              setCabinetOpenPersisted(true);
-            }
-          }}
-          title={
-            anon
-              ? "Войдите на сайт, чтобы открыть личный кабинет: ваши пробежки, волонтёрства, достижения и карта локаций"
-              : collapsed
-                ? "Личный кабинет"
-                : undefined
-          }
-        >
-          <span className="portal-cab-nav-icon">{CABINET_ICON}</span>
-          <span className="portal-cab-nav-label">Личный кабинет</span>
-          {authed && (
-            <button
-              type="button"
-              className={`portal-cab-group-chevron${cabinetOpen ? " open" : ""}`}
-              aria-label={cabinetOpen ? "Скрыть разделы кабинета" : "Показать разделы кабинета"}
-              aria-expanded={cabinetOpen}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                toggleCabinetOpen();
-              }}
-            >
-              {icon(<path d="M9 6l6 6-6 6" />)}
-            </button>
-          )}
-        </a>
-        {authed &&
-          cabinetOpen &&
-          CABINET_NAV.map((item) => (
-            <a
-              key={item.key}
-              href={tabHref(item)}
-              className={`portal-cab-nav-item portal-cab-nav-subitem${item.key === active ? " active" : ""}`}
-              aria-current={item.key === active ? "page" : undefined}
-              title={collapsed ? item.label : undefined}
-            >
-              <span className="portal-cab-nav-icon">{item.icon}</span>
-              <span className="portal-cab-nav-label">{item.label}</span>
-            </a>
-          ))}
-
-        {/* Группа текущей страницы (публичный профиль участника): заголовок —
-            имя, подпункты — вкладки профиля, переключаются без перезагрузки.
-            Стоит сразу под своим кабинетом (который на чужой странице
-            свёрнут), а не в конце навигации: человек пришёл смотреть именно
-            этого участника, и его разделы должны быть под рукой, а не после
-            Локаций и Рейтингов. */}
-        {extraGroup && (
-          <>
-            {/* Линии-разделители: пункты чужого профиля временные, их надо
-                визуально отделить от постоянной навигации сайта. */}
-            <div className="portal-cab-nav-sep" aria-hidden="true" />
-            {/* Строка-заголовок: имя — отдельная кнопка (ведёт на главную
-                участника), шеврон — соседняя, а не вложенная. Вложенная
-                кнопка в кнопке невалидна и ломала гидрацию React. */}
-            <div
-              className={`portal-cab-nav-item portal-cab-group-head${
-                extraGroup.onTitleClick ? "" : " portal-cab-group-head-static"
-              }`}
-              title={collapsed ? extraGroup.title : undefined}
-            >
-              {extraGroup.onTitleClick ? (
-                <button
-                  type="button"
-                  className="portal-cab-group-title"
-                  onClick={extraGroup.onTitleClick}
-                >
-                  <span className="portal-cab-nav-icon">
-                    {extraGroup.avatarUrl ? (
-                      <img className="portal-cab-nav-avatar" src={extraGroup.avatarUrl} alt="" />
-                    ) : (
-                      PROFILE_ICON
-                    )}
-                  </span>
-                  <span className="portal-cab-nav-label">{extraGroup.title}</span>
-                </button>
-              ) : (
-                <span className="portal-cab-group-title">
-                  <span className="portal-cab-nav-icon">
-                    {extraGroup.avatarUrl ? (
-                      <img className="portal-cab-nav-avatar" src={extraGroup.avatarUrl} alt="" />
-                    ) : (
-                      PROFILE_ICON
-                    )}
-                  </span>
-                  <span className="portal-cab-nav-label">{extraGroup.title}</span>
-                </span>
-              )}
-              <button
-                type="button"
-                className={`portal-cab-group-chevron${extraOpen ? " open" : ""}`}
-                aria-label={extraOpen ? "Скрыть разделы участника" : "Показать разделы участника"}
-                aria-expanded={extraOpen}
-                onClick={() => setExtraOpen((open) => !open)}
-              >
-                {icon(<path d="M9 6l6 6-6 6" />)}
-              </button>
-            </div>
-            {extraOpen &&
-              extraGroup.items.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={item.onClick}
-                  className={`portal-cab-nav-item portal-cab-nav-subitem${
-                    item.active ? " active" : ""
-                  }`}
-                  aria-current={item.active ? "page" : undefined}
-                  title={collapsed ? item.label : undefined}
-                >
-                  {/* Иконка нужна и в свёрнутом рельсе: без неё пункты чужого
-                      профиля превращались там в пустые полоски. */}
-                  {item.icon && <span className="portal-cab-nav-icon">{item.icon}</span>}
-                  <span className="portal-cab-nav-label">{item.label}</span>
-                </button>
-              ))}
-            <div className="portal-cab-nav-sep" aria-hidden="true" />
-          </>
-        )}
-
-        <a
-          href="/locations"
-          className={`portal-cab-nav-item${active === "locations" && !location ? " active" : ""}`}
-          aria-current={active === "locations" && !location ? "page" : undefined}
-          title={collapsed ? "Локации" : undefined}
-        >
-          <span className="portal-cab-nav-icon">{LOCATIONS_ICON}</span>
-          <span className="portal-cab-nav-label">Локации</span>
-        </a>
-        {location &&
-          locationSectionLinks(location).map((item) => {
-            const current = item.isCurrent(pathname, active);
-            return (
-              <a
-                key={item.key}
-                href={item.href}
-                className={`portal-cab-nav-item portal-cab-nav-subitem${current ? " active" : ""}`}
-                aria-current={current ? "page" : undefined}
-                title={collapsed ? item.label : undefined}
-              >
-                <span className="portal-cab-nav-icon">{item.icon}</span>
-                <span className="portal-cab-nav-label">{item.label}</span>
-              </a>
-            );
-          })}
-
-        {/* Кабинет организатора — постоянный подпункт, как «Последние
-            пробежки». Ведёт всегда к СПИСКУ своих локаций (/organizer): раньше
-            вёл в кабинет открытой локации, и со страницы чужой локации
-            организатор попадал в отказ (правка Дмитрия 24.08.2026). При одной
-            своей локации список сам редиректит в её кабинет. */}
-        {organizer && (
-          <a
-            href="/organizer"
-            className={`portal-cab-nav-item portal-cab-nav-subitem${
-              active === "organizer" ? " active" : ""
-            }`}
-            aria-current={active === "organizer" ? "page" : undefined}
-            title={collapsed ? "Кабинет организатора" : undefined}
+    <aside className={`site-nav${collapsed ? " site-nav-collapsed" : ""}`} aria-label="Навигация по сайту">
+      <nav className="site-rail" aria-label="Разделы сайта">
+        {!hideSecondaryNav && (
+          <button
+            type="button"
+            className="site-rail-item site-rail-search"
+            onClick={() => openSiteSearch()}
+            title={`Поиск по сайту (${isMac() ? "⌘" : "Ctrl"}+K)`}
           >
-            <span className="portal-cab-nav-icon">{ORGANIZER_ICON}</span>
-            <span className="portal-cab-nav-label">Кабинет организатора</span>
-          </a>
+            <span className="site-rail-icon">{SEARCH_ICON}</span>
+            <span className="site-rail-label">Поиск</span>
+          </button>
         )}
-
-
-        {/* Заголовок раздела ведёт на витрину, подпункты — общие с телефоном
-            (см. RESULTS_SECTION_LINKS). */}
-        <a
-          href="/results"
-          className={`portal-cab-nav-item${active === "last-results" ? " active" : ""}`}
-          aria-current={active === "last-results" ? "page" : undefined}
-          title={collapsed ? "Результаты" : undefined}
-        >
-          <span className="portal-cab-nav-icon">{LAST_RESULTS_ICON}</span>
-          <span className="portal-cab-nav-label">Результаты</span>
-        </a>
-        {RESULTS_SECTION_LINKS.map((item) => {
-          const current = item.isCurrent(pathname, active);
+        {visibleSections.map((section) => {
+          const isCurrent = section.key === current?.key;
           return (
             <a
-              key={item.key}
-              href={item.href}
-              className={`portal-cab-nav-item portal-cab-nav-subitem${current ? " active" : ""}`}
-              aria-current={current ? "page" : undefined}
-              title={collapsed ? item.label : undefined}
+              key={section.key}
+              href={section.href}
+              className={`site-rail-item${isCurrent ? " active" : ""}`}
+              aria-current={isCurrent ? "true" : undefined}
+              title={section.label}
             >
-              <span className="portal-cab-nav-icon">{item.icon}</span>
-              <span className="portal-cab-nav-label">{item.label}</span>
+              <span className="site-rail-icon">{SECTION_ICONS[section.key]}</span>
+              <span className="site-rail-label">{section.shortLabel}</span>
             </a>
           );
         })}
-        <a
-          href="/ratings"
-          className={`portal-cab-nav-item${active === "ratings" ? " active" : ""}`}
-          aria-current={active === "ratings" ? "page" : undefined}
-          title={collapsed ? "Рейтинги" : undefined}
+        <button
+          type="button"
+          className="site-rail-item site-rail-collapse"
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Показать подразделы" : "Скрыть подразделы"}
+          title={collapsed ? "Показать подразделы" : "Скрыть подразделы — больше места таблицам"}
         >
-          <span className="portal-cab-nav-icon">{RATINGS_ICON}</span>
-          <span className="portal-cab-nav-label">Рейтинги</span>
-        </a>
-
+          <span className="site-rail-icon">{collapsed ? CHEVRON_RIGHT_ICON : CHEVRON_LEFT_ICON}</span>
+        </button>
       </nav>
 
-      {!hideSecondaryNav && (
-        <nav className="portal-cab-nav portal-cab-nav-secondary" aria-label="Служебные разделы">
-          {SECONDARY_NAV.filter((item) => !item.adminOnly || (user != null && user.is_admin)).map((item) => {
-            const disabled = Boolean(item.authOnly) && anon;
-            const current =
-              (item.href === PORTAL_CABINET_SETTINGS_HREF && active === "settings") ||
-              (item.href === "/backlog" && active === "backlog");
+      {!collapsed && (
+        <div className="site-col">
+          {user != null && <CabinetUserCard initialUser={user} />}
+          {/* Гостю отдельной карточки «Войти» нет: кнопка уже есть в шапке и
+              первым пунктом рельса, третья была бы лишней. */}
+          {user === undefined && <div className="portal-cab-user portal-cab-user-pending" aria-hidden="true" />}
+
+          {extraGroup && <ExtraGroupBlock group={extraGroup} />}
+
+          {columnSection && (
+            <SectionColumn
+              section={columnSection}
+              pathname={pathname}
+              user={user}
+              organizerPlace={columnSection.key === "organizer" ? organizerPlace : null}
+            />
+          )}
+
+          {user != null && !hideSecondaryNav && <LogoutButton className="site-col-logout" />}
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function SectionColumn({
+  section,
+  pathname,
+  user,
+  organizerPlace,
+}: {
+  section: NavSection;
+  pathname: string;
+  user: User | null | undefined;
+  organizerPlace: NavPlace | null;
+}) {
+  if (section.key === "me" && user === null) {
+    return (
+      <div className="site-col-section">
+        <div className="site-col-title">{section.label}</div>
+        <p className="site-col-hint">
+          Войдите, чтобы видеть свои пробежки, волонтёрства, достижения и карту локаций.
+        </p>
+        <a className="btn primary btn-sm site-col-login" href={PORTAL_LOGIN_HREF}>
+          Войти
+        </a>
+      </div>
+    );
+  }
+  return (
+    <div className="site-col-section">
+      {organizerPlace ? (
+        <OrganizerSwitcher user={user} place={organizerPlace} variant="column" />
+      ) : (
+        <a className="site-col-title" href={section.href}>
+          {section.label}
+        </a>
+      )}
+      {section.groups.map((group) => (
+        <div key={group.key} className={`site-col-group${group.context && section.key === "locations" ? " site-col-group-context" : ""}`}>
+          {group.title && <div className="site-col-group-title">{group.title}</div>}
+          {group.items.map((link) => {
+            const isCurrent = isLinkCurrent(link, pathname);
             return (
               <a
-                key={item.href}
-                href={disabled ? undefined : item.href}
-                className={`portal-cab-nav-item portal-cab-nav-item-secondary${
-                  item.adminOnly ? " portal-cab-nav-item-admin" : ""
-                }${disabled ? " portal-cab-nav-item-disabled" : ""}${current ? " active" : ""}`}
-                aria-disabled={disabled || undefined}
-                title={disabled ? "Доступно после входа на сайт" : undefined}
+                key={link.key}
+                href={link.href}
+                className={`site-col-item${isCurrent ? " active" : ""}${link.tone === "admin" ? " site-col-item-admin" : ""}`}
+                aria-current={isCurrent ? "page" : undefined}
               >
-                <span className="portal-cab-nav-label">{item.label}</span>
+                {link.label}
               </a>
             );
           })}
-          {authed && (
-            <button
-              type="button"
-              className="portal-cab-nav-item portal-cab-nav-item-secondary portal-cab-logout"
-              onClick={() => void handleLogout()}
-            >
-              <span className="portal-cab-nav-label">Выйти</span>
-            </button>
-          )}
-        </nav>
-      )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
-      <button
-        type="button"
-        className="portal-cab-collapse"
-        onClick={toggleCollapsed}
-        aria-label={collapsed ? "Развернуть меню" : "Свернуть меню"}
-        title={collapsed ? "Развернуть меню" : "Свернуть меню"}
-      >
-        <span className="portal-cab-nav-icon">
-          {icon(collapsed ? <path d="M9 6l6 6-6 6" /> : <path d="M15 6l-6 6 6 6" />)}
-        </span>
-        <span className="portal-cab-nav-label">Свернуть</span>
-      </button>
-    </aside>
+function ExtraGroupBlock({ group }: { group: SidebarExtraGroup }) {
+  const head = (
+    <>
+      <span className="site-col-extra-icon">
+        {group.avatarUrl ? <img src={group.avatarUrl} alt="" /> : PROFILE_ICON}
+      </span>
+      <span className="site-col-extra-name">{group.title}</span>
+    </>
+  );
+  return (
+    <div className="site-col-section site-col-group-context">
+      {group.onTitleClick ? (
+        <button type="button" className="site-col-extra-head" onClick={group.onTitleClick}>
+          {head}
+        </button>
+      ) : (
+        <div className="site-col-extra-head">{head}</div>
+      )}
+      {group.items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          onClick={item.onClick}
+          className={`site-col-item${item.active ? " active" : ""}`}
+          aria-current={item.active ? "page" : undefined}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function LogoutButton({ className }: { className?: string }) {
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      clearCachedUser();
+      window.location.href = PORTAL_LOGIN_HREF;
+    }
+  };
+  return (
+    <button type="button" className={className} onClick={() => void handleLogout()}>
+      Выйти
+    </button>
   );
 }

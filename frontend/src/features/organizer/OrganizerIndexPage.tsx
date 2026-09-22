@@ -22,14 +22,25 @@ function OrganizerIndexContent({ user }: { user: User }) {
   const [error, setError] = useState<string | null>(null);
   // Поиск нужен админу: у него в списке весь каталог, у организатора 1–2 строки.
   const [query, setQuery] = useState("");
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     getOrganizerLocations()
       .then((payload) => {
-        if (!cancelled) {
-          setItems(payload.items);
+        if (cancelled) {
+          return;
         }
+        // Одна своя локация — выбирать не из чего, сразу открываем её кабинет
+        // (решение Дмитрия 23.09.2026). replace, а не href: иначе «назад» из
+        // кабинета возвращал бы на этот список и тут же снова уводил вперёд.
+        // Админу список нужен всегда — у него весь каталог.
+        if (payload.items.length === 1 && !user.is_admin) {
+          setRedirecting(true);
+          window.location.replace(`/organizer/${encodeURIComponent(payload.items[0].slug)}`);
+          return;
+        }
+        setItems(payload.items);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -39,7 +50,15 @@ function OrganizerIndexContent({ user }: { user: User }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [user.is_admin]);
+
+  if (redirecting) {
+    return (
+      <PortalSectionShell sidebar={{ active: "organizer" }}>
+        <p className="muted">Открываем кабинет вашей локации…</p>
+      </PortalSectionShell>
+    );
+  }
 
   return (
     <PortalSectionShell sidebar={{ active: "organizer" }}>

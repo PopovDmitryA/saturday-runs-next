@@ -29,6 +29,7 @@ import {
 } from "./lib/portalRoutes";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { TapTooltipLayer } from "./components/TapTooltipLayer";
+import { SiteSearchDialog } from "./features/portal/nav/SiteSearchDialog";
 import { useEntryKey } from "./hooks/useEntryKey";
 import { useAppPath } from "./hooks/useAppPath";
 import { ShareSheetProvider } from "./features/sharing/ShareSheetContext";
@@ -55,6 +56,7 @@ const AdminBlockedSlugsPage = lazyPage(() => import("./features/admin/AdminBlock
 const AdminStatsPage = lazyPage(() => import("./features/admin/AdminStatsPage"), (m) => m.AdminStatsPage);
 const AdminSyncRunsPage = lazyPage(() => import("./features/admin/AdminSyncRunsPage"), (m) => m.AdminSyncRunsPage);
 const AdminPageAnalyticsPage = lazyPage(() => import("./features/admin/AdminPageAnalyticsPage"), (m) => m.AdminPageAnalyticsPage);
+const AdminSearchLogPage = lazyPage(() => import("./features/admin/AdminSearchLogPage"), (m) => m.AdminSearchLogPage);
 const AdminRatingsPage = lazyPage(() => import("./features/admin/AdminRatingsPage"), (m) => m.AdminRatingsPage);
 const AdminResyncPage = lazyPage(() => import("./features/admin/AdminResyncPage"), (m) => m.AdminResyncPage);
 const AdminLocationContactsPage = lazyPage(() => import("./features/admin/AdminLocationContactsPage"), (m) => m.AdminLocationContactsPage);
@@ -285,6 +287,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/profile-slugs": () => <AdminBlockedSlugsPage />,
   "/admin/stats": () => <AdminStatsPage />,
   "/admin/page-analytics": () => <AdminPageAnalyticsPage />,
+  // Журнал поиска по сайту: что ищут и что не находится.
+  "/admin/search": () => <AdminSearchLogPage />,
   "/admin/ratings": () => <AdminRatingsPage />,
   "/admin/resync": () => <AdminResyncPage />,
   "/admin/records-digest": () => <AdminRecordsDigestPage />,
@@ -497,6 +501,9 @@ export function App() {
       <TeaserClaimRunner userId={viewer?.id ?? null} />
       {/* Тап-подсказки на телефоне — один слой на весь сайт (см. TapTooltipLayer). */}
       <TapTooltipLayer />
+      {/* Поиск по сайту — одно окно на всё приложение, открывается из шапки,
+          рельса, «Меню» и по ⌘K / «/» (см. nav/SiteSearchDialog). */}
+      <SiteSearchDialog />
     </ShareSheetProvider>
   );
 }

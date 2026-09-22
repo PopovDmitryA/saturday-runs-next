@@ -1603,6 +1603,39 @@ class EmailLoginRequest(Base):
     ip: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
 
 
+class SearchQueryLog(Base):
+    """Журнал запросов поиска по сайту: что ищут люди и что не находят.
+
+    Строку присылает фронт беконом, когда человек закончил с поиском (выбрал
+    результат или закрыл панель), — поэтому одна строка на поиск, а не на
+    каждую нажатую букву.
+
+    Анонимно намеренно: ни user_id, ни visitor_key, ни IP. Вопрос владельца
+    проекта — «что ищут», а не «кто»; сам текст запроса нередко чьё-то ФИО, и
+    связывать его с человеком незачем. is_authed/is_mobile — только разрезы.
+    Хранится вечно: строк единицы в день.
+    """
+
+    __tablename__ = "search_query_log"
+    __table_args__ = (Index("ix_search_query_log_created_at", "created_at"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # Нормализованный: без лишних пробелов, в нижнем регистре, до 100 знаков.
+    query: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Запрос после перевода раскладки («cjrjkmybrb» → «сокольники»), если по нему нашлось.
+    corrected_query: Mapped[str | None] = mapped_column(String(100))
+    pages_found: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    locations_found: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    people_found: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    # page | location | person; NULL — ушёл, ничего не выбрав.
+    clicked_kind: Mapped[str | None] = mapped_column(String(16))
+    # Куда перешёл: href либо название.
+    clicked_target: Mapped[str | None] = mapped_column(String(200))
+    is_authed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    is_mobile: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+
+
 class AbEvent(Base):
     """Сырое событие АБ-эксперимента (скролл, клики, конверсия) с вариантом.
 

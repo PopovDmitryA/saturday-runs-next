@@ -228,6 +228,11 @@ class Settings(BaseSettings):
     abuse_auth_window_seconds: int = 600
     abuse_expensive_limit_per_ip: int = 20
     abuse_expensive_window_seconds: int = 60
+    # Поиск по сайту (/api/search и его журнал). Фронт шлёт запрос с паузой
+    # после набора, так что живой человек делает единицы запросов в минуту;
+    # 60 — с большим запасом на быстрый набор, но перебор имён упирается сразу.
+    abuse_search_limit_per_ip: int = 60
+    abuse_search_window_seconds: int = 60
     abuse_block_score_threshold: int = 200
     abuse_block_duration_seconds: int = 900
     abuse_severe_block_score_threshold: int = 400

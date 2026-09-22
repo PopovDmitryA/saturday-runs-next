@@ -4898,3 +4898,109 @@ export function getAdminSyncRuns(params: {
   return apiFetch<AdminSyncRunsResponse>(`/admin/sync-runs?${query.toString()}`);
 }
 
+
+// ---------- Поиск по сайту ----------
+
+export type SiteSearchLocation = {
+  slug: string;
+  name: string;
+  city: string | null;
+  platform_codes: string[];
+  href: string;
+};
+
+/**
+ * Человек в выдаче поиска. «registered» — участник сайта с открытым профилем,
+ * в него можно провалиться. «participant» — любой из протоколов (в том числе
+ * с закрытым профилем): только статистика, без перехода и без внешних ссылок.
+ */
+export type SiteSearchPerson =
+  | {
+      kind: "registered";
+      display_name: string;
+      href: string;
+      avatar_url: string | null;
+      total_runs: number;
+      total_volunteering: number;
+      top_location_name: string | null;
+      platform_codes: string[];
+    }
+  | {
+      kind: "participant";
+      display_name: string;
+      total_runs: number;
+      total_volunteering: number;
+      top_location_name: string | null;
+      top_location_city: string | null;
+      platform_codes: string[];
+    };
+
+export type SiteSearchResponse = {
+  query: string;
+  corrected_query: string | null;
+  locations: SiteSearchLocation[];
+  people: SiteSearchPerson[];
+  people_truncated: boolean;
+};
+
+export function searchSite(query: string, signal?: AbortSignal) {
+  return apiFetch<SiteSearchResponse>(`/search?q=${encodeURIComponent(query)}`, signal ? { signal } : undefined);
+}
+
+export type SiteSearchLogEntry = {
+  query: string;
+  corrected_query: string | null;
+  pages_found: number;
+  locations_found: number;
+  people_found: number;
+  clicked_kind: "page" | "location" | "person" | null;
+  clicked_target: string | null;
+  is_mobile: boolean;
+};
+
+/**
+ * Запись в журнал поиска. sendBeacon — чтобы запись долетела и тогда, когда
+ * клик по результату тут же уводит со страницы.
+ */
+export function logSiteSearch(entry: SiteSearchLogEntry): void {
+  const body = JSON.stringify(entry);
+  try {
+    if (navigator.sendBeacon?.(`${API_BASE}/search/log`, new Blob([body], { type: "text/plain" }))) {
+      return;
+    }
+  } catch {
+    // sendBeacon недоступен — пробуем обычным запросом
+  }
+  void fetch(`${API_BASE}/search/log`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body,
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
+export type AdminSearchLogResponse = {
+  total: number;
+  zero_result_total: number;
+  top_queries: { query: string; count: number; zero_results_count: number; clicks: number }[];
+  zero_result_queries: { query: string; count: number; last_at: string }[];
+  clicks_by_kind: { page: number; location: number; person: number; none: number };
+  daily: { date: string; count: number }[];
+  recent: {
+    created_at: string;
+    query: string;
+    corrected_query: string | null;
+    pages_found: number;
+    locations_found: number;
+    people_found: number;
+    clicked_kind: string | null;
+    clicked_target: string | null;
+    is_authed: boolean;
+    is_mobile: boolean;
+  }[];
+};
+
+export function getAdminSearchLog(periodDays: number) {
+  return apiFetch<AdminSearchLogResponse>(`/admin/search-log?period_days=${periodDays}`);
+}

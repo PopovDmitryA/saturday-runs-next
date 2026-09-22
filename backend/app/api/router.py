@@ -24,6 +24,7 @@ from app.api.routes import (
     releases,
     reports,
     runs,
+    search,
     settings,
     stats,
     sync,
@@ -58,3 +59,4 @@ api_router.include_router(settings.router)
 api_router.include_router(public_profiles.router)
 api_router.include_router(internal_bot.router)
 api_router.include_router(reports.router)
+api_router.include_router(search.router)
