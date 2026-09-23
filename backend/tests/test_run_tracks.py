@@ -366,3 +366,33 @@ def test_import_keeps_the_better_of_two_tracks_for_one_run() -> None:
     assert verdict["close"] == (True, None)
     assert verdict["far"][0] is False
     assert "лучше" in verdict["far"][1]
+
+
+def test_privacy_trim_keeps_the_whole_course_not_just_the_two_km_circle() -> None:
+    # Набережная Чебоксар: «туда и обратно», разворот в 2,5 км от старта.
+    # Отбор по расстоянию выкусывал из середины кусок самой трассы.
+    from app.services.run_track_service import _trim_to_location
+
+    class _Loc:
+        latitude = 56.1400
+        longitude = 47.2500
+
+    class _Pt:
+        def __init__(self, elevation_m: float | None) -> None:
+            self.elevation_m = elevation_m
+
+    # Бежим строго на север от локации и обратно: 0 → 2,5 км → 0.
+    # 0.00001 широты ≈ 1,11 м, поэтому 2,5 км — это примерно 0.0225.
+    steps = [i / 100 * 0.0225 for i in range(101)]
+    series = [(_Loc.latitude + shift, _Loc.longitude, float(i)) for i, shift in enumerate(steps)]
+    series += [(_Loc.latitude + shift, _Loc.longitude, float(101 + i)) for i, shift in enumerate(reversed(steps))]
+    points = [_Pt(None) for _ in series]
+
+    kept = _trim_to_location(points, series, _Loc())  # type: ignore[arg-type]
+
+    # Дальняя точка разворота обязана остаться: без неё линия обрывается.
+    assert max(lat for lat, _lon, _offset, _ele in kept) == max(lat for lat, _lon, _t in series)
+    # И ничего не выкушено из середины — точки идут подряд по времени.
+    offsets = [offset for _lat, _lon, offset, _ele in kept]
+    assert offsets == sorted(offsets)
+    assert len(kept) == len(series)

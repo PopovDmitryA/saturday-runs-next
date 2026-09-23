@@ -157,20 +157,34 @@ def _trim_to_location(
     series: list[tuple[float, float, float]],
     location: Location | None,
 ) -> list[tuple[float, float, float, float | None]]:
-    """Оставляет только окрестность старта и прореживает слишком длинные треки."""
+    """Отрезает дорогу от дома и обратно, прореживая слишком длинные треки.
+
+    Режем ИМЕННО хвосты, а не все далёкие точки: трасса не обязана целиком
+    помещаться в круг радиусом 2 км. На «туда и обратно» вдоль набережной
+    разворот стоит в 2,5 км от старта, и отбор по расстоянию выкусывал из
+    середины кусок самой трассы — линия на карте обрывалась, а у 8 треков
+    из 133 пропадало до 1,1 км (поймано 23.09.2026). Приватность от этого
+    не страдает: круг тот же, просто всё, что внутри пробежки, остаётся.
+    """
     if location is not None and location.latitude is not None and location.longitude is not None:
         center = (location.latitude, location.longitude)
     else:
         center = (series[0][0], series[0][1])
 
-    kept: list[tuple[float, float, float, float | None]] = []
-    for point, (lat, lon, offset) in zip(points, series, strict=False):
-        if haversine((lat, lon), center) > PRIVACY_RADIUS_M:
-            continue
-        kept.append((lat, lon, offset, point.elevation_m))
+    near = [
+        index
+        for index, (lat, lon, _offset) in enumerate(series)
+        if haversine((lat, lon), center) <= PRIVACY_RADIUS_M
+    ]
+    if near:
+        first, last = near[0], near[-1]
+    else:
+        first, last = 0, len(series) - 1
 
-    if not kept:
-        kept = [(lat, lon, offset, point.elevation_m) for point, (lat, lon, offset) in zip(points, series, strict=False)]
+    kept: list[tuple[float, float, float, float | None]] = [
+        (lat, lon, offset, point.elevation_m)
+        for point, (lat, lon, offset) in zip(points[first : last + 1], series[first : last + 1], strict=False)
+    ]
 
     if len(kept) > MAX_STORED_POINTS:
         step = len(kept) // MAX_STORED_POINTS + 1
