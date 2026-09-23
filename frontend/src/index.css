@@ -17875,6 +17875,8 @@ input.participant-name-search-input:focus {
   margin: 0.5rem 0 0;
   font-size: 0.9rem;
   color: var(--tint-amber-text);
+}
+
 /* ===== Треки пробежек (Ч33): значок в строке, загрузка и разбор ===== */
 
 /* Значок трека стоит между звездой и «Поделиться»: тот же размер и тот же
