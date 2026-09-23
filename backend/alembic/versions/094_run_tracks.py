@@ -7,8 +7,8 @@
 Треки — чувствительные данные: точки хранятся обрезанными окрестностью старта
 (см. run_track_service), а согласие на обработку фиксируется в users.
 
-Revision ID: 087_run_tracks
-Revises: 086_admin_resync_requests
+Revision ID: 094_run_tracks
+Revises: 093_drop_sync_log_entries
 Create Date: 2026-09-10
 """
 
@@ -19,8 +19,8 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from alembic import op
 
-revision = "087_run_tracks"
-down_revision = "086_admin_resync_requests"
+revision = "094_run_tracks"
+down_revision = "093_drop_sync_log_entries"
 branch_labels = None
 depends_on = None
 

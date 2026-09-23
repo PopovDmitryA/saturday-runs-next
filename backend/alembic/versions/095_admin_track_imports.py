@@ -5,8 +5,8 @@
 Треки создаются сразу, но со статусом preview — в кабинет участника они
 попадают только после подтверждения.
 
-Revision ID: 088_admin_track_imports
-Revises: 087_run_tracks
+Revision ID: 095_admin_track_imports
+Revises: 094_run_tracks
 Create Date: 2026-09-21
 """
 
@@ -17,8 +17,8 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from alembic import op
 
-revision = "088_admin_track_imports"
-down_revision = "087_run_tracks"
+revision = "095_admin_track_imports"
+down_revision = "094_run_tracks"
 branch_labels = None
 depends_on = None
 

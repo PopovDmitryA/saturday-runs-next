@@ -3,8 +3,8 @@
 Чтобы на странице локации рисовать саму трассу, а не только профиль высот,
 храним представительную линию — прореженный трек с медианной длиной.
 
-Revision ID: 091_course_profile_geometry
-Revises: 090_location_course_profiles
+Revision ID: 098_course_profile_geometry
+Revises: 097_location_course_profiles
 Create Date: 2026-09-24
 """
 
@@ -15,8 +15,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from alembic import op
 
-revision = "091_course_profile_geometry"
-down_revision = "090_location_course_profiles"
+revision = "098_course_profile_geometry"
+down_revision = "097_location_course_profiles"
 branch_labels = None
 depends_on = None
 

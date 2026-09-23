@@ -5,8 +5,8 @@
 длина, скорость и набор высоты, а также случаи, где время протокола правили
 руками (Щёлково 16.05.2026: запись класса A, расхождение 83 секунды).
 
-Revision ID: 089_run_track_course_fitness
-Revises: 088_admin_track_imports
+Revision ID: 096_run_track_course_fitness
+Revises: 095_admin_track_imports
 Create Date: 2026-09-23
 """
 
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "089_run_track_course_fitness"
-down_revision = "088_admin_track_imports"
+revision = "096_run_track_course_fitness"
+down_revision = "095_admin_track_imports"
 branch_labels = None
 depends_on = None
 

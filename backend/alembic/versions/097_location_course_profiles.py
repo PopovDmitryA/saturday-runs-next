@@ -4,8 +4,8 @@
 кругов. Трассы иногда меняют — тогда заводится новая версия профиля, а прежняя
 остаётся историей.
 
-Revision ID: 090_location_course_profiles
-Revises: 089_run_track_course_fitness
+Revision ID: 097_location_course_profiles
+Revises: 096_run_track_course_fitness
 Create Date: 2026-09-23
 """
 
@@ -16,8 +16,8 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from alembic import op
 
-revision = "090_location_course_profiles"
-down_revision = "089_run_track_course_fitness"
+revision = "097_location_course_profiles"
+down_revision = "096_run_track_course_fitness"
 branch_labels = None
 depends_on = None
 
