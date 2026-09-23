@@ -66,9 +66,16 @@ class BacklogCardResponse(BaseModel):
     # author_user_id) — по нему рисуется кнопка «Редактировать». Работает и для
     # своих анонимных карточек, где автор скрыт от остальных.
     is_mine: bool = False
+    # Следит ли зритель за карточкой (колокольчик): автор и комментаторы —
+    # автоматически, остальные — по клику. Анониму всегда False.
+    is_subscribed: bool = False
     photos: list[PhotoResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+
+class BacklogCardSubscriptionRequest(BaseModel):
+    subscribed: bool
 
 
 class BacklogCardListResponse(BaseModel):

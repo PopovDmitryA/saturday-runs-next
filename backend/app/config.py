@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     # Домен сайта должен быть прописан боту через /setdomain у @BotFather,
     # иначе Telegram виджет не покажет.
     telegram_login_enabled: bool = True
+    # Треки пробежек: первая итерация — сбор через админку, участникам ничего
+    # не показываем. Переключение на всех делается этим флагом, кода это не
+    # касается (вторая итерация фичи, см. Ч33).
+    tracks_public_enabled: bool = False
     telegram_login_bot_token: str = ""
     telegram_login_bot_username: str = ""
     # Сколько живёт подпись виджета. Сутки — как в примерах Telegram: человек
@@ -375,6 +379,22 @@ class Settings(BaseSettings):
     # используется только когда Telegram-прокси недоступна.
     vk_bot_group_token: str = ""
     vk_admin_user_id: int = 0
+    # Сообщество, от имени которого уходят личные уведомления во VK (тот же
+    # токен группы). id и короткое имя можно не задавать — тогда они берутся
+    # у VK через groups.getById и кэшируются на сутки.
+    vk_bot_group_id: int = 0
+    vk_bot_group_screen_name: str = ""
+
+    # Уведомления сайта (app/services/notification_service.py). Пробежки
+    # старше этого окна не считаются «новыми»: первичная загрузка истории
+    # профиля приносит сотни строк, писать о каждой нельзя.
+    notifications_runs_window_days: int = 14
+    # Сколько пробежек перечислять в одном сообщении, остальные — «и ещё N».
+    notifications_runs_max_listed: int = 5
+    # Копия каждого доставленного уведомления в админский Telegram: «кому,
+    # куда, текст». Дмитрий хочет первое время видеть всё, что бот пишет
+    # людям; выключается одной переменной.
+    notifications_admin_copy: bool = True
 
     # Секретный токен для скрытой страницы-табло обхода атлетов (/hq/<token>).
 

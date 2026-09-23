@@ -41,6 +41,8 @@ import {
   uniquePlatforms,
 } from "../../lib/activityList";
 import { formatFinishTimeValue, formatInt, formatTopPercent, platformCodeLabel } from "../../lib/format";
+import { RunTrackButton } from "./RunTrackButton";
+import { RunTrackModal } from "./RunTrackModal";
 import { ShareRowButton } from "../sharing/ShareRowButton";
 import { runSubject } from "../sharing/subjects";
 import { TableWrap } from "../../components/tableUx/TableWrap";
@@ -61,10 +63,10 @@ const RUNS_COLUMNS: AdaptiveColumn[] = [
   { key: "date", width: 160, required: true },
   { key: "location", width: 200, required: true },
   { key: "time", width: 112, required: true },
-  // 68px: в ячейке две иконки — оценка старта и «Поделиться» (см. .col-rating).
+  // 96px: в ячейке три иконки — оценка старта, трек и «Поделиться» (см. .col-rating).
   // Стоит сразу за обязательной тройкой: это действия, а не данные, и уступать
   // место темпу с «Топ %» они не должны (Дмитрий 02.09.2026).
-  { key: "rating", width: 68, required: true },
+  { key: "rating", width: 96, required: true },
   { key: "position", width: 104 },
   // Погода в час старта: значок и градусы, подробности — в подсказке.
   { key: "weather", width: 96 },
@@ -110,6 +112,8 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
   const [eligibleIds, setEligibleIds] = useState<Set<string>>(new Set());
   const [ratingsVersion, setRatingsVersion] = useState(0);
   const [activeRun, setActiveRun] = useState<EligibleRun | null>(null);
+  // Пробежка, для которой открыт разбор трека (или предложение его приложить).
+  const [trackRun, setTrackRun] = useState<RunItem | null>(null);
   const { snackbar, showSnackbar, dismissSnackbar } = useSnackbar();
   const currentUser = useOptionalUser();
 
@@ -600,6 +604,14 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
                                   canRate={canRate}
                                   onOpen={() => setActiveRun(buildEligibleRun(run, rating))}
                                 />
+                                {/* Первая итерация: треки собираем через
+                                    админку, участникам значок не показываем. */}
+                                {currentUser?.is_admin && (
+                                  <RunTrackButton
+                                    hasTrack={Boolean(run.track_id)}
+                                    onOpen={() => setTrackRun(run)}
+                                  />
+                                )}
                                 <ShareRowButton
                                   subject={runSubject(run, currentUser ?? null)}
                                   entry="runs"
@@ -640,6 +652,24 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
           onDeleted={() => {
             reloadRatings();
             setActiveRun(null);
+          }}
+        />
+      )}
+
+      {trackRun && (
+        <RunTrackModal
+          run={trackRun}
+          onClose={() => setTrackRun(null)}
+          onChanged={(trackId) => {
+            // Значок в таблице должен ожить сразу, без перезагрузки списка.
+            setRuns((current) =>
+              current.map((item) =>
+                item.run_result_id && item.run_result_id === trackRun.run_result_id
+                  ? { ...item, track_id: trackId }
+                  : item,
+              ),
+            );
+            setTrackRun((current) => (current ? { ...current, track_id: trackId } : current));
           }}
         />
       )}

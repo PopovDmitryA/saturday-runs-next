@@ -49,3 +49,12 @@ def test_login_keyboard_callbacks(bot_main: object) -> None:
     first = consent.inline_keyboard[0][0]
     assert first.callback_data == "login_consent:tok"
     assert "Принимаю" in first.text
+
+
+def test_notify_keyboard_asks_before_connecting(bot_main: object) -> None:
+    """/start notify_<token> сначала спрашивает — chat_id уходит на сайт только по кнопке."""
+    keyboard = bot_main._notify_keyboard("tok")
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+    assert [button.callback_data for button in buttons] == ["notify_confirm:tok", "notify_decline:tok"]
+    assert buttons[0].text == "✅ Подключить"
+    assert "Подключить уведомления" in bot_main.NOTIFY_ASK_MESSAGE

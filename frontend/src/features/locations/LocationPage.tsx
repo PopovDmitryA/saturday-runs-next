@@ -40,6 +40,7 @@ import { useOptionalUser } from "../../lib/useOptionalUser";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
 import { locationCardSubject, locationEventSubject, locationMeSubject } from "../sharing/subjects";
+import { LocationCourseCard } from "./LocationCourseCard";
 import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { lazyPage } from "../../lib/lazyPage";
 import { LocationRouteButton } from "./LocationRouteButton";
@@ -1493,6 +1494,9 @@ function LocationPageContent({ slug }: { slug: string }) {
 
       <LocationWeatherSection slug={page.slug} />
       <LocationLeadersSection slug={page.slug} />
+
+      {/* Трасса по трекам: пока фича закрыта, блок показывается только админу. */}
+      <LocationCourseCard slug={page.slug} />
 
       {/* Карта, адрес, описание и история систем — одним блоком в самом низу:
           это справка о месте, а не статистика, ради которой страницу открывают. */}

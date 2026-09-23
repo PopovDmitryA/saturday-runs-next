@@ -7,6 +7,7 @@ from app.api.routes import (
     avatars,
     backlog,
     blog,
+    courses,
     dashboard,
     fastest,
     internal_bot,
@@ -17,6 +18,7 @@ from app.api.routes import (
     locations,
     media,
     newsletter,
+    notifications,
     organizer,
     portal,
     profiles,
@@ -39,6 +41,7 @@ api_router.include_router(admin.router)
 api_router.include_router(profiles.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(achievements.router)
+api_router.include_router(courses.router)
 api_router.include_router(runs.router)
 api_router.include_router(leaderboards.router)
 api_router.include_router(fastest.router)
@@ -50,6 +53,7 @@ api_router.include_router(unified_protocol.router)
 api_router.include_router(media.router)
 api_router.include_router(organizer.router)
 api_router.include_router(newsletter.router)
+api_router.include_router(notifications.router)
 api_router.include_router(portal.router)
 api_router.include_router(blog.router)
 api_router.include_router(releases.router)

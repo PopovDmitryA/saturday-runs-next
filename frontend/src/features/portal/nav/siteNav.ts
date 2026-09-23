@@ -174,6 +174,9 @@ const CABINET_SERVICE: readonly CabinetDef[] = [
       "закрыть профиль",
       "домашняя локация",
       "удалить аккаунт",
+      "уведомления",
+      "рассылка",
+      "способы входа",
     ],
   },
 ];
@@ -476,7 +479,22 @@ const RATING_GROUPS: readonly { key: string; title: string; items: readonly NavL
 
 export const RATINGS_HUB_HREF = "/ratings";
 
-function ratingsSection(): NavSection {
+function ratingsSection(ctx: NavContext): NavSection {
+  const groups: NavGroup[] = RATING_GROUPS.map((group) => ({ key: group.key, title: group.title, items: [...group.items] }));
+  // Трассы по трекам участников — фича пока закрыта, как и карточка на хабе:
+  // видит только админ.
+  if (ctx.user?.is_admin) {
+    groups
+      .find((group) => group.key === "places")
+      ?.items.push({
+        key: "courses",
+        label: "Трассы локаций",
+        chipLabel: "Трассы",
+        icon: I.ELEVATION_ICON,
+        href: "/ratings/courses",
+        keywords: ["трасса", "перепад высот", "набор высоты", "горки", "профиль трассы", "треки"],
+      });
+  }
   return {
     key: "ratings",
     label: "Рейтинги",
@@ -485,7 +503,7 @@ function ratingsSection(): NavSection {
     keywords: ["рейтинг", "лидерборд", "таблица лидеров", "топ", "кто первый"],
     groups: [
       { key: "hub", items: [{ key: "hub", label: "Все рейтинги", chipLabel: "Все", icon: I.GRID_ICON, href: RATINGS_HUB_HREF }] },
-      ...RATING_GROUPS.map((group) => ({ key: group.key, title: group.title, items: [...group.items] })),
+      ...groups,
     ],
   };
 }
@@ -552,7 +570,7 @@ export function buildSiteNav(ctx: NavContext): NavSection[] {
   if (canSeeOrganizer(ctx.user)) {
     sections.push(organizerSection(ctx));
   }
-  sections.push(resultsSection(), locationsSection(ctx), ratingsSection(), projectSection(ctx));
+  sections.push(resultsSection(), locationsSection(ctx), ratingsSection(ctx), projectSection(ctx));
   return sections;
 }
 

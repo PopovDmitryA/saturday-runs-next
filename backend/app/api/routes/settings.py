@@ -9,6 +9,18 @@ from app.api.deps import get_current_user
 from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.models import AuthProvider, Platform, PlatformLink, User
+from app.schemas.notifications import (
+    NewsletterSettingsResponse,
+    NewsletterSettingsUpdateRequest,
+    NotificationChannelToggle,
+    NotificationCheckResponse,
+    NotificationConnectUrlResponse,
+    NotificationEnableResponse,
+    NotificationNudgeState,
+    NotificationSettingsState,
+    NotificationSettingsUpdate,
+    NotificationTestResponse,
+)
 from app.schemas.settings import (
     AutoSyncPlatformPreference,
     AutoSyncSettingsResponse,
@@ -19,8 +31,6 @@ from app.schemas.settings import (
     HomeLocationCandidateResponse,
     HomeLocationResponse,
     HomeLocationUpdateRequest,
-    NotificationSettingsResponse,
-    NotificationSettingsUpdateRequest,
     PrivacySettingsResponse,
     PrivacySettingsUpdateRequest,
     ProfileSlugCheckResponse,
@@ -29,6 +39,8 @@ from app.schemas.settings import (
     TourismPlatformsResponse,
     TourismPlatformsUpdateRequest,
 )
+from app.services import notification_channels_service as channels
+from app.services import notification_service as notifications
 from app.services.auth_identity_service import list_user_identities
 from app.services.dashboard_service import invalidate_dashboard_cache_for_users
 from app.services.home_location_service import (
@@ -60,11 +72,7 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 def _profile_slug_response(user: User, settings: Settings) -> ProfileSlugResponse:
-    public_url = (
-        f"{settings.app_base_url.rstrip('/')}/users/{user.public_slug}"
-        if user.public_slug
-        else None
-    )
+    public_url = f"{settings.app_base_url.rstrip('/')}/users/{user.public_slug}" if user.public_slug else None
     return ProfileSlugResponse(
         slug=user.public_slug,
         public_url=public_url,
@@ -129,30 +137,154 @@ def _newsletter_email(db: Session, user: User) -> str | None:
     return None
 
 
-@router.get("/notifications", response_model=NotificationSettingsResponse)
-def get_notification_settings(
+@router.get("/newsletter", response_model=NewsletterSettingsResponse)
+def get_newsletter_settings(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
-) -> NotificationSettingsResponse:
-    return NotificationSettingsResponse(
+) -> NewsletterSettingsResponse:
+    return NewsletterSettingsResponse(
         enabled=user.news_subscribed,
         email=_newsletter_email(db, user),
     )
 
 
-@router.put("/notifications", response_model=NotificationSettingsResponse)
-def update_notification_settings(
-    body: NotificationSettingsUpdateRequest,
+@router.put("/newsletter", response_model=NewsletterSettingsResponse)
+def update_newsletter_settings(
+    body: NewsletterSettingsUpdateRequest,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
-) -> NotificationSettingsResponse:
+) -> NewsletterSettingsResponse:
     user.news_subscribed = body.enabled
     db.commit()
     db.refresh(user)
-    return NotificationSettingsResponse(
+    return NewsletterSettingsResponse(
         enabled=user.news_subscribed,
         email=_newsletter_email(db, user),
     )
+
+
+# --- Уведомления сайта (app/services/notification_service.py) ---------------
+
+
+def _notification_state(db: Session, user: User) -> NotificationSettingsState:
+    state = NotificationSettingsState.model_validate(notifications.settings_state(db, user))
+    # channels_state мог обновить check_ok у строк каналов — фиксируем.
+    db.commit()
+    return state
+
+
+@router.get("/notifications", response_model=NotificationSettingsState)
+def get_notification_settings(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> NotificationSettingsState:
+    return _notification_state(db, user)
+
+
+@router.put("/notifications", response_model=NotificationSettingsState)
+def update_notification_settings(
+    body: NotificationSettingsUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> NotificationSettingsState:
+    """Основной канал и переключатели видов — частично: приходят только изменённые поля."""
+    fields = body.model_dump(exclude_unset=True)
+    try:
+        notifications.update_prefs(
+            db,
+            user.id,
+            primary_channel=fields["primary_channel"] if "primary_channel" in fields else ...,
+            kinds=fields.get("kinds"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    db.commit()
+    return _notification_state(db, user)
+
+
+@router.put("/notifications/channels/{channel}", response_model=NotificationSettingsState)
+def toggle_notification_channel(
+    channel: str,
+    body: NotificationChannelToggle,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> NotificationSettingsState:
+    """Переключатель «уведомления» у способа входа."""
+    try:
+        notifications.set_channel_enabled(db, user, channel, body.enabled)
+    except channels.ChannelError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    db.commit()
+    return _notification_state(db, user)
+
+
+@router.post("/notifications/channels/{channel}/check", response_model=NotificationCheckResponse)
+def check_notification_channel(
+    channel: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> NotificationCheckResponse:
+    """«Проверить ещё раз»: заново спросить бота или VK, можно ли писать."""
+    if channel not in channels.CHANNEL_ORDER:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Неизвестный канал")
+    outcome = channels.recheck_channel(db, user, channel)
+    db.commit()
+    return NotificationCheckResponse(ok=outcome.ok, error=outcome.error)
+
+
+@router.post("/notifications/channels/telegram/connect", response_model=NotificationConnectUrlResponse)
+def telegram_notification_connect(
+    user: Annotated[User, Depends(get_current_user)],
+) -> NotificationConnectUrlResponse:
+    """Ссылка в бота: по /start он сообщит chat_id, и канал включится."""
+    url = channels.telegram_connect_url(user)
+    if url is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Telegram-бот не настроен")
+    return NotificationConnectUrlResponse(connect_url=url)
+
+
+@router.get("/notifications/nudge", response_model=NotificationNudgeState)
+def notification_nudge(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> NotificationNudgeState:
+    """Показывать ли баннер «Включите уведомления»."""
+    return NotificationNudgeState.model_validate(notifications.nudge_state(db, user))
+
+
+@router.post("/notifications/nudge/dismiss", response_model=NotificationNudgeState)
+def dismiss_notification_nudge(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> NotificationNudgeState:
+    notifications.dismiss_nudge(db, user.id)
+    db.commit()
+    return NotificationNudgeState.model_validate(notifications.nudge_state(db, user))
+
+
+@router.post("/notifications/enable", response_model=NotificationEnableResponse)
+def enable_notifications(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> NotificationEnableResponse:
+    """Кнопка «Включить уведомления» из баннера или модалки: лучший доступный канал."""
+    channel = notifications.enable_now(db, user)
+    db.commit()
+    return NotificationEnableResponse(channel=channel, state=_notification_state(db, user))
+
+
+@router.post("/notifications/test", response_model=NotificationTestResponse)
+def send_notification_test(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> NotificationTestResponse:
+    """Проверочное сообщение по включённым каналам (для стенда и отладки; в
+    интерфейсе кнопки нет). Повтор в ту же минуту отбрасывается."""
+    enabled = channels.enabled_channels(db, user.id)
+    if not enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ни один канал не включён")
+    delivery = notifications.send_test_notification(db, user)
+    return NotificationTestResponse(queued=delivery is not None, channels=enabled)
 
 
 @router.get("/privacy", response_model=PrivacySettingsResponse)
@@ -257,9 +389,7 @@ def update_tourism_platforms(
 def get_history_milestone_settings(
     user: Annotated[User, Depends(get_current_user)],
 ) -> HistoryMilestoneSettingsResponse:
-    return HistoryMilestoneSettingsResponse.model_validate(
-        {"kinds": list_user_milestone_kind_settings(user)}
-    )
+    return HistoryMilestoneSettingsResponse.model_validate({"kinds": list_user_milestone_kind_settings(user)})
 
 
 @router.put("/history-milestones", response_model=HistoryMilestoneSettingsResponse)
@@ -291,14 +421,10 @@ def update_history_milestone_setting(
     try:
         set_user_milestone_kind_enabled(user, kind, body.enabled)
     except UnknownMilestoneKindError as err:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Неизвестный вид вехи"
-        ) from err
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Неизвестный вид вехи") from err
     db.commit()
     db.refresh(user)
-    return HistoryMilestoneSettingsResponse.model_validate(
-        {"kinds": list_user_milestone_kind_settings(user)}
-    )
+    return HistoryMilestoneSettingsResponse.model_validate({"kinds": list_user_milestone_kind_settings(user)})
 
 
 @router.get("/profile-slug", response_model=ProfileSlugResponse)

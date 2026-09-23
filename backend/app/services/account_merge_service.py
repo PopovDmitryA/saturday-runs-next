@@ -9,6 +9,7 @@ from app.models import (
     AuthIdentity,
     AuthOneTimeToken,
     BacklogCard,
+    BacklogCardSubscription,
     BacklogComment,
     BacklogVote,
     DashboardCache,
@@ -94,6 +95,23 @@ def _reassign_backlog(db: Session, merged_id: UUID, survivor_id: UUID) -> None:
             recompute_vote_counts(db, card)
 
 
+def _reassign_backlog_subscriptions(db: Session, merged_id: UUID, survivor_id: UUID) -> None:
+    """Подписки на карточки бэклога переезжают к выжившему; где он уже следит —
+    дубль просто уходит вместе с профилем (CASCADE). Настройки и каналы
+    уведомлений поглощаемого не переносим: у выжившего свои, а каналы
+    привязаны к его же способам входа."""
+    survivor_cards = {
+        row[0]
+        for row in db.query(BacklogCardSubscription.card_id)
+        .filter(BacklogCardSubscription.user_id == survivor_id)
+        .all()
+    }
+    query = db.query(BacklogCardSubscription).filter(BacklogCardSubscription.user_id == merged_id)
+    if survivor_cards:
+        query = query.filter(BacklogCardSubscription.card_id.notin_(survivor_cards))
+    query.update({"user_id": survivor_id}, synchronize_session=False)
+
+
 def _delete_backlog(db: Session, merged_id: UUID) -> None:
     """Наследника нет — карточки автора уходят вместе с ним (голоса и
     комментарии под ними снимет ON DELETE CASCADE по card_id)."""
@@ -121,6 +139,7 @@ def delete_user_with_dependencies(
     if reassign_to is not None:
         db.query(SyncJob).filter(SyncJob.user_id == merged.id).update({"user_id": reassign_to})
         _reassign_backlog(db, merged.id, reassign_to)
+        _reassign_backlog_subscriptions(db, merged.id, reassign_to)
     else:
         db.query(SyncJob).filter(SyncJob.user_id == merged.id).delete(synchronize_session=False)
         _delete_backlog(db, merged.id)

@@ -2378,3 +2378,29 @@ body.has-pinned-me .lb-scroll-top {
   border-top: none;
   padding-top: 0;
 }
+
+/* --- Фильтры в одну строку (рейтинг трасс) --- */
+
+/* Панель фильтров раскладывается строкой: вкладки и поиск стоят на одной
+   линии, пока хватает ширины, и переносятся только когда не влезают. Без
+   этого .lb-controls-left остаётся колонкой и группы идут этажами. */
+.lb-controls-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 1.25rem;
+}
+
+.lb-controls-inline .lb-controls-left {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 1.25rem;
+  flex: 1 1 100%;
+}
+
+/* Значок подсказки в заголовке столбца: рядом с названием, до стрелки сортировки. */
+.lb-col-hint {
+  margin-left: 0.25rem;
+  cursor: help;
+}

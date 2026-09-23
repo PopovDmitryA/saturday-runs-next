@@ -391,6 +391,14 @@ export const RECORD_ICON = icon(
 // Регионы: сложенная карта.
 export const REGIONS_ICON = CABINET_ICONS.map;
 
+// Трассы локаций: профиль высоты.
+export const ELEVATION_ICON = icon(
+  <>
+    <path d="M3 19.5h18" />
+    <path d="m3 17 5-7 3.5 4 3-5L21 17" />
+  </>,
+);
+
 export const INFO_ICON = icon(
   <>
     <circle cx="12" cy="12" r="8.5" />

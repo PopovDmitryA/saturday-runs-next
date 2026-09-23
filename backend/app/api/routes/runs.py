@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.config import Settings, get_settings
+from app.core.admin import is_admin_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas.dashboard import (
@@ -17,6 +20,11 @@ from app.schemas.dashboard import (
     VolunteeringItemResponse,
     VolunteerRoleStatResponse,
     WinResponse,
+)
+from app.schemas.tracks import (
+    TrackDetailResponse,
+    TrackLinkRequest,
+    TrackSummaryResponse,
 )
 from app.services.co_runners_service import (
     list_co_runner_meetings,
@@ -31,8 +39,33 @@ from app.services.dashboard_service import (
     list_user_volunteering,
     list_user_wins,
 )
+from app.services.location_course_service import rebuild_for_tracks, rebuild_location_profile
+from app.services.run_track_service import (
+    build_track,
+    delete_track,
+    ensure_consent,
+    find_existing,
+    get_track,
+    list_tracks,
+)
+from app.services.track_parsing import TrackParseError, parse_garmin_link, parse_upload
 
 router = APIRouter(tags=["runs"])
+
+# Трек пятикилометровой пробежки с посекундной записью весит десятки килобайт;
+# лимит с большим запасом отсекает случайные архивы и чужие файлы.
+MAX_TRACK_FILE_BYTES = 12 * 1024 * 1024
+
+
+def _ensure_tracks_visible(user: User, settings: Settings) -> None:
+    """Пока идёт сбор, треки видит только админ.
+
+    Отвечаем 404, а не 403: наружу фича не анонсирована, и её существование
+    незачем подтверждать. Открывается флагом tracks_public_enabled.
+    """
+    if settings.tracks_public_enabled or is_admin_user(user, settings):
+        return
+    raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
 
 
 @router.get("/runs", response_model=list[RunItemResponse])
@@ -91,6 +124,109 @@ def list_run_co_runner_meetings(
         platform_codes=parse_platform_codes(platforms),
     )
     return [CoRunnerMeetingResponse.model_validate(item) for item in items]
+
+
+@router.get("/runs/tracks", response_model=list[TrackSummaryResponse])
+def list_run_tracks(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[TrackSummaryResponse]:
+    _ensure_tracks_visible(user, settings)
+    return [TrackSummaryResponse.model_validate(track) for track in list_tracks(db, user.id)]
+
+
+@router.post("/runs/tracks/upload", response_model=TrackDetailResponse, status_code=status.HTTP_201_CREATED)
+def upload_run_track(
+    file: UploadFile,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> TrackDetailResponse:
+    """Приём файла с часов: GPX, TCX или оригинальный FIT."""
+    _ensure_tracks_visible(user, settings)
+    data = file.file.read(MAX_TRACK_FILE_BYTES + 1)
+    if len(data) > MAX_TRACK_FILE_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Файл слишком большой.")
+    if not data:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Файл пустой.")
+    try:
+        parsed = parse_upload(file.filename or "", data)
+    except TrackParseError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return _save_track(db, user, parsed)
+
+
+@router.post("/runs/tracks/link", response_model=TrackDetailResponse, status_code=status.HTTP_201_CREATED)
+def import_run_track_link(
+    payload: TrackLinkRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> TrackDetailResponse:
+    """Импорт по ссылке на публичную активность Garmin Connect."""
+    _ensure_tracks_visible(user, settings)
+    try:
+        parsed = parse_garmin_link(payload.url)
+    except TrackParseError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return _save_track(db, user, parsed)
+
+
+def _save_track(db: Session, user: User, parsed) -> TrackDetailResponse:
+    existing = find_existing(db, user.id, parsed.source, parsed.source_ref)
+    if existing is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Этот трек уже загружен.")
+    try:
+        track = build_track(db, user, parsed)
+    except TrackParseError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    if track.exclusion_reason == "far_from_location":
+        # Не записываем молча: человек приложил трек другой пробежки.
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"{track.exclusion_note}. Похоже, это трек другой пробежки.",
+        )
+    ensure_consent(db, user)
+    db.add(track)
+    db.flush()
+    rebuild_for_tracks(db, [track])
+    db.commit()
+    db.refresh(track)
+    return TrackDetailResponse.model_validate(track)
+
+
+@router.get("/runs/tracks/{track_id}", response_model=TrackDetailResponse)
+def get_run_track(
+    track_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> TrackDetailResponse:
+    _ensure_tracks_visible(user, settings)
+    track = get_track(db, user.id, track_id)
+    if track is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Трек не найден.")
+    return TrackDetailResponse.model_validate(track)
+
+
+@router.delete("/runs/tracks/{track_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_run_track(
+    track_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    _ensure_tracks_visible(user, settings)
+    track = get_track(db, user.id, track_id)
+    location_id = track.location_id if track else None
+    if not delete_track(db, user.id, track_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Трек не найден.")
+    if location_id is not None:
+        # Трек ушёл — паспорт трассы пересобираем без него.
+        rebuild_location_profile(db, location_id)
+    db.commit()
+
 
 
 @router.get("/runs/best-results", response_model=list[BestResultResponse])

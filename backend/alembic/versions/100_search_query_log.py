@@ -5,8 +5,8 @@
 пользователя, ни посетителя, ни IP в таблице нет. Объём — единицы строк в
 день, поэтому чистки нет, храним вечно.
 
-Revision ID: 094_search_query_log
-Revises: 093_drop_sync_log_entries
+Revision ID: 100_search_query_log
+Revises: 099_notifications
 Create Date: 2026-09-23
 """
 
@@ -15,8 +15,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "094_search_query_log"
-down_revision = "093_drop_sync_log_entries"
+revision = "100_search_query_log"
+down_revision = "099_notifications"
 branch_labels = None
 depends_on = None
 

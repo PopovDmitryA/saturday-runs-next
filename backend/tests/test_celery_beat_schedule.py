@@ -438,6 +438,14 @@ AGREED_LIMITS_MINUTES: dict[str, tuple[int, int]] = {
     "sync_runs.close_stale": (5, 6),
     "queues.watch_priority": (5, 6),
     "email_send.deliver": (5, 6),
+    # Уведомления сайта: доставка и выборка новых результатов — один запрос
+    # к каналу или базе; сканы и воскресные рейтинги считают челленджи и
+    # рейтинги пачкой до 50 человек, отсюда средняя ступень.
+    "notifications.deliver": (5, 6),
+    "notifications.scan_new_results": (5, 6),
+    "notifications.scan_activity": (20, 25),
+    "notifications.weekly_ratings": (20, 25),
+    "notifications.retry_queued": (20, 25),
 }
 
 

@@ -68,7 +68,13 @@ const PortalMapLab = lazyPage(() => import("./features/portal/PortalMapLab"), (m
 const AdminBlogPage = lazyPage(() => import("./features/admin/AdminBlogPage"), (m) => m.AdminBlogPage);
 const AdminReleasesPage = lazyPage(() => import("./features/admin/AdminReleasesPage"), (m) => m.AdminReleasesPage);
 const AdminBacklogPage = lazyPage(() => import("./features/admin/AdminBacklogPage"), (m) => m.AdminBacklogPage);
+const AdminNotificationsPage = lazyPage(
+  () => import("./features/admin/AdminNotificationsPage"),
+  (m) => m.AdminNotificationsPage,
+);
 const BacklogPage = lazyPage(() => import("./features/backlog/BacklogPage"), (m) => m.BacklogPage);
+const AdminTrackImportsPage = lazyPage(() => import("./features/admin/AdminTrackImportsPage"), (m) => m.AdminTrackImportsPage);
+const CourseRatingPage = lazyPage(() => import("./features/leaderboards/CourseRatingPage"), (m) => m.CourseRatingPage);
 const LocationEventsPage = lazyPage(() => import("./features/locations/LocationEventsPage"), (m) => m.LocationEventsPage);
 const LocationParticipantsPage = lazyPage(() => import("./features/locations/LocationParticipantsPage"), (m) => m.LocationParticipantsPage);
 const LocationProtocolPage = lazyPage(() => import("./features/locations/LocationProtocolPage"), (m) => m.LocationProtocolPage);
@@ -270,6 +276,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
   "/ratings/location-records": () => <LocationRecordsRatingPage />,
   "/ratings/regions": () => <RegionsRatingPage />,
+  "/ratings/courses": () => <CourseRatingPage />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.
   "/backlog": () => <BacklogPage />,
@@ -297,6 +304,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/blog": () => <AdminBlogPage />,
   "/admin/releases": () => <AdminReleasesPage />,
   "/admin/backlog": () => <AdminBacklogPage />,
+  "/admin/notifications": () => <AdminNotificationsPage />,
+  "/admin/track-imports": () => <AdminTrackImportsPage />,
 
 };
 

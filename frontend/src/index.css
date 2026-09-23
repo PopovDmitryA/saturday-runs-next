@@ -8003,7 +8003,7 @@ a.admin-system-chip:hover {
 
 /* Звезда-оценка в таблице пробежек */
 /* Ширина под две иконки: звезда оценки + «Поделиться». */
-.col-rating { width: 68px; }
+.col-rating { width: 96px; }
 .td-rating { text-align: center; padding-left: 0; padding-right: 0; }
 
 /* На всю ширину ячейки + центрирование — чтобы звезда и «—» имели ОДИН центр
@@ -17454,4 +17454,617 @@ input.participant-name-search-input:focus {
 }
 .loc-top-row > .loc-personal-cta .loc-stat-value {
   font-size: 1.15rem;
+}
+
+/* --- Уведомления: тумблер в карточке способа входа, модалка «о чём», баннер --- */
+
+/* Карточка способа входа: инфо | 🔔 уведомления | действия — в одну строку,
+   всё выровнено по центру; красная подсказка — отдельной строкой на всю ширину. */
+.auth-provider-row,
+.auth-provider-email {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "info notify actions" "problem problem problem";
+  align-items: center;
+  column-gap: 1rem;
+}
+
+.auth-provider-row > .settings-platform-info,
+.auth-provider-email > .settings-platform-info {
+  grid-area: info;
+}
+
+.auth-provider-row > .auth-provider-actions,
+.auth-provider-email > .auth-provider-email-form,
+.auth-provider-email > .btn {
+  grid-area: actions;
+  justify-self: end;
+}
+
+.notify-inline {
+  grid-area: notify;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.notify-inline-text {
+  display: grid;
+  gap: 0.05rem;
+  text-align: right;
+}
+
+.notify-inline-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.notify-inline-status {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+}
+
+.notify-inline-status.on {
+  color: var(--tint-green-text);
+}
+
+.notify-inline-status.bad {
+  color: #b91c1c;
+}
+
+.notify-row-problem {
+  grid-area: problem;
+  margin: 0.5rem 0 0;
+}
+
+.auth-provider-email > .settings-platform-hint,
+.auth-provider-email > .email-spam-hint {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .auth-provider-row,
+  .auth-provider-email {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "info actions" "notify notify" "problem problem";
+    row-gap: 0.5rem;
+  }
+
+  .notify-inline {
+    justify-content: space-between;
+    padding: 0.4rem 0 0;
+    border-top: 1px dashed var(--border);
+  }
+
+  .notify-inline-text {
+    text-align: left;
+  }
+}
+
+.notify-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--tint-blue-border);
+  border-radius: 10px;
+  background: var(--tint-blue-bg);
+}
+
+.notify-summary-text {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.notify-channel-label {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.notify-channel-hint {
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.notify-channel-error {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: #b91c1c;
+}
+
+.notify-channel-error a,
+.notify-channel-error .link-button {
+  color: inherit;
+  font-weight: 600;
+  margin-right: 0.35rem;
+}
+
+.notify-kind-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.notify-soon-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  background: var(--chip-bg-strong);
+  color: var(--text-muted);
+}
+
+.notify-kind-soon .settings-platform-name {
+  color: var(--text-muted);
+}
+
+.notify-primary-block {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.notify-primary-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin-top: 0.5rem;
+}
+
+.notify-primary-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.notify-nudge-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+/* Колокольчик «следить за карточкой» в строке меты открытой карточки бэклога:
+   серый контур, залитый золотом — когда следим. */
+.backlog-bell {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0.1rem;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.backlog-bell svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.backlog-bell:hover:not(:disabled) {
+  color: var(--text);
+  transform: rotate(-12deg);
+}
+
+.backlog-bell.active {
+  color: #d4a017;
+}
+
+.backlog-bell.active svg path:first-child {
+  fill: #f2c94c;
+}
+
+.backlog-bell:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Админка → «Уведомления» */
+.admin-notify-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-notify-toolbar .input {
+  width: auto;
+  min-width: 10rem;
+}
+
+.admin-notify-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-notify-count {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.admin-notify-count-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.admin-notify-count ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.admin-notify-count li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+}
+
+.admin-notify-table .table-scroll,
+.table-scroll {
+  overflow-x: auto;
+}
+
+.admin-notify-table {
+  min-width: 56rem;
+  font-size: 0.88rem;
+}
+
+.admin-notify-error {
+  max-width: 22rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  word-break: break-word;
+}
+
+.admin-notify-status {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--chip-bg-strong);
+}
+
+.admin-notify-status-sent {
+  background: var(--tint-green-bg-strong);
+  color: var(--tint-green-text);
+}
+
+.admin-notify-status-failed {
+  background: #fde8e8;
+  color: #991b1b;
+}
+
+.admin-notify-status-skipped {
+  color: var(--text-muted);
+}
+
+.admin-notify-pager {
+  margin-top: 0.75rem;
+  align-items: center;
+}
+
+/* Модалка «На сайте появились уведомления» — один раз за вход. */
+.notify-intro {
+  width: min(100%, 30rem);
+  text-align: left;
+}
+
+.notify-intro-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.6rem;
+  height: 3.6rem;
+  margin: 0 auto 0.75rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  box-shadow: 0 12px 24px -10px rgba(37, 99, 235, 0.6);
+}
+
+.notify-intro-bell {
+  font-size: 1.7rem;
+  line-height: 1;
+  animation: notify-intro-ring 1.6s ease-in-out 0.3s 2;
+  transform-origin: 50% 0;
+}
+
+@keyframes notify-intro-ring {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(14deg); }
+  40% { transform: rotate(-12deg); }
+  60% { transform: rotate(8deg); }
+  80% { transform: rotate(-4deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notify-intro-bell { animation: none; }
+}
+
+.notify-intro-title {
+  text-align: center;
+}
+
+.notify-intro-lead {
+  margin: 0.25rem 0 1rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.notify-intro-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.notify-intro-list li {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.65rem 0.8rem;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 0.93rem;
+  line-height: 1.4;
+}
+
+.notify-intro-icon {
+  font-size: 1.35rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.notify-intro-note {
+  margin: 0.9rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.notify-intro-actions {
+  margin-top: 1.1rem;
+}
+
+.notify-intro-never {
+  display: block;
+  margin: 0.75rem auto 0;
+  font-size: 0.85rem;
+  color: var(--text-faint);
+}
+
+.notify-row-waiting {
+  grid-area: problem;
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: var(--tint-amber-text);
+}
+
+/* ===== Треки пробежек (Ч33): значок в строке, загрузка и разбор ===== */
+
+/* Значок трека стоит между звездой и «Поделиться»: тот же размер и тот же
+   приглушённый цвет, залитый вариант — когда трек уже приложен. */
+.run-track-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0.2rem;
+  border-radius: 6px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.run-track-btn:hover {
+  color: var(--accent-indigo-text);
+  background: var(--tint-indigo-bg);
+}
+
+.run-track-btn.has-track {
+  color: var(--accent-indigo-text);
+}
+
+.run-track-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.run-track-file input[type="file"] {
+  display: block;
+  margin-top: 0.35rem;
+}
+
+.run-track-link {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.run-track-link input {
+  flex: 1 1 320px;
+  min-width: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-input, transparent);
+  color: inherit;
+}
+
+.run-track-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Четыре главные цифры трека в одну строку, на телефоне — по две. */
+.run-track-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.run-track-facts > div {
+  background: var(--surface-card, var(--bg));
+  padding: 0.55rem 0.7rem;
+}
+
+.run-track-facts b {
+  display: block;
+  font-size: 1.15rem;
+  line-height: 1.25;
+}
+
+.run-track-facts span {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+}
+
+.run-track-map {
+  height: 320px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.run-track-splits {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.run-track-splits td {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.run-track-splits td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.run-track-notes {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--text-muted, inherit);
+}
+
+.run-track-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Профиль трассы: километраж по горизонтали, высота по вертикали. */
+.run-track-elevation {
+  margin: 0;
+}
+
+.run-track-elevation figcaption {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  margin-bottom: 0.3rem;
+}
+
+.run-track-elevation svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.run-track-elevation .area {
+  fill: color-mix(in srgb, var(--accent-indigo-text) 14%, transparent);
+}
+
+.run-track-elevation .line {
+  fill: none;
+  stroke: var(--accent-indigo-text);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+/* Главный подъём — светлая полоса под графиком, а не заливка поверх линии. */
+.run-track-elevation .climb-band {
+  fill: color-mix(in srgb, var(--accent-indigo-text) 8%, transparent);
+}
+
+.run-track-elevation .grid {
+  stroke: var(--border-soft);
+  stroke-width: 1;
+}
+
+.run-track-elevation .axis {
+  fill: var(--text-faint);
+  font-size: 10px;
+}
+
+.run-track-elevation .cursor {
+  stroke: var(--text-faint);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.run-track-elevation .dot {
+  fill: var(--accent-indigo-text);
+}
+
+.run-track-elevation-note {
+  margin: 0.35rem 0 0;
+  color: var(--text-faint);
+  font-size: 0.82rem;
+}
+
+
+/* Локация в рейтинге трасс есть, а треков для неё пока нет. */
+.lb-table tr.lb-row-muted td {
+  color: var(--text-faint);
+}
+
+.lb-table tr.lb-row-muted a {
+  color: inherit;
 }

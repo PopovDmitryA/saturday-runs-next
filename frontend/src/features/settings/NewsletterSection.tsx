@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { getNotificationSettings, updateNotificationSettings } from "../../lib/api";
+import { getNewsletterSettings, updateNewsletterSettings } from "../../lib/api";
 
-export function NotificationSettingsSection() {
+export function NewsletterSection() {
   const [enabled, setEnabled] = useState(false);
   const [description, setDescription] = useState("");
   const [email, setEmail] = useState<string | null>(null);
@@ -13,7 +13,7 @@ export function NotificationSettingsSection() {
     setLoading(true);
     setError(null);
     try {
-      const settings = await getNotificationSettings();
+      const settings = await getNewsletterSettings();
       setEnabled(settings.enabled);
       setDescription(settings.description);
       setEmail(settings.email);
@@ -32,7 +32,7 @@ export function NotificationSettingsSection() {
     setSaving(true);
     setError(null);
     try {
-      const settings = await updateNotificationSettings(nextEnabled);
+      const settings = await updateNewsletterSettings(nextEnabled);
       setEnabled(settings.enabled);
       setEmail(settings.email);
     } catch (err) {

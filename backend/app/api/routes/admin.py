@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin_user
 from app.config import get_settings
 from app.db.session import get_db
-from app.models import SyncJobTrigger, User
+from app.models import AdminTrackImport, SyncJobTrigger, User
 from app.schemas.abuse_admin import (
     AbuseBanCreateRequest,
     AbuseBanCreateResponse,
@@ -42,6 +42,12 @@ from app.schemas.admin_stats import (
     PageAnalyticsResponse,
 )
 from app.schemas.admin_sync_runs import AdminSyncRunsResponse
+from app.schemas.admin_track_import import (
+    TrackImportBatch,
+    TrackImportBatchDetail,
+    TrackImportItem,
+    TrackImportListResponse,
+)
 from app.schemas.backlog import (
     BacklogCardAdminListResponse,
     BacklogCardAdminResponse,
@@ -74,6 +80,7 @@ from app.schemas.location_openings import (
     LocationOpeningResponse,
     LocationOpeningUpdateRequest,
 )
+from app.schemas.notifications import AdminNotificationsResponse
 from app.schemas.rating import (
     AdminLocationRatingsResponse,
     AdminRatingsResponse,
@@ -87,6 +94,7 @@ from app.schemas.releases import (
 )
 from app.schemas.search import AdminSearchLogResponse
 from app.services import admin_resync_service as resync
+from app.services import admin_track_import_service as track_import
 from app.services.abuse_admin_service import (
     AbuseAdminError,
     clear_ip_score,
@@ -524,6 +532,23 @@ def admin_site_stats(
 ) -> AdminSiteStatsResponse:
     payload = get_admin_site_stats(db, period_days=period_days)
     return AdminSiteStatsResponse.model_validate(payload)
+
+
+@router.get("/notifications", response_model=AdminNotificationsResponse)
+def admin_notifications(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int, Query(ge=1, le=365)] = 7,
+    status_: Annotated[str | None, Query(alias="status", pattern="^(queued|sent|failed|skipped)$")] = None,
+    kind: Annotated[str | None, Query(max_length=32)] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> AdminNotificationsResponse:
+    """Журнал уведомлений: сколько ушло по видам и каналам, кто подписан, лента доставок."""
+    from app.services.admin_notifications_service import get_admin_notifications
+
+    payload = get_admin_notifications(db, period_days=period_days, status=status_, kind=kind, limit=limit, offset=offset)
+    return AdminNotificationsResponse.model_validate(payload)
 
 
 @router.get("/email-login", response_model=AdminEmailLoginResponse)
@@ -1075,3 +1100,165 @@ def admin_delete_backlog_comment(
     except BacklogError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return AbuseMessageResponse(message="backlog_comment_deleted")
+
+
+# --- Импорт треков участников (архивы, файлы, ссылки) ---------------------
+
+def _import_payload(db: Session, batch: AdminTrackImport) -> dict[str, Any]:
+    target = db.get(User, batch.target_user_id)
+    return {
+        "id": batch.id,
+        "target_user_id": batch.target_user_id,
+        "target_user_name": target.display_name if target else None,
+        "source_kind": batch.source_kind,
+        "status": batch.status,
+        "total_count": batch.total_count,
+        "processed_count": batch.processed_count,
+        "imported_count": batch.imported_count,
+        "skipped_count": batch.skipped_count,
+        "pending_count": len(batch.pending or []),
+        "problems": batch.problems or [],
+        "error_message": batch.error_message,
+        "created_at": batch.created_at,
+        "applied_at": batch.applied_at,
+    }
+
+
+def _import_out(db: Session, batch: AdminTrackImport) -> TrackImportBatch:
+    return TrackImportBatch.model_validate(_import_payload(db, batch))
+
+
+def _import_detail(db: Session, batch: AdminTrackImport) -> TrackImportBatchDetail:
+    payload = _import_payload(db, batch)
+    payload["items"] = [TrackImportItem.model_validate(item) for item in track_import.preview_items(db, batch)]
+    return TrackImportBatchDetail.model_validate(payload)
+
+
+@router.post("/track-imports", response_model=TrackImportBatchDetail, status_code=201)
+def admin_track_import_create(
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    target_user_id: Annotated[UUID, Form(description="Чьи это пробежки")],
+    files: Annotated[list[UploadFile] | None, File(description="Файлы треков или архивы")] = None,
+    links: Annotated[str, Form(description="Ссылки на активности Garmin, по одной в строке")] = "",
+) -> TrackImportBatchDetail:
+    """Принимает архив, пачку файлов или список ссылок и заводит сессию импорта.
+
+    Ничего не подтверждает: треки создаются в статусе preview, дальше админ
+    прогоняет разбор и смотрит предпросмотр.
+    """
+    target = get_admin_user(db, target_user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Участник не найден")
+
+    extracted: list[track_import.ExtractedFile] = []
+    total_bytes = 0
+    for upload in files or []:
+        data = upload.file.read(track_import.MAX_ARCHIVE_BYTES + 1)
+        total_bytes += len(data)
+        if total_bytes > track_import.MAX_ARCHIVE_BYTES:
+            raise HTTPException(status_code=413, detail="Слишком много данных за один раз")
+        try:
+            extracted.extend(track_import.extract_track_files(upload.filename or "", data))
+        except track_import.TrackImportError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    link_list = [line.strip() for line in (links or "").splitlines() if line.strip()]
+    source_kind = "links" if link_list and not extracted else ("archive" if len(extracted) > 1 else "files")
+
+    try:
+        batch = track_import.create_batch(
+            db,
+            admin=admin,
+            target_user=target,
+            source_kind=source_kind,
+            files=extracted[: track_import.MAX_FILES_PER_BATCH],
+            links=link_list,
+        )
+    except track_import.TrackImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(batch)
+    return _import_detail(db, batch)
+
+
+@router.post("/track-imports/{batch_id}/process", response_model=TrackImportBatchDetail)
+def admin_track_import_process(
+    batch_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    limit: Annotated[int, Query(ge=1, le=100)] = track_import.DEFAULT_CHUNK,
+) -> TrackImportBatchDetail:
+    """Разбирает следующую порцию файлов: страница вызывает это в цикле."""
+    batch = track_import.get_batch(db, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Загрузка не найдена")
+    try:
+        track_import.process_chunk(db, batch, limit=limit)
+    except track_import.TrackImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(batch)
+    return _import_detail(db, batch)
+
+
+@router.get("/track-imports", response_model=TrackImportListResponse)
+def admin_track_import_list(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> TrackImportListResponse:
+    return TrackImportListResponse(
+        items=[_import_out(db, batch) for batch in track_import.list_batches(db, limit=limit)]
+    )
+
+
+@router.get("/track-imports/{batch_id}", response_model=TrackImportBatchDetail)
+def admin_track_import_get(
+    batch_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> TrackImportBatchDetail:
+    batch = track_import.get_batch(db, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Загрузка не найдена")
+    return _import_detail(db, batch)
+
+
+@router.post("/track-imports/{batch_id}/apply", response_model=TrackImportBatchDetail)
+def admin_track_import_apply(
+    batch_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> TrackImportBatchDetail:
+    """Подтверждение: треки появляются в кабинете участника."""
+    batch = track_import.get_batch(db, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Загрузка не найдена")
+    try:
+        track_import.apply_batch(db, batch)
+    except track_import.TrackImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(batch)
+    return _import_detail(db, batch)
+
+
+@router.post("/track-imports/{batch_id}/discard", response_model=TrackImportBatchDetail)
+def admin_track_import_discard(
+    batch_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> TrackImportBatchDetail:
+    """Отмена: разобранные треки удаляются, участник их не увидит."""
+    batch = track_import.get_batch(db, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Загрузка не найдена")
+    try:
+        track_import.discard_batch(db, batch)
+    except track_import.TrackImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(batch)
+    return _import_detail(db, batch)
+

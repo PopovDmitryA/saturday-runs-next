@@ -50,3 +50,39 @@ def send_vk_message(
         params["reply_to"] = reply_to
     message_id = call_vk_api("messages.send", token, timeout=timeout, **params)
     return int(message_id) if message_id is not None else None
+
+
+def vk_group_info(token: str, *, timeout: float = 30.0) -> dict[str, Any] | None:
+    """Сообщество, которому принадлежит токен: {id, screen_name, name}.
+
+    Нужно уведомлениям: ссылка «открыть диалог» строится по короткому имени, а
+    проверка разрешения на сообщения — по id группы.
+    """
+    response = call_vk_api("groups.getById", token, timeout=timeout)
+    groups = response.get("groups") if isinstance(response, dict) else response
+    if not groups:
+        return None
+    group = groups[0]
+    try:
+        group_id = int(group["id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return {
+        "id": group_id,
+        "screen_name": str(group.get("screen_name") or ""),
+        "name": str(group.get("name") or ""),
+    }
+
+
+def vk_messages_allowed(token: str, *, group_id: int, user_id: int, timeout: float = 30.0) -> bool:
+    """Разрешил ли человек сообществу писать ему (messages.isMessagesFromGroupAllowed)."""
+    response = call_vk_api(
+        "messages.isMessagesFromGroupAllowed",
+        token,
+        timeout=timeout,
+        group_id=group_id,
+        user_id=user_id,
+    )
+    if isinstance(response, dict):
+        return bool(response.get("is_allowed"))
+    return False

@@ -421,6 +421,93 @@ export type RunItem = {
   is_test_event: boolean;
   event_url?: string | null;
   weather?: WeatherBrief | null;
+  // Загруженный трек этой пробежки: есть — открываем разбор, нет — предлагаем загрузить.
+  track_id?: string | null;
+};
+
+export type RunTrackSummary = {
+  id: string;
+  run_result_id: string | null;
+  location_id: string | null;
+  source: string;
+  source_url: string | null;
+  started_at: string | null;
+  duration_sec: number | null;
+  // Наш замер по сглаженной геометрии и цифра прибора: расходятся на 1-2%.
+  distance_m: number | null;
+  device_distance_m: number | null;
+  elevation_gain_m: number | null;
+  elevation_loss_m: number | null;
+  min_elevation_m: number | null;
+  max_elevation_m: number | null;
+  device_name: string | null;
+  device_firmware: string | null;
+  has_barometer: boolean | null;
+  point_count: number | null;
+  sample_interval_sec: number | null;
+  quality_class: string | null;
+  protocol_delta_sec: number | null;
+  // Годится ли трек как измерение трассы: брак не влияет на личный разбор.
+  is_course_eligible: boolean;
+  exclusion_reason: string | null;
+  exclusion_note: string | null;
+  start_distance_m: number | null;
+  created_at: string;
+};
+
+export type RunTrackSplit = {
+  km: number | null;
+  meters?: number;
+  seconds: number;
+};
+
+export type RunTrackMetrics = {
+  distance_m?: number;
+  raw_distance_m?: number;
+  duration_sec?: number;
+  start_end_gap_m?: number;
+  splits?: RunTrackSplit[];
+  turn_sum_deg?: number;
+  turn_count?: number;
+  u_turn_count?: number;
+  longest_straight_m?: number;
+  longest_straight_from_m?: number;
+  lap_count?: number;
+  lap_length_m?: number;
+  slowest_at_m?: number;
+  slowest_speed_ms?: number;
+  fastest_at_m?: number;
+  fastest_speed_ms?: number;
+  finish_at_sec?: number;
+  finish_at_m?: number;
+  after_finish_sec?: number;
+  // Профиль трассы: [метры от старта, высота]. Есть только у файлов с высотами.
+  elevation_profile?: [number, number][];
+  elevation_gain_profile_m?: number;
+  elevation_loss_profile_m?: number;
+  elevation_min_m?: number;
+  elevation_max_m?: number;
+  uphill_share?: number;
+  downhill_share?: number;
+  climb_from_m?: number;
+  climb_length_m?: number;
+  climb_rise_m?: number;
+  climb_grade_percent?: number;
+};
+
+export type RunTrackQuality = {
+  sample_interval_sec?: number;
+  gap_share?: number;
+  noise_m?: number;
+  point_count?: number;
+  reason?: string;
+};
+
+export type RunTrackDetail = RunTrackSummary & {
+  quality: RunTrackQuality;
+  metrics: RunTrackMetrics;
+  // [широта, долгота, секунды от начала записи, высота|null]
+  points: [number, number, number, number | null][];
 };
 
 export type BestResultItem = {
@@ -2233,6 +2320,39 @@ export function deleteRunRating(entryId: string) {
 // со своим boundary, который проставляет сам браузер.
 export const MAX_RATING_PHOTOS = 5;
 
+export async function listRunTracks(): Promise<RunTrackSummary[]> {
+  return apiFetch<RunTrackSummary[]>("/runs/tracks");
+}
+
+export async function getRunTrack(trackId: string): Promise<RunTrackDetail> {
+  return apiFetch<RunTrackDetail>(`/runs/tracks/${trackId}`);
+}
+
+export async function uploadRunTrack(file: File): Promise<RunTrackDetail> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(`${API_BASE}/runs/tracks/upload`, {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  if (!response.ok) {
+    throw new ApiError(await readErrorDetail(response), response.status);
+  }
+  return (await response.json()) as RunTrackDetail;
+}
+
+export async function importRunTrackLink(url: string): Promise<RunTrackDetail> {
+  return apiFetch<RunTrackDetail>("/runs/tracks/link", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}
+
+export async function deleteRunTrack(trackId: string): Promise<void> {
+  await apiFetch<void>(`/runs/tracks/${trackId}`, { method: "DELETE" });
+}
+
 export async function uploadRatingPhoto(entryId: string, file: File): Promise<Photo> {
   const form = new FormData();
   form.append("file", file);
@@ -3439,21 +3559,160 @@ export function updateAutoSyncSettings(autoSyncByPlatform: Record<string, boolea
   });
 }
 
-export type NotificationSettings = {
+export type NewsletterSettings = {
   enabled: boolean;
   description: string;
   email: string | null;
 };
 
-export function getNotificationSettings() {
-  return apiFetch<NotificationSettings>("/settings/notifications");
+export function getNewsletterSettings() {
+  return apiFetch<NewsletterSettings>("/settings/newsletter");
 }
 
-export function updateNotificationSettings(enabled: boolean) {
-  return apiFetch<NotificationSettings>("/settings/notifications", {
+export function updateNewsletterSettings(enabled: boolean) {
+  return apiFetch<NewsletterSettings>("/settings/newsletter", {
     method: "PUT",
     body: JSON.stringify({ enabled }),
   });
+}
+
+// Уведомления сайта: каналы привязаны к способам входа (Telegram / VK /
+// почта), включаются по одному; переключатели видов и основной канал — в
+// модалке «о чём присылать». См. backend app/services/notification_service.py.
+export type NotificationChannelCode = "telegram" | "vk" | "email";
+
+export type NotificationChannelState = {
+  channel: NotificationChannelCode;
+  title: string;
+  available: boolean;
+  linked: boolean;
+  enabled: boolean;
+  // Проверка «дойдёт ли»: null — не проверяли (нет привязки).
+  deliverable: boolean | null;
+  // Что сделать, если не дойдёт (красным).
+  problem: string | null;
+  label: string | null;
+  email_source: string | null;
+  allow_url: string | null;
+  bot_url: string | null;
+  last_error: string | null;
+};
+
+export type NotificationKindState = {
+  code: string;
+  title: string;
+  description: string;
+  enabled: boolean;
+  available: boolean;
+};
+
+export type NotificationSettingsState = {
+  enabled: boolean;
+  primary_channel: NotificationChannelCode | null;
+  channels: NotificationChannelState[];
+  kinds: NotificationKindState[];
+};
+
+export type NotificationSettingsUpdate = {
+  primary_channel?: NotificationChannelCode | null;
+  kinds?: Record<string, boolean>;
+};
+
+export type NotificationNudgeState = {
+  show: boolean;
+  enabled: boolean;
+  linked_channels: NotificationChannelCode[];
+};
+
+export function getNotificationSettings() {
+  return apiFetch<NotificationSettingsState>("/settings/notifications");
+}
+
+export function updateNotificationSettings(body: NotificationSettingsUpdate) {
+  return apiFetch<NotificationSettingsState>("/settings/notifications", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function toggleNotificationChannel(channel: NotificationChannelCode, enabled: boolean) {
+  return apiFetch<NotificationSettingsState>(`/settings/notifications/channels/${channel}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export function checkNotificationChannel(channel: NotificationChannelCode) {
+  return apiFetch<{ ok: boolean; error: string | null }>(`/settings/notifications/channels/${channel}/check`, {
+    method: "POST",
+  });
+}
+
+export function requestTelegramNotificationLink() {
+  return apiFetch<{ connect_url: string }>("/settings/notifications/channels/telegram/connect", {
+    method: "POST",
+  });
+}
+
+export function getNotificationNudge() {
+  return apiFetch<NotificationNudgeState>("/settings/notifications/nudge");
+}
+
+export function dismissNotificationNudge() {
+  return apiFetch<NotificationNudgeState>("/settings/notifications/nudge/dismiss", { method: "POST" });
+}
+
+export function enableNotifications() {
+  return apiFetch<{ channel: NotificationChannelCode | null; state: NotificationSettingsState }>(
+    "/settings/notifications/enable",
+    { method: "POST" },
+  );
+}
+
+export type AdminNotificationCount = { key: string; count: number };
+
+export type AdminNotificationDelivery = {
+  id: string;
+  user_serial_id: number | null;
+  user_label: string;
+  kind: string;
+  status: "queued" | "sent" | "failed" | "skipped";
+  channel: string | null;
+  attempts: number;
+  title: string;
+  error: string | null;
+  created_at: string;
+  sent_at: string | null;
+};
+
+export type AdminNotificationsResponse = {
+  period_days: number;
+  generated_at: string;
+  total: number;
+  by_status: AdminNotificationCount[];
+  by_kind: AdminNotificationCount[];
+  by_channel: AdminNotificationCount[];
+  subscribers_by_channel: AdminNotificationCount[];
+  items: AdminNotificationDelivery[];
+  items_total: number;
+  limit: number;
+  offset: number;
+};
+
+export function getAdminNotifications(params: {
+  periodDays?: number;
+  status?: string | null;
+  kind?: string | null;
+  limit?: number;
+  offset?: number;
+} = {}) {
+  const query = new URLSearchParams();
+  query.set("period_days", String(params.periodDays ?? 7));
+  if (params.status) query.set("status", params.status);
+  if (params.kind) query.set("kind", params.kind);
+  query.set("limit", String(params.limit ?? 100));
+  query.set("offset", String(params.offset ?? 0));
+  return apiFetch<AdminNotificationsResponse>(`/admin/notifications?${query.toString()}`);
 }
 
 export type PrivacySettings = {
@@ -3690,6 +3949,98 @@ export type AdminUserVisitsResponse = {
 
 export function getAdminUserVisits(userId: string, limit = 300) {
   return apiFetch<AdminUserVisitsResponse>(`/admin/users/${userId}/visits?limit=${limit}`);
+}
+
+export type TrackImportProblem = {
+  name: string;
+  reason: string;
+};
+
+export type TrackImportItem = {
+  track_id: string;
+  source: string;
+  source_ref: string;
+  started_at: string | null;
+  distance_m: number | null;
+  duration_sec: number | null;
+  elevation_gain_m: number | null;
+  // Есть ли высоты по точкам: без них профиля рельефа не будет.
+  has_elevation_profile: boolean;
+  device_name: string | null;
+  quality_class: string | null;
+  lap_count: number | null;
+  location_name: string | null;
+  event_date: string | null;
+  matched_run: boolean;
+  protocol_delta_sec: number | null;
+  is_course_eligible: boolean;
+  exclusion_reason: string | null;
+  exclusion_note: string | null;
+};
+
+export type TrackImportBatch = {
+  id: string;
+  target_user_id: string;
+  target_user_name: string | null;
+  source_kind: string;
+  status: string;
+  total_count: number;
+  processed_count: number;
+  imported_count: number;
+  skipped_count: number;
+  pending_count: number;
+  problems: TrackImportProblem[];
+  error_message: string | null;
+  created_at: string;
+  applied_at: string | null;
+};
+
+export type TrackImportBatchDetail = TrackImportBatch & {
+  items: TrackImportItem[];
+};
+
+export async function createTrackImport(
+  targetUserId: string,
+  files: File[],
+  links: string,
+): Promise<TrackImportBatchDetail> {
+  const form = new FormData();
+  form.append("target_user_id", targetUserId);
+  form.append("links", links);
+  for (const file of files) {
+    form.append("files", file);
+  }
+  const response = await fetch(`${API_BASE}/admin/track-imports`, {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  if (!response.ok) {
+    throw new ApiError(await readErrorDetail(response), response.status);
+  }
+  return (await response.json()) as TrackImportBatchDetail;
+}
+
+export function processTrackImport(batchId: string, limit = 25) {
+  return apiFetch<TrackImportBatchDetail>(`/admin/track-imports/${batchId}/process?limit=${limit}`, {
+    method: "POST",
+  });
+}
+
+export function getTrackImport(batchId: string) {
+  return apiFetch<TrackImportBatchDetail>(`/admin/track-imports/${batchId}`);
+}
+
+export function listTrackImports(limit = 20) {
+  return apiFetch<{ items: TrackImportBatch[] }>(`/admin/track-imports?limit=${limit}`);
+}
+
+export function applyTrackImport(batchId: string) {
+  return apiFetch<TrackImportBatchDetail>(`/admin/track-imports/${batchId}/apply`, { method: "POST" });
+}
+
+export function discardTrackImport(batchId: string) {
+  return apiFetch<TrackImportBatchDetail>(`/admin/track-imports/${batchId}/discard`, { method: "POST" });
 }
 
 export type AdminUsersSort = "created" | "runs" | "volunteering" | "profile" | "seen";
