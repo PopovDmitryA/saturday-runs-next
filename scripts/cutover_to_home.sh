@@ -119,7 +119,7 @@ start)
   "${COMPOSE[@]}" up -d --build postgres redis api nginx edge certbot || die "стек не поднялся"
   "${COMPOSE[@]}" run --rm -T api alembic upgrade head </dev/null | tail -2
   for _ in $(seq 1 60); do
-    code=$(curl -s -o /dev/null -m 5 -w '%{http_code}' -H 'Host: run5k.run' http://127.0.0.1/health)
+    code=$(curl -s -o /dev/null -m 5 --resolve run5k.run:443:127.0.0.1 -w '%{http_code}' https://run5k.run/health)
     [ "$code" = "200" ] && { say "✓ health 200 через край"; break; }
     sleep 2
   done
@@ -140,7 +140,8 @@ warm)
   say "прогреваю кэши ДО перевода DNS (холодная главная считается ~34 с)"
   for u in /api/portal/home /api/locations/index /api/fastest /api/location-records /api/protocol/week; do
     printf '  %-26s' "$u"
-    curl -s -o /dev/null -m 120 -w '%{http_code} за %{time_total}s\n' -H 'Host: run5k.run' "http://127.0.0.1$u"
+    curl -s -o /dev/null -m 180 --resolve run5k.run:443:127.0.0.1 \
+      -w '%{http_code} за %{time_total}s\n' "https://run5k.run$u"
   done
   ;;
 
@@ -148,7 +149,8 @@ verify)
   say "== дом до переключения DNS =="
   for u in / /health /api/locations/index /api/portal/home; do
     printf '  %-24s' "$u"
-    curl -s -o /dev/null -m 60 -w '%{http_code} за %{time_total}s\n' -H 'Host: run5k.run' "http://127.0.0.1$u"
+    curl -s -o /dev/null -m 120 --resolve run5k.run:443:127.0.0.1 \
+      -w '%{http_code} за %{time_total}s\n' "https://run5k.run$u"
   done
   say "теперь DNS: A run5k.run → $HOME_IP, AAAA удалить (дома IPv6 нет)"
   ;;
