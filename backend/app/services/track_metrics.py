@@ -57,6 +57,15 @@ ELEVATION_NOISE_M = 1.0
 # С какого уклона участок считается подъёмом, а не «плоско», в процентах.
 GRADE_FLAT_PERCENT = 1.0
 # Отдельный подъём трассы: короче этого не показываем как «главный».
+# Во сколько раз интервал должен превысить обычный ритм записи, чтобы
+# считаться пропуском, и ниже какой длины провал вообще не считаем.
+GAP_RATIO = 3.0
+GAP_ABSOLUTE_SEC = 15.0
+# Плотность записи в метрах между точками. Плотнее DENSE — запись подробная
+# (посекундная у бегуна даёт 3-4 м); до SPARSE — для личного разбора годится,
+# для замера трассы уже нет; реже — трек слишком грубый.
+DENSE_SPACING_M = 5.0
+SPARSE_SPACING_M = 12.0
 MIN_CLIMB_M = 50.0
 # Подъём считаем подъёмом, только если он действительно поднимает: иначе на
 # равнине «главным подъёмом» объявлялся весь трек. Иваново 12.09.2026 —
@@ -574,22 +583,46 @@ def assess_quality(points: list[tuple[float, float, float]]) -> tuple[str, dict[
     if not intervals:
         return "C", {"reason": "у точек нет времени"}
     sample_interval = median(intervals)
-    gaps = sum(1 for value in intervals if value > 5)
+    # Пропуск — это провал НА ФОНЕ собственного ритма записи, а не любой
+    # интервал длиннее пяти секунд. Умные часы пишут точки неравномерно: у
+    # Forerunner 965 на прогулке 29.11.2025 медиана 5 с, а 44% интервалов
+    # ровно по 6 с — по старому правилу трек объявлялся «рваным», хотя самый
+    # большой разрыв во всей записи был те же 6 секунд.
+    gap_threshold = max(GAP_ABSOLUTE_SEC, sample_interval * GAP_RATIO)
+    gaps = sum(1 for value in intervals if value > gap_threshold)
     gap_share = gaps / len(intervals)
 
     smoothed = _smooth(points)
     offsets = [haversine(points[i][:2], smoothed[i][:2]) for i in range(len(points))]
     noise_m = median(offsets) if offsets else 0.0
 
+    # Для замера трассы важен не интервал в секундах, а РАССТОЯНИЕ между
+    # точками: оно и есть разрешающая способность записи. Прогулка с записью
+    # раз в 5 секунд даёт 8 м между точками, а бег с той же записью — 17 м,
+    # и это записи разного качества, хотя интервал одинаковый.
+    steps = [haversine(points[i][:2], points[i + 1][:2]) for i in range(len(points) - 1)]
+    steps = [value for value in steps if value > 0]
+    spacing_m = median(steps) if steps else 0.0
+
     quality: dict[str, Any] = {
         "sample_interval_sec": round(sample_interval, 2),
         "gap_share": round(gap_share, 3),
+        # Чтобы вердикт можно было проверить, а не принимать на веру.
+        "gap_count": gaps,
+        "gap_threshold_sec": round(gap_threshold, 1),
+        "max_gap_sec": round(max(intervals), 1),
         "noise_m": round(noise_m, 2),
+        "meters_per_point": round(spacing_m, 1),
         "point_count": len(points),
     }
 
-    if sample_interval <= 2 and gap_share < 0.02 and noise_m <= 3.0:
+    # Класс считаем по плотности, а не по секундам: она прямо отвечает на
+    # вопрос «насколько подробно записана трасса». Замер 23.09.2026 показал,
+    # где проходят границы — при 5 м между точками суммарный поворот уже
+    # занижается на 16-29%, при 8 м на 27-42% (см. COURSE_SPACING_M
+    # в track_validation).
+    if spacing_m <= DENSE_SPACING_M and gap_share < 0.02 and noise_m <= 3.0:
         return "A", quality
-    if sample_interval <= 5 and gap_share < 0.1:
+    if spacing_m <= SPARSE_SPACING_M and gap_share < 0.1:
         return "B", quality
     return "C", quality

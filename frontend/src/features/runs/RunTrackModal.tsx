@@ -39,15 +39,52 @@ function splitLabel(split: RunTrackSplit): string {
   return split.km != null ? `${split.km}-й км` : `последние ${split.meters} м`;
 }
 
-/** Словесная оценка записи: человеку важно не число, а годится ли его трек. */
+function secondsLabel(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded.toString().replace(".", ",")} с`;
+}
+
+/** Оценка записи с цифрами: голый вердикт «редкая или рваная» проверить нельзя. */
 function qualityText(track: RunTrackDetail): string {
+  const quality = track.quality ?? {};
+  const interval = track.sample_interval_sec ?? quality.sample_interval_sec;
+  const parts: string[] = [];
+
   if (track.quality_class === "A") {
-    return "Запись посекундная, без пропусков.";
+    parts.push("Запись подробная, без пропусков.");
+  } else if (track.quality_class === "B") {
+    parts.push("Запись пореже: для личного разбора хватает, для замера трассы — нет.");
+  } else {
+    parts.push("Запись грубая: точки идут далеко друг от друга или с пропусками.");
   }
-  if (track.quality_class === "B") {
-    return "Запись с интервалом в несколько секунд: для разбора хватает, для замера трассы — нет.";
+
+  const details: string[] = [];
+  if (interval != null) {
+    details.push(`точка раз в ${secondsLabel(interval)}`);
   }
-  return "Запись редкая или с пропусками.";
+  if (quality.meters_per_point != null) {
+    details.push(`${quality.meters_per_point.toFixed(1).replace(".", ",")} м между точками`);
+  }
+  if (quality.max_gap_sec != null) {
+    details.push(`самый большой разрыв ${secondsLabel(quality.max_gap_sec)}`);
+  }
+  if (quality.gap_count != null && quality.gap_threshold_sec != null) {
+    details.push(
+      quality.gap_count === 0
+        ? "пропусков нет"
+        : `пропусков ${quality.gap_count} (длиннее ${secondsLabel(quality.gap_threshold_sec)})`,
+    );
+  }
+  if (track.point_count != null) {
+    details.push(`точек ${track.point_count}`);
+  }
+  if (quality.noise_m != null) {
+    details.push(`дрожание ${quality.noise_m.toFixed(1).replace(".", ",")} м`);
+  }
+  if (details.length > 0) {
+    parts.push(`${details.join(", ")}.`);
+  }
+  return parts.join(" ");
 }
 
 export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
@@ -243,6 +280,16 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
               <b>{track.elevation_gain_m != null ? `${Math.round(track.elevation_gain_m)} м` : "—"}</b>
               <span>набор высоты</span>
             </div>
+            {/* Плотность записи — главный показатель того, можно ли верить
+                геометрии: при 8 м между точками поворот занижается на треть. */}
+            <div className={track.is_course_eligible ? "" : "run-track-fact-warn"}>
+              <b>
+                {track.quality?.meters_per_point != null
+                  ? `${track.quality.meters_per_point.toFixed(1).replace(".", ",")} м`
+                  : "—"}
+              </b>
+              <span>между точками{track.is_course_eligible ? "" : " · точность низкая"}</span>
+            </div>
           </div>
 
           <RunTrackMap points={track.points} />
@@ -302,7 +349,10 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
               {track.device_name ? ` Устройство: ${track.device_name}.` : ""}
             </li>
             {!track.is_course_eligible && track.exclusion_note && (
-              <li>В измерения трассы не идёт: {track.exclusion_note.toLowerCase()}.</li>
+              <li>
+                В измерения трассы не идёт: {track.exclusion_note.toLowerCase()}. Паспорт трассы считается
+                только по посекундным записям — на более редких суммарный поворот занижается вдвое.
+              </li>
             )}
           </ul>
 
@@ -310,7 +360,10 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
             <div className="run-track-actions run-track-actions-draft">
               <p className="run-track-draft-note">
                 Трек пока никуда не записан — это разбор приложенного файла. Сохраните, чтобы он появился
-                в вашем профиле и пошёл в измерения трассы.
+                в вашем профиле
+                {track.is_course_eligible
+                  ? " и пошёл в измерения трассы."
+                  : ". В измерения трассы он не пойдёт — причина ниже, но на ваш личный разбор это не влияет."}
               </p>
               <div className="run-track-actions-row">
                 <button
