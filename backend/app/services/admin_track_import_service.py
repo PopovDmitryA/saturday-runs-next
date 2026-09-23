@@ -29,9 +29,11 @@ from app.services.location_course_service import rebuild_for_tracks
 from app.services.run_track_service import build_track
 from app.services.track_parsing import TrackParseError, parse_garmin_link, parse_upload
 
-# Где лежат распакованные файлы до подтверждения. Переживать перезапуск
-# контейнера им не нужно: незавершённую сессию проще собрать заново.
-STAGING_ROOT = Path("/tmp/run5k_track_imports")
+# Где лежат распакованные файлы до подтверждения. Не /tmp: он живёт внутри
+# контейнера, и деплой посреди разбора уносил очередь вместе с ним — архив
+# на 205 файлов приходилось загружать заново (поймано 23.09.2026). /data
+# смонтирован с хоста и перезапуск переживает.
+STAGING_ROOT = Path("/data/track_imports")
 TRACK_SUFFIXES = (".fit", ".gpx", ".tcx")
 # Архив выгрузки Garmin за годы — это десятки мегабайт и сотни файлов.
 # Тот же потолок стоит на nginx (location /api/admin/track-imports в
@@ -185,7 +187,12 @@ def _build_from_source(db: Session, target_user: User, item: dict[str, str]) -> 
     if item["kind"] == "link":
         parsed = parse_garmin_link(item["path"])
     else:
-        data = Path(item["path"]).read_bytes()
+        source = Path(item["path"])
+        if not source.exists():
+            # Старые сессии держали файлы в /tmp контейнера — после его
+            # пересоздания дорешать такую загрузку нечем.
+            raise TrackParseError("Файл больше не лежит на сервере — загрузите архив заново")
+        data = source.read_bytes()
         parsed = parse_upload(item["name"], data)
         # Внутри архива имена одинаковые, поэтому ключом делаем отпечаток
         # содержимого: он же ловит повторную загрузку того же файла.
