@@ -502,7 +502,15 @@ export type RunTrackMetrics = {
 export type RunTrackQuality = {
   sample_interval_sec?: number;
   gap_share?: number;
+  // Пропуск — провал на фоне собственного ритма записи, а не любой интервал
+  // длиннее пяти секунд. Эти три поля позволяют вердикт проверить.
+  gap_count?: number;
+  gap_threshold_sec?: number;
+  max_gap_sec?: number;
   noise_m?: number;
+  // Метров между соседними точками — разрешающая способность записи. Для
+  // замера трассы важна именно она, а не интервал в секундах.
+  meters_per_point?: number;
   point_count?: number;
   reason?: string;
 };

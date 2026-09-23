@@ -31,6 +31,22 @@ MAX_ELEVATION_GAIN_M = 250.0
 MAX_ELEVATION_SPAN_M = 150.0
 # Дальше от локации трек начинаться не может — это пробежка в другом месте.
 MAX_START_DISTANCE_M = 1500.0
+# Разрешающая способность записи, при которой трассе можно верить. Меряли
+# 23.09.2026 на четырёх треках класса A: прореживаем до заданного шага и
+# смотрим, как врут метрики.
+#
+#   шаг     суммарный поворот      длина
+#   5 м     −16 … −29%             −0,4 … −9%
+#   8 м     −27 … −42%             −0,6 … −15%
+#   15 м    −32 … −55%             −1,6 … −26%
+#
+# Чем извилистее трасса, тем хуже: на Александрове (8891°) при 8 м теряется
+# уже 15% самой дистанции — хорда срезает зигзаги. Поэтому в паспорт трассы
+# идёт только плотная запись; на личный разбор это не влияет.
+#
+# Важно, что мерять надо метры, а не секунды: прогулка с записью раз в 5 с
+# даёт 8 м между точками, бег с той же записью — 17 м.
+COURSE_SPACING_M = 5.0
 
 REASON_LABELS = {
     "distance_out_of_range": "длина не похожа на парковую пятёрку",
@@ -40,7 +56,8 @@ REASON_LABELS = {
     "elevation_spike": "аномальный набор высоты",
     "elevation_span_spike": "аномальный перепад высот",
     "far_from_location": "трек начинается далеко от локации",
-    "low_quality": "запись слишком редкая или рваная",
+    "low_quality": "в записи есть пропуски",
+    "sparse_recording": "точки записаны слишком редко",
     "no_location": "не привязан к пробежке из протокола",
 }
 
@@ -49,6 +66,7 @@ def evaluate_course_fitness(
     *,
     metrics: dict[str, Any],
     quality_class: str | None,
+    quality: dict[str, Any] | None = None,
     elevation_gain_m: float | None,
     protocol_delta_sec: int | None,
     has_location: bool,
@@ -98,6 +116,11 @@ def evaluate_course_fitness(
         return False, "elevation_span_spike", f"Перепад высот {span:.0f} м"
 
     if quality_class == "C":
-        return False, "low_quality", "Запись слишком редкая или рваная"
+        return False, "low_quality", "В записи есть пропуски"
+
+    if quality_class == "B":
+        spacing = (quality or {}).get("meters_per_point")
+        shown = f" — {spacing:.0f} м".replace(".", ",") if spacing else ""
+        return False, "sparse_recording", f"Точки идут слишком далеко друг от друга{shown}"
 
     return True, None, None

@@ -100,11 +100,9 @@ export function ElevationProfile({ metrics, deviceGainM }: ElevationProfileProps
   };
 
   const hoverGrade = hover ? gradeAt(hover.index) : null;
-  // Подсказку держим у курсора, но не даём ей вылезти за края графика.
-  const hoverBoxWidth = 132;
-  const hoverBoxX = hover
-    ? Math.max(PADDING.left, Math.min(WIDTH - PADDING.right - hoverBoxWidth, x(hover.distance) + 8))
-    : 0;
+  // За серединой графика подсказку вешаем слева от курсора, иначе у правого
+  // края она упиралась в стенку окна.
+  const hoverOnRight = hover != null && x(hover.distance) > WIDTH / 2;
   const inClimb =
     hasClimb && hover != null && hover.distance >= climbFrom && hover.distance <= climbFrom + climbLength;
 
@@ -155,44 +153,43 @@ export function ElevationProfile({ metrics, deviceGainM }: ElevationProfileProps
           <g>
             <line x1={x(hover.distance)} y1={PADDING.top} x2={x(hover.distance)} y2={baseline} className="cursor" />
             <circle cx={x(hover.distance)} cy={y(hover.height)} r={3.5} className="dot" />
-            {/* Цифры прямо у курсора: раньше пунктир ездил молча, а подпись
-                под графиком глазом не ловилась. */}
-            <g className="hover-box">
-              <rect
-                x={hoverBoxX}
-                y={PADDING.top + 4}
-                width={hoverBoxWidth}
-                height={inClimb ? 56 : 40}
-                rx={6}
-              />
-              <text x={hoverBoxX + 9} y={PADDING.top + 20}>
-                {(hover.distance / 1000).toFixed(2).replace(".", ",")} км ·{" "}
-                {hover.height.toFixed(1).replace(".", ",")} м
-              </text>
-              <text x={hoverBoxX + 9} y={PADDING.top + 34} className="hover-sub">
-                {hoverGrade == null
-                  ? "уклон —"
-                  : Math.abs(hoverGrade) < 0.3
-                    ? "ровно"
-                    : `уклон ${hoverGrade > 0 ? "+" : "−"}${Math.abs(hoverGrade)
-                        .toFixed(1)
-                        .replace(".", ",")}%`}
-                {" · "}
-                {hover.height === maxHeight
-                  ? "высшая точка"
-                  : hover.height === minHeight
-                    ? "низшая точка"
-                    : `+${(hover.height - minHeight).toFixed(1).replace(".", ",")} м от низа`}
-              </text>
-              {inClimb && (
-                <text x={hoverBoxX + 9} y={PADDING.top + 48} className="hover-sub">
-                  это главный подъём
-                </text>
-              )}
-            </g>
           </g>
         )}
       </svg>
+      {/* Подсказку рисуем не в SVG, а слоем поверх: ширину текста в SVG не
+          измерить, и коробочка фиксированной ширины вылезала за край окна.
+          Здесь ширину считает браузер, а край ловится обычным left/right. */}
+      {hover && (
+        <div
+          className="run-track-hover"
+          style={
+            hoverOnRight
+              ? { right: `${(1 - x(hover.distance) / WIDTH) * 100}%` }
+              : { left: `${(x(hover.distance) / WIDTH) * 100}%` }
+          }
+        >
+          <b>
+            {(hover.distance / 1000).toFixed(2).replace(".", ",")} км ·{" "}
+            {hover.height.toFixed(1).replace(".", ",")} м
+          </b>
+          <span>
+            {hoverGrade == null
+              ? "уклон —"
+              : Math.abs(hoverGrade) < 0.3
+                ? "ровно"
+                : `уклон ${hoverGrade > 0 ? "+" : "−"}${Math.abs(hoverGrade)
+                    .toFixed(1)
+                    .replace(".", ",")}%`}
+            {" · "}
+            {hover.height === maxHeight
+              ? "высшая точка"
+              : hover.height === minHeight
+                ? "низшая точка"
+                : `+${(hover.height - minHeight).toFixed(1).replace(".", ",")} м от низа`}
+            {inClimb && " · главный подъём"}
+          </span>
+        </div>
+      )}
       <p className="run-track-elevation-note">
         {hasClimb ? (
           <>

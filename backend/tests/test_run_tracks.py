@@ -482,3 +482,46 @@ def test_real_climb_is_still_found() -> None:
 
     assert climb["climb_rise_m"] == pytest.approx(20.0, abs=0.5)
     assert climb["climb_grade_percent"] == pytest.approx(2.5, abs=0.2)
+
+
+def test_gap_is_measured_against_the_tracks_own_rhythm() -> None:
+    # Дружба 29.11.2025, Forerunner 965 на прогулке: медиана интервала 5 с,
+    # 44% точек идут с шагом 6 с, а самый большой разрыв во всей записи —
+    # те же 6 секунд. Старое правило («интервал больше 5 с = пропуск»)
+    # объявляло такой трек рваным.
+    points: list[tuple[float, float, float]] = []
+    clock = 0.0
+    for index in range(600):
+        clock += 6.0 if index % 2 else 4.0
+        points.append((55.75 + index * 0.00002, 37.6 + index * 0.00002, clock))
+
+    _quality_class, quality = assess_quality(points)
+
+    assert quality["max_gap_sec"] == 6.0
+    assert quality["gap_count"] == 0
+
+
+def test_class_follows_distance_between_points_not_seconds() -> None:
+    # Один и тот же интервал записи даёт разную подробность: у идущего пешком
+    # точки ложатся вдвое плотнее, чем у бегущего.
+    def track(step_m: float) -> list[tuple[float, float, float]]:
+        # 0.00001 широты ≈ 1,11 м.
+        shift = step_m / 111320
+        return [(55.75 + index * shift, 37.6, index * 5.0) for index in range(600)]
+
+    dense_class, dense = assess_quality(track(3.0))
+    sparse_class, sparse = assess_quality(track(17.0))
+
+    assert dense["meters_per_point"] == pytest.approx(3.0, abs=0.2)
+    assert sparse["meters_per_point"] == pytest.approx(17.0, abs=0.3)
+    assert dense_class == "A"
+    assert sparse_class == "C"
+
+
+def test_sparse_track_is_kept_out_of_course_measurements() -> None:
+    # Замер 23.09.2026: при 8 м между точками суммарный поворот занижается на
+    # 27-42%, поэтому в паспорт трассы такой трек не идёт.
+    eligible, reason, note = _fitness(quality_class="B", quality={"meters_per_point": 8.0})
+    assert eligible is False
+    assert reason == "sparse_recording"
+    assert "8 м" in note

@@ -89,6 +89,7 @@ def build_track(db: Session, user: User, parsed: ParsedTrack) -> RunTrack:
     eligible, reason, note = evaluate_course_fitness(
         metrics=metrics,
         quality_class=quality_class,
+        quality=quality,
         elevation_gain_m=parsed.elevation_gain_m,
         protocol_delta_sec=track.protocol_delta_sec,
         has_location=location is not None,
