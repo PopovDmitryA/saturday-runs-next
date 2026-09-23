@@ -25,7 +25,13 @@ import {
 import { formatFinishTime } from "./formatFinishTime";
 import { getFastestRating, type FastestRatingResponse } from "./fastestApi";
 import { getRegionsRating, type RegionRatingRow, type RegionsPlatform } from "./regionsApi";
-import { COURSE_METRIC_LABELS, getCourseRating, type CourseRatingItem } from "./courseApi";
+import {
+  COURSE_METRIC_HUB_LABELS,
+  COURSE_METRIC_LABELS,
+  getCourseRating,
+  type CourseRatingItem,
+  type CourseRatingMetric,
+} from "./courseApi";
 import { surnameFirst } from "../../lib/personName";
 import "./leaderboards.css";
 
@@ -414,41 +420,70 @@ function RegionsHubCard({ platform }: { platform: PlatformFilter }) {
   );
 }
 
-/** Трассы локаций: рейтинг по трекам участников. Пока фича закрыта — только админу. */
-function CoursesHubCard() {
+/** Как показываем значение метрики трассы в тройке лидеров. */
+const COURSE_HUB_VALUE: Record<CourseRatingMetric, (item: CourseRatingItem) => string> = {
+  elevation: (item) => (item.value == null ? "—" : `${item.value.toFixed(1).replace(".", ",")} м`),
+  straightness: (item) => (item.value == null ? "—" : `${Math.round(item.value)}°`),
+  // Площадь в метрах не читается: «45 000 м²» ни о чём не говорит, а
+  // «150 × 300 м» сразу рисует картинку.
+  footprint: (item) =>
+    item.box_short_m != null && item.box_long_m != null
+      ? `${Math.round(item.box_short_m)} × ${Math.round(item.box_long_m)} м`
+      : "—",
+};
+
+/**
+ * Трасса локации по одной метрике. Карточка повторяет разметку соседних
+ * рейтингов (lb-hub-rank-*), иначе строки слипаются в «1Кисловодский парк72,0 м».
+ * Пока фича закрыта — показываем только админу.
+ */
+function CoursesHubCard({ metric }: { metric: CourseRatingMetric }) {
   const [rows, setRows] = useState<CourseRatingItem[] | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    getCourseRating("elevation")
-      .then((response) => setRows(response.items.filter((item) => item.has_data).slice(0, 3)))
-      .catch(() => setError(true));
-  }, []);
+    let cancelled = false;
+    setRows(null);
+    setError(false);
+    getCourseRating(metric)
+      .then((response) => {
+        if (!cancelled) {
+          setRows(response.items.filter((item) => item.has_data).slice(0, HUB_TOP_N));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [metric]);
 
   return (
-    <a className="lb-hub-card lb-hub-card-live" href="/ratings/courses">
+    <a className="lb-hub-card lb-hub-card-live" href={`/ratings/courses/${metric}`}>
       <div className="lb-hub-card-top">
-        <span className="lb-hub-card-title">Трассы локаций</span>
+        <span className="lb-hub-card-title">{COURSE_METRIC_LABELS[metric]}</span>
       </div>
       {rows === null && !error && <p className="lb-hub-loading muted">Считаем…</p>}
       {error && <p className="lb-hub-loading muted">Не удалось загрузить</p>}
       {rows && rows.length === 0 && <p className="lb-hub-loading muted">Треков пока нет</p>}
       {rows && rows.length > 0 && (
         <div className="lb-hub-top3">
+          <p className="lb-hub-top3-label">{COURSE_METRIC_HUB_LABELS[metric]}</p>
           {rows.map((item, index) => (
-            <div className="lb-hub-top3-row" key={item.location_slug}>
-              <span className="lb-hub-top3-place">{index + 1}</span>
-              <span className="lb-hub-top3-name">{item.location_name}</span>
-              <span className="lb-hub-top3-value">
-                {item.value != null ? `${item.value.toFixed(1).replace(".", ",")} м` : "—"}
+            <div className="lb-hub-rank-row" key={item.location_slug}>
+              <span className={`lb-hub-rank-chip lb-hub-rank-${RANK_TIER[index] ?? "silver"}`}>
+                {index + 1}
               </span>
+              <span className="lb-hub-rank-name">{item.location_name}</span>
+              <span className="lb-hub-rank-value">{COURSE_HUB_VALUE[metric](item)}</span>
             </div>
           ))}
         </div>
       )}
-      <p className="lb-hub-card-fallback muted">
-        {COURSE_METRIC_LABELS.elevation} и {COURSE_METRIC_LABELS.straightness.toLowerCase()}
-      </p>
+      <span className="lb-hub-see-all">Смотреть топ →</span>
     </a>
   );
 }
@@ -523,9 +558,15 @@ export function LeaderboardsHubPage() {
           <div className="lb-hub-cards">
             <LocationRecordsHubCard platform={platform} />
             <RegionsHubCard platform={platform} />
-            {/* Трассы по трекам: карточка тянет закрытую ручку, поэтому
-                показываем её только админу. */}
-            {viewer?.is_admin && <CoursesHubCard />}
+            {/* Трассы по трекам: карточки тянут закрытую ручку, поэтому
+                показываем их только админу. */}
+            {viewer?.is_admin && (
+              <>
+                <CoursesHubCard metric="elevation" />
+                <CoursesHubCard metric="straightness" />
+                <CoursesHubCard metric="footprint" />
+              </>
+            )}
           </div>
         </section>
       </div>

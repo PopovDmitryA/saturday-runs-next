@@ -234,6 +234,55 @@ def _geometry(smoothed: list[tuple[float, float, float]], cumulative: list[float
         "u_turn_count": sum(1 for t in turn_groups if abs(t) > U_TURN_DEG),
         "longest_straight_m": longest["meters"],
         "longest_straight_from_m": longest["from_m"],
+        **_footprint(resampled),
+    }
+
+
+# Шаг перебора угла при поиске самого тесного прямоугольника, градусы.
+# Прямоугольник симметричен через 90°, поэтому дальше идти незачем; на градусе
+# площадь уже не «дышит» — проверено на трассах от 150 м до 2,5 км в поперечнике.
+FOOTPRINT_ANGLE_STEP_DEG = 1
+
+
+def _footprint(resampled: list[tuple[float, float, float]]) -> dict[str, Any]:
+    """Самый тесный прямоугольник, в который влезает трасса.
+
+    Не по сторонам света: прямоугольник поворачиваем вместе с трассой и берём
+    угол с наименьшей площадью. Иначе диагональная аллея давала бы огромный
+    «квадрат» только оттого, что лежит наискосок к меридиану.
+
+    Пять километров, уложенные в 150 × 300 м, — это про то, как густо
+    намотана трасса; сама по себе цифра нагляднее, чем число кругов.
+    """
+    if len(resampled) < 5:
+        return {}
+
+    lat0 = sum(point[0] for point in resampled) / len(resampled)
+    # Локальная плоскость: на масштабе трассы (километры) искажение меньше
+    # метра, а считать в метрах и проще, и честнее.
+    scale_lon = math.cos(math.radians(lat0)) * math.pi * EARTH_RADIUS_M / 180
+    scale_lat = math.pi * EARTH_RADIUS_M / 180
+    lon0 = sum(point[1] for point in resampled) / len(resampled)
+    plane = [((point[1] - lon0) * scale_lon, (point[0] - lat0) * scale_lat) for point in resampled]
+
+    best: tuple[float, float, float] | None = None
+    for step in range(0, 90, FOOTPRINT_ANGLE_STEP_DEG):
+        angle = math.radians(step)
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        xs = [x * cos_a + y * sin_a for x, y in plane]
+        ys = [-x * sin_a + y * cos_a for x, y in plane]
+        width = max(xs) - min(xs)
+        height = max(ys) - min(ys)
+        area = width * height
+        if best is None or area < best[0]:
+            best = (area, width, height)
+
+    area, width, height = best  # type: ignore[misc]
+    short, long = sorted((width, height))
+    return {
+        "box_short_m": round(short),
+        "box_long_m": round(long),
+        "box_area_m2": round(area),
     }
 
 

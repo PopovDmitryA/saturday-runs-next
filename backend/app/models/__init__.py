@@ -1037,6 +1037,11 @@ class LocationCourseProfile(Base):
     u_turn_count: Mapped[float | None] = mapped_column(Float)
     longest_straight_m: Mapped[float | None] = mapped_column(Float)
     lap_count: Mapped[int | None] = mapped_column(Integer)
+    # Самый тесный прямоугольник, в который влезает трасса: короткая и длинная
+    # сторона плюс площадь. Показывает, насколько густо намотаны пять км.
+    box_short_m: Mapped[float | None] = mapped_column(Float)
+    box_long_m: Mapped[float | None] = mapped_column(Float)
+    box_area_m2: Mapped[float | None] = mapped_column(Float)
     uphill_share: Mapped[float | None] = mapped_column(Float)
     downhill_share: Mapped[float | None] = mapped_column(Float)
     climb_length_m: Mapped[float | None] = mapped_column(Float)

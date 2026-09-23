@@ -396,3 +396,42 @@ def test_privacy_trim_keeps_the_whole_course_not_just_the_two_km_circle() -> Non
     offsets = [offset for _lat, _lon, offset, _ele in kept]
     assert offsets == sorted(offsets)
     assert len(kept) == len(series)
+
+
+def test_footprint_rectangle_turns_with_the_course() -> None:
+    # Прямая, положенная строго по диагонали: шаг 10 м на север и 10 м на
+    # восток, то есть 14,1 м пути, и на 79 шагах выходит около 1120 м.
+    # Прямоугольник по сторонам света дал бы «квадрат» 790 × 790 м на ровном
+    # месте; тесный обязан лечь вдоль трассы и получиться узким.
+    from app.services.track_metrics import _footprint
+
+    steps = 80
+    resampled = [(55.75 + i * 0.00009, 37.60 + i * 0.00016, i * 10.0) for i in range(steps)]
+    box = _footprint(resampled)
+
+    assert box["box_short_m"] <= 5
+    assert 1100 <= box["box_long_m"] <= 1140
+
+
+def test_footprint_measures_the_patch_a_lap_is_wound_on() -> None:
+    # Замкнутая петля примерно 300 × 150 м: именно такие цифры и должны выйти.
+    import math
+
+    from app.services.track_metrics import _footprint
+
+    lat0, lon0 = 56.40, 38.71
+    half_long, half_short = 150.0, 75.0
+    per_deg_lat = 111320.0
+    per_deg_lon = per_deg_lat * math.cos(math.radians(lat0))
+    resampled = []
+    for i in range(120):
+        angle = 2 * math.pi * i / 120
+        x = half_long * math.cos(angle)
+        y = half_short * math.sin(angle)
+        resampled.append((lat0 + y / per_deg_lat, lon0 + x / per_deg_lon, i * 10.0))
+    box = _footprint(resampled)
+
+    assert 140 <= box["box_short_m"] <= 160
+    assert 290 <= box["box_long_m"] <= 310
+    # Площадь — произведение сторон, на ней и строится рейтинг.
+    assert abs(box["box_area_m2"] - box["box_short_m"] * box["box_long_m"]) < 500

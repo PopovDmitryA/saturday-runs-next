@@ -26,6 +26,11 @@ class CourseProfileResponse(BaseModel):
     u_turn_count: float | None = None
     longest_straight_m: float | None = None
     lap_count: int | None = None
+    # Самый тесный прямоугольник вокруг трассы: короткая сторона, длинная
+    # и площадь. «Пять километров умещаются в 150 × 300 метров».
+    box_short_m: float | None = None
+    box_long_m: float | None = None
+    box_area_m2: float | None = None
     uphill_share: float | None = None
     downhill_share: float | None = None
     climb_length_m: float | None = None
@@ -67,6 +72,11 @@ class CourseRatingItem(BaseModel):
     turn_sum_deg: float | None = None
     longest_straight_m: float | None = None
     lap_count: int | None = None
+    # Самый тесный прямоугольник вокруг трассы: короткая сторона, длинная
+    # и площадь. «Пять километров умещаются в 150 × 300 метров».
+    box_short_m: float | None = None
+    box_long_m: float | None = None
+    box_area_m2: float | None = None
 
 
 class CourseRatingResponse(BaseModel):

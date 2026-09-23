@@ -1,11 +1,19 @@
 // Рейтинги трасс и паспорт трассы локации. Пока фича закрыта, эти ручки
 // отвечают 404 всем, кроме админа (см. tracks_public_enabled на бэкенде).
 
-export type CourseRatingMetric = "elevation" | "straightness";
+export type CourseRatingMetric = "elevation" | "straightness" | "footprint";
 
 export const COURSE_METRIC_LABELS: Record<CourseRatingMetric, string> = {
   elevation: "Перепад высот",
   straightness: "Прямолинейность",
+  footprint: "Самые тесные трассы",
+};
+
+// Подпись под тройкой лидеров на главной странице рейтингов.
+export const COURSE_METRIC_HUB_LABELS: Record<CourseRatingMetric, string> = {
+  elevation: "Самый большой перепад",
+  straightness: "Меньше всего поворотов",
+  footprint: "Меньше всего места",
 };
 
 export type CourseRatingItem = {
@@ -27,6 +35,10 @@ export type CourseRatingItem = {
   turn_sum_deg: number | null;
   longest_straight_m: number | null;
   lap_count: number | null;
+  // Самый тесный прямоугольник вокруг трассы.
+  box_short_m: number | null;
+  box_long_m: number | null;
+  box_area_m2: number | null;
 };
 
 export type CourseRatingResponse = {
@@ -50,6 +62,9 @@ export type CourseProfile = {
   u_turn_count: number | null;
   longest_straight_m: number | null;
   lap_count: number | null;
+  box_short_m: number | null;
+  box_long_m: number | null;
+  box_area_m2: number | null;
   uphill_share: number | null;
   downhill_share: number | null;
   climb_length_m: number | null;

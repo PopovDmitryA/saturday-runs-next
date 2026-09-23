@@ -1,4 +1,4 @@
-// Рейтинг трасс: перепад высот и прямолинейность по трекам участников.
+// Рейтинг трасс: перепад высот, прямолинейность и пятачок — по трекам участников.
 // Устройство страницы — как у остальных рейтингов: крошки, шапка, панель
 // фильтров с поиском, сортируемая таблица и карточки на узком экране.
 
@@ -25,13 +25,29 @@ const PAGE_STEP = 100;
 const METRIC_TABS: { value: CourseRatingMetric; label: string }[] = [
   { value: "elevation", label: COURSE_METRIC_LABELS.elevation },
   { value: "straightness", label: COURSE_METRIC_LABELS.straightness },
+  { value: "footprint", label: "Пятачок" },
 ];
+
+// У этих метрик «лучше» значит «меньше»: меньше градусов — прямее, меньше
+// площадь — теснее намотана трасса.
+const LOWER_IS_BETTER: CourseRatingMetric[] = ["straightness", "footprint"];
+
+/** Метрика из адреса: на главную рейтингов ведут три разные карточки. */
+function metricFromUrl(): CourseRatingMetric | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const value = new URLSearchParams(window.location.search).get("metric");
+  return value && value in COURSE_METRIC_LABELS ? (value as CourseRatingMetric) : null;
+}
 
 const METRIC_HINT =
   "Перепад — разница между низшей и высшей точкой трассы. Берём его, а не набор высоты: " +
   "набор у барометра пляшет от погоды, на одной трассе выходило от 7 до 42 м. " +
   "Прямолинейность — суммарный поворот за дистанцию: один полный оборот это 360°, " +
-  "чем меньше градусов, тем прямее трасса.";
+  "чем меньше градусов, тем прямее трасса. " +
+  "Пятачок — самый тесный прямоугольник, в который влезает вся трасса: видно, " +
+  "на каком клочке земли умещаются пять километров.";
 
 const COLUMN_HINTS: Record<string, string> = {
   value: "Столбец выбранной метрики: по нему и построен рейтинг.",
@@ -47,6 +63,10 @@ const COLUMN_HINTS: Record<string, string> = {
   straight:
     "Самый длинный участок без заметных поворотов — место, где можно разогнаться и обогнать.",
   laps: "Сколько раз трасса повторяет один и тот же круг. Одна петля без повторов — это 1.",
+  box:
+    "Самый тесный прямоугольник, в который влезает трасса целиком. Ищется перебором угла, " +
+    "а не по сторонам света, иначе диагональная аллея давала бы огромный «квадрат». " +
+    "Сортировка — по площади: чем она меньше, тем гуще намотаны пять километров.",
   tracks: "Сколько треков учтено в расчёте. Наведите на число — увидите, от скольких разных людей.",
 };
 
@@ -54,7 +74,16 @@ const EMPTY_HINT =
   "Локации без треков из рейтинга не убираем: по ним видно, где данных ещё нет. " +
   "Цифры появятся, когда участники приложат треки.";
 
-type SortKey = "value" | "distance" | "elevation" | "turns" | "straight" | "laps" | "tracks" | "name";
+type SortKey =
+  | "value"
+  | "distance"
+  | "elevation"
+  | "turns"
+  | "straight"
+  | "laps"
+  | "box"
+  | "tracks"
+  | "name";
 
 type SortState = { key: SortKey; direction: "asc" | "desc" };
 
@@ -66,6 +95,7 @@ const DEFAULT_DIRECTION: Record<SortKey, SortState["direction"]> = {
   turns: "desc",
   straight: "desc",
   laps: "desc",
+  box: "asc",
   tracks: "desc",
   name: "asc",
 };
@@ -84,6 +114,8 @@ function sortValue(row: CourseRatingItem, key: SortKey): number | string | null 
       return row.longest_straight_m;
     case "laps":
       return row.lap_count;
+    case "box":
+      return row.box_area_m2;
     case "tracks":
       return row.tracks_count;
     default:
@@ -134,7 +166,17 @@ function formatKm(meters: number | null): string {
   return meters == null ? "—" : (meters / 1000).toFixed(2).replace(".", ",");
 }
 
+function formatBox(row: CourseRatingItem): string {
+  // Площадь в квадратных метрах не читается — показываем стороны.
+  return row.box_short_m != null && row.box_long_m != null
+    ? `${Math.round(row.box_short_m)} × ${Math.round(row.box_long_m)} м`
+    : "—";
+}
+
 function formatMetric(metric: CourseRatingMetric, row: CourseRatingItem): string {
+  if (metric === "footprint") {
+    return formatBox(row);
+  }
   if (row.value == null) {
     return "—";
   }
@@ -154,7 +196,10 @@ function LocationCell({ row }: { row: CourseRatingItem }) {
 
 export function CourseRatingPage() {
   const narrowViewport = useNarrowViewport();
-  const [metric, setMetric] = useRestorableState<CourseRatingMetric>("courses.metric", "elevation");
+  const [metric, setMetric] = useRestorableState<CourseRatingMetric>(
+    "courses.metric",
+    metricFromUrl() ?? "elevation",
+  );
   const [query, setQuery] = useRestorableState("courses.query", "");
   const [showEmpty, setShowEmpty] = useRestorableState("courses.empty", false);
   const [visibleCount, setVisibleCount] = useRestorableState("courses.visible", PAGE_STEP);
@@ -209,9 +254,10 @@ export function CourseRatingPage() {
         .some((value) => String(value).toLowerCase().includes(needle));
     });
 
-    // Прямолинейность читается от меньшего: чем меньше градусов, тем прямее.
+    // Прямолинейность и пятачок читаются от меньшего: меньше градусов — прямее,
+    // меньше площадь — теснее намотано.
     const direction =
-      sort.key === "value" && metric === "straightness" && sort.direction === "desc"
+      sort.key === "value" && LOWER_IS_BETTER.includes(metric) && sort.direction === "desc"
         ? "asc"
         : sort.direction;
     const factor = direction === "asc" ? 1 : -1;
@@ -231,7 +277,8 @@ export function CourseRatingPage() {
   }, [data, metric, query, showEmpty, sort]);
 
   const visibleRows = rows.slice(0, visibleCount);
-  const metricLabel = metric === "elevation" ? "Перепад" : "Поворот";
+  const metricLabel =
+    metric === "elevation" ? "Перепад" : metric === "straightness" ? "Поворот" : "Пятачок";
 
   return (
     <PortalSectionShell sidebar={{ active: "ratings" }}>
@@ -245,8 +292,8 @@ export function CourseRatingPage() {
         <header className="lb-header">
           <h1>Трассы локаций</h1>
           <p className="lb-description">
-            Какие на самом деле трассы у субботних пятёрок: перепад высот и извилистость, посчитанные по
-            трекам участников.
+            Какие на самом деле трассы у субботних пятёрок: перепад высот, извилистость и размер пятачка,
+            посчитанные по трекам участников.
           </p>
         </header>
 
@@ -349,7 +396,7 @@ export function CourseRatingPage() {
                       </div>
                       <div className="rowcard-sub">
                         {row.has_data
-                          ? `${formatKm(row.distance_m)} км · ${row.lap_count ?? 1} кр. · треков ${row.tracks_count}`
+                          ? `${formatKm(row.distance_m)} км · ${row.lap_count ?? 1} кр. · ${formatBox(row)} · треков ${row.tracks_count}`
                           : "треков пока нет"}
                       </div>
                     </div>
@@ -375,6 +422,7 @@ export function CourseRatingPage() {
                       <SortableHeader label="Поворот" sortKey="turns" sort={sort} onSort={toggleSort} />
                       <SortableHeader label="Прямая" sortKey="straight" sort={sort} onSort={toggleSort} />
                       <SortableHeader label="Кругов" sortKey="laps" sort={sort} onSort={toggleSort} />
+                      <SortableHeader label="Пятачок" sortKey="box" sort={sort} onSort={toggleSort} />
                       <SortableHeader label="Треков" sortKey="tracks" sort={sort} onSort={toggleSort} />
                       <th>Система</th>
                     </tr>
@@ -401,6 +449,16 @@ export function CourseRatingPage() {
                           {row.longest_straight_m != null ? `${Math.round(row.longest_straight_m)} м` : "—"}
                         </td>
                         <td className="num">{row.lap_count ?? "—"}</td>
+                        <td
+                          className="num"
+                          title={
+                            row.box_area_m2 != null
+                              ? `Площадь ${formatInt(Math.round(row.box_area_m2 / 100) / 100)} га`
+                              : undefined
+                          }
+                        >
+                          {formatBox(row)}
+                        </td>
                         <td className="num" title={`Участников: ${row.unique_user_count}`}>
                           {row.tracks_count || "—"}
                         </td>
