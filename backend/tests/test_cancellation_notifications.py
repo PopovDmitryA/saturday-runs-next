@@ -144,42 +144,49 @@ def test_compose_single_cancellation() -> None:
         base_url="https://run5k.test",
         today=date(2026, 9, 23),
     )
-    assert title == "🚫 Отмена старта: Мещерский"
-    assert "🚫 **Старт 26.09 отменён**" in text
-    assert "**Мещерский** · 5 вёрст" in text and "Работы в парке" in text
+    # Состояние сказано один раз — в заголовке; строка площадки его не повторяет.
+    assert title == "🚫 Отмена старта 26.09"
+    assert text.startswith("📍 **Мещерский** · 5 вёрст\nРаботы в парке")
+    assert "отменён" not in text
     assert "[Страница локации](https://run5k.test/locations/meshcherskiy)" in text
 
 
-def test_compose_batch_mixes_cancelled_and_restored() -> None:
+def test_compose_batch_has_no_counter_and_marks_each_location() -> None:
     title, text = cancellations.compose(
-        [
-            _change("a", name="Лихославль"),
-            _change("b", name="Иваново", platform="s95"),
-            _change("c", name="Серов", cancelled=False),
-        ],
+        [_change("a", name="Лихославль"), _change("b", name="Иваново", platform="s95")],
+        base_url="https://run5k.test",
+        today=date(2026, 9, 23),
+    )
+    assert title == "🚫 Отмены стартов 26.09"
+    assert text.startswith("📍 **Лихославль** · 5 вёрст\n\n📍 **Иваново** · С95")
+    assert "[Все локации](https://run5k.test/locations)" in text
+
+
+def test_compose_mixed_marks_state_per_location() -> None:
+    title, text = cancellations.compose(
+        [_change("a", name="Лихославль"), _change("c", name="Серов", cancelled=False)],
         base_url="https://run5k.test",
         today=date(2026, 9, 23),
     )
     assert title == "🚫 Изменения по отменам стартов 26.09"
-    assert "**Лихославль** · 5 вёрст" in text and "**Иваново** · С95" in text
-    assert "✅ **Отмена снята**" in text and "**Серов** · 5 вёрст" in text
-    # Ссылок на каждую площадку не даём — одна общая на каталог.
-    assert text.count("[") == 1 and "[Все локации](https://run5k.test/locations)" in text
+    assert "🚫 **Лихославль** · 5 вёрст" in text
+    assert "✅ **Серов** · 5 вёрст" in text
+    assert text.count("[") == 1
 
 
-def test_compose_plural_titles() -> None:
+def test_compose_restored_only() -> None:
+    title, text = cancellations.compose(
+        [_change("a", name="Первый", cancelled=False)], base_url="https://run5k.test", today=date(2026, 9, 23)
+    )
+    assert title == "✅ Отмена снята"
+    assert text.startswith("📍 **Первый** · 5 вёрст")
+
     title, _ = cancellations.compose(
-        [_change("a", name="Первый"), _change("b", name="Второй")],
+        [_change("a", name="Первый", cancelled=False), _change("b", name="Второй", cancelled=False)],
         base_url="https://run5k.test",
         today=date(2026, 9, 23),
     )
-    assert title == "🚫 Отмены стартов 26.09: 2"
-    title, _ = cancellations.compose(
-        [_change("a", name="Первый", cancelled=False)],
-        base_url="https://run5k.test",
-        today=date(2026, 9, 23),
-    )
-    assert title == "✅ Отмена снята: Первый"
+    assert title == "✅ Отмены сняты"
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +214,7 @@ def test_notify_goes_to_every_subscriber_regardless_of_location(db_session: Sess
     assert cancellations.notify_cancellation_subscribers(db_session, [change]) == 2
     rows = db_session.query(NotificationDelivery).filter_by(kind="cancellations").all()
     assert {row.user_id for row in rows} == {local.id, newcomer.id}
-    assert rows[0].payload["title"] == "🚫 Отмена старта: Владивосток"
+    assert rows[0].payload["title"].startswith("🚫 Отмена старта ")
     assert rows[0].payload["url"].endswith("/locations/vladivostok")
     assert set(_no_broker) == {row.id for row in rows}
 
@@ -220,7 +227,7 @@ def test_batch_is_one_message_and_dedupes(db_session: Session) -> None:
     assert cancellations.notify_cancellation_subscribers(db_session, batch) == 1
     row = db_session.query(NotificationDelivery).filter_by(user_id=user.id, kind="cancellations").one()
     day = cancellations.upcoming_saturday(date.today()).strftime("%d.%m")
-    assert row.payload["title"] == f"🚫 Отмены стартов {day}: 2"
+    assert row.payload["title"] == f"🚫 Отмены стартов {day}"
     assert "Первый" in row.payload["text"] and "Второй" in row.payload["text"]
 
     # Тот же набор на той же неделе (реестр и наблюдатель видят его по очереди).

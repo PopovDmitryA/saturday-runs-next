@@ -56,28 +56,37 @@ def upcoming_saturday(today: date) -> date:
     return saturday if saturday >= today else saturday + timedelta(days=7)
 
 
-def _location_line(change: CancellationChange) -> str:
+def _location_line(change: CancellationChange, *, marker: str) -> str:
+    """Строка площадки: эмодзи-маркер отделяет одну локацию от другой."""
     title = change.name or change.slug
-    line = f"{bold(title)} · {platform_title(change.platform_code)}"
+    line = f"{marker} {bold(title)} · {platform_title(change.platform_code)}"
     if change.cancelled and change.reason:
         line += f"\n{change.reason}"
     return line
 
 
 def compose(changes: list[CancellationChange], *, base_url: str, today: date | None = None) -> tuple[str, str]:
-    """(заголовок, тело в разметке) на весь набор изменений одного человека."""
+    """(заголовок, тело в разметке) на весь набор изменений одного человека.
+
+    Состояние живёт в заголовке, пока весь набор одного вида: повторять его
+    ещё и строкой над списком — значит сказать одно и то же дважды. В
+    смешанном наборе состояние переезжает к каждой площадке своим эмодзи.
+    """
     saturday = upcoming_saturday(today or date.today())
     day = f"{saturday.day:02d}.{saturday.month:02d}"
     cancelled = [item for item in changes if item.cancelled]
     restored = [item for item in changes if not item.cancelled]
 
-    blocks: list[str] = []
-    if cancelled:
-        blocks.append(f"🚫 {bold(f'Старт {day} отменён')}")
-        blocks.extend(_location_line(item) for item in cancelled)
-    if restored:
-        blocks.append(f"✅ {bold('Отмена снята')}")
-        blocks.extend(_location_line(item) for item in restored)
+    if cancelled and restored:
+        title = f"🚫 Изменения по отменам стартов {day}"
+        blocks = [_location_line(item, marker="🚫") for item in cancelled]
+        blocks += [_location_line(item, marker="✅") for item in restored]
+    elif cancelled:
+        title = f"🚫 Отмена старта {day}" if len(cancelled) == 1 else f"🚫 Отмены стартов {day}"
+        blocks = [_location_line(item, marker="📍") for item in cancelled]
+    else:
+        title = "✅ Отмена снята" if len(restored) == 1 else "✅ Отмены сняты"
+        blocks = [_location_line(item, marker="📍") for item in restored]
 
     # Ссылка ведёт на саму площадку, когда изменение одно, и в каталог, когда
     # их несколько: перечислять пять ссылок в конце сообщения бессмысленно.
@@ -85,21 +94,6 @@ def compose(changes: list[CancellationChange], *, base_url: str, today: date | N
         blocks.append(link("Страница локации", f"{base_url}/locations/{changes[0].slug}"))
     else:
         blocks.append(link("Все локации", f"{base_url}/locations"))
-
-    if cancelled and not restored:
-        title = (
-            f"🚫 Отмена старта: {cancelled[0].name or cancelled[0].slug}"
-            if len(cancelled) == 1
-            else f"🚫 Отмены стартов {day}: {len(cancelled)}"
-        )
-    elif restored and not cancelled:
-        title = (
-            f"✅ Отмена снята: {restored[0].name or restored[0].slug}"
-            if len(restored) == 1
-            else f"✅ Отмены сняты: {len(restored)}"
-        )
-    else:
-        title = f"🚫 Изменения по отменам стартов {day}"
     return title, "\n\n".join(blocks)
 
 
