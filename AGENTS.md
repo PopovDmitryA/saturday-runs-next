@@ -499,7 +499,7 @@ Telegram / HTML письма / текст VK), `services/notification_service.py
 доставляемости), `services/notification_senders.py` (отправители),
 `services/activity_notification_service.py` (единое сообщение о пробежке),
 `services/admin_notifications_service.py` (админка), `workers/tasks/notifications.py`.
-Миграция `094_notifications`: `user_notification_prefs`, `user_notification_channels`,
+Миграция `099_notifications`: `user_notification_prefs`, `user_notification_channels`,
 `notification_deliveries`, `backlog_card_subscriptions`.
 
 Правила:

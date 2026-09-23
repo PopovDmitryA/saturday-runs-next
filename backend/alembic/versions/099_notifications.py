@@ -27,8 +27,8 @@
 поглощаемого просто исчезают (см. BLOCKING_USER_REFERENCES в
 account_merge_service — эти таблицы удаление НЕ держат).
 
-Revision ID: 094_notifications
-Revises: 093_drop_sync_log_entries
+Revision ID: 099_notifications
+Revises: 098_course_profile_geometry
 Create Date: 2026-09-19
 """
 
@@ -39,8 +39,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "094_notifications"
-down_revision = "093_drop_sync_log_entries"
+revision = "099_notifications"
+down_revision = "098_course_profile_geometry"
 branch_labels = None
 depends_on = None
 
