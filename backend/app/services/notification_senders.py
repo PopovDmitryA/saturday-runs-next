@@ -54,7 +54,7 @@ class OutgoingMessage:
         parts = [f"<b>{to_telegram_html(self.title)}</b>", "", to_telegram_html(self.text)]
         if self.url:
             parts += ["", f'🔗 <a href="{self.url}">{to_telegram_html(self.url_label)}</a>']
-        parts += ["", f'⚙️ <a href="{self.settings_url}">Настроить такие уведомления</a>']
+        parts += ["", f'⚙️ <a href="{self.settings_url}">Настроить уведомления</a>']
         return "\n".join(parts)
 
     def plain_text(self) -> str:
@@ -62,7 +62,7 @@ class OutgoingMessage:
         lines = [to_plain(self.title), "", to_plain(self.text)]
         if self.url:
             lines += ["", f"🔗 {to_plain(self.url_label)}: {self.url}"]
-        lines += ["", f"⚙️ Настроить такие уведомления: {self.settings_url}"]
+        lines += ["", f"⚙️ Настроить уведомления: {self.settings_url}"]
         return "\n".join(lines)
 
     def email_text(self) -> str:

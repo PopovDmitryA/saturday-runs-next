@@ -563,7 +563,7 @@ Telegram / HTML письма / текст VK), `services/notification_service.py
   комментарии и смена статуса; автор и комментаторы следят автоматически,
   остальные — колокольчиком (`PUT /backlog/cards/{id}/subscription`).
   `kind=backlog_new_cards` — каждая новая карточка тем, кто включил.
-- **Подвал сообщения.** В Telegram и VK — «⚙️ Настроить такие уведомления»
+- **Подвал сообщения.** В Telegram и VK — «⚙️ Настроить уведомления»
   со ссылкой на `/settings#notifications`: чаще нужно донастроить, а не
   отрезать всё (решение Дмитрия 24.09.2026). Мгновенная отписка
   `/api/notifications/unsubscribe?token=…` (HMAC на `app_secret_key`, внутри
