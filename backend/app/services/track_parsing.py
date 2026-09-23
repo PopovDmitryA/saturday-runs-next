@@ -124,7 +124,10 @@ def parse_gpx(data: bytes, filename: str = "") -> ParsedTrack:
         points.append(TrackPoint(lat=lat, lon=lon, at=at, elevation_m=elevation))
 
     if not points:
-        raise TrackParseError("В файле нет ни одной точки трека.")
+        raise TrackParseError(
+            "В файле нет ни одной точки с координатами — похоже, часы так и не поймали GPS. "
+            "Проверьте эту пробежку в приложении часов: если карты нет и там, трека не существует."
+        )
 
     # creator у GPX с часов — модель («fenix 7»), у выгрузки из сервиса — имя
     # сервиса («Garmin Connect», «StravaGPX iPhone»).
@@ -173,7 +176,10 @@ def parse_tcx(data: bytes, filename: str = "") -> ParsedTrack:
                     device_name = child.text.strip()
 
     if not points:
-        raise TrackParseError("В файле нет ни одной точки трека.")
+        raise TrackParseError(
+            "В файле нет ни одной точки с координатами — похоже, часы так и не поймали GPS. "
+            "Проверьте эту пробежку в приложении часов: если карты нет и там, трека не существует."
+        )
 
     track = ParsedTrack(
         source="tcx",
@@ -245,7 +251,10 @@ def parse_fit(data: bytes, filename: str = "") -> ParsedTrack:
         raise TrackParseError("Не удалось разобрать FIT-файл.") from exc
 
     if not points:
-        raise TrackParseError("В FIT-файле нет координат — часы не поймали GPS.")
+        raise TrackParseError(
+            "В FIT-файле нет координат — часы не поймали GPS. Проверьте эту пробежку "
+            "в приложении часов: если карты нет и там, трека не существует."
+        )
 
     if not device_name:
         device_name = " ".join(part for part in (manufacturer, product) if part) or None

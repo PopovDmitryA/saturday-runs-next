@@ -20,7 +20,7 @@ REMOTE_DIR="${VPS_DIR:-/opt/saturday-runs-next}"
 HOME_DIR="${HOME_PROD_DIR:-$HOME/srs-prod}"
 DUMP_DIR="${HOME_DUMP_DIR:-$HOME/srs-prod-db}"
 HOME_IP="${HOME_PUBLIC_IP:-95.165.143.93}"
-COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.home-site.yml --profile telegram)
+COMPOSE=(docker compose -p "${HOME_PROJECT:-srs_home}" -f docker-compose.yml -f docker-compose.home-site.yml --profile telegram)
 
 step="${1:-}"
 say() { echo "$(date '+%H:%M:%S') $*"; }
@@ -81,12 +81,16 @@ db)
   t0=$(date +%s)
   stamp=$(date +%Y%m%d-%H%M%S)
   dump="saturday_runs_lk_cutover_${stamp}.dump"
-  say "финальный дамп на проде"
-  ssh -o BatchMode=yes "$VPS" "sudo -u postgres pg_dump -Fc -Z6 saturday_runs_lk -f /tmp/$dump && sudo chmod 644 /tmp/$dump" || die "дамп не снялся"
   mkdir -p "$DUMP_DIR"
-  scp -q -o BatchMode=yes "$VPS:/tmp/$dump" "$DUMP_DIR/$dump" || die "дамп не скачался"
-  ssh -o BatchMode=yes "$VPS" "sudo rm -f /tmp/$dump"
-  say "дамп дома: $(du -h "$DUMP_DIR/$dump" | cut -f1)"
+
+  # Дамп снимаем ОТСЮДА правами приложения через tailnet: root на проде не
+  # нужен, а 335 МБ приезжают за ~40 с (замер 24.09.2026). Раньше здесь был
+  # ssh + sudo -u postgres, и шаг упирался в пароль viewer.
+  say "снимаю дамп прод-базы (правами приложения, по tailnet)"
+  set -a; . "$HOME_DIR/.env"; set +a
+  PROD_URL="${PROD_DATABASE_URL:-${DATABASE_URL/postgresql+psycopg/postgresql}}"
+  pg_dump "$PROD_URL" -Fc -Z6 -f "$DUMP_DIR/$dump" || die "дамп не снялся"
+  say "дамп: $(du -h "$DUMP_DIR/$dump" | cut -f1) за $(( $(date +%s) - t0 )) с"
 
   "${COMPOSE[@]}" up -d postgres || die "база не поднялась"
   for _ in $(seq 1 60); do "${COMPOSE[@]}" exec -T postgres pg_isready -U "${POSTGRES_USER:-saturday_runs}" >/dev/null 2>&1 && break; sleep 1; done

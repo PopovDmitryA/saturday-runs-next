@@ -56,6 +56,9 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState("");
+  // Что именно сейчас разбирается: без этого человек выбирал файл и сидел
+  // перед неизменившимся окном, не понимая, идёт ли что-нибудь.
+  const [pending, setPending] = useState<string | null>(null);
 
   useEffect(() => {
     if (!run.track_id) {
@@ -100,6 +103,7 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
         setError((cause as Error).message);
       } finally {
         setBusy(false);
+        setPending(null);
       }
     },
     [onChanged],
@@ -107,6 +111,7 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
 
   const handleFile = (file: File | undefined) => {
     if (file) {
+      setPending(file.name);
       void accept(uploadRunTrack(file));
     }
   };
@@ -114,6 +119,7 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
   const handleLink = () => {
     const value = url.trim();
     if (value) {
+      setPending("ссылку на активность");
       void accept(importRunTrackLink(value));
     }
   };
@@ -157,7 +163,9 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
   return (
     <DetailModal open title={title} onClose={onClose}>
       {loading && <p className="muted">Загружаем трек…</p>}
-      {error && <p className="form-error">{error}</p>}
+      {/* Ошибку показываем рядом с самим действием: наверху модалки её
+          проглядывали, а при загрузке взгляд остаётся на кнопке выбора. */}
+      {error && track && <p className="form-error">{error}</p>}
 
       {!loading && !track && (
         <div className="run-track-upload">
@@ -173,8 +181,24 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
               disabled={busy}
               onChange={(event) => handleFile(event.target.files?.[0])}
             />
-            <span>Выбрать файл</span>
+            <span>{busy ? "Разбираем…" : "Выбрать файл"}</span>
           </label>
+
+          {busy && pending && (
+            <p className="run-track-progress">
+              <span className="run-track-spinner" aria-hidden />
+              Разбираем {pending} — это занимает несколько секунд.
+            </p>
+          )}
+
+          {error && (
+            <div className="form-error">
+              <b>Трек не загрузился.</b> {error}
+              <span className="run-track-error-hint">
+                Выберите другой файл или приложите ссылку на активность — окно можно не закрывать.
+              </span>
+            </div>
+          )}
           <div className="run-track-link">
             <input
               type="url"
