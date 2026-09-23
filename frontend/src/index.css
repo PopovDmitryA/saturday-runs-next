@@ -18124,9 +18124,32 @@ input.participant-name-search-input:focus {
   color: inherit;
 }
 
+/* «О чём присылать»: список видов — не диалог с вопросом, а форма, поэтому
+   панель шире обычной модалки и текст выровнен по левому краю (общий
+   ConfirmModal центрирует и сужает — здесь это делало из списка столбик). */
+.modal-panel:has(.notify-kind-list) {
+  width: min(100%, 34rem);
+  text-align: left;
+}
+
+.modal-panel:has(.notify-kind-list) .modal-title,
+.modal-panel:has(.notify-kind-list) .modal-body {
+  text-align: left;
+}
+
+/* Кнопок две только у вопроса «да/нет»; здесь настройки применяются сразу,
+   и «Закрыть» с «Готово» делали бы одно и то же. */
+.modal-panel:has(.notify-kind-list) .modal-actions .btn.secondary {
+  display: none;
+}
+
 /* «О чём присылать»: у «Отмен стартов» — выбор систем под строкой вида. */
 .notify-kind-row {
   flex-wrap: wrap;
+}
+
+.notify-kind-list .settings-platform-info {
+  flex: 1 1 14rem;
 }
 
 .notify-kind-extra {
