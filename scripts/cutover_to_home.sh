@@ -101,6 +101,14 @@ db)
   "${COMPOSE[@]}" up -d postgres || die "база не поднялась"
   for _ in $(seq 1 60); do "${COMPOSE[@]}" exec -T postgres pg_isready -U "${POSTGRES_USER:-saturday_runs}" >/dev/null 2>&1 && break; sleep 1; done
 
+  # База пересоздаётся: на репетициях том уже наполнен, и pg_restore поверх
+  # существующих строк сыплет конфликтами первичных ключей. Дома в этот момент
+  # только копия прода — терять нечего.
+  "${COMPOSE[@]}" exec -T postgres psql -U "${POSTGRES_USER:-saturday_runs}" -d postgres \
+    -c "drop database if exists ${POSTGRES_DB:-saturday_runs_lk}" >/dev/null || die "не удалось снести старую копию"
+  "${COMPOSE[@]}" exec -T postgres psql -U "${POSTGRES_USER:-saturday_runs}" -d postgres \
+    -c "create database ${POSTGRES_DB:-saturday_runs_lk} owner ${POSTGRES_USER:-saturday_runs}" >/dev/null || die "не создалась база"
+
   # Роль отчётов создаём ДО восстановления: иначе 40 GRANT'ов отваливаются и
   # внутренний отчётный доступ приезжает без прав (проверено на репетиции).
   "${COMPOSE[@]}" exec -T postgres psql -U "${POSTGRES_USER:-saturday_runs}" -d "${POSTGRES_DB:-saturday_runs_lk}" \
