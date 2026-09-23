@@ -58,6 +58,20 @@ ELEVATION_NOISE_M = 1.0
 GRADE_FLAT_PERCENT = 1.0
 # Отдельный подъём трассы: короче этого не показываем как «главный».
 MIN_CLIMB_M = 50.0
+# Подъём считаем подъёмом, только если он действительно поднимает: иначе на
+# равнине «главным подъёмом» объявлялся весь трек. Иваново 12.09.2026 —
+# 3463 м с уклоном 0,1%, то есть 3,4 м набора за три с половиной километра.
+MIN_CLIMB_RISE_M = 5.0
+# Уклон держим низким намеренно: на пятёрке подъём в 20 м, растянутый на два с
+# половиной километра, — это 0,8%, и он настоящий. Отсекаем только то, что
+# вообще не поднимается.
+MIN_CLIMB_GRADE_PERCENT = 0.5
+# Насколько близко должны сойтись старт и финиш, чтобы считать трассу
+# замкнутой: у субботних пятёрок финишный створ рядом со стартовым.
+LOOP_CLOSURE_M = 120.0
+# Больше этого расхождение на замкнутой трассе — уже не дрейф барометра,
+# а что-то другое (склейка двух записей, сбой прибора). Не трогаем.
+MAX_DRIFT_M = 30.0
 
 
 def haversine(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -132,7 +146,15 @@ def compute_metrics(
     metrics.update(_laps(smoothed, cumulative, total_m))
     metrics.update(_speed_marks(smoothed, cumulative, speeds, total_m))
     if elevations:
-        metrics.update(_elevation(cumulative, elevations, total_m))
+        corrected = _drift_corrected(smoothed, elevations, metrics["start_end_gap_m"])
+        # Сколько именно уползло: показываем это в разборе трека, иначе
+        # поправка выглядела бы подгонкой цифр без объяснения.
+        if corrected is not elevations:
+            last = elevations[-1]
+            fixed = corrected[-1]
+            if last is not None and fixed is not None:
+                metrics["elevation_drift_m"] = round(last - fixed, 1)
+        metrics.update(_elevation(cumulative, corrected, total_m))
     return metrics
 
 
@@ -390,6 +412,44 @@ def _speed_marks(
     return marks
 
 
+def _drift_corrected(
+    points: list[tuple[float, float, float]],
+    elevations: list[float | None],
+    start_end_gap_m: float,
+) -> list[float | None]:
+    """Убирает уползание барометра у трассы, которая финиширует там же, где стартовала.
+
+    Давление за полчаса меняется, и прибор честно показывает это высотой: в
+    Иваново 12.09.2026 старт и финиш — одна и та же точка в пяти метрах друг
+    от друга, а высота разошлась на 3 метра при всём рельефе трассы в 5 м.
+    Маятниковая трасса из-за этого переставала быть зеркальной: путь «туда» и
+    путь «обратно» расходились по высоте до 3,6 м.
+
+    Раз физически это одна точка, вся разница — ошибка прибора. Считаем её
+    равномерной по времени и вычитаем. После поправки расхождение «туда» и
+    «обратно» падает до 1,7 м — остаётся уже собственный шум барометра.
+    """
+    if start_end_gap_m > LOOP_CLOSURE_M:
+        return elevations
+
+    measured = [index for index, value in enumerate(elevations) if value is not None]
+    if len(measured) < 2:
+        return elevations
+
+    first, last = measured[0], measured[-1]
+    seconds = points[last][2] - points[first][2]
+    drift = (elevations[last] or 0.0) - (elevations[first] or 0.0)
+    if seconds <= 0 or abs(drift) > MAX_DRIFT_M:
+        return elevations
+
+    rate = drift / seconds
+    base = points[first][2]
+    return [
+        None if value is None else value - rate * (points[index][2] - base)
+        for index, value in enumerate(elevations)
+    ]
+
+
 def _elevation(cumulative: list[float], elevations: list[float | None], total_m: float) -> dict[str, Any]:
     """Профиль трассы: высота по километражу плюс подъёмы, спуски и главная горка.
 
@@ -478,7 +538,11 @@ def _main_climb(profile: list[tuple[float, float]]) -> dict[str, Any]:
         nonlocal best
         length = profile[to_index][0] - profile[from_index][0]
         rise = profile[to_index][1] - profile[from_index][1]
-        if length >= MIN_CLIMB_M and rise > best.get("climb_rise_m", 0):
+        if length < MIN_CLIMB_M or rise < MIN_CLIMB_RISE_M:
+            return
+        if rise / length * 100 < MIN_CLIMB_GRADE_PERCENT:
+            return
+        if rise > best.get("climb_rise_m", 0):
             best = {
                 "climb_from_m": round(profile[from_index][0]),
                 "climb_length_m": round(length),

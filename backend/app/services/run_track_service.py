@@ -207,13 +207,36 @@ def _protocol_delta(metrics: dict[str, Any], run_result: RunResult | None) -> in
 
 
 def find_existing(db: Session, user_id: UUID, source: str, source_ref: str) -> RunTrack | None:
+    """Сохранённый трек того же источника. Черновики предпросмотра не в счёт.
+
+    Иначе брошенный предпросмотр («отменить» не нажали, закрыли вкладку)
+    навсегда блокировал бы повторную загрузку того же файла.
+    """
     return db.scalar(
         select(RunTrack).where(
             RunTrack.user_id == user_id,
             RunTrack.source == source,
             RunTrack.source_ref == source_ref,
+            RunTrack.status == "ok",
         )
     )
+
+
+def drop_own_previews(db: Session, user_id: UUID) -> None:
+    """Убирает брошенные черновики участника перед новой загрузкой.
+
+    Черновики админского импорта не трогаем: у них заполнен import_batch_id,
+    и распоряжается ими админка, а не кабинет.
+    """
+    for track in db.scalars(
+        select(RunTrack).where(
+            RunTrack.user_id == user_id,
+            RunTrack.status == "preview",
+            RunTrack.import_batch_id.is_(None),
+        )
+    ):
+        db.delete(track)
+    db.flush()
 
 
 def list_tracks(db: Session, user_id: UUID, *, limit: int = 100) -> list[RunTrack]:
@@ -228,18 +251,30 @@ def list_tracks(db: Session, user_id: UUID, *, limit: int = 100) -> list[RunTrac
     )
 
 
-def get_track(db: Session, user_id: UUID, track_id: UUID) -> RunTrack | None:
+def get_track(
+    db: Session,
+    user_id: UUID,
+    track_id: UUID,
+    *,
+    include_preview: bool = False,
+) -> RunTrack | None:
+    """Трек участника. По умолчанию — только сохранённый.
+
+    include_preview нужен там, где человек работает со своим черновиком:
+    смотрит разбор перед сохранением, сохраняет его или отменяет.
+    """
+    statuses = ["ok", "preview"] if include_preview else ["ok"]
     return db.scalar(
         select(RunTrack).where(
             RunTrack.id == track_id,
             RunTrack.user_id == user_id,
-            RunTrack.status == "ok",
+            RunTrack.status.in_(statuses),
         )
     )
 
 
 def delete_track(db: Session, user_id: UUID, track_id: UUID) -> bool:
-    track = get_track(db, user_id, track_id)
+    track = get_track(db, user_id, track_id, include_preview=True)
     if track is None:
         return False
     db.delete(track)

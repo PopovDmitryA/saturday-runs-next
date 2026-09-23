@@ -447,6 +447,8 @@ export type RunTrackSummary = {
   sample_interval_sec: number | null;
   quality_class: string | null;
   protocol_delta_sec: number | null;
+  // "preview" — черновик: разбор показан, но «Сохранить» ещё не нажато.
+  status?: string;
   // Годится ли трек как измерение трассы: брак не влияет на личный разбор.
   is_course_eligible: boolean;
   exclusion_reason: string | null;
@@ -484,6 +486,8 @@ export type RunTrackMetrics = {
   // Профиль трассы: [метры от старта, высота]. Есть только у файлов с высотами.
   elevation_profile?: [number, number][];
   elevation_gain_profile_m?: number;
+  // На сколько уползла высота барометра за пробежку: поправка снята.
+  elevation_drift_m?: number;
   elevation_loss_profile_m?: number;
   elevation_min_m?: number;
   elevation_max_m?: number;
@@ -2358,6 +2362,12 @@ export async function importRunTrackLink(url: string): Promise<RunTrackDetail> {
     method: "POST",
     body: JSON.stringify({ url }),
   });
+}
+
+// «Сохранить»: черновик становится треком пробежки в профиле. До этого
+// приложенный файл виден только тому, кто его приложил.
+export async function confirmRunTrack(trackId: string): Promise<RunTrackDetail> {
+  return apiFetch<RunTrackDetail>(`/runs/tracks/${trackId}/confirm`, { method: "POST" });
 }
 
 export async function deleteRunTrack(trackId: string): Promise<void> {

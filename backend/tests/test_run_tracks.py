@@ -435,3 +435,50 @@ def test_footprint_measures_the_patch_a_lap_is_wound_on() -> None:
     assert 290 <= box["box_long_m"] <= 310
     # Площадь — произведение сторон, на ней и строится рейтинг.
     assert abs(box["box_area_m2"] - box["box_short_m"] * box["box_long_m"]) < 500
+
+
+def test_barometer_drift_is_removed_on_a_course_that_returns_to_the_start() -> None:
+    # Иваново 12.09.2026: маятниковая трасса, старт и финиш в пяти метрах друг
+    # от друга, а высота за 22 минуты уползла на 3 м при рельефе в 5 м. Из-за
+    # этого «туда» и «обратно» переставали совпадать.
+    from app.services.track_metrics import _drift_corrected
+
+    points = [(56.0 + i * 0.00001, 40.0, float(i)) for i in range(100)]
+    # Ровная трасса плюс равномерный дрейф в 3 метра за всю запись.
+    elevations: list[float | None] = [100.0 + 3.0 * i / 99 for i in range(100)]
+
+    fixed = _drift_corrected(points, elevations, start_end_gap_m=5.7)
+
+    assert fixed[0] == pytest.approx(100.0, abs=0.01)
+    assert fixed[-1] == pytest.approx(100.0, abs=0.01)
+    assert max(fixed) - min(fixed) < 0.05  # type: ignore[type-var]
+
+
+def test_drift_is_not_touched_when_start_and_finish_are_different_places() -> None:
+    # Трасса из точки в точку: разница высот там настоящая, править нельзя.
+    from app.services.track_metrics import _drift_corrected
+
+    points = [(56.0 + i * 0.0001, 40.0, float(i)) for i in range(100)]
+    elevations: list[float | None] = [100.0 + 3.0 * i / 99 for i in range(100)]
+
+    assert _drift_corrected(points, elevations, start_end_gap_m=900.0) is elevations
+
+
+def test_flat_course_has_no_main_climb() -> None:
+    # До правки на равнине «главным подъёмом» объявлялся весь трек: Иваново —
+    # 3463 м с уклоном 0,1%. Это не подъём, а шум барометра.
+    from app.services.track_metrics import _main_climb
+
+    profile = [(float(i * 25), 100.0 + i * 0.001) for i in range(200)]
+    assert _main_climb(profile) == {}
+
+
+def test_real_climb_is_still_found() -> None:
+    from app.services.track_metrics import _main_climb
+
+    # Первые 800 м поднимаемся на 20 м (уклон 2,5%), дальше ровно.
+    profile = [(float(i * 25), 100.0 + min(i, 32) * 0.625) for i in range(200)]
+    climb = _main_climb(profile)
+
+    assert climb["climb_rise_m"] == pytest.approx(20.0, abs=0.5)
+    assert climb["climb_grade_percent"] == pytest.approx(2.5, abs=0.2)

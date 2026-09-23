@@ -46,6 +46,9 @@ class TrackSummaryResponse(BaseModel):
     exclusion_reason: str | None = None
     exclusion_note: str | None = None
     start_distance_m: float | None = None
+    # preview — черновик: человек посмотрел разбор, но ещё не нажал
+    # «Сохранить». В профиле и в паспорте трассы такой трек не участвует.
+    status: str = "ok"
     created_at: datetime
 
 

@@ -3,6 +3,7 @@ import { DetailModal } from "../../components/DetailModal";
 import { ElevationProfile } from "./ElevationProfile";
 import { RunTrackMap } from "./RunTrackMap";
 import {
+  confirmRunTrack,
   deleteRunTrack,
   getRunTrack,
   importRunTrackLink,
@@ -90,7 +91,11 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
       try {
         const detail = await action;
         setTrack(detail);
-        onChanged(detail.id);
+        // Черновик в таблицу пробежек не попадает: значок появится только
+        // после «Сохранить».
+        if (detail.status !== "preview") {
+          onChanged(detail.id);
+        }
       } catch (cause) {
         setError((cause as Error).message);
       } finally {
@@ -113,6 +118,23 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
     }
   };
 
+  const handleConfirm = async () => {
+    if (!track) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await confirmRunTrack(track.id);
+      setTrack(saved);
+      onChanged(saved.id);
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!track) {
       return;
@@ -129,6 +151,7 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
     }
   };
 
+  const isDraft = track?.status === "preview";
   const title = `Трек пробежки · ${formatDateLong(run.event_date)}`;
 
   return (
@@ -259,11 +282,38 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
             )}
           </ul>
 
-          <div className="run-track-actions">
-            <button type="button" className="btn btn-danger" disabled={busy} onClick={() => void handleDelete()}>
-              Удалить трек
-            </button>
-          </div>
+          {isDraft ? (
+            <div className="run-track-actions run-track-actions-draft">
+              <p className="run-track-draft-note">
+                Трек пока никуда не записан — это разбор приложенного файла. Сохраните, чтобы он появился
+                в вашем профиле и пошёл в измерения трассы.
+              </p>
+              <div className="run-track-actions-row">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={busy}
+                  onClick={() => void handleConfirm()}
+                >
+                  Сохранить трек
+                </button>
+                <button type="button" className="btn" disabled={busy} onClick={() => void handleDelete()}>
+                  Отменить
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="run-track-actions">
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={busy}
+                onClick={() => void handleDelete()}
+              >
+                Удалить трек
+              </button>
+            </div>
+          )}
         </div>
       )}
     </DetailModal>

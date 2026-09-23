@@ -18061,6 +18061,59 @@ input.participant-name-search-input:focus {
   font-size: 0.82rem;
 }
 
+/* Образец заливки перед подписью: связывает цветную полосу на графике с
+   текстом «Закрашен главный подъём». */
+.run-track-elevation-note .climb-legend {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 0.35em;
+  vertical-align: -0.08em;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent-indigo-text) 22%, transparent);
+}
+
+/* Цифры под курсором. Подложка нужна: график тёмный, текст без неё теряется. */
+.run-track-elevation .hover-box rect {
+  fill: var(--surface-card, var(--bg));
+  stroke: var(--border-soft);
+  stroke-width: 1;
+  opacity: 0.96;
+}
+
+.run-track-elevation .hover-box text {
+  fill: var(--text-strong, var(--text));
+  font-size: 11px;
+  font-weight: 600;
+  /* Подсказка ездит под курсором — перехватывать его она не должна. */
+  pointer-events: none;
+}
+
+.run-track-elevation .hover-box .hover-sub {
+  fill: var(--text-faint);
+  font-weight: 500;
+  font-size: 10px;
+}
+
+/* Черновик трека: пока не сохранён, кнопки стоят парой с пояснением. */
+.run-track-actions-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.run-track-draft-note {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+}
+
+.run-track-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 
 /* Локация в рейтинге трасс есть, а треков для неё пока нет. */
 .lb-table tr.lb-row-muted td {
