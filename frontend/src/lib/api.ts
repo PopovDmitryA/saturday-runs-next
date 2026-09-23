@@ -698,10 +698,21 @@ function extractApiErrorDetail(body: unknown, status: number, rawText: string): 
     }
   }
   const trimmed = rawText.trim();
-  if (trimmed) {
-    return sanitizeApiErrorMessage(trimmed);
+  // Ответ мог прийти не от приложения, а от nginx: при слишком большом теле
+  // запроса или падении апстрима он отдаёт свою HTML-страницу. Показывать её
+  // целиком бессмысленно — 23.09.2026 админ при загрузке архива треков увидел
+  // в интерфейсе разметку «413 Request Entity Too Large» вместе с комментариями
+  // для MSIE. Разбираем такие ответы по коду и говорим человеческим языком.
+  if (!trimmed || /^\s*<(!doctype|html)/i.test(trimmed)) {
+    if (status === 413) {
+      return "Файл слишком большой — сервер не принял запрос. Разбейте архив на части.";
+    }
+    if (status === 502 || status === 503 || status === 504) {
+      return "Сервер сейчас недоступен. Попробуйте через минуту.";
+    }
+    return `Не удалось выполнить запрос (HTTP ${status})`;
   }
-  return `Не удалось выполнить запрос (HTTP ${status})`;
+  return sanitizeApiErrorMessage(trimmed);
 }
 
 // Тот же разбор detail, что у apiFetch, но для «сырых» fetch-запросов

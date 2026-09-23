@@ -34,7 +34,10 @@ from app.services.track_parsing import TrackParseError, parse_garmin_link, parse
 STAGING_ROOT = Path("/tmp/run5k_track_imports")
 TRACK_SUFFIXES = (".fit", ".gpx", ".tcx")
 # Архив выгрузки Garmin за годы — это десятки мегабайт и сотни файлов.
-MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+# Тот же потолок стоит на nginx (location /api/admin/track-imports в
+# nginx/conf.d/default.conf): без него запрос не доходил до приложения и
+# админ видел HTML-страницу «413 Request Entity Too Large» вместо ошибки.
+MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_FILES_PER_BATCH = 2000
 # Вложенные архивы: выгрузка аккаунта кладёт zip внутрь zip.
 MAX_ARCHIVE_DEPTH = 3
