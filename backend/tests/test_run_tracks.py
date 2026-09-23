@@ -7,6 +7,7 @@ import math
 
 import pytest
 
+from app.services.admin_track_import_service import _suggestions
 from app.services.track_metrics import assess_quality, compute_metrics
 from app.services.track_parsing import (
     TrackParseError,
@@ -315,3 +316,53 @@ def test_geometry_fingerprint_tells_same_course_from_another_one() -> None:
     base_cells = _cells([[lat, lon] for lat, lon, _ in base])
     assert similarity(base_cells, _cells([[lat, lon] for lat, lon, _ in same])) > 0.8
     assert similarity(base_cells, _cells([[lat, lon] for lat, lon, _ in other])) == 0.0
+
+
+# --- что предлагаем взять при импорте из админки -----------------------------
+
+
+class _FakeTrack:
+    """Минимум полей RunTrack, на которые смотрит отбор."""
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        run_result_id: object | None,
+        distance_m: float,
+        protocol_delta_sec: int | None = 0,
+        is_course_eligible: bool = True,
+    ) -> None:
+        self.id = name
+        self.run_result_id = run_result_id
+        self.distance_m = distance_m
+        self.protocol_delta_sec = protocol_delta_sec
+        self.is_course_eligible = is_course_eligible
+
+
+def test_import_suggests_everything_except_clear_outliers() -> None:
+    # Случай Дмитрия 03.06.2023: к пробежке в Дружбе приехали два трека —
+    # настоящая пятёрка и обрывок на 370 метров. Галочка должна остаться
+    # только у пятёрки, и разбираться руками с этим админ не обязан.
+    good = _FakeTrack("good", run_result_id="run-1", distance_m=5010.0)
+    scrap = _FakeTrack("scrap", run_result_id="run-1", distance_m=370.0, protocol_delta_sec=-1384)
+    weekday = _FakeTrack("weekday", run_result_id=None, distance_m=6610.0)
+    verdict = _suggestions([good, scrap, weekday])
+
+    assert verdict["good"] == (True, None)
+    assert verdict["scrap"][0] is False
+    assert "обрывок" in verdict["scrap"][1]
+    assert verdict["weekday"][0] is False
+    assert "протокол" in verdict["weekday"][1]
+
+
+def test_import_keeps_the_better_of_two_tracks_for_one_run() -> None:
+    # Оба трека похожи на пятёрку — тогда выигрывает тот, что ближе к
+    # протоколу, а второй остаётся в списке со снятой галочкой.
+    close = _FakeTrack("close", run_result_id="run-2", distance_m=5020.0, protocol_delta_sec=2)
+    far = _FakeTrack("far", run_result_id="run-2", distance_m=5040.0, protocol_delta_sec=40)
+    verdict = _suggestions([far, close])
+
+    assert verdict["close"] == (True, None)
+    assert verdict["far"][0] is False
+    assert "лучше" in verdict["far"][1]

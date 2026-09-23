@@ -3987,6 +3987,9 @@ export type TrackImportItem = {
   is_course_eligible: boolean;
   exclusion_reason: string | null;
   exclusion_note: string | null;
+  // Предлагает ли сервер взять этот трек по умолчанию и почему нет.
+  suggested: boolean;
+  suggestion_note: string | null;
 };
 
 export type TrackImportBatch = {
@@ -4032,10 +4035,17 @@ export async function createTrackImport(
   return (await response.json()) as TrackImportBatchDetail;
 }
 
+// Разбор порции — единственный заведомо долгий запрос админки: 25 файлов
+// FIT с расчётом метрик занимают десятки секунд, а на общем таймауте в 20 с
+// страница сдавалась посреди архива, хотя сервер продолжал работать.
+const TRACK_IMPORT_PROCESS_TIMEOUT_MS = 180_000;
+
 export function processTrackImport(batchId: string, limit = 25) {
-  return apiFetch<TrackImportBatchDetail>(`/admin/track-imports/${batchId}/process?limit=${limit}`, {
-    method: "POST",
-  });
+  return apiFetch<TrackImportBatchDetail>(
+    `/admin/track-imports/${batchId}/process?limit=${limit}`,
+    { method: "POST" },
+    { timeoutMs: TRACK_IMPORT_PROCESS_TIMEOUT_MS },
+  );
 }
 
 export function getTrackImport(batchId: string) {
@@ -4046,8 +4056,14 @@ export function listTrackImports(limit = 20) {
   return apiFetch<{ items: TrackImportBatch[] }>(`/admin/track-imports?limit=${limit}`);
 }
 
-export function applyTrackImport(batchId: string) {
-  return apiFetch<TrackImportBatchDetail>(`/admin/track-imports/${batchId}/apply`, { method: "POST" });
+// trackIds — что админ отметил галочками; не переданное удаляется вместе
+// с сессией. undefined означает «взять всё разобранное».
+export function applyTrackImport(batchId: string, trackIds?: string[]) {
+  return apiFetch<TrackImportBatchDetail>(
+    `/admin/track-imports/${batchId}/apply`,
+    { method: "POST", body: JSON.stringify({ track_ids: trackIds ?? null }) },
+    { timeoutMs: TRACK_IMPORT_PROCESS_TIMEOUT_MS },
+  );
 }
 
 export function discardTrackImport(batchId: string) {

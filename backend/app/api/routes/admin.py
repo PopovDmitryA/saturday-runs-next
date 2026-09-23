@@ -43,6 +43,7 @@ from app.schemas.admin_stats import (
 )
 from app.schemas.admin_sync_runs import AdminSyncRunsResponse
 from app.schemas.admin_track_import import (
+    TrackImportApplyRequest,
     TrackImportBatch,
     TrackImportBatchDetail,
     TrackImportItem,
@@ -1217,13 +1218,14 @@ def admin_track_import_apply(
     batch_id: UUID,
     db: Annotated[Session, Depends(get_db)],
     _admin: Annotated[User, Depends(get_current_admin_user)],
+    payload: TrackImportApplyRequest | None = None,
 ) -> TrackImportBatchDetail:
-    """Подтверждение: треки появляются в кабинете участника."""
+    """Подтверждение: отмеченные треки появляются в кабинете участника."""
     batch = track_import.get_batch(db, batch_id)
     if batch is None:
         raise HTTPException(status_code=404, detail="Загрузка не найдена")
     try:
-        track_import.apply_batch(db, batch)
+        track_import.apply_batch(db, batch, track_ids=payload.track_ids if payload else None)
     except track_import.TrackImportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
