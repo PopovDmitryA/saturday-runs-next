@@ -3346,6 +3346,69 @@ button.badge-platform-btn:hover {
   margin: 0;
 }
 
+/* Класса .form-error в стилях не было вовсе: восемь мест по сайту рисовали
+   ошибку обычным серым абзацем, и человек не понимал, что что-то произошло
+   (поймано 23.09.2026 на загрузке трека без координат). Выглядит как
+   .profile-form-error, но с пометкой «Ошибка» — блок часто стоит особняком,
+   вне формы, и без неё читается как обычная подпись. */
+.form-error {
+  margin: 0.5rem 0 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  background: var(--tint-red-bg);
+  border: 1px solid var(--tint-red-border);
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--tint-red-text);
+}
+
+.form-error::before {
+  content: "⚠ ";
+  font-weight: 700;
+}
+
+/* Подсказка «что делать» второй строкой внутри той же красной плашки. */
+.run-track-error-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+/* Разбор файла идёт на сервере и занимает секунды: без этой строки человек
+   выбирал файл и смотрел на неизменившееся окно. */
+.run-track-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.5rem 0 0;
+  color: var(--text-faint);
+  font-size: 0.88rem;
+}
+
+.run-track-spinner {
+  width: 0.9em;
+  height: 0.9em;
+  border: 2px solid var(--border-soft);
+  border-top-color: var(--accent-indigo-text);
+  border-radius: 50%;
+  animation: run-track-spin 0.8s linear infinite;
+}
+
+@keyframes run-track-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Уважаем системную настройку «меньше движения»: вместо вращения — мигание. */
+@media (prefers-reduced-motion: reduce) {
+  .run-track-spinner {
+    animation: none;
+    border-top-color: var(--border-soft);
+  }
+}
+
 .input-invalid {
   border-color: #f87171;
 }
