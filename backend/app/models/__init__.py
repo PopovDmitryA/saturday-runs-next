@@ -2060,6 +2060,11 @@ class UserNotificationPrefs(Base):
     primary_channel: Mapped[str | None] = mapped_column(String(16))
     # {код вида: bool}; отсутствующий ключ = умолчание реестра.
     kinds: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    # Системы, об отменах стартов в которых сообщать (коды платформ).
+    # Пустой список — все системы (миграция 101).
+    cancellation_platforms: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
     # Снимки сканера активности; NULL — снимка ещё не было, первый скан
     # только запоминает и молчит.
     challenge_levels: Mapped[dict[str, Any] | None] = mapped_column(JSONB)

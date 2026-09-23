@@ -39,6 +39,7 @@ from app.notification_kinds import KIND_BY_CODE, NOTIFICATION_KINDS, kind_enable
 from app.notification_markup import to_email_html, to_telegram_html
 from app.services import notification_channels_service as channels
 from app.services.notification_senders import SENDERS, OutgoingMessage, send_telegram_html
+from app.services.platform_titles import PLATFORM_TITLES
 
 logger = logging.getLogger(__name__)
 
@@ -160,12 +161,20 @@ def update_prefs(
     *,
     primary_channel: str | None | object = ...,
     kinds: dict[str, bool] | None = None,
+    cancellation_platforms: list[str] | None = None,
 ) -> UserNotificationPrefs:
     prefs = touch_settings(db, user_id)
     if primary_channel is not ...:
         if primary_channel is not None and primary_channel not in channels.CHANNEL_ORDER:
             raise ValueError("Неизвестный канал")
         prefs.primary_channel = primary_channel
+    if cancellation_platforms is not None:
+        unknown = [code for code in cancellation_platforms if code not in PLATFORM_TITLES]
+        if unknown:
+            raise ValueError("Неизвестная система")
+        # Порядок держим канонический (5 вёрст, S95, parkrun, RunPark), дубли
+        # снимаем: список едет в интерфейс как есть.
+        prefs.cancellation_platforms = [c for c in PLATFORM_TITLES if c in set(cancellation_platforms)]
     if kinds:
         merged = dict(prefs.kinds or {})
         for code, value in kinds.items():
@@ -199,22 +208,59 @@ def settings_state(db: Session, user: User) -> dict[str, Any]:
     return {
         "enabled": channels.is_enabled(db, user.id),
         "primary_channel": prefs.primary_channel if prefs is not None else None,
+        "cancellation_platforms": list(prefs.cancellation_platforms or []) if prefs is not None else [],
         "channels": channels.channels_state(db, user),
         "kinds": kinds_state(prefs),
     }
 
 
 def nudge_state(db: Session, user: User) -> dict[str, Any]:
-    """Показывать ли баннер «Включите уведомления» и что даст кнопка.
+    """Что показать человеку: призыв включить уведомления или тревогу о том,
+    что включённые не доходят.
 
-    Показываем, пока уведомления выключены, баннер не закрывали и есть хоть
-    одна привязка, из которой канал можно сделать.
+    `kind`:
+      * `enable` — уведомления выключены, есть привязка, из которой можно
+        сделать канал, и призыв ещё не закрывали навсегда;
+      * `fix_delivery` — уведомления включены, но НИ ОДИН включённый канал не
+        может доставить (бот заблокирован, сообщество без разрешения). Это
+        не реклама, а поломка, поэтому «больше не напоминать» тут не слушаем;
+      * `null` — всё в порядке.
     """
     prefs = get_prefs(db, user.id)
     enabled = channels.is_enabled(db, user.id)
     dismissed = prefs is not None and prefs.nudge_dismissed_at is not None
     linked = [c for c in channels.CHANNEL_ORDER if channels._address_for(db, user, c)]
-    return {"show": not enabled and not dismissed and bool(linked), "enabled": enabled, "linked_channels": linked}
+
+    if not enabled:
+        kind = "enable" if (linked and not dismissed) else None
+        return {"kind": kind, "show": kind is not None, "enabled": False, "linked_channels": linked, "broken": []}
+
+    state = channels.channels_state(db, user)
+    on = [item for item in state if item["enabled"]]
+    broken = [item for item in on if item["deliverable"] is False]
+    # Хотя бы один рабочий канал — сообщение дойдёт, тревожить незачем.
+    if not broken or len(broken) < len(on):
+        return {"kind": None, "show": False, "enabled": True, "linked_channels": linked, "broken": []}
+    for item in broken:
+        if item["channel"] == channels.CHANNEL_TELEGRAM:
+            # Персональная ссылка: по ней бот и спросит разрешение, и вернёт
+            # актуальный chat_id, если человек пишет боту с другого аккаунта.
+            item["bot_url"] = channels.telegram_connect_url(user) or item["bot_url"]
+    return {
+        "kind": "fix_delivery",
+        "show": True,
+        "enabled": True,
+        "linked_channels": linked,
+        "broken": [
+            {
+                "channel": item["channel"],
+                "title": item["title"],
+                "problem": item["problem"],
+                "action_url": item["bot_url"] or item["allow_url"],
+            }
+            for item in broken
+        ],
+    }
 
 
 def dismiss_nudge(db: Session, user_id: UUID) -> None:

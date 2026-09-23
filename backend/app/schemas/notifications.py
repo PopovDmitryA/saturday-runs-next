@@ -38,6 +38,8 @@ class NotificationKindState(BaseModel):
 class NotificationSettingsState(BaseModel):
     enabled: bool
     primary_channel: str | None = None
+    # Системы для «Отмен стартов»: пустой список = все.
+    cancellation_platforms: list[str] = Field(default_factory=list)
     channels: list[NotificationChannelState] = Field(default_factory=list)
     kinds: list[NotificationKindState] = Field(default_factory=list)
 
@@ -46,6 +48,7 @@ class NotificationSettingsUpdate(BaseModel):
     # Отсутствие поля — не менять; null — сбросить на порядок по умолчанию.
     primary_channel: str | None = None
     kinds: dict[str, bool] | None = None
+    cancellation_platforms: list[str] | None = None
     model_config = {"extra": "forbid"}
 
 
@@ -67,11 +70,21 @@ class NotificationTestResponse(BaseModel):
     channels: list[str] = Field(default_factory=list)
 
 
+class NotificationBrokenChannel(BaseModel):
+    channel: str
+    title: str
+    problem: str | None = None
+    # Куда идти разрешать: бот или диалог с сообществом.
+    action_url: str | None = None
+
+
 class NotificationNudgeState(BaseModel):
-    # Показывать ли баннер «Включите уведомления».
+    # enable — призыв включить; fix_delivery — включено, но не доходит; null — тихо.
+    kind: str | None = None
     show: bool
     enabled: bool
     linked_channels: list[str] = Field(default_factory=list)
+    broken: list[NotificationBrokenChannel] = Field(default_factory=list)
 
 
 class NotificationEnableResponse(BaseModel):

@@ -3630,6 +3630,8 @@ export type NotificationKindState = {
 export type NotificationSettingsState = {
   enabled: boolean;
   primary_channel: NotificationChannelCode | null;
+  // Системы для «Отмен стартов»; пустой список = все.
+  cancellation_platforms: string[];
   channels: NotificationChannelState[];
   kinds: NotificationKindState[];
 };
@@ -3637,12 +3639,23 @@ export type NotificationSettingsState = {
 export type NotificationSettingsUpdate = {
   primary_channel?: NotificationChannelCode | null;
   kinds?: Record<string, boolean>;
+  cancellation_platforms?: string[];
+};
+
+export type NotificationBrokenChannel = {
+  channel: NotificationChannelCode;
+  title: string;
+  problem: string | null;
+  action_url: string | null;
 };
 
 export type NotificationNudgeState = {
+  // enable — призыв включить; fix_delivery — включено, но не доходит.
+  kind: "enable" | "fix_delivery" | null;
   show: boolean;
   enabled: boolean;
   linked_channels: NotificationChannelCode[];
+  broken: NotificationBrokenChannel[];
 };
 
 export function getNotificationSettings() {
