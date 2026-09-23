@@ -47,10 +47,14 @@ class OutgoingMessage:
     html: str | None = None
 
     def telegram_html(self) -> str:
+        """Подвал ведёт в настройки, а не на мгновенную отписку: человеку чаще
+        нужно донастроить, а не отрезать всё сразу — выключить вид там же в
+        два клика. Одноразовая ссылка отписки остаётся в письмах, где её
+        требуют почтовые провайдеры."""
         parts = [f"<b>{to_telegram_html(self.title)}</b>", "", to_telegram_html(self.text)]
         if self.url:
             parts += ["", f'🔗 <a href="{self.url}">{to_telegram_html(self.url_label)}</a>']
-        parts += ["", f'<a href="{self.unsubscribe_url}">Отписаться от таких сообщений</a>']
+        parts += ["", f'⚙️ <a href="{self.settings_url}">Настроить такие уведомления</a>']
         return "\n".join(parts)
 
     def plain_text(self) -> str:
@@ -58,7 +62,7 @@ class OutgoingMessage:
         lines = [to_plain(self.title), "", to_plain(self.text)]
         if self.url:
             lines += ["", f"🔗 {to_plain(self.url_label)}: {self.url}"]
-        lines += ["", f"Отписаться: {self.unsubscribe_url}"]
+        lines += ["", f"⚙️ Настроить такие уведомления: {self.settings_url}"]
         return "\n".join(lines)
 
     def email_text(self) -> str:

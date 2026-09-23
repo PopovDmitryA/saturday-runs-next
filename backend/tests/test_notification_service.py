@@ -120,7 +120,7 @@ def test_markup_renders_per_channel() -> None:
     assert to_email_html("a\nb") == "a<br>b"
 
 
-def test_outgoing_message_telegram_html_has_title_link_and_unsubscribe() -> None:
+def test_outgoing_message_telegram_html_has_title_link_and_settings() -> None:
     message = OutgoingMessage(
         title="🏃 Пробежка попала на сайт",
         text="**📍 Парк** · 20 сентября\n⏱ 24:31",
@@ -132,11 +132,13 @@ def test_outgoing_message_telegram_html_has_title_link_and_unsubscribe() -> None
     html = message.telegram_html()
     assert html.startswith("<b>🏃 Пробежка попала на сайт</b>\n\n<b>📍 Парк</b> · 20 сентября\n⏱ 24:31")
     assert '<a href="https://run5k.test/users/1/runs">Мои пробежки</a>' in html
-    assert html.endswith(
-        '<a href="https://run5k.test/api/notifications/unsubscribe?token=abc">Отписаться от таких сообщений</a>'
-    )
+    # Подвал ведёт в настройки: отписка одним кликом остаётся в письмах.
+    assert html.endswith('⚙️ <a href="https://run5k.test/settings#notifications">Настроить такие уведомления</a>')
+    assert "unsubscribe" not in html
+
     plain = message.plain_text()
     assert "<b>" not in plain and "Мои пробежки: https://run5k.test/users/1/runs" in plain
+    assert plain.endswith("⚙️ Настроить такие уведомления: https://run5k.test/settings#notifications")
 
 
 # ---------------------------------------------------------------------------

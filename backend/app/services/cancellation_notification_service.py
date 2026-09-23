@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import User, UserNotificationChannel, UserNotificationPrefs
 from app.notification_kinds import kind_enabled
-from app.notification_markup import bold, link
+from app.notification_markup import bold
 from app.saturday_week import week_saturday
 from app.services import notification_service as notifications
 from app.services.platform_titles import platform_title
@@ -65,7 +65,7 @@ def _location_line(change: CancellationChange, *, marker: str) -> str:
     return line
 
 
-def compose(changes: list[CancellationChange], *, base_url: str, today: date | None = None) -> tuple[str, str]:
+def compose(changes: list[CancellationChange], *, today: date | None = None) -> tuple[str, str]:
     """(заголовок, тело в разметке) на весь набор изменений одного человека.
 
     Состояние живёт в заголовке, пока весь набор одного вида: повторять его
@@ -88,12 +88,8 @@ def compose(changes: list[CancellationChange], *, base_url: str, today: date | N
         title = "✅ Отмена снята" if len(restored) == 1 else "✅ Отмены сняты"
         blocks = [_location_line(item, marker="📍") for item in restored]
 
-    # Ссылка ведёт на саму площадку, когда изменение одно, и в каталог, когда
-    # их несколько: перечислять пять ссылок в конце сообщения бессмысленно.
-    if len(changes) == 1:
-        blocks.append(link("Страница локации", f"{base_url}/locations/{changes[0].slug}"))
-    else:
-        blocks.append(link("Все локации", f"{base_url}/locations"))
+    # Ссылки в теле нет: она уходит кнопкой-действием самого уведомления
+    # (на площадку, когда изменение одно, иначе в каталог) — см. notify_user.
     return title, "\n\n".join(blocks)
 
 
@@ -140,7 +136,7 @@ def notify_cancellation_subscribers(
             mine = [item for item in changes if platform_allowed(prefs, item.platform_code)]
             if not mine:
                 continue
-            title, text = compose(mine, base_url=base_url, today=today)
+            title, text = compose(mine, today=today)
             url = f"{base_url}/locations/{mine[0].slug}" if len(mine) == 1 else f"{base_url}/locations"
             delivery = notifications.notify_user(
                 db,

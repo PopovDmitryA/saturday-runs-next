@@ -141,49 +141,44 @@ def test_upcoming_saturday_rolls_over_on_sunday() -> None:
 def test_compose_single_cancellation() -> None:
     title, text = cancellations.compose(
         [_change("meshcherskiy", name="Мещерский", reason="Работы в парке")],
-        base_url="https://run5k.test",
         today=date(2026, 9, 23),
     )
     # Состояние сказано один раз — в заголовке; строка площадки его не повторяет.
     assert title == "🚫 Отмена старта 26.09"
     assert text.startswith("📍 **Мещерский** · 5 вёрст\nРаботы в парке")
     assert "отменён" not in text
-    assert "[Страница локации](https://run5k.test/locations/meshcherskiy)" in text
+    # Ссылка на площадку уходит кнопкой уведомления, в теле её нет.
+    assert "[" not in text
 
 
 def test_compose_batch_has_no_counter_and_marks_each_location() -> None:
     title, text = cancellations.compose(
         [_change("a", name="Лихославль"), _change("b", name="Иваново", platform="s95")],
-        base_url="https://run5k.test",
         today=date(2026, 9, 23),
     )
     assert title == "🚫 Отмены стартов 26.09"
     assert text.startswith("📍 **Лихославль** · 5 вёрст\n\n📍 **Иваново** · С95")
-    assert "[Все локации](https://run5k.test/locations)" in text
+    assert "[" not in text
 
 
 def test_compose_mixed_marks_state_per_location() -> None:
     title, text = cancellations.compose(
         [_change("a", name="Лихославль"), _change("c", name="Серов", cancelled=False)],
-        base_url="https://run5k.test",
         today=date(2026, 9, 23),
     )
     assert title == "🚫 Изменения по отменам стартов 26.09"
     assert "🚫 **Лихославль** · 5 вёрст" in text
     assert "✅ **Серов** · 5 вёрст" in text
-    assert text.count("[") == 1
+    assert "[" not in text
 
 
 def test_compose_restored_only() -> None:
-    title, text = cancellations.compose(
-        [_change("a", name="Первый", cancelled=False)], base_url="https://run5k.test", today=date(2026, 9, 23)
-    )
+    title, text = cancellations.compose([_change("a", name="Первый", cancelled=False)], today=date(2026, 9, 23))
     assert title == "✅ Отмена снята"
     assert text.startswith("📍 **Первый** · 5 вёрст")
 
     title, _ = cancellations.compose(
         [_change("a", name="Первый", cancelled=False), _change("b", name="Второй", cancelled=False)],
-        base_url="https://run5k.test",
         today=date(2026, 9, 23),
     )
     assert title == "✅ Отмены сняты"
