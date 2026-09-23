@@ -1,0 +1,131 @@
+/* Паспорт трассы на странице локации: цифры, профиль рельефа, история версий. */
+
+.loc-course-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 1px;
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 0.9rem;
+}
+
+.loc-course-facts > div {
+  background: var(--surface-card, var(--bg));
+  padding: 0.55rem 0.7rem;
+}
+
+.loc-course-facts b {
+  display: block;
+  font-size: 1.12rem;
+  line-height: 1.25;
+}
+
+.loc-course-facts span {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+}
+
+.loc-course-empty {
+  margin: 0;
+  color: var(--text-faint);
+}
+
+.loc-course-notes {
+  margin: 0.7rem 0 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.loc-course-notes .dim {
+  color: var(--text-faint);
+}
+
+.loc-course-history {
+  margin-top: 0.9rem;
+}
+
+.loc-course-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+  margin-top: 0.5rem;
+}
+
+.loc-course-history-table th,
+.loc-course-history-table td {
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border-soft);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.loc-course-history-table th {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.loc-course-history-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.loc-course-section svg,
+.card.loc-section .loc-course-facts + svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.card.loc-section svg .grid {
+  stroke: var(--border-soft);
+  stroke-width: 1;
+}
+
+.card.loc-section svg .axis {
+  fill: var(--text-faint);
+  font-size: 10px;
+}
+
+.card.loc-section svg .area {
+  fill: color-mix(in srgb, var(--accent-indigo-text) 13%, transparent);
+}
+
+.card.loc-section svg .line {
+  fill: none;
+  stroke: var(--accent-indigo-text);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+/* Счётчик треков — в правом верхнем углу блока, а не в списке фактов. */
+.loc-course-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.loc-course-source {
+  color: var(--text-faint);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.loc-course-map {
+  height: 300px;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 0.8rem;
+}
+
+.loc-course-caption {
+  margin: 0 0 0.2rem;
+  color: var(--text-faint);
+  font-size: 0.8rem;
+}

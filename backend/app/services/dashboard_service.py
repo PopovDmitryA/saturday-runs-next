@@ -1570,6 +1570,10 @@ def list_user_runs(
     age_group_places = _age_group_places(
         db, [(run.id, run.event_id, run.age_category) for run, _e, _l, _p, _link in rows]
     )
+    # Свои треки к этим пробежкам: в таблице показываем значок, по нему
+    # открывается разбор (Ч33). Пока фича закрыта, значок не должен появляться
+    # даже случайно, поэтому список пустой для всех, кроме админа.
+    track_ids = _user_track_ids(db, user_id, [run.id for run, *_ in rows])
     return [
         {
             "run_result_id": run.id,
@@ -1611,6 +1615,7 @@ def list_user_runs(
             "status": run.status,
             "is_test_event": event.is_test_event,
             "weather": weather_map.get((event.location_id, event.event_date)),
+            "track_id": track_ids.get(run.id),
             "event_url": _activity_event_url(
                 platform_code=platform.code,
                 event=event,
@@ -1622,6 +1627,32 @@ def list_user_runs(
         }
         for run, event, location, platform, platform_link in rows
     ]
+
+
+def _user_track_ids(db: Session, user_id: UUID, run_result_ids: list[UUID]) -> dict[UUID, UUID]:
+    """Какие из пробежек уже имеют загруженный трек: run_result_id -> track_id.
+
+    Пока треки закрыты (tracks_public_enabled=False), значок видит только
+    админ — иначе фича засветилась бы в таблице до выката.
+    """
+    if not run_result_ids:
+        return {}
+    from app.config import get_settings
+    from app.core.admin import is_admin_user
+    from app.models import RunTrack, User
+
+    settings = get_settings()
+    if not settings.tracks_public_enabled:
+        user = db.get(User, user_id)
+        if user is None or not is_admin_user(user, settings):
+            return {}
+
+    rows = db.query(RunTrack.run_result_id, RunTrack.id).filter(
+        RunTrack.user_id == user_id,
+        RunTrack.status == "ok",
+        RunTrack.run_result_id.in_(run_result_ids),
+    )
+    return {run_result_id: track_id for run_result_id, track_id in rows if run_result_id is not None}
 
 
 def list_user_best_results(

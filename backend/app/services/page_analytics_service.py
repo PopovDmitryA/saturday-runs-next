@@ -96,6 +96,7 @@ _STATIC_PAGE_TYPES = {
     "/ratings/home-distance": "ratings_home_distance",
     "/ratings/location-records": "ratings_location_records",
     "/ratings/regions": "ratings_regions",
+    "/ratings/courses": "ratings_courses",
     "/backlog": "backlog",
     "/organizer": "organizer_index",
     "/share": "share",

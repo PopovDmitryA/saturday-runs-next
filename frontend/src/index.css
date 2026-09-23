@@ -8003,7 +8003,7 @@ a.admin-system-chip:hover {
 
 /* Звезда-оценка в таблице пробежек */
 /* Ширина под две иконки: звезда оценки + «Поделиться». */
-.col-rating { width: 68px; }
+.col-rating { width: 96px; }
 .td-rating { text-align: center; padding-left: 0; padding-right: 0; }
 
 /* На всю ширину ячейки + центрирование — чтобы звезда и «—» имели ОДИН центр
@@ -17875,4 +17875,193 @@ input.participant-name-search-input:focus {
   margin: 0.5rem 0 0;
   font-size: 0.9rem;
   color: var(--tint-amber-text);
+/* ===== Треки пробежек (Ч33): значок в строке, загрузка и разбор ===== */
+
+/* Значок трека стоит между звездой и «Поделиться»: тот же размер и тот же
+   приглушённый цвет, залитый вариант — когда трек уже приложен. */
+.run-track-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0.2rem;
+  border-radius: 6px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.run-track-btn:hover {
+  color: var(--accent-indigo-text);
+  background: var(--tint-indigo-bg);
+}
+
+.run-track-btn.has-track {
+  color: var(--accent-indigo-text);
+}
+
+.run-track-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.run-track-file input[type="file"] {
+  display: block;
+  margin-top: 0.35rem;
+}
+
+.run-track-link {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.run-track-link input {
+  flex: 1 1 320px;
+  min-width: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-input, transparent);
+  color: inherit;
+}
+
+.run-track-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Четыре главные цифры трека в одну строку, на телефоне — по две. */
+.run-track-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.run-track-facts > div {
+  background: var(--surface-card, var(--bg));
+  padding: 0.55rem 0.7rem;
+}
+
+.run-track-facts b {
+  display: block;
+  font-size: 1.15rem;
+  line-height: 1.25;
+}
+
+.run-track-facts span {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+}
+
+.run-track-map {
+  height: 320px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.run-track-splits {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.run-track-splits td {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.run-track-splits td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.run-track-notes {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--text-muted, inherit);
+}
+
+.run-track-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Профиль трассы: километраж по горизонтали, высота по вертикали. */
+.run-track-elevation {
+  margin: 0;
+}
+
+.run-track-elevation figcaption {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  margin-bottom: 0.3rem;
+}
+
+.run-track-elevation svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.run-track-elevation .area {
+  fill: color-mix(in srgb, var(--accent-indigo-text) 14%, transparent);
+}
+
+.run-track-elevation .line {
+  fill: none;
+  stroke: var(--accent-indigo-text);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+/* Главный подъём — светлая полоса под графиком, а не заливка поверх линии. */
+.run-track-elevation .climb-band {
+  fill: color-mix(in srgb, var(--accent-indigo-text) 8%, transparent);
+}
+
+.run-track-elevation .grid {
+  stroke: var(--border-soft);
+  stroke-width: 1;
+}
+
+.run-track-elevation .axis {
+  fill: var(--text-faint);
+  font-size: 10px;
+}
+
+.run-track-elevation .cursor {
+  stroke: var(--text-faint);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.run-track-elevation .dot {
+  fill: var(--accent-indigo-text);
+}
+
+.run-track-elevation-note {
+  margin: 0.35rem 0 0;
+  color: var(--text-faint);
+  font-size: 0.82rem;
+}
+
+
+/* Локация в рейтинге трасс есть, а треков для неё пока нет. */
+.lb-table tr.lb-row-muted td {
+  color: var(--text-faint);
+}
+
+.lb-table tr.lb-row-muted a {
+  color: inherit;
 }

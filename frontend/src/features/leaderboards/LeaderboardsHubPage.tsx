@@ -25,6 +25,7 @@ import {
 import { formatFinishTime } from "./formatFinishTime";
 import { getFastestRating, type FastestRatingResponse } from "./fastestApi";
 import { getRegionsRating, type RegionRatingRow, type RegionsPlatform } from "./regionsApi";
+import { COURSE_METRIC_LABELS, getCourseRating, type CourseRatingItem } from "./courseApi";
 import { surnameFirst } from "../../lib/personName";
 import "./leaderboards.css";
 
@@ -413,6 +414,45 @@ function RegionsHubCard({ platform }: { platform: PlatformFilter }) {
   );
 }
 
+/** Трассы локаций: рейтинг по трекам участников. Пока фича закрыта — только админу. */
+function CoursesHubCard() {
+  const [rows, setRows] = useState<CourseRatingItem[] | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    getCourseRating("elevation")
+      .then((response) => setRows(response.items.filter((item) => item.has_data).slice(0, 3)))
+      .catch(() => setError(true));
+  }, []);
+
+  return (
+    <a className="lb-hub-card lb-hub-card-live" href="/ratings/courses">
+      <div className="lb-hub-card-top">
+        <span className="lb-hub-card-title">Трассы локаций</span>
+      </div>
+      {rows === null && !error && <p className="lb-hub-loading muted">Считаем…</p>}
+      {error && <p className="lb-hub-loading muted">Не удалось загрузить</p>}
+      {rows && rows.length === 0 && <p className="lb-hub-loading muted">Треков пока нет</p>}
+      {rows && rows.length > 0 && (
+        <div className="lb-hub-top3">
+          {rows.map((item, index) => (
+            <div className="lb-hub-top3-row" key={item.location_slug}>
+              <span className="lb-hub-top3-place">{index + 1}</span>
+              <span className="lb-hub-top3-name">{item.location_name}</span>
+              <span className="lb-hub-top3-value">
+                {item.value != null ? `${item.value.toFixed(1).replace(".", ",")} м` : "—"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="lb-hub-card-fallback muted">
+        {COURSE_METRIC_LABELS.elevation} и {COURSE_METRIC_LABELS.straightness.toLowerCase()}
+      </p>
+    </a>
+  );
+}
+
 export function LeaderboardsHubPage() {
   const [platform, setPlatform] = useState<PlatformFilter>("all");
   // Закрытые рейтинги показываем только админу: карточка тянет данные, а API
@@ -483,6 +523,9 @@ export function LeaderboardsHubPage() {
           <div className="lb-hub-cards">
             <LocationRecordsHubCard platform={platform} />
             <RegionsHubCard platform={platform} />
+            {/* Трассы по трекам: карточка тянет закрытую ручку, поэтому
+                показываем её только админу. */}
+            {viewer?.is_admin && <CoursesHubCard />}
           </div>
         </section>
       </div>
