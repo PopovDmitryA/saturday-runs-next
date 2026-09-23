@@ -6,7 +6,7 @@
  * жил подпунктом «Локаций».
  *
  * Состав пунктов — не здесь, а в nav/siteNav.ts: оттуда же рисуются нижняя
- * панель телефона, чипы, шторка «Меню» и поиск по страницам.
+ * панель телефона, полоса страниц раздела, шторка «Меню» и поиск по страницам.
  *
  * Интерфейс компонента прежний (active, location, user, extraGroup…), поэтому
  * три десятка страниц менять не пришлось.
@@ -323,7 +323,8 @@ function SectionColumn({
                 className={`site-col-item${isCurrent ? " active" : ""}${link.tone === "admin" ? " site-col-item-admin" : ""}`}
                 aria-current={isCurrent ? "page" : undefined}
               >
-                {link.label}
+                {link.icon && <span className="site-col-item-icon">{link.icon}</span>}
+                <span className="site-col-item-label">{link.label}</span>
               </a>
             );
           })}
@@ -359,7 +360,8 @@ function ExtraGroupBlock({ group }: { group: SidebarExtraGroup }) {
           className={`site-col-item${item.active ? " active" : ""}`}
           aria-current={item.active ? "page" : undefined}
         >
-          {item.label}
+          {item.icon && <span className="site-col-item-icon">{item.icon}</span>}
+          <span className="site-col-item-label">{item.label}</span>
         </button>
       ))}
     </div>

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
 import { SiteSidebar, type SiteSidebarProps } from "./SiteSidebar";
-import { SectionChips } from "./nav/SectionChips";
+import { SectionSubnav } from "./nav/SectionSubnav";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import "./portal.css";
 import "./portalSection.css";
@@ -13,7 +13,7 @@ import "./portalSection.css";
  *
  * С пропом `sidebar` рендерится навигация сайта (SiteSidebar: рельс разделов
  * и колонка подразделов) в том же лейауте, что и личный кабинет
- * (.portal-cab-layout), а на телефоне — чипы подразделов над контентом.
+ * (.portal-cab-layout), а на телефоне — липкая полоса страниц раздела.
  * Нижнюю панель телефона рисует сама шапка. Без пропа — просто
  * центрированный контейнер.
  *
@@ -45,7 +45,7 @@ export function PortalSectionShell({
       <div className="portal-cab-layout">
         <SiteSidebar active={sidebar.active} location={sidebar.location} />
         <main className="portal-cab-main portal-section">
-          <SectionChips active={sidebar.active} location={sidebar.location} user={user} />
+          <SectionSubnav active={sidebar.active} location={sidebar.location} user={user} />
           {children}
         </main>
       </div>

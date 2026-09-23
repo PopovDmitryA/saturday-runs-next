@@ -509,7 +509,7 @@ Scheduled sync → лог в `scheduled_run_logs` через `run_reported_sync(
 
 С 23.09.2026 (вариант В): на компьютере — рельс разделов + колонка со всеми
 страницами раздела (`SiteSidebar.tsx`), на телефоне — одна нижняя панель на
-весь сайт (её рисует `PortalHeader`), чипы подразделов над контентом и шторка
+весь сайт (её рисует `PortalHeader`), липкая полоса страниц раздела под шапкой (до 6 страниц — вкладки, больше — переключатель со шторкой; `nav/SectionSubnav.tsx`) и шторка
 «Меню». Всё это строится из одного дерева `features/portal/nav/siteNav.ts` —
 вручную пункты меню нигде больше не пишутся.
 
@@ -581,7 +581,7 @@ cd backend && ruff check app tests
 | Parkrun English names | catalog link + norm slug; import catalog |
 | PR не показывается | `is_pr`, five_verst protocol label, backfill PR |
 | Новая страница на сайте | Роут в `App.tsx` + раздел в аналитике: `_STATIC_PAGE_TYPES`, `PAGE_TYPE_LABELS`, `APP_ROUTES` (см. §12) |
-| Новая страница: где её найдут | Пункт в `frontend/src/features/portal/nav/siteNav.ts` с синонимами (`keywords`) — из этого дерева рисуются рельс и колонка на компьютере, нижняя панель, чипы и «Меню» на телефоне и поиск по страницам (см. §12, «Навигация и поиск») |
+| Новая страница: где её найдут | Пункт в `frontend/src/features/portal/nav/siteNav.ts` с синонимами (`keywords`) — из этого дерева рисуются рельс и колонка на компьютере, нижняя панель, полоса страниц раздела и «Меню» на телефоне и поиск по страницам (см. §12, «Навигация и поиск») |
 | Deploy | `deploy_prod.sh`; verify build + health |
 | API 502 | `docker compose logs api` — часто SyntaxError после деплоя |
 | Prod DB query | SSH + `docker compose exec api python -c "…"` |

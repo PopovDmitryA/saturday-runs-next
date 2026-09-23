@@ -1,5 +1,5 @@
 /* Навигация сайта, вариант В (23.09.2026): рельс разделов + колонка
-   подразделов на компьютере; нижняя панель, чипы, «Меню» и поиск на
+   подразделов на компьютере; нижняя панель, полоса страниц раздела, «Меню» и поиск на
    телефоне. Все цвета — через переменные темы из index.css. */
 
 /* ---------- компьютер: рельс + колонка ---------- */
@@ -61,7 +61,8 @@
 
 .site-rail-item:focus-visible,
 .site-col-item:focus-visible,
-.site-chip:focus-visible,
+.site-tab:focus-visible,
+.site-subnav-picker:focus-visible,
 .site-bottomnav-item:focus-visible {
   outline: 2px solid var(--accent-indigo);
   outline-offset: 1px;
@@ -179,7 +180,9 @@ a.site-col-title:hover {
 }
 
 .site-col-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 9px;
   width: 100%;
   padding: 6px 10px;
   border: 0;
@@ -199,6 +202,32 @@ a.site-col-title:hover {
   background: var(--bg-muted);
   color: var(--text);
   text-decoration: none;
+}
+
+/* Иконка страницы — серая, у текущей подсвечивается вместе с текстом. */
+.site-col-item-icon {
+  flex: none;
+  display: inline-flex;
+  width: 17px;
+  height: 17px;
+  color: var(--text-faint);
+}
+
+.site-col-item-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.site-col-item:hover .site-col-item-icon {
+  color: var(--text-muted);
+}
+
+.site-col-item.active .site-col-item-icon {
+  color: var(--accent-indigo-text);
+}
+
+.site-col-item-label {
+  min-width: 0;
 }
 
 .site-col-group-context .site-col-item:hover {
@@ -435,10 +464,10 @@ div.site-col-extra-head {
   color: var(--text-faint);
 }
 
-/* ---------- телефон: нижняя панель, «Меню», чипы ---------- */
+/* ---------- телефон: нижняя панель и «Меню» ---------- */
 
 .site-bottomnav,
-.site-chips {
+.site-subnav {
   display: none;
 }
 
@@ -507,80 +536,6 @@ div.site-col-extra-head {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  /* Чипы подразделов над контентом страницы. */
-  .site-chips {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin: 0 0 14px;
-  }
-
-  .site-chips-lead {
-    display: flex;
-  }
-
-  .site-chips-row {
-    display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    scrollbar-width: none;
-    /* Ряд уходит под края экрана, а не обрезается на полях страницы. */
-    margin: 0 -20px;
-    padding: 0 20px;
-    scroll-padding: 0 20px;
-  }
-
-  .site-chips-row::-webkit-scrollbar {
-    display: none;
-  }
-
-  .site-chip {
-    flex: none;
-    padding: 6px 13px;
-    border: 1px solid var(--border-strong);
-    border-radius: 999px;
-    background: var(--surface);
-    color: var(--text-2);
-    font-size: 13.5px;
-    font-weight: 600;
-    white-space: nowrap;
-    text-decoration: none;
-  }
-
-  .site-chip:hover {
-    text-decoration: none;
-    border-color: var(--accent-indigo);
-  }
-
-  .site-chip.active {
-    background: var(--accent-indigo);
-    border-color: var(--accent-indigo);
-    color: #fff;
-  }
-
-  /* Второй ряд (таблицы внутри группы рейтингов) — мельче и спокойнее. */
-  .site-chips-row + .site-chips-row .site-chip {
-    padding: 4px 11px;
-    font-size: 12.5px;
-  }
-
-  .site-chips-row + .site-chips-row .site-chip.active {
-    background: var(--tint-indigo-bg);
-    border-color: var(--accent-indigo);
-    color: var(--accent-indigo-text);
-  }
-
-  .site-org-switch-chip .site-org-switch-button {
-    width: auto;
-    max-width: 100%;
-    font-size: 16px;
-    padding: 6px 12px;
-  }
-
-  .site-org-switch-chip > .site-org-switch-name {
-    font-size: 16px;
   }
 
   /* шторка «Меню» */
@@ -717,7 +672,9 @@ div.site-col-extra-head {
   }
 
   .site-menu-item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     padding: 8px;
     border-radius: 8px;
     font-size: 14.5px;
@@ -732,6 +689,23 @@ div.site-col-extra-head {
   }
 
   .site-menu-item.active {
+    color: var(--accent-indigo-text);
+  }
+
+  .site-menu-item-icon {
+    flex: none;
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
+    color: var(--text-faint);
+  }
+
+  .site-menu-item-icon svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .site-menu-item.active .site-menu-item-icon {
     color: var(--accent-indigo-text);
   }
 
@@ -1115,4 +1089,198 @@ a.site-search-row:hover {
 .site-col-login {
   align-self: flex-start;
   margin: 10px 10px 0;
+}
+
+/* ---------- телефон: полоса страниц раздела (SectionSubnav) ---------- */
+
+/* Высота шапки сайта сама по себе (60px + граница) — --portal-header-h ниже
+   на телефоне включает ещё и полосу, а полосе нужен верх без неё самой. */
+:root {
+  --site-header-base-h: 61px;
+  --site-subnav-h: 44px;
+}
+
+@media (max-width: 900px) {
+  /* Всё липкое ниже шапки (полоса «Кратко | Полно», шапки таблиц, якоря)
+     отсчитывает верх от --portal-header-h — добавляем к нему полосу. */
+  html.has-site-subnav {
+    --portal-header-h: calc(var(--site-header-base-h) + var(--site-subnav-h));
+  }
+
+  .site-subnav {
+    position: sticky;
+    top: var(--site-header-base-h);
+    z-index: 35;
+    display: flex;
+    align-items: stretch;
+    height: var(--site-subnav-h);
+    /* Во всю ширину экрана: поля страницы — 20px, их и съедаем. Сверху
+       прилегает к шапке, съедая отступ колонки контента. */
+    margin: -20px -20px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Вкладки: текст без рамок, текущая — подчёркнута. Края ряда тают, чтобы
+     было видно, что за краем есть ещё вкладки. */
+  .site-subnav-tabs {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    gap: 22px;
+    padding: 0 20px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 22px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 22px), transparent 100%);
+  }
+
+  .site-subnav-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .site-tab {
+    flex: none;
+    display: flex;
+    align-items: center;
+    padding-top: 2px;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    font-size: 14.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .site-tab:hover {
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .site-tab.active {
+    color: var(--text);
+    border-bottom-color: var(--accent-indigo);
+  }
+
+  /* Переключатель: «Группа · Страница ▾» и счётчик «3/13» справа. */
+  .site-subnav-switch {
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px 0 20px;
+  }
+
+  .site-subnav-picker {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .site-subnav-picker-icon {
+    flex: none;
+    display: inline-flex;
+    width: 19px;
+    height: 19px;
+    color: var(--accent-indigo-text);
+  }
+
+  .site-subnav-picker-icon svg,
+  .site-subnav-picker-chevron svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .site-subnav-picker-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+  }
+
+  .site-subnav-picker-group {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .site-subnav-picker-label {
+    font-weight: 700;
+  }
+
+  .site-subnav-picker-chevron {
+    flex: none;
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    color: var(--accent-indigo-text);
+  }
+
+  .site-subnav-count {
+    flex: none;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+  }
+
+  /* Кабинет организатора: слева локация (переключатель), справа инструмент. */
+  .site-subnav-place {
+    flex: 0 1 auto;
+    max-width: 48%;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    padding-right: 10px;
+    border-right: 1px solid var(--border);
+  }
+
+  .site-org-switch-chip {
+    min-width: 0;
+    max-width: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .site-org-switch-chip .site-org-switch-button {
+    text-decoration: none;
+    width: auto;
+    max-width: 100%;
+    padding: 4px 0;
+    border: 0;
+    background: transparent;
+    font-size: 13.5px;
+    color: var(--text-muted);
+  }
+
+  .site-org-switch-chip .site-org-switch-name {
+    font-weight: 600;
+  }
+
+  .site-org-switch-chip > .site-org-switch-name {
+    font-size: 13.5px;
+    color: var(--text-muted);
+  }
+
+  .site-org-switch-chip .site-org-switch-all {
+    padding: 0;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .site-subnav-sheet-title {
+    padding: 0 8px 6px;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
 }

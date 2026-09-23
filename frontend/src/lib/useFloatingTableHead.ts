@@ -89,9 +89,13 @@ export function useFloatingTableHead(
       // Липкая полоса над таблицей (если она есть) прилипает ниже шапки сайта,
       // поэтому отсчитываем от того края, который сейчас ниже.
       const below = belowSelector ? document.querySelector(belowSelector) : null;
+      // На телефоне под шапкой липнет ещё полоса страниц раздела
+      // (nav/SectionSubnav) — копия шапки таблицы встаёт под неё.
+      const subnav = document.querySelector(".site-subnav");
       const offset = Math.max(
         0,
         siteHeader?.getBoundingClientRect().bottom ?? 0,
+        subnav && getComputedStyle(subnav).position === "sticky" ? subnav.getBoundingClientRect().bottom : 0,
         below?.getBoundingClientRect().bottom ?? 0,
       );
       const box = wrap.getBoundingClientRect();

@@ -10,6 +10,7 @@
  * запрос локаций и людей, а найденные локации склеиваются со страницей:
  * «погода сокол» → «Погода · Сокольники».
  */
+import type { ReactNode } from "react";
 import type { SiteSearchLocation } from "../../../lib/api";
 import { LOCATION_PAGES, flattenNav, type NavSection } from "./siteNav";
 
@@ -19,6 +20,7 @@ export type PageHit = {
   /** Где страница живёт: «Рейтинги · Туристы», «Мой кабинет». */
   context: string;
   href: string;
+  icon?: ReactNode;
   score: number;
 };
 
@@ -57,7 +59,15 @@ function wordMatches(word: string, haystack: string[]): { hit: boolean; exact: b
   return { hit, exact: false };
 }
 
-type Entry = { key: string; label: string; context: string; href: string; labelTokens: string[]; allTokens: string[] };
+type Entry = {
+  key: string;
+  label: string;
+  context: string;
+  href: string;
+  icon?: ReactNode;
+  labelTokens: string[];
+  allTokens: string[];
+};
 
 function buildEntries(sections: NavSection[]): Entry[] {
   const seen = new Set<string>();
@@ -71,6 +81,7 @@ function buildEntries(sections: NavSection[]): Entry[] {
       label: link.label,
       context,
       href: link.href,
+      icon: link.icon,
       labelTokens: tokens(link.label),
       allTokens: tokens([link.label, section.label, group.title ?? "", ...(section.keywords ?? []), ...(link.keywords ?? [])].join(" ")),
     });
@@ -110,7 +121,7 @@ export function planSearch(raw: string, sections: NavSection[]): PageSearchPlan 
       score += (inLabel.hit ? 3 : 1) + (inAny.exact ? 1 : 0);
     }
     if (all) {
-      hits.push({ key: entry.key, label: entry.label, context: entry.context, href: entry.href, score });
+      hits.push({ key: entry.key, label: entry.label, context: entry.context, href: entry.href, icon: entry.icon, score });
     }
   }
   hits.sort((a, b) => b.score - a.score || a.label.localeCompare(b.label, "ru"));
@@ -149,6 +160,7 @@ export function combineLocationPages(
         label: `${page.label} · ${location.name}`,
         context: location.city ? `Локация · ${location.city}` : "Локация",
         href: `${location.href}${page.suffix}`,
+        icon: page.icon,
         score: 100,
       });
     }

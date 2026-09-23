@@ -12,7 +12,7 @@
  * 23.09.2026: кабинет организатора — самый посещаемый раздел сайта).
  *
  * «Меню» — полная карта сайта из того же дерева, что рельс и колонка на
- * компьютере: если чего-то нет в чипах, оно точно есть здесь.
+ * компьютере: если чего-то нет в полосе страниц раздела, оно точно есть здесь.
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -195,6 +195,7 @@ function MenuSection({
                     className={`site-menu-item${isCurrent ? " active" : ""}${link.tone === "admin" ? " site-menu-item-admin" : ""}`}
                     aria-current={isCurrent ? "page" : undefined}
                   >
+                    {link.icon && <span className="site-menu-item-icon">{link.icon}</span>}
                     {link.label}
                   </a>
                 );

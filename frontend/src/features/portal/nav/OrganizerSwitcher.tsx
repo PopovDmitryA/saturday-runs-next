@@ -104,6 +104,17 @@ export function OrganizerSwitcher({
     );
   }
   if (items !== null && items.length > MAX_DROPDOWN) {
+    // В полосе телефона места на «имя + ссылку» нет: само имя ведёт к списку.
+    if (variant === "chip") {
+      return (
+        <div className={className}>
+          <a className="site-org-switch-button" href={ORGANIZER_INDEX_HREF} title="Выбрать другую локацию">
+            <span className="site-org-switch-name">{name}</span>
+            <span className="site-org-switch-chevron">{CHEVRON_DOWN_ICON}</span>
+          </a>
+        </div>
+      );
+    }
     return (
       <div className={className}>
         <span className="site-org-switch-name">{name}</span>

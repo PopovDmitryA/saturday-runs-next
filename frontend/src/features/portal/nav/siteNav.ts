@@ -8,14 +8,16 @@
  *
  * Теперь всё рисуется отсюда:
  * - рельс разделов и колонка подразделов на компьютере (SiteSidebar);
- * - нижняя панель, чипы под заголовком и шторка «Меню» на телефоне;
+ * - нижняя панель, липкая полоса страниц раздела и шторка «Меню» на телефоне;
  * - поиск по страницам сайта — через keywords (синонимы).
  *
  * Добавляете страницу — добавьте её сюда, и она появится везде сразу.
  * Синонимы пишите так, как человек спросил бы в личке: «где погода»,
  * «кто быстрее всех», «как привязать профиль».
  */
+import type { ReactNode } from "react";
 import type { User } from "../../../lib/api";
+import * as I from "./navIcons";
 import {
   cabinetTabHref,
   type CabinetTabSegmentKey,
@@ -33,8 +35,10 @@ export type NavLink = {
   key: string;
   label: string;
   href: string;
-  /** Подпись чипа на телефоне, если полная не влезает. */
+  /** Подпись вкладки на телефоне, если полная не влезает. */
   chipLabel?: string;
+  /** Иконка страницы: колонка, «Меню», переключатель, поиск. */
+  icon?: ReactNode;
   /** Синонимы для поиска по сайту (в нижнем регистре). */
   keywords?: readonly string[];
   /** Текущая ли страница, когда одного совпадения адреса мало. */
@@ -96,35 +100,40 @@ export function isLinkCurrent(link: NavLink, pathname: string): boolean {
 
 // ---------- Моё ----------
 
-type CabinetDef = { key: CabinetTabKey; label: string; keywords: readonly string[] };
+type CabinetDef = { key: CabinetTabKey; label: string; icon: ReactNode; keywords: readonly string[] };
 
 // Порядок — по спросу с прода (30 дней до 23.09.2026): обзор, достижения,
-// пробежки, карта, история, волонтёрство, встречи. На телефоне в ряд чипов
-// влезают первые четыре — пусть это будут самые открываемые.
+// пробежки, карта, история, волонтёрство, встречи. В шторке переключателя на
+// телефоне самые открываемые оказываются под пальцем первыми.
 export const CABINET_TABS: readonly CabinetDef[] = [
   {
     key: "dashboard",
     label: "Обзор",
+    icon: I.CABINET_ICONS.dashboard,
     keywords: ["мой кабинет", "личный кабинет", "профиль", "моя статистика", "дашборд", "главная кабинета"],
   },
   {
     key: "achievements",
     label: "Достижения",
+    icon: I.CABINET_ICONS.achievements,
     keywords: ["значки", "награды", "челленджи", "клубы", "юбилей", "ачивки", "майка", "футболка"],
   },
   {
     key: "runs",
     label: "Пробежки",
+    icon: I.CABINET_ICONS.runs,
     keywords: ["мои пробежки", "мои результаты", "мое время", "личный рекорд", "рекорд", "pb", "темп", "забеги"],
   },
   {
     key: "map",
     label: "Карта",
+    icon: I.CABINET_ICONS.map,
     keywords: ["моя карта", "где бегал", "где я бегал", "туризм", "мои локации", "география"],
   },
   {
     key: "history",
     label: "Моя история",
+    icon: I.CABINET_ICONS.history,
     // Настройка вех живёт шестерёнкой на этой вкладке (перенесена из
     // «Настроек» 23.09.2026) — поиск «вехи» должен вести сюда.
     keywords: ["история", "хронология", "первый забег", "первая пробежка", "лента", "по годам", "вехи", "настройка вех"],
@@ -132,20 +141,23 @@ export const CABINET_TABS: readonly CabinetDef[] = [
   {
     key: "volunteering",
     label: "Волонтёрство",
+    icon: I.CABINET_ICONS.volunteering,
     keywords: ["мои волонтерства", "волонтер", "роли", "помощь", "организация забега"],
   },
   {
     key: "meetings",
     label: "Встречи",
+    icon: I.CABINET_ICONS.meetings,
     keywords: ["с кем бегаю", "с кем бегал", "знакомые", "друзья", "попутчики", "соседи по забегу"],
   },
 ];
 
 const CABINET_SERVICE: readonly CabinetDef[] = [
-  { key: "share", label: "Поделиться", keywords: ["сторис", "картинка", "постер", "поделиться результатом"] },
+  { key: "share", label: "Поделиться", icon: I.CABINET_ICONS.share, keywords: ["сторис", "картинка", "постер", "поделиться результатом"] },
   {
     key: "settings",
     label: "Настройки",
+    icon: I.SETTINGS_ICON,
     keywords: [
       "имя",
       "сменить имя",
@@ -181,6 +193,7 @@ function meSection(ctx: NavContext): NavSection {
   const link = (def: CabinetDef): NavLink => ({
     key: def.key,
     label: def.label,
+    icon: def.icon,
     href: cabinetHref(ctx, def.key),
     keywords: def.keywords,
   });
@@ -202,7 +215,14 @@ function meSection(ctx: NavContext): NavSection {
 
 // ---------- Организатор ----------
 
-type ToolDef = { key: string; label: string; chipLabel?: string; path: string; keywords: readonly string[] };
+type ToolDef = {
+  key: string;
+  label: string;
+  chipLabel?: string;
+  icon: ReactNode;
+  path: string;
+  keywords: readonly string[];
+};
 
 // Группы — по тому, зачем организатор приходит: собрать отчёт о субботе,
 // посмотреть на людей, спланировать команду. Названия — как на карточках хаба.
@@ -211,30 +231,30 @@ const ORGANIZER_TOOL_GROUPS: readonly { key: string; title: string; tools: reado
     key: "saturday",
     title: "Субботний отчёт",
     tools: [
-      { key: "hub", label: "Обзор кабинета", chipLabel: "Обзор", path: "", keywords: ["светофор", "здоровье локации"] },
-      { key: "report", label: "Свод по пробежке", chipLabel: "Свод", path: "report", keywords: ["отчет", "свод", "итоги субботы"] },
-      { key: "post", label: "Пост-отчёт", chipLabel: "Пост", path: "post", keywords: ["пост", "текст для канала", "анонс", "постер"] },
-      { key: "protocols", label: "Протоколы", path: "protocols", keywords: ["скорость протокола", "выгрузка протокола", "задержка"] },
+      { key: "hub", label: "Обзор кабинета", icon: I.GRID_ICON, chipLabel: "Обзор", path: "", keywords: ["светофор", "здоровье локации"] },
+      { key: "report", label: "Свод по пробежке", icon: I.REPORT_ICON, chipLabel: "Свод", path: "report", keywords: ["отчет", "свод", "итоги субботы"] },
+      { key: "post", label: "Пост-отчёт", icon: I.POST_ICON, chipLabel: "Пост", path: "post", keywords: ["пост", "текст для канала", "анонс", "постер"] },
+      { key: "protocols", label: "Протоколы", icon: I.PROTOCOL_SPEED_ICON, path: "protocols", keywords: ["скорость протокола", "выгрузка протокола", "задержка"] },
     ],
   },
   {
     key: "people",
     title: "Люди",
     tools: [
-      { key: "milestones", label: "Календарь юбилеев", chipLabel: "Юбилеи", path: "milestones", keywords: ["юбилеи", "клуб 50", "клуб 100", "поздравить"] },
-      { key: "newcomers", label: "Удержание новичков", chipLabel: "Новички", path: "newcomers", keywords: ["новички", "дебютанты", "первый старт", "вернулись"] },
-      { key: "absence", label: "Долгая пауза", chipLabel: "Пауза", path: "absence", keywords: ["пропали", "давно не было", "пауза", "вернуть участников"] },
-      { key: "audience", label: "Портрет участника", chipLabel: "Портрет", path: "audience", keywords: ["аудитория", "возраст", "пол", "клубы участников"] },
+      { key: "milestones", label: "Календарь юбилеев", icon: I.MILESTONES_ICON, chipLabel: "Юбилеи", path: "milestones", keywords: ["юбилеи", "клуб 50", "клуб 100", "поздравить"] },
+      { key: "newcomers", label: "Удержание новичков", icon: I.NEWCOMERS_ICON, chipLabel: "Новички", path: "newcomers", keywords: ["новички", "дебютанты", "первый старт", "вернулись"] },
+      { key: "absence", label: "Долгая пауза", icon: I.PAUSE_ICON, chipLabel: "Пауза", path: "absence", keywords: ["пропали", "давно не было", "пауза", "вернуть участников"] },
+      { key: "audience", label: "Портрет участника", icon: I.AUDIENCE_ICON, chipLabel: "Портрет", path: "audience", keywords: ["аудитория", "возраст", "пол", "клубы участников"] },
     ],
   },
   {
     key: "team",
     title: "Команда",
     tools: [
-      { key: "volunteers", label: "Волонтёрская скамейка", chipLabel: "Скамейка", path: "volunteers", keywords: ["скамейка", "кого позвать", "резерв волонтеров"] },
-      { key: "team", label: "Команда и нагрузка", chipLabel: "Команда", path: "team", keywords: ["нагрузка", "ротация", "организаторы дня"] },
-      { key: "attendance", label: "Посещаемость", path: "attendance", keywords: ["явка", "посещаемость", "журнал посещаемости"] },
-      { key: "benchmark", label: "Мы и соседи", chipLabel: "Соседи", path: "benchmark", keywords: ["сравнение", "соседние локации", "бенчмарк"] },
+      { key: "volunteers", label: "Волонтёрская скамейка", icon: I.BENCH_ICON, chipLabel: "Скамейка", path: "volunteers", keywords: ["скамейка", "кого позвать", "резерв волонтеров"] },
+      { key: "team", label: "Команда и нагрузка", icon: I.TEAM_ICON, chipLabel: "Команда", path: "team", keywords: ["нагрузка", "ротация", "организаторы дня"] },
+      { key: "attendance", label: "Посещаемость", icon: I.ATTENDANCE_ICON, path: "attendance", keywords: ["явка", "посещаемость", "журнал посещаемости"] },
+      { key: "benchmark", label: "Мы и соседи", icon: I.BENCHMARK_ICON, chipLabel: "Соседи", path: "benchmark", keywords: ["сравнение", "соседние локации", "бенчмарк"] },
     ],
   },
 ];
@@ -256,6 +276,7 @@ function organizerSection(ctx: NavContext): NavSection {
           key: tool.key,
           label: tool.label,
           chipLabel: tool.chipLabel,
+          icon: tool.icon,
           href: `/organizer/${place.slug}${tool.path ? `/${tool.path}` : ""}`,
           keywords: tool.keywords,
         })),
@@ -263,7 +284,7 @@ function organizerSection(ctx: NavContext): NavSection {
     : [
         {
           key: "index",
-          items: [{ key: "index", label: "Мои локации", href: ORGANIZER_INDEX_HREF, keywords: ["выбрать локацию"] }],
+          items: [{ key: "index", label: "Мои локации", icon: I.CATALOG_ICON, href: ORGANIZER_INDEX_HREF, keywords: ["выбрать локацию"] }],
         },
       ];
   return {
@@ -292,6 +313,7 @@ function resultsSection(): NavSection {
           {
             key: "last-results",
             label: "Последние пробежки",
+            icon: I.RESULTS_ICON,
             chipLabel: "Последние",
             href: "/results",
             keywords: [
@@ -307,6 +329,7 @@ function resultsSection(): NavSection {
           {
             key: "unified-protocol",
             label: "Единый протокол",
+            icon: I.UNIFIED_PROTOCOL_ICON,
             href: "/protocol",
             matches: (pathname) => pathname === "/protocol" || pathname.startsWith("/protocol/"),
             keywords: ["вся страна", "все финишеры", "общий протокол", "протокол недели", "все локации сразу"],
@@ -320,21 +343,23 @@ function resultsSection(): NavSection {
 // ---------- Локации ----------
 
 /**
- * Страницы одной локации. Нужны и колонке с чипами (когда локация открыта), и
+ * Страницы одной локации. Нужны и колонке с полосой страниц (когда локация открыта), и
  * поиску: «погода сокол» складывает синоним страницы с найденной локацией.
  */
 export const LOCATION_PAGES: readonly {
   key: string;
   label: string;
   chipLabel?: string;
+  icon: ReactNode;
   suffix: string;
   keywords: readonly string[];
   matches?: (pathname: string, base: string) => boolean;
 }[] = [
-  { key: "location", label: "Обзор", suffix: "", keywords: ["трасса", "как добраться", "описание", "адрес", "старт"] },
+  { key: "location", label: "Обзор", icon: I.PLACE_ICON, suffix: "", keywords: ["трасса", "как добраться", "описание", "адрес", "старт"] },
   {
     key: "events",
     label: "Журнал протоколов",
+    icon: I.PROTOCOL_ICON,
     chipLabel: "Протоколы",
     suffix: "/events",
     keywords: ["протоколы", "протокол", "история стартов", "все старты", "архив", "журнал"],
@@ -343,6 +368,7 @@ export const LOCATION_PAGES: readonly {
   {
     key: "participants",
     label: "Постоянный состав",
+    icon: I.REGULARS_ICON,
     chipLabel: "Состав",
     suffix: "/participants",
     keywords: ["постоянные участники", "завсегдатаи", "регулярные", "состав", "кто бегает", "сообщество"],
@@ -350,6 +376,7 @@ export const LOCATION_PAGES: readonly {
   {
     key: "tops",
     label: "Топы бегунов",
+    icon: I.PODIUM_ICON,
     chipLabel: "Топы",
     suffix: "/tops",
     keywords: ["топ", "лучшие", "самые быстрые", "рекорд трассы", "лидеры", "победители"],
@@ -357,6 +384,7 @@ export const LOCATION_PAGES: readonly {
   {
     key: "weather",
     label: "Погода",
+    icon: I.WEATHER_ICON,
     suffix: "/weather",
     keywords: ["погода", "температура", "дождь", "ветер", "снег", "мороз", "жара", "прогноз", "градусы"],
   },
@@ -368,6 +396,7 @@ export function locationPageLinks(place: NavPlace): NavLink[] {
     key: page.key,
     label: page.label,
     chipLabel: page.chipLabel,
+    icon: page.icon,
     href: `${base}${page.suffix}`,
     keywords: page.keywords,
     matches: page.matches ? (pathname: string) => page.matches!(pathname, base) : undefined,
@@ -382,6 +411,7 @@ function locationsSection(ctx: NavContext): NavSection {
         {
           key: "catalog",
           label: "Все локации",
+          icon: I.CATALOG_ICON,
           href: "/locations",
           keywords: ["каталог", "список локаций", "парки", "где бегать", "карта локаций", "ближайшая локация"],
         },
@@ -410,36 +440,36 @@ const RATING_GROUPS: readonly { key: string; title: string; items: readonly NavL
     key: "runners",
     title: "Бегуны",
     items: [
-      { key: "runs", label: "Количество пробежек", chipLabel: "Пробежки", href: "/ratings/runs", keywords: ["больше всех пробежек", "самые активные"] },
-      { key: "wins", label: "Первые места", href: "/ratings/wins", keywords: ["победы", "победители", "первое место", "абсолют"] },
-      { key: "fastest", label: "Самые быстрые", chipLabel: "Быстрые", href: "/ratings/fastest", keywords: ["быстрее всех", "скорость", "лучшее время", "рекорды времени"] },
+      { key: "runs", label: "Количество пробежек", icon: I.RUNS_RATING_ICON, chipLabel: "Пробежки", href: "/ratings/runs", keywords: ["больше всех пробежек", "самые активные"] },
+      { key: "wins", label: "Первые места", icon: I.MEDAL_ICON, href: "/ratings/wins", keywords: ["победы", "победители", "первое место", "абсолют"] },
+      { key: "fastest", label: "Самые быстрые", icon: I.BOLT_ICON, chipLabel: "Быстрые", href: "/ratings/fastest", keywords: ["быстрее всех", "скорость", "лучшее время", "рекорды времени"] },
     ],
   },
   {
     key: "volunteers",
     title: "Волонтёры",
     items: [
-      { key: "volunteering", label: "Количество волонтёрств", chipLabel: "Волонтёрства", href: "/ratings/volunteering", keywords: ["больше всех волонтерств", "волонтеры"] },
-      { key: "volunteer-locations", label: "Волонтёрство на разных локациях", chipLabel: "Локации", href: "/ratings/volunteer-locations", keywords: ["волонтерский туризм"] },
-      { key: "volunteer-roles", label: "Разнообразие ролей", chipLabel: "Роли", href: "/ratings/volunteer-roles", keywords: ["мультиволонтер", "все роли"] },
+      { key: "volunteering", label: "Количество волонтёрств", icon: I.VOLUNTEER_ICON, chipLabel: "Волонтёрства", href: "/ratings/volunteering", keywords: ["больше всех волонтерств", "волонтеры"] },
+      { key: "volunteer-locations", label: "Волонтёрство на разных локациях", icon: I.VOLUNTEER_PLACES_ICON, chipLabel: "Локации", href: "/ratings/volunteer-locations", keywords: ["волонтерский туризм"] },
+      { key: "volunteer-roles", label: "Разнообразие ролей", icon: I.ROLES_ICON, chipLabel: "Роли", href: "/ratings/volunteer-roles", keywords: ["мультиволонтер", "все роли"] },
     ],
   },
   {
     key: "tourists",
     title: "Туристы",
     items: [
-      { key: "locations", label: "Уникальные локации", chipLabel: "Локации", href: "/ratings/locations", keywords: ["туризм", "паркран-туристы", "больше всех локаций", "туристы"] },
-      { key: "openings", label: "Открытия локаций", chipLabel: "Открытия", href: "/ratings/openings", keywords: ["первопроходцы", "первый старт локации", "открытие"] },
-      { key: "win-locations", label: "Локации с первым местом", chipLabel: "С победой", href: "/ratings/win-locations", keywords: ["победы на разных локациях"] },
-      { key: "home-distance", label: "Дальность от дома", chipLabel: "Дальность", href: "/ratings/home-distance", keywords: ["далеко от дома", "километры", "путешествия"] },
+      { key: "locations", label: "Уникальные локации", icon: I.GLOBE_ICON, chipLabel: "Локации", href: "/ratings/locations", keywords: ["туризм", "паркран-туристы", "больше всех локаций", "туристы"] },
+      { key: "openings", label: "Открытия локаций", icon: I.FLAG_ICON, chipLabel: "Открытия", href: "/ratings/openings", keywords: ["первопроходцы", "первый старт локации", "открытие"] },
+      { key: "win-locations", label: "Локации с первым местом", icon: I.CROWN_ICON, chipLabel: "С победой", href: "/ratings/win-locations", keywords: ["победы на разных локациях"] },
+      { key: "home-distance", label: "Дальность от дома", icon: I.DISTANCE_ICON, chipLabel: "Дальность", href: "/ratings/home-distance", keywords: ["далеко от дома", "километры", "путешествия"] },
     ],
   },
   {
     key: "places",
     title: "Локации",
     items: [
-      { key: "location-records", label: "Рекорды локаций", chipLabel: "Рекорды", href: "/ratings/location-records", keywords: ["рекорд трассы", "рекорды", "лучшее время на локации"] },
-      { key: "regions", label: "Регионы", href: "/ratings/regions", keywords: ["области", "города", "страны", "регионы россии"] },
+      { key: "location-records", label: "Рекорды локаций", icon: I.RECORD_ICON, chipLabel: "Рекорды", href: "/ratings/location-records", keywords: ["рекорд трассы", "рекорды", "лучшее время на локации"] },
+      { key: "regions", label: "Регионы", icon: I.REGIONS_ICON, href: "/ratings/regions", keywords: ["области", "города", "страны", "регионы россии"] },
     ],
   },
 ];
@@ -454,7 +484,7 @@ function ratingsSection(): NavSection {
     href: RATINGS_HUB_HREF,
     keywords: ["рейтинг", "лидерборд", "таблица лидеров", "топ", "кто первый"],
     groups: [
-      { key: "hub", items: [{ key: "hub", label: "Все рейтинги", chipLabel: "Все", href: RATINGS_HUB_HREF }] },
+      { key: "hub", items: [{ key: "hub", label: "Все рейтинги", chipLabel: "Все", icon: I.GRID_ICON, href: RATINGS_HUB_HREF }] },
       ...RATING_GROUPS.map((group) => ({ key: group.key, title: group.title, items: [...group.items] })),
     ],
   };
@@ -467,6 +497,7 @@ function projectSection(ctx: NavContext): NavSection {
     {
       key: "about",
       label: "О проекте",
+      icon: I.INFO_ICON,
       href: PORTAL_ABOUT_HREF,
       matches: (pathname) => pathname === PORTAL_ABOUT_HREF,
       keywords: ["о сайте", "контакты", "автор", "приватность", "данные", "политика", "связаться", "поддержка"],
@@ -474,6 +505,7 @@ function projectSection(ctx: NavContext): NavSection {
     {
       key: "blog",
       label: "Блог",
+      icon: I.BLOG_ICON,
       href: PORTAL_BLOG_HREF,
       matches: (pathname) => pathname === PORTAL_BLOG_HREF || pathname.startsWith(`${PORTAL_BLOG_HREF}/`),
       keywords: ["новости", "статьи", "посты", "телеграм канал", "канал"],
@@ -481,12 +513,14 @@ function projectSection(ctx: NavContext): NavSection {
     {
       key: "updates",
       label: "Обновления",
+      icon: I.SPARKLES_ICON,
       href: PORTAL_UPDATES_HREF,
       keywords: ["что нового", "релизы", "версии", "изменения на сайте"],
     },
     {
       key: "backlog",
       label: "Бэклог идей",
+      icon: I.IDEA_ICON,
       chipLabel: "Бэклог",
       href: "/backlog",
       keywords: ["идеи", "предложить идею", "предложение", "пожелание", "баг", "ошибка", "сообщить об ошибке"],
@@ -496,6 +530,7 @@ function projectSection(ctx: NavContext): NavSection {
     items.push({
       key: "admin",
       label: "Админка",
+      icon: I.SHIELD_ICON,
       href: "/admin/users",
       matches: (pathname) => pathname.startsWith("/admin"),
       tone: "admin",
@@ -545,21 +580,6 @@ export function sectionKeyFromPath(pathname: string): NavSectionKey | null {
     pathname.startsWith("/new/")
   ) {
     return "me";
-  }
-  return null;
-}
-
-/** Текущий пункт раздела (для подсветки и чипов). */
-export function findCurrent(
-  section: NavSection,
-  pathname: string,
-): { group: NavGroup; link: NavLink } | null {
-  for (const group of section.groups) {
-    for (const link of group.items) {
-      if (isLinkCurrent(link, pathname)) {
-        return { group, link };
-      }
-    }
   }
   return null;
 }

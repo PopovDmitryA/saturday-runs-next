@@ -355,7 +355,7 @@ export function SiteSearchDialog() {
                       choose({ kind: "page", hit });
                     }}
                   >
-                    <span className="site-search-row-mark">§</span>
+                    <span className="site-search-row-mark site-search-row-mark-icon">{hit.icon ?? SEARCH_ICON}</span>
                     <span className="site-search-row-main">
                       <b>{hit.label}</b>
                       <small>{hit.context}</small>

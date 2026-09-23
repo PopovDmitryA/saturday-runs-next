@@ -3,7 +3,7 @@ import type { User } from "../../../lib/api";
 import { PortalFooter } from "../PortalFooter";
 import { PortalHeader } from "../PortalHeader";
 import { CabinetUserCard, SiteSidebar, type CabinetTabKey } from "../SiteSidebar";
-import { SectionChips } from "../nav/SectionChips";
+import { SectionSubnav } from "../nav/SectionSubnav";
 import "../portal.css";
 import "./cabinet.css";
 
@@ -105,6 +105,11 @@ export function PortalCabinetShell({
         />
 
         <main className="portal-cab-main" ref={mainRef}>
+          {/* Страницы кабинета на телефоне — липкой полосой из общего дерева
+              навигации, первой в колонке: она прилегает к шапке сайта. Своя
+              нижняя панель кабинета ушла 23.09.2026 — панель одна на весь
+              сайт, её рисует шапка. */}
+          <SectionSubnav active={active} user={user} hrefForTab={hrefForTab} />
           {/* Телефон: сайдбар скрыт, вместе с ним пропадала и карточка
               участника — карандаш правки имени был доступен только с
               компьютера. Здесь та же карточка, видна только на узких
@@ -112,10 +117,6 @@ export function PortalCabinetShell({
           <div className="portal-cab-user-mobile">
             <CabinetUserCard initialUser={user} />
           </div>
-          {/* Вкладки кабинета на телефоне — чипами из общего дерева навигации.
-              Своя нижняя панель кабинета ушла 23.09.2026: панель одна на весь
-              сайт, её рисует шапка. */}
-          <SectionChips active={active} user={user} hrefForTab={hrefForTab} />
           {title && (
             <div className="portal-cab-pagehead">
               <h1>{title}</h1>

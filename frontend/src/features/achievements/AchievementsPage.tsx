@@ -52,9 +52,9 @@ const TIER_LABELS: Record<string, string> = {
 // Порядок от простого к сложному — на нём строятся вкладки и выбор «текущего» тира.
 const TIER_SEQUENCE = ["easy", "medium", "hard"] as const;
 
-// Полосы, залипающие сверху и перекрывающие цель прокрутки: шапка портала и
-// фильтр систем над сеткой челленджей.
-const STICKY_TOP_SELECTORS = [".portal-header", ".achv-platform-filters"];
+// Полосы, залипающие сверху и перекрывающие цель прокрутки: шапка портала,
+// полоса страниц кабинета на телефоне и фильтр систем над сеткой челленджей.
+const STICKY_TOP_SELECTORS = [".portal-header", ".site-subnav", ".achv-platform-filters"];
 // Зазор между низом залипших полос и верхом карточки.
 const JUMP_BREATHING_PX = 12;
 
