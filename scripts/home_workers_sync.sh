@@ -23,6 +23,14 @@ COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.home.yml)
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
 
+# После переезда сайта домой воркеры живут в общем стеке (docker-compose.home-site.yml)
+# и ходят в локальную базу. Этот скрипт поднял бы ВТОРОЙ комплект воркеров,
+# смотрящий в брошенную базу на VPS, — поэтому он просто отходит в сторону.
+if [ -f "${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}" ]; then
+    log "сайт переехал домой — воркеры живут в общем стеке, синхронизировать нечего"
+    exit 0
+fi
+
 [ -d "$HOME_DIR/.git" ] || { log "нет клона $HOME_DIR — сначала git clone"; exit 1; }
 [ -f "$HOME_DIR/.env" ] || { log "нет $HOME_DIR/.env — воркеру неоткуда взять настройки"; exit 1; }
 # Конфиг прокси gitignored и живёт только на серверах: без него docker

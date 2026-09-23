@@ -7,6 +7,7 @@
 #   bash scripts/cutover_to_home.sh freeze      # заглушка на проде, стоп записи
 #   bash scripts/cutover_to_home.sh db          # финальный дамп → восстановление
 #   bash scripts/cutover_to_home.sh start       # поднять ВЕБ-часть (безопасно)
+#   bash scripts/cutover_to_home.sh mark        # маркер «сайт дома» + стоп старых воркеров
 #   bash scripts/cutover_to_home.sh start-full  # фон: бот, beat, воркеры — ТОЛЬКО после freeze
 #   bash scripts/cutover_to_home.sh warm        # прогреть кэши ДО переключения
 #   bash scripts/cutover_to_home.sh verify      # проверить дом до перевода DNS
@@ -136,6 +137,18 @@ start)
     [ "$code" = "200" ] && { say "✓ health 200 через край"; break; }
     sleep 2
   done
+  ;;
+
+mark)
+  # Маркер «сайт дома»: по нему разбор очереди профилей начинает писать в
+  # локальную базу, а синхронизаторы перестают тянуть код с VPS. Без него
+  # очередь молча продолжила бы писать в БРОШЕННУЮ базу на проде.
+  touch "${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}"
+  say "маркер поставлен: ${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}"
+  # Старый стек воркеров (проект srs-prod) смотрит в базу на VPS по tailnet —
+  # после переезда его работа уходила бы в никуда.
+  docker compose -p srs-prod -f docker-compose.yml -f docker-compose.home.yml stop 2>/dev/null | tail -2
+  say "старый стек домашних воркеров остановлен — они теперь часть общего стека"
   ;;
 
 start-full)

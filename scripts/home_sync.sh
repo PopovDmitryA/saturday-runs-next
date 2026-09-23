@@ -75,8 +75,15 @@ sync_workers_checkout() {
 }
 
 
-remote_sha=$(ssh -o BatchMode=yes -o ConnectTimeout=20 "$VPS" \
-    "cat $REMOTE_DIR/.deployed_sha 2>/dev/null" | tr -d '\r\n')
+# Источник правды переезжает вместе с сайтом: пока он на VPS — маркер там,
+# после переезда — в домашнем боевом клоне (его пишет scripts/deploy_home.sh).
+if [ -f "${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}" ]; then
+    remote_sha=$(cat "${HOME_PROD_DIR:-$HOME/srs-prod}/.deployed_sha" 2>/dev/null | tr -d '\r\n')
+    log "сайт дома: сверяюсь с домашним маркером"
+else
+    remote_sha=$(ssh -o BatchMode=yes -o ConnectTimeout=20 "$VPS" \
+        "cat $REMOTE_DIR/.deployed_sha 2>/dev/null" | tr -d '\r\n')
+fi
 if [ -z "$remote_sha" ]; then
     log "на проде нет маркера .deployed_sha — деплой ещё не писал его, пропускаю"
     exit 0
@@ -102,10 +109,12 @@ pyproject_before=$(md5sum "$LOCAL_DIR/backend/pyproject.toml" 2>/dev/null | cut 
 # каталог с картинками. Маска со звёздочкой не случайна: рядом с .env прод
 # держит резервные копии вида .env.backup-ГГГГММДД-ЧЧММСС, они принадлежат root
 # с правами 600, и rsync на них падает целиком (Permission denied).
+SYNC_SRC="$VPS:$REMOTE_DIR/"
+[ -f "${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}" ] && SYNC_SRC="${HOME_PROD_DIR:-$HOME/srs-prod}/"
 rsync -a --delete \
     --exclude '.git/' --exclude 'node_modules/' --exclude '__pycache__/' \
     --exclude '.env*' --exclude 'data/' \
-    -e "ssh -o BatchMode=yes" "$VPS:$REMOTE_DIR/" "$LOCAL_DIR/" || {
+    -e "ssh -o BatchMode=yes" "$SYNC_SRC" "$LOCAL_DIR/" || {
         log "rsync не прошёл — оставляю как было"
         [ "$was_active" = "active" ] && sudo systemctl start "$QUEUE_TIMER" 2>/dev/null
         exit 1
