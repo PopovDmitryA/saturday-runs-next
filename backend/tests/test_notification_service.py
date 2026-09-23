@@ -116,11 +116,11 @@ def test_markup_renders_per_channel() -> None:
     assert (
         to_telegram_html(text) == '<b>Жирно</b> и <a href="https://run5k.test/x">ссылка</a> &lt;b&gt;не тег&lt;/b&gt;'
     )
-    assert to_plain(text) == "Жирно и ссылка: https://run5k.test/x <b>не тег</b>"
+    assert to_plain(text) == "Жирно и ссылка <b>не тег</b>\nhttps://run5k.test/x"
     assert to_email_html("a\nb") == "a<br>b"
 
 
-def test_outgoing_message_telegram_html_has_title_link_and_unsubscribe() -> None:
+def test_outgoing_message_telegram_html_has_title_link_and_settings() -> None:
     message = OutgoingMessage(
         title="🏃 Пробежка попала на сайт",
         text="**📍 Парк** · 20 сентября\n⏱ 24:31",
@@ -132,11 +132,13 @@ def test_outgoing_message_telegram_html_has_title_link_and_unsubscribe() -> None
     html = message.telegram_html()
     assert html.startswith("<b>🏃 Пробежка попала на сайт</b>\n\n<b>📍 Парк</b> · 20 сентября\n⏱ 24:31")
     assert '<a href="https://run5k.test/users/1/runs">Мои пробежки</a>' in html
-    assert html.endswith(
-        '<a href="https://run5k.test/api/notifications/unsubscribe?token=abc">Отписаться от таких сообщений</a>'
-    )
+    # Подвал ведёт в настройки: отписка одним кликом остаётся в письмах.
+    assert html.endswith('──────────\n⚙️ <a href="https://run5k.test/settings#notifications">Настроить уведомления</a>')
+    assert "unsubscribe" not in html
+
     plain = message.plain_text()
     assert "<b>" not in plain and "Мои пробежки: https://run5k.test/users/1/runs" in plain
+    assert plain.endswith("──────────\n⚙️ Настроить уведомления: https://run5k.test/settings#notifications")
 
 
 # ---------------------------------------------------------------------------
@@ -704,3 +706,11 @@ def test_scan_skips_disabled(db_session: Session, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(activity, "compute_challenges", lambda db, user_id: called.append(user_id) or {})
     assert activity.scan_user_activity(db_session, user.id) == {"skipped": "disabled"}
     assert called == []
+
+
+def test_markup_renders_bold_link_label() -> None:
+    """Название площадки — и ссылка, и жирное: `[**Имя**](url)`."""
+    text = "📍 [**Мещерский**](https://run5k.test/locations/m) · 5 вёрст"
+    assert to_telegram_html(text) == ('📍 <a href="https://run5k.test/locations/m"><b>Мещерский</b></a> · 5 вёрст')
+    # Адрес — отдельной строкой: иначе он разрывает фразу пополам.
+    assert to_plain(text) == "📍 Мещерский · 5 вёрст\nhttps://run5k.test/locations/m"

@@ -37,6 +37,7 @@ type SortKey =
   | "best_male"
   | "best_female"
   | "avg"
+  | "last"
   | "debutants"
   | "returned"
   | "first_here"
@@ -61,6 +62,8 @@ function sortValue(row: LocationEventRow, key: SortKey): number | string | null 
       return row.best_female_time_sec;
     case "avg":
       return row.avg_time_sec;
+    case "last":
+      return row.last_finisher_time_sec;
     case "debutants":
       return row.debutants;
     case "returned":
@@ -101,6 +104,7 @@ const EVENTS_COLUMNS: AdaptiveColumn[] = [
   { key: "first_here", width: 176 },
   { key: "guests", width: 148 },
   { key: "avg", width: 184 },
+  { key: "last", width: 184 },
   { key: "prs", width: 184 },
 ];
 
@@ -359,6 +363,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
               {show("best_male") && <col className="col-time" />}
               {show("best_female") && <col className="col-time" />}
               {show("avg") && <col className="col-time" />}
+              {show("last") && <col className="col-time" />}
               {show("prs") && <col className="col-compact-wide" />}
             </colgroup>
             <thead>
@@ -446,6 +451,13 @@ function LocationEventsContent({ slug }: { slug: string }) {
                     label="Среднее время"
                     hint="Среднее время финиша"
                     {...sortProps("avg")}
+                  />
+                )}
+                {show("last") && (
+                  <ColumnHeader
+                    label="Последний финишёр"
+                    hint="Время замыкающего: за сколько финишировал последний на старте"
+                    {...sortProps("last")}
                   />
                 )}
                 {show("prs") && (
@@ -563,6 +575,7 @@ function LocationEventsContent({ slug }: { slug: string }) {
                       </td>
                     )}
                     {show("avg") && <td className="td-time">{stripHours(row.avg_time_display)}</td>}
+                    {show("last") && <td className="td-time">{stripHours(row.last_finisher_time_display)}</td>}
                     {show("prs") && <td className="td-compact">{row.prs ?? "—"}</td>}
                   </tr>
                 ))
@@ -599,7 +612,7 @@ function RecordIcon({ icon, ariaLabel, tooltip }: { icon: string; ariaLabel: str
   );
 }
 
-/** «00:18:08» → «18:08» (часовые времена на 5 км не встречаются). */
+/** «00:18:08» → «18:08». Часовое время (замыкающий на 1:02:10) остаётся целиком. */
 function stripHours(display: string | null): string {
   if (!display) {
     return "—";

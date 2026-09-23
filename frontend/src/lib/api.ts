@@ -2921,6 +2921,9 @@ export type LocationEventRow = {
   best_female_runner_serial_id: number | null;
   avg_time_sec: number | null;
   avg_time_display: string | null;
+  /** Время замыкающего финишёра; только у стартов с полным протоколом. */
+  last_finisher_time_sec: number | null;
+  last_finisher_time_display: string | null;
   // Дебютанты системы и «впервые здесь» не пересекаются: у дебютанта старт
   // здесь тоже первый, но в first_at_location он не попадает (иначе сумма
   // «новичков» считала бы его дважды).
@@ -3638,6 +3641,8 @@ export type NotificationKindState = {
 export type NotificationSettingsState = {
   enabled: boolean;
   primary_channel: NotificationChannelCode | null;
+  // Системы для «Отмен стартов»; пустой список = все.
+  cancellation_platforms: string[];
   channels: NotificationChannelState[];
   kinds: NotificationKindState[];
 };
@@ -3645,12 +3650,23 @@ export type NotificationSettingsState = {
 export type NotificationSettingsUpdate = {
   primary_channel?: NotificationChannelCode | null;
   kinds?: Record<string, boolean>;
+  cancellation_platforms?: string[];
+};
+
+export type NotificationBrokenChannel = {
+  channel: NotificationChannelCode;
+  title: string;
+  problem: string | null;
+  action_url: string | null;
 };
 
 export type NotificationNudgeState = {
+  // enable — призыв включить; fix_delivery — включено, но не доходит.
+  kind: "enable" | "fix_delivery" | null;
   show: boolean;
   enabled: boolean;
   linked_channels: NotificationChannelCode[];
+  broken: NotificationBrokenChannel[];
 };
 
 export function getNotificationSettings() {

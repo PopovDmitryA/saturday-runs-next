@@ -6,6 +6,11 @@ import {
   type NotificationChannelCode,
   type NotificationSettingsState,
 } from "../../lib/api";
+import { platformCodeLabel } from "../../lib/format";
+
+// Отмены стартов публикуют только эти две системы: у parkrun и RunPark
+// недельных отмен в источниках нет (см. app/services/location_activity_status).
+const CANCELLATION_PLATFORMS = ["five_verst", "s95"] as const;
 
 // «О чём присылать»: переключатели видов и выбор основного канала. Живёт
 // модалкой, чтобы не раздувать «Способы входа» — там только тумблеры каналов.
@@ -47,7 +52,7 @@ export function NotificationPrefsModal({
     >
       <ul className="settings-platform-list notify-kind-list">
         {state.kinds.map((kind) => (
-          <li className={`settings-platform-row ${kind.available ? "" : "notify-kind-soon"}`} key={kind.code}>
+          <li className={`settings-platform-row notify-kind-row ${kind.available ? "" : "notify-kind-soon"}`} key={kind.code}>
             <div className="settings-platform-info">
               <span className="settings-platform-name">
                 {kind.title}
@@ -67,6 +72,39 @@ export function NotificationPrefsModal({
                 <span className="toggle-switch-thumb" />
               </span>
             </label>
+            {kind.code === "cancellations" && kind.enabled && state.enabled && (
+              // Пустой список на бэкенде означает «все системы», поэтому снятая
+              // последняя галочка равна выбору обеих — так и подписано.
+              <div className="notify-kind-extra">
+                <span className="muted notify-channel-hint">Про какие системы сообщать:</span>
+                <div className="notify-platform-options">
+                  {CANCELLATION_PLATFORMS.map((code) => {
+                    const chosen =
+                      state.cancellation_platforms.length === 0 || state.cancellation_platforms.includes(code);
+                    return (
+                      <label className="notify-platform-option" key={code}>
+                        <input
+                          type="checkbox"
+                          checked={chosen}
+                          disabled={busy}
+                          onChange={(event) => {
+                            const current =
+                              state.cancellation_platforms.length === 0
+                                ? [...CANCELLATION_PLATFORMS]
+                                : state.cancellation_platforms;
+                            const next = event.target.checked
+                              ? Array.from(new Set([...current, code]))
+                              : current.filter((item) => item !== code);
+                            void apply({ cancellation_platforms: next });
+                          }}
+                        />
+                        <span>{platformCodeLabel(code)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </li>
         ))}
       </ul>

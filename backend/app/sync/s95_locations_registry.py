@@ -301,7 +301,7 @@ def sync_s95_locations_registry(
                 [item.slug for item in result.cancellation_changes],
                 "синк реестра s95",
             )
-            notify_cancellation_changes(result.cancellation_changes)
+            notify_cancellation_changes(result.cancellation_changes, db)
         return result
 
     except Exception as exc:

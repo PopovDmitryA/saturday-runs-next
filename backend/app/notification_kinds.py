@@ -40,6 +40,12 @@ NOTIFICATION_KINDS: tuple[NotificationKind, ...] = (
         "после того, как все протоколы субботы загрузились.",
     ),
     NotificationKind(
+        code="cancellations",
+        title="Отмены стартов",
+        description="Ближайший старт отменён или отмена снята — по всей стране, "
+        "чтобы узнать заранее и о локации, куда только собираетесь.",
+    ),
+    NotificationKind(
         code="backlog",
         title="Мои карточки в бэклоге",
         description="Карточка принята, новые комментарии и смена статуса — по своим карточкам "

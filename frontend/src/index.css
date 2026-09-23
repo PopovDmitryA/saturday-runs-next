@@ -18219,3 +18219,60 @@ input.participant-name-search-input:focus {
 .lb-table tr.lb-row-muted a {
   color: inherit;
 }
+
+/* «О чём присылать»: список видов — не диалог с вопросом, а форма, поэтому
+   панель шире обычной модалки и текст выровнен по левому краю (общий
+   ConfirmModal центрирует и сужает — здесь это делало из списка столбик). */
+.modal-panel:has(.notify-kind-list) {
+  width: min(100%, 34rem);
+  text-align: left;
+}
+
+.modal-panel:has(.notify-kind-list) .modal-title,
+.modal-panel:has(.notify-kind-list) .modal-body {
+  text-align: left;
+}
+
+/* Кнопок две только у вопроса «да/нет»; здесь настройки применяются сразу,
+   и «Закрыть» с «Готово» делали бы одно и то же. */
+.modal-panel:has(.notify-kind-list) .modal-actions .btn.secondary {
+  display: none;
+}
+
+/* «О чём присылать»: у «Отмен стартов» — выбор систем под строкой вида. */
+.notify-kind-row {
+  flex-wrap: wrap;
+}
+
+.notify-kind-list .settings-platform-info {
+  flex: 1 1 14rem;
+}
+
+.notify-kind-extra {
+  flex-basis: 100%;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+  display: grid;
+  gap: 0.35rem;
+}
+
+.notify-platform-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+}
+
+.notify-platform-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-size: 0.92rem;
+}
+
+/* Тревожная модалка «не можем написать»: тот же каркас, другой акцент. */
+.notify-intro-alert .notify-intro-hero {
+  background: linear-gradient(135deg, #d97706, #b91c1c);
+  box-shadow: 0 12px 24px -10px rgba(185, 28, 28, 0.55);
+}
