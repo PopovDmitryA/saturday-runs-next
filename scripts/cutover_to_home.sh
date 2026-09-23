@@ -6,7 +6,8 @@
 #   bash scripts/cutover_to_home.sh media       # первый прогон rsync (373 МБ)
 #   bash scripts/cutover_to_home.sh freeze      # заглушка на проде, стоп записи
 #   bash scripts/cutover_to_home.sh db          # финальный дамп → восстановление
-#   bash scripts/cutover_to_home.sh start       # поднять домашний стек
+#   bash scripts/cutover_to_home.sh start       # поднять ВЕБ-часть (безопасно)
+#   bash scripts/cutover_to_home.sh start-full  # фон: бот, beat, воркеры — ТОЛЬКО после freeze
 #   bash scripts/cutover_to_home.sh warm        # прогреть кэши ДО переключения
 #   bash scripts/cutover_to_home.sh verify      # проверить дом до перевода DNS
 #   ... перевод DNS руками: A → домашний IP, AAAA удалить ...
@@ -108,14 +109,31 @@ db)
   ;;
 
 start)
-  say "поднимаю домашний стек"
-  "${COMPOSE[@]}" up -d --build || die "стек не поднялся"
+  # ТОЛЬКО веб: база, кэш, api, nginx, край. Ни бота, ни beat, ни воркеров —
+  # у них боевые токены и общий Telegram. 24.09.2026 репетиция подняла всё
+  # разом: бот-дубль три минуты дрался с боевым за getUpdates (18 конфликтов
+  # в журнале прода), а beat успел поставить задачу. Обошлось — ни одного
+  # апдейта дубль не обработал, наружу воркеры не сходили. Больше так нельзя:
+  # фоновую часть поднимает отдельный шаг start-full, и только после freeze.
+  say "поднимаю ВЕБ-часть (без бота, планировщика и воркеров)"
+  "${COMPOSE[@]}" up -d --build postgres redis api nginx edge certbot || die "стек не поднялся"
   "${COMPOSE[@]}" run --rm -T api alembic upgrade head </dev/null | tail -2
   for _ in $(seq 1 60); do
     code=$(curl -s -o /dev/null -m 5 -w '%{http_code}' -H 'Host: run5k.run' http://127.0.0.1/health)
     [ "$code" = "200" ] && { say "✓ health 200 через край"; break; }
     sleep 2
   done
+  ;;
+
+start-full)
+  # Фоновая часть. Зовётся ТОЛЬКО после freeze: пока прод жив, второй бот и
+  # второй планировщик — это дубль боевых токенов и двойные походы наружу.
+  ssh -o BatchMode=yes "$VPS" "cd $REMOTE_DIR && docker compose ps --status running --services 2>/dev/null" |
+    grep -qxE "bot|beat" &&
+    die "на проде ещё живы bot/beat — сначала freeze, иначе получим два бота на один токен"
+  say "поднимаю фоновую часть: планировщик, воркеры, бот"
+  "${COMPOSE[@]}" up -d --build || die "фоновая часть не поднялась"
+  "${COMPOSE[@]}" ps --format '{{.Service}}: {{.Status}}'
   ;;
 
 warm)
