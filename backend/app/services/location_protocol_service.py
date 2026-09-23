@@ -483,7 +483,9 @@ def _build_results(
             {
                 "position": result.position,
                 "participant_id": result.participant_id,
-                "name": row.display_name,
+                # Строка без участника — заглушка пропущенного места русского
+                # parkrun (app/parkrun/protocol_gaps.py): имени нет нигде.
+                "name": row.display_name or ("НЕИЗВЕСТНЫЙ" if result.participant_id is None else None),
                 "external_user_id": row.external_user_id,
                 "serial_id": row.serial_id if row.profile_private is False else None,
                 "gender": gender,

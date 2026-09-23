@@ -489,6 +489,44 @@ def test_journal_leaves_the_last_start_without_a_retention_number(db_session: An
     assert last["debut_return_pct"] is None
 
 
+def test_journal_shows_last_finisher_time(db_session: Any) -> None:
+    """«Последний финишёр» — самое медленное время старта; строка без времени не в счёт."""
+    from app.models import Event, Location, RunResult
+
+    slug = _seed_retention_location(db_session)
+    location = db_session.query(Location).filter(Location.external_key == slug).one()
+    first_event = (
+        db_session.query(Event)
+        .filter(Event.location_id == location.id, Event.event_number == 1)
+        .one()
+    )
+    slow = (
+        db_session.query(RunResult)
+        .filter(RunResult.event_id == first_event.id)
+        .order_by(RunResult.external_result_key)
+        .first()
+    )
+    slow.finish_time_sec = 2 * 3600 + 15
+    db_session.add(
+        RunResult(
+            event_id=first_event.id,
+            participant_id=None,
+            external_result_key=f"{slug}-unknown-1",
+            position=3,
+            finish_time_sec=None,
+        )
+    )
+    db_session.flush()
+
+    payload = location_page_service._compute_location_events(db_session, slug)
+    assert payload is not None
+    by_date = {str(item["event_date"]): item for item in payload["items"]}
+
+    assert by_date["2026-08-01"]["last_finisher_time_sec"] == 2 * 3600 + 15
+    assert by_date["2026-08-01"]["last_finisher_time_display"] == "02:00:15"
+    assert by_date["2026-08-08"]["last_finisher_time_sec"] == 1500
+
+
 def _seed_unknown_rows_location(db_session: Any) -> str:
     """Один живой участник на двух стартах и две безымянные строки протокола."""
     from uuid import uuid4
