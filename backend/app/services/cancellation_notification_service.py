@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import User, UserNotificationChannel, UserNotificationPrefs
 from app.notification_kinds import kind_enabled
-from app.notification_markup import bold
+from app.notification_markup import bold, link
 from app.saturday_week import week_saturday
 from app.services import notification_service as notifications
 from app.services.platform_titles import platform_title
@@ -56,16 +56,19 @@ def upcoming_saturday(today: date) -> date:
     return saturday if saturday >= today else saturday + timedelta(days=7)
 
 
-def _location_line(change: CancellationChange, *, marker: str) -> str:
-    """Строка площадки: эмодзи-маркер отделяет одну локацию от другой."""
+def _location_line(change: CancellationChange, *, marker: str, base_url: str) -> str:
+    """Строка площадки: эмодзи-маркер отделяет одну локацию от другой, а само
+    название — ссылка на её страницу у нас. Общей ссылки внизу поэтому нет:
+    из списка на пять площадок нужна конкретная, а не каталог."""
     title = change.name or change.slug
-    line = f"{marker} {bold(title)} · {platform_title(change.platform_code)}"
+    url = f"{base_url}/locations/{change.slug}"
+    line = f"{marker} {link(bold(title), url)} · {platform_title(change.platform_code)}"
     if change.cancelled and change.reason:
         line += f"\n{change.reason}"
     return line
 
 
-def compose(changes: list[CancellationChange], *, today: date | None = None) -> tuple[str, str]:
+def compose(changes: list[CancellationChange], *, base_url: str, today: date | None = None) -> tuple[str, str]:
     """(заголовок, тело в разметке) на весь набор изменений одного человека.
 
     Состояние живёт в заголовке, пока весь набор одного вида: повторять его
@@ -79,17 +82,15 @@ def compose(changes: list[CancellationChange], *, today: date | None = None) -> 
 
     if cancelled and restored:
         title = f"🚫 Изменения по отменам стартов {day}"
-        blocks = [_location_line(item, marker="🚫") for item in cancelled]
-        blocks += [_location_line(item, marker="✅") for item in restored]
+        blocks = [_location_line(item, marker="🚫", base_url=base_url) for item in cancelled]
+        blocks += [_location_line(item, marker="✅", base_url=base_url) for item in restored]
     elif cancelled:
         title = f"🚫 Отмена старта {day}" if len(cancelled) == 1 else f"🚫 Отмены стартов {day}"
-        blocks = [_location_line(item, marker="📍") for item in cancelled]
+        blocks = [_location_line(item, marker="📍", base_url=base_url) for item in cancelled]
     else:
         title = "✅ Отмена снята" if len(restored) == 1 else "✅ Отмены сняты"
-        blocks = [_location_line(item, marker="📍") for item in restored]
+        blocks = [_location_line(item, marker="📍", base_url=base_url) for item in restored]
 
-    # Ссылки в теле нет: она уходит кнопкой-действием самого уведомления
-    # (на площадку, когда изменение одно, иначе в каталог) — см. notify_user.
     return title, "\n\n".join(blocks)
 
 
@@ -136,8 +137,7 @@ def notify_cancellation_subscribers(
             mine = [item for item in changes if platform_allowed(prefs, item.platform_code)]
             if not mine:
                 continue
-            title, text = compose(mine, today=today)
-            url = f"{base_url}/locations/{mine[0].slug}" if len(mine) == 1 else f"{base_url}/locations"
+            title, text = compose(mine, base_url=base_url, today=today)
             delivery = notifications.notify_user(
                 db,
                 user,
@@ -145,8 +145,8 @@ def notify_cancellation_subscribers(
                 title=title,
                 text=text,
                 dedupe_key=_dedupe_key(mine, today=today),
-                url=url,
-                url_label="Страница локации" if len(mine) == 1 else "Все локации",
+                # Ссылки-кнопки нет: каждая площадка в списке кликабельна сама.
+                url=None,
                 commit=False,
             )
             if delivery is not None:
