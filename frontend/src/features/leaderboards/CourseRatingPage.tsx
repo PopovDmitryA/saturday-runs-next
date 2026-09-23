@@ -30,7 +30,26 @@ const METRIC_TABS: { value: CourseRatingMetric; label: string }[] = [
 
 // У этих метрик «лучше» значит «меньше»: меньше градусов — прямее, меньше
 // площадь — теснее намотана трасса.
+type SortKey =
+  | "value"
+  | "distance"
+  | "elevation"
+  | "turns"
+  | "straight"
+  | "laps"
+  | "box"
+  | "tracks"
+  | "name";
+
 const LOWER_IS_BETTER: CourseRatingMetric[] = ["straightness", "footprint"];
+
+// Какой столбец данных повторяет выбранную метрику. Его прячем: значение уже
+// стоит слева, в колонке метрики, и дважды одно и то же читать незачем.
+// У перепада высот пары нет — «Набор» это другая величина.
+const METRIC_OWN_COLUMN: Partial<Record<CourseRatingMetric, SortKey>> = {
+  straightness: "turns",
+  footprint: "box",
+};
 
 /** Метрика из адреса: на главную рейтингов ведут три разные карточки. */
 function metricFromUrl(): CourseRatingMetric | null {
@@ -66,24 +85,14 @@ const COLUMN_HINTS: Record<string, string> = {
   box:
     "Самый тесный прямоугольник, в который влезает трасса целиком. Ищется перебором угла, " +
     "а не по сторонам света, иначе диагональная аллея давала бы огромный «квадрат». " +
-    "Сортировка — по площади: чем она меньше, тем гуще намотаны пять километров.",
+    "Рядом со сторонами — площадь в гектарах, по ней и строится сортировка: " +
+    "чем она меньше, тем гуще намотаны пять километров.",
   tracks: "Сколько треков учтено в расчёте. Наведите на число — увидите, от скольких разных людей.",
 };
 
 const EMPTY_HINT =
   "Локации без треков из рейтинга не убираем: по ним видно, где данных ещё нет. " +
   "Цифры появятся, когда участники приложат треки.";
-
-type SortKey =
-  | "value"
-  | "distance"
-  | "elevation"
-  | "turns"
-  | "straight"
-  | "laps"
-  | "box"
-  | "tracks"
-  | "name";
 
 type SortState = { key: SortKey; direction: "asc" | "desc" };
 
@@ -167,10 +176,19 @@ function formatKm(meters: number | null): string {
 }
 
 function formatBox(row: CourseRatingItem): string {
-  // Площадь в квадратных метрах не читается — показываем стороны.
+  // Стороны нагляднее площади: «150 × 300 м» сразу рисует картинку.
   return row.box_short_m != null && row.box_long_m != null
     ? `${Math.round(row.box_short_m)} × ${Math.round(row.box_long_m)} м`
     : "—";
+}
+
+/** Площадь пятачка в гектарах: по ней и строится рейтинг. */
+function formatBoxArea(row: CourseRatingItem): string {
+  if (row.box_area_m2 == null) {
+    return "—";
+  }
+  const hectares = row.box_area_m2 / 10000;
+  return `${hectares.toFixed(hectares < 10 ? 2 : 1).replace(".", ",")} га`;
 }
 
 function formatMetric(metric: CourseRatingMetric, row: CourseRatingItem): string {
@@ -226,6 +244,23 @@ export function CourseRatingPage() {
     load(metric);
   }, [load, metric]);
 
+  // Вкладка метрики живёт и в адресе: ссылку на «Прямолинейность» можно
+  // скопировать и переслать, а карточки с главной рейтингов ведут прямо сюда.
+  // replaceState, а не push: три вкладки одной страницы не должны забивать
+  // историю и ломать кнопку «назад».
+  const selectMetric = useCallback(
+    (value: CourseRatingMetric) => {
+      setMetric(value);
+      if (typeof window === "undefined") {
+        return;
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.set("metric", value);
+      window.history.replaceState(window.history.state, "", url.toString());
+    },
+    [setMetric],
+  );
+
   const toggleSort = useCallback(
     (key: SortKey) => {
       setSort((current) =>
@@ -279,6 +314,7 @@ export function CourseRatingPage() {
   const visibleRows = rows.slice(0, visibleCount);
   const metricLabel =
     metric === "elevation" ? "Перепад" : metric === "straightness" ? "Поворот" : "Пятачок";
+  const ownColumn = METRIC_OWN_COLUMN[metric];
 
   return (
     <PortalSectionShell sidebar={{ active: "ratings" }}>
@@ -315,7 +351,7 @@ export function CourseRatingPage() {
                     type="button"
                     aria-pressed={metric === tab.value}
                     className={`lb-gender-tab${metric === tab.value ? " lb-gender-tab-active" : ""}`}
-                    onClick={() => setMetric(tab.value)}
+                    onClick={() => selectMetric(tab.value)}
                   >
                     {tab.label}
                   </button>
@@ -396,7 +432,7 @@ export function CourseRatingPage() {
                       </div>
                       <div className="rowcard-sub">
                         {row.has_data
-                          ? `${formatKm(row.distance_m)} км · ${row.lap_count ?? 1} кр. · ${formatBox(row)} · треков ${row.tracks_count}`
+                          ? `${formatKm(row.distance_m)} км · ${row.lap_count ?? 1} кр. · ${formatBox(row)} (${formatBoxArea(row)}) · треков ${row.tracks_count}`
                           : "треков пока нет"}
                       </div>
                     </div>
@@ -419,10 +455,14 @@ export function CourseRatingPage() {
                       <SortableHeader label={metricLabel} sortKey="value" sort={sort} onSort={toggleSort} />
                       <SortableHeader label="Длина, км" sortKey="distance" sort={sort} onSort={toggleSort} />
                       <SortableHeader label="Набор" sortKey="elevation" sort={sort} onSort={toggleSort} />
-                      <SortableHeader label="Поворот" sortKey="turns" sort={sort} onSort={toggleSort} />
+                      {ownColumn !== "turns" && (
+                        <SortableHeader label="Поворот" sortKey="turns" sort={sort} onSort={toggleSort} />
+                      )}
                       <SortableHeader label="Прямая" sortKey="straight" sort={sort} onSort={toggleSort} />
                       <SortableHeader label="Кругов" sortKey="laps" sort={sort} onSort={toggleSort} />
-                      <SortableHeader label="Пятачок" sortKey="box" sort={sort} onSort={toggleSort} />
+                      {ownColumn !== "box" && (
+                        <SortableHeader label="Пятачок" sortKey="box" sort={sort} onSort={toggleSort} />
+                      )}
                       <SortableHeader label="Треков" sortKey="tracks" sort={sort} onSort={toggleSort} />
                       <th>Система</th>
                     </tr>
@@ -437,28 +477,33 @@ export function CourseRatingPage() {
                         <td>
                           <LocationCell row={row} />
                         </td>
-                        <td className="num strong">{formatMetric(metric, row)}</td>
+                        <td className="num strong">
+                          {formatMetric(metric, row)}
+                          {metric === "footprint" && row.box_area_m2 != null && (
+                            <span className="lb-muted"> · {formatBoxArea(row)}</span>
+                          )}
+                        </td>
                         <td className="num">{formatKm(row.distance_m)}</td>
                         <td className="num">
                           {row.elevation_gain_m != null ? `${Math.round(row.elevation_gain_m)} м` : "—"}
                         </td>
-                        <td className="num">
-                          {row.turn_sum_deg != null ? `${formatInt(row.turn_sum_deg)}°` : "—"}
-                        </td>
+                        {ownColumn !== "turns" && (
+                          <td className="num">
+                            {row.turn_sum_deg != null ? `${formatInt(row.turn_sum_deg)}°` : "—"}
+                          </td>
+                        )}
                         <td className="num">
                           {row.longest_straight_m != null ? `${Math.round(row.longest_straight_m)} м` : "—"}
                         </td>
                         <td className="num">{row.lap_count ?? "—"}</td>
-                        <td
-                          className="num"
-                          title={
-                            row.box_area_m2 != null
-                              ? `Площадь ${formatInt(Math.round(row.box_area_m2 / 100) / 100)} га`
-                              : undefined
-                          }
-                        >
-                          {formatBox(row)}
-                        </td>
+                        {ownColumn !== "box" && (
+                          <td className="num">
+                            {formatBox(row)}
+                            {row.box_area_m2 != null && (
+                              <span className="lb-muted"> · {formatBoxArea(row)}</span>
+                            )}
+                          </td>
+                        )}
                         <td className="num" title={`Участников: ${row.unique_user_count}`}>
                           {row.tracks_count || "—"}
                         </td>

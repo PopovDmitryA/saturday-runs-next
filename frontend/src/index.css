@@ -2872,6 +2872,9 @@ tr.run-crosslinked td {
 .badge-platform {
   margin-left: 0;
   font-weight: 600;
+  /* «5 вёрст» и «Парк Победы» не должны ломаться пополам: в узкой колонке
+     таблицы бейдж переносился на вторую строку и выглядел обрывком. */
+  white-space: nowrap;
 }
 
 .badge-platform-five-verst {

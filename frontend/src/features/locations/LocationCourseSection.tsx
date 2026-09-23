@@ -65,6 +65,12 @@ function ProfileChart({ profile }: { profile: CourseProfile }) {
   );
 }
 
+/** Площадь пятачка: в гектарах она читается, в квадратных метрах — нет. */
+function formatHectares(areaM2: number): string {
+  const hectares = areaM2 / 10000;
+  return `${hectares.toFixed(hectares < 10 ? 2 : 1).replace(".", ",")} га`;
+}
+
 function Facts({ profile }: { profile: CourseProfile }) {
   return (
     <div className="loc-course-facts">
@@ -95,14 +101,18 @@ function Facts({ profile }: { profile: CourseProfile }) {
         <span>суммарный поворот</span>
       </div>
       {/* Пятачок: самый тесный прямоугольник вокруг трассы. Стороны нагляднее
-          площади — «150 × 300 м» сразу рисует картинку, «45 000 м²» нет. */}
+          площади — «150 × 300 м» сразу рисует картинку, «45 000 м²» нет, —
+          но саму площадь показываем подписью: по ней строится рейтинг. */}
       <div>
         <b>
           {profile.box_short_m != null && profile.box_long_m != null
             ? `${Math.round(profile.box_short_m)} × ${Math.round(profile.box_long_m)} м`
             : "—"}
         </b>
-        <span>умещается на пятачке</span>
+        <span>
+          умещается на пятачке
+          {profile.box_area_m2 != null && ` · ${formatHectares(profile.box_area_m2)}`}
+        </span>
       </div>
     </div>
   );
