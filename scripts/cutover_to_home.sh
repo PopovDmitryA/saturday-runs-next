@@ -6,7 +6,8 @@
 #   bash scripts/cutover_to_home.sh media       # первый прогон rsync (373 МБ)
 #   bash scripts/cutover_to_home.sh freeze      # заглушка на проде, стоп записи
 #   bash scripts/cutover_to_home.sh db          # финальный дамп → восстановление
-#   bash scripts/cutover_to_home.sh start       # поднять домашний стек
+#   bash scripts/cutover_to_home.sh start       # поднять ВЕБ-часть (безопасно)
+#   bash scripts/cutover_to_home.sh start-full  # фон: бот, beat, воркеры — ТОЛЬКО после freeze
 #   bash scripts/cutover_to_home.sh warm        # прогреть кэши ДО переключения
 #   bash scripts/cutover_to_home.sh verify      # проверить дом до перевода DNS
 #   ... перевод DNS руками: A → домашний IP, AAAA удалить ...
@@ -71,10 +72,15 @@ media)
 
 freeze)
   say "== заморозка прода =="
-  ssh -o BatchMode=yes "$VPS" "cd $REMOTE_DIR && cp deploy/nginx/maintenance_planned.html deploy/nginx/maintenance_current.html && docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile telegram stop beat bot worker worker-warm worker-five-verst-user worker-parkrun" ||
-    die "не удалось остановить фон на проде"
-  say "фон на проде остановлен, заглушка подложена; api и nginx ещё отвечают"
-  say "ВАЖНО: с этого момента прод только читают — всё, что запишется, потеряется"
+  # Плановое окно: пока на диске лежит maintenance_on, контейнерный nginx
+  # отдаёт всем «обновляемся» (у нас есть обход по куке /__maint/bypass).
+  # Без этого люди продолжали бы писать в базу, которую мы уже сняли дампом,
+  # и эти записи потерялись бы при переезде.
+  ssh -o BatchMode=yes "$VPS" "cd $REMOTE_DIR && touch deploy/nginx/maintenance_on && docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile telegram stop beat bot worker worker-warm worker-five-verst-user worker-parkrun" ||
+    die "не удалось заморозить прод (если ssh отказал — выполнить команду руками на проде)"
+  code=$(curl -s -o /dev/null -m 15 -w '%{http_code}' https://run5k.run/)
+  say "фон остановлен, окно обслуживания включено; сайт отдаёт $code"
+  say "ВАЖНО: с этой минуты записи на проде нет — всё, что запишется, потеряется"
   ;;
 
 db)
@@ -95,6 +101,14 @@ db)
   "${COMPOSE[@]}" up -d postgres || die "база не поднялась"
   for _ in $(seq 1 60); do "${COMPOSE[@]}" exec -T postgres pg_isready -U "${POSTGRES_USER:-saturday_runs}" >/dev/null 2>&1 && break; sleep 1; done
 
+  # База пересоздаётся: на репетициях том уже наполнен, и pg_restore поверх
+  # существующих строк сыплет конфликтами первичных ключей. Дома в этот момент
+  # только копия прода — терять нечего.
+  "${COMPOSE[@]}" exec -T postgres psql -U "${POSTGRES_USER:-saturday_runs}" -d postgres \
+    -c "drop database if exists ${POSTGRES_DB:-saturday_runs_lk}" >/dev/null || die "не удалось снести старую копию"
+  "${COMPOSE[@]}" exec -T postgres psql -U "${POSTGRES_USER:-saturday_runs}" -d postgres \
+    -c "create database ${POSTGRES_DB:-saturday_runs_lk} owner ${POSTGRES_USER:-saturday_runs}" >/dev/null || die "не создалась база"
+
   # Роль отчётов создаём ДО восстановления: иначе 40 GRANT'ов отваливаются и
   # внутренний отчётный доступ приезжает без прав (проверено на репетиции).
   "${COMPOSE[@]}" exec -T postgres psql -U "${POSTGRES_USER:-saturday_runs}" -d "${POSTGRES_DB:-saturday_runs_lk}" \
@@ -108,21 +122,39 @@ db)
   ;;
 
 start)
-  say "поднимаю домашний стек"
-  "${COMPOSE[@]}" up -d --build || die "стек не поднялся"
+  # ТОЛЬКО веб: база, кэш, api, nginx, край. Ни бота, ни beat, ни воркеров —
+  # у них боевые токены и общий Telegram. 24.09.2026 репетиция подняла всё
+  # разом: бот-дубль три минуты дрался с боевым за getUpdates (18 конфликтов
+  # в журнале прода), а beat успел поставить задачу. Обошлось — ни одного
+  # апдейта дубль не обработал, наружу воркеры не сходили. Больше так нельзя:
+  # фоновую часть поднимает отдельный шаг start-full, и только после freeze.
+  say "поднимаю ВЕБ-часть (без бота, планировщика и воркеров)"
+  "${COMPOSE[@]}" up -d --build postgres redis api nginx edge certbot || die "стек не поднялся"
   "${COMPOSE[@]}" run --rm -T api alembic upgrade head </dev/null | tail -2
   for _ in $(seq 1 60); do
-    code=$(curl -s -o /dev/null -m 5 -w '%{http_code}' -H 'Host: run5k.run' http://127.0.0.1/health)
+    code=$(curl -s -o /dev/null -m 5 --resolve run5k.run:443:127.0.0.1 -w '%{http_code}' https://run5k.run/health)
     [ "$code" = "200" ] && { say "✓ health 200 через край"; break; }
     sleep 2
   done
+  ;;
+
+start-full)
+  # Фоновая часть. Зовётся ТОЛЬКО после freeze: пока прод жив, второй бот и
+  # второй планировщик — это дубль боевых токенов и двойные походы наружу.
+  ssh -o BatchMode=yes "$VPS" "cd $REMOTE_DIR && docker compose ps --status running --services 2>/dev/null" |
+    grep -qxE "bot|beat" &&
+    die "на проде ещё живы bot/beat — сначала freeze, иначе получим два бота на один токен"
+  say "поднимаю фоновую часть: планировщик, воркеры, бот"
+  "${COMPOSE[@]}" up -d --build || die "фоновая часть не поднялась"
+  "${COMPOSE[@]}" ps --format '{{.Service}}: {{.Status}}'
   ;;
 
 warm)
   say "прогреваю кэши ДО перевода DNS (холодная главная считается ~34 с)"
   for u in /api/portal/home /api/locations/index /api/fastest /api/location-records /api/protocol/week; do
     printf '  %-26s' "$u"
-    curl -s -o /dev/null -m 120 -w '%{http_code} за %{time_total}s\n' -H 'Host: run5k.run' "http://127.0.0.1$u"
+    curl -s -o /dev/null -m 180 --resolve run5k.run:443:127.0.0.1 \
+      -w '%{http_code} за %{time_total}s\n' "https://run5k.run$u"
   done
   ;;
 
@@ -130,7 +162,8 @@ verify)
   say "== дом до переключения DNS =="
   for u in / /health /api/locations/index /api/portal/home; do
     printf '  %-24s' "$u"
-    curl -s -o /dev/null -m 60 -w '%{http_code} за %{time_total}s\n' -H 'Host: run5k.run' "http://127.0.0.1$u"
+    curl -s -o /dev/null -m 120 --resolve run5k.run:443:127.0.0.1 \
+      -w '%{http_code} за %{time_total}s\n' "https://run5k.run$u"
   done
   say "теперь DNS: A run5k.run → $HOME_IP, AAAA удалить (дома IPv6 нет)"
   ;;

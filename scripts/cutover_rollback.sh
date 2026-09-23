@@ -24,7 +24,7 @@ now)
   cd "$HOME_DIR" && "${COMPOSE[@]}" stop edge nginx api beat bot worker worker-warm \
     worker-s95 worker-five-verst worker-five-verst-user worker-parkrun worker-runpark
   say "поднимаю прод"
-  ssh -o BatchMode=yes "$VPS" "cd $REMOTE_DIR && rm -f deploy/nginx/maintenance_current.html && docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile telegram up -d"
+  ssh -o BatchMode=yes "$VPS" "cd $REMOTE_DIR && rm -f deploy/nginx/maintenance_on deploy/nginx/maintenance_current.html && docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile telegram up -d"
   say "ВЕРНИ DNS: A run5k.run → 195.58.34.112, AAAA 2a03:6f00:a::47dc"
   say "проверка: curl -s -o /dev/null -w '%{http_code}' https://run5k.run/"
   ;;

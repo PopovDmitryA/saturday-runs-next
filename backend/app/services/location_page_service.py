@@ -110,8 +110,8 @@ def location_page_cache_key(slug: str) -> str:
 
 
 def location_events_cache_key(slug: str) -> str:
-    # v4 — в строках появилась погода в час старта (weather).
-    return f"locations:events:v4:{slug.strip().lower()}"
+    # v5 — в строках появилось время последнего финишёра (last_finisher_time_*).
+    return f"locations:events:v5:{slug.strip().lower()}"
 
 
 def location_leaders_cache_key(slug: str) -> str:
@@ -2785,6 +2785,7 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
                 func.min(case((time_ok & (gender_expr == "male"), RunResult.finish_time_sec))).label("best_male"),
                 func.min(case((time_ok & (gender_expr == "female"), RunResult.finish_time_sec))).label("best_female"),
                 func.avg(case((time_ok, RunResult.finish_time_sec))).label("avg_time"),
+                func.max(case((time_ok, RunResult.finish_time_sec))).label("last_time"),
                 debutants_sum().label("debutants"),
                 first_at_location_sum().label("first_here"),
                 func.sum(case((RunResult.is_pr.is_(True), 1), else_=0)).label("prs"),
@@ -2802,6 +2803,7 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
                 "best_male": int(row.best_male) if row.best_male is not None else None,
                 "best_female": int(row.best_female) if row.best_female is not None else None,
                 "avg_time": int(row.avg_time) if row.avg_time is not None else None,
+                "last_time": int(row.last_time) if row.last_time is not None else None,
                 "debutants": int(row.debutants or 0),
                 "first_here": int(row.first_here or 0),
                 "prs": int(row.prs or 0),
@@ -2918,6 +2920,10 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
                 "best_female_runner_serial_id": female_runner.get("serial_id"),
                 "avg_time_sec": avg_time,
                 "avg_time_display": fmt(avg_time),  # type: ignore[arg-type]
+                # Время замыкающего — только из полного протокола: в сводках
+                # систем его нет. Безымянные без времени в max не попадают.
+                "last_finisher_time_sec": stats["last_time"] if stats else None,
+                "last_finisher_time_display": fmt(stats["last_time"]) if stats else None,  # type: ignore[arg-type]
                 "debutants": stats["debutants"] if stats else None,
                 "first_at_location": stats["first_here"] if stats else None,
                 # Доля дописывается ниже, когда известно, был ли у новичков

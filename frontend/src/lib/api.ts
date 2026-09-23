@@ -2913,6 +2913,9 @@ export type LocationEventRow = {
   best_female_runner_serial_id: number | null;
   avg_time_sec: number | null;
   avg_time_display: string | null;
+  /** Время замыкающего финишёра; только у стартов с полным протоколом. */
+  last_finisher_time_sec: number | null;
+  last_finisher_time_display: string | null;
   // Дебютанты системы и «впервые здесь» не пересекаются: у дебютанта старт
   // здесь тоже первый, но в first_at_location он не попадает (иначе сумма
   // «новичков» считала бы его дважды).

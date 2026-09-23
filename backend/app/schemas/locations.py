@@ -329,6 +329,8 @@ class LocationEventRowResponse(BaseModel):
     best_female_runner_serial_id: int | None = None
     avg_time_sec: int | None = None
     avg_time_display: str | None = None
+    last_finisher_time_sec: int | None = None
+    last_finisher_time_display: str | None = None
     # Дебютанты системы (первый старт вообще) и «впервые здесь» (в системе не
     # впервые, на площадке впервые) — непересекающиеся множества, их можно и
     # складывать, и показывать порознь. См. app/services/newcomer_counts.py.
