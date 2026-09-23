@@ -462,7 +462,9 @@ function CoursesHubCard({ metric }: { metric: CourseRatingMetric }) {
   }, [metric]);
 
   return (
-    <a className="lb-hub-card lb-hub-card-live" href={`/ratings/courses/${metric}`}>
+    // Метрика уходит параметром, а не сегментом пути: маршрут один
+    // (/ratings/courses), страница читает metric из адреса.
+    <a className="lb-hub-card lb-hub-card-live" href={`/ratings/courses?metric=${metric}`}>
       <div className="lb-hub-card-top">
         <span className="lb-hub-card-title">{COURSE_METRIC_LABELS[metric]}</span>
       </div>
