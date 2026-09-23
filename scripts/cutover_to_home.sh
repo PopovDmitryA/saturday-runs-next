@@ -72,10 +72,15 @@ media)
 
 freeze)
   say "== заморозка прода =="
-  ssh -o BatchMode=yes "$VPS" "cd $REMOTE_DIR && cp deploy/nginx/maintenance_planned.html deploy/nginx/maintenance_current.html && docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile telegram stop beat bot worker worker-warm worker-five-verst-user worker-parkrun" ||
-    die "не удалось остановить фон на проде"
-  say "фон на проде остановлен, заглушка подложена; api и nginx ещё отвечают"
-  say "ВАЖНО: с этого момента прод только читают — всё, что запишется, потеряется"
+  # Плановое окно: пока на диске лежит maintenance_on, контейнерный nginx
+  # отдаёт всем «обновляемся» (у нас есть обход по куке /__maint/bypass).
+  # Без этого люди продолжали бы писать в базу, которую мы уже сняли дампом,
+  # и эти записи потерялись бы при переезде.
+  ssh -o BatchMode=yes "$VPS" "cd $REMOTE_DIR && touch deploy/nginx/maintenance_on && docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile telegram stop beat bot worker worker-warm worker-five-verst-user worker-parkrun" ||
+    die "не удалось заморозить прод (если ssh отказал — выполнить команду руками на проде)"
+  code=$(curl -s -o /dev/null -m 15 -w '%{http_code}' https://run5k.run/)
+  say "фон остановлен, окно обслуживания включено; сайт отдаёт $code"
+  say "ВАЖНО: с этой минуты записи на проде нет — всё, что запишется, потеряется"
   ;;
 
 db)
