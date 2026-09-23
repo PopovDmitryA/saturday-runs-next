@@ -7264,6 +7264,17 @@ a.admin-system-chip:hover {
   font-size: 0.9rem;
 }
 
+/* Подписчики уведомлений: несколько таблиц подряд в одной карточке. */
+.admin-stats-notifications {
+  margin-bottom: 1rem;
+}
+
+.admin-stats-notifications > .admin-stats-chart-title,
+.admin-stats-notifications > .admin-stats-platform-list,
+.admin-stats-notifications > .admin-stats-chart-card {
+  margin-top: 1.25rem;
+}
+
 /* Наборы привязок — таблица под списком систем в той же карточке. */
 .admin-stats-combos {
   margin-top: 1.25rem;

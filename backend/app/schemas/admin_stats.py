@@ -304,3 +304,69 @@ class AdminEmailLoginResponse(BaseModel):
     totals: AdminEmailLoginTotals
     by_domain: list[AdminEmailLoginDomainRow] = Field(default_factory=list)
     by_day: list[AdminEmailLoginDayRow] = Field(default_factory=list)
+
+
+class AdminNotificationTotals(BaseModel):
+    users_total: int = 0
+    subscribers: int = 0
+    subscribers_share: float = 0.0
+    new_subscribers_period: int = 0
+    opted_out: int = 0
+    unreachable: int = 0
+    nudge_dismissed: int = 0
+    sent_period: int = 0
+
+
+class AdminNotificationChannelRow(BaseModel):
+    channel: str
+    title: str
+    enabled: int = 0
+    disabled: int = 0
+    check_ok: int = 0
+    check_failed: int = 0
+    unchecked: int = 0
+    primary: int = 0
+    sent_period: int = 0
+
+
+class AdminNotificationComboRow(BaseModel):
+    channels: list[str] = Field(default_factory=list)
+    users: int = 0
+
+
+class AdminNotificationKindRow(BaseModel):
+    code: str
+    title: str
+    default_enabled: bool = True
+    enabled: int = 0
+    share: float = 0.0
+
+
+class AdminNotificationPlatformRow(BaseModel):
+    # "all" — выбор пустой, то есть все системы.
+    code: str
+    users: int = 0
+
+
+class AdminNotificationDeliveryKindRow(BaseModel):
+    code: str
+    title: str
+    sent: int = 0
+    failed: int = 0
+    other: int = 0
+
+
+class AdminNotificationDayRow(BaseModel):
+    date: date
+    value: int = 0
+
+
+class AdminNotificationStatsResponse(BaseModel):
+    period_days: int
+    totals: AdminNotificationTotals
+    channels: list[AdminNotificationChannelRow] = Field(default_factory=list)
+    combinations: list[AdminNotificationComboRow] = Field(default_factory=list)
+    kinds: list[AdminNotificationKindRow] = Field(default_factory=list)
+    cancellation_platforms: list[AdminNotificationPlatformRow] = Field(default_factory=list)
+    deliveries_by_kind: list[AdminNotificationDeliveryKindRow] = Field(default_factory=list)
+    new_by_day: list[AdminNotificationDayRow] = Field(default_factory=list)

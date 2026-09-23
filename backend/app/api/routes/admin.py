@@ -37,6 +37,7 @@ from app.schemas.admin_resync import (
 )
 from app.schemas.admin_stats import (
     AdminEmailLoginResponse,
+    AdminNotificationStatsResponse,
     AdminSiteStatsResponse,
     AdminUsersGeographyResponse,
     PageAnalyticsResponse,
@@ -104,6 +105,7 @@ from app.services.abuse_admin_service import (
     get_ip_block_details,
     list_abuse_blocks,
 )
+from app.services.admin_notification_stats_service import get_admin_notification_stats
 from app.services.admin_site_stats_service import get_admin_site_stats
 from app.services.admin_users_geo_stats_service import get_admin_users_geography
 from app.services.admin_users_service import (
@@ -575,6 +577,18 @@ def admin_users_geography(
     считается по протоколам и заметно дольше остальных чисел страницы."""
     payload = get_admin_users_geography(db, period_days=period_days)
     return AdminUsersGeographyResponse.model_validate(payload)
+
+
+@router.get("/stats/notifications", response_model=AdminNotificationStatsResponse)
+def admin_notification_stats(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> AdminNotificationStatsResponse:
+    """Подписчики уведомлений: каналы, их наборы, виды, системы для отмен и
+    доставки за период. Отдельным запросом от /stats, как почта и география."""
+    payload = get_admin_notification_stats(db, period_days=period_days)
+    return AdminNotificationStatsResponse.model_validate(payload)
 
 
 @router.get("/page-analytics", response_model=PageAnalyticsResponse)

@@ -5112,6 +5112,41 @@ export type AdminEmailLoginResponse = {
 
 // Воронка входа по почте: сколько писем с кодом ушло и сколько сработало.
 // Отдельный запрос от /admin/stats — это отчёт про доставку писем.
+export type AdminNotificationStatsResponse = {
+  period_days: number;
+  totals: {
+    users_total: number;
+    subscribers: number;
+    subscribers_share: number;
+    new_subscribers_period: number;
+    opted_out: number;
+    unreachable: number;
+    nudge_dismissed: number;
+    sent_period: number;
+  };
+  channels: {
+    channel: string;
+    title: string;
+    enabled: number;
+    disabled: number;
+    check_ok: number;
+    check_failed: number;
+    unchecked: number;
+    primary: number;
+    sent_period: number;
+  }[];
+  combinations: { channels: string[]; users: number }[];
+  kinds: { code: string; title: string; default_enabled: boolean; enabled: number; share: number }[];
+  /** code "all" — выбор пустой, то есть все системы. */
+  cancellation_platforms: { code: string; users: number }[];
+  deliveries_by_kind: { code: string; title: string; sent: number; failed: number; other: number }[];
+  new_by_day: { date: string; value: number }[];
+};
+
+export function getAdminNotificationStats(periodDays = 30) {
+  return apiFetch<AdminNotificationStatsResponse>(`/admin/stats/notifications?period_days=${periodDays}`);
+}
+
 export function getAdminEmailLoginFunnel(periodDays = 30) {
   return apiFetch<AdminEmailLoginResponse>(`/admin/email-login?period_days=${periodDays}`);
 }
