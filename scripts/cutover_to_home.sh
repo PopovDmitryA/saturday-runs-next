@@ -95,7 +95,11 @@ db)
   # ssh + sudo -u postgres, и шаг упирался в пароль viewer.
   say "снимаю дамп прод-базы (правами приложения, по tailnet)"
   set -a; . "$HOME_DIR/.env"; set +a
-  PROD_URL="${PROD_DATABASE_URL:-${DATABASE_URL/postgresql+psycopg/postgresql}}"
+  PROD_URL="${PROD_DATABASE_URL:-$DATABASE_URL}"
+  PROD_URL="${PROD_URL/postgresql+psycopg/postgresql}"
+  case "$PROD_URL" in *127.0.0.1*|*localhost*)
+      die "PROD_DATABASE_URL смотрит на локальную базу — дамп снялся бы сам с себя" ;;
+  esac
   pg_dump "$PROD_URL" -Fc -Z6 -f "$DUMP_DIR/$dump" || die "дамп не снялся"
   say "дамп: $(du -h "$DUMP_DIR/$dump" | cut -f1) за $(( $(date +%s) - t0 )) с"
 
@@ -145,6 +149,30 @@ mark)
   # очередь молча продолжила бы писать в БРОШЕННУЮ базу на проде.
   touch "${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}"
   say "маркер поставлен: ${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}"
+
+  # .env домашнего клона всё ещё указывает на базу VPS (по нему работали
+  # воркеры до переезда). Сервисам compose адрес перекрывает, а вот ручной
+  # скрипт внутри контейнера (docker compose exec api python scripts/…)
+  # прочитал бы именно .env и ушёл писать на прод. Переписываем: боевой адрес
+  # становится локальным, прежний остаётся под именем PROD_DATABASE_URL —
+  # он нужен шагу db, чтобы снимать дамп.
+  python3 - "$HOME_DIR/.env" <<'PYENV'
+import pathlib, sys, re
+p = pathlib.Path(sys.argv[1])
+lines = p.read_text().splitlines()
+out, prod_url = [], None
+for line in lines:
+    if line.startswith("DATABASE_URL=") and "@100.93.200.8:" in line:
+        prod_url = line.split("=", 1)[1]
+        out.append(re.sub(r"@100\.93\.200\.8:5432", "@127.0.0.1:5433", line))
+    else:
+        out.append(line)
+if prod_url and not any(l.startswith("PROD_DATABASE_URL=") for l in out):
+    out.append("# Адрес прод-базы на VPS: нужен шагу db сценария переезда и откату.")
+    out.append(f"PROD_DATABASE_URL={prod_url}")
+p.write_text("\n".join(out) + "\n")
+print("   .env: DATABASE_URL переключён на локальную базу" if prod_url else "   .env: боевой адрес уже локальный")
+PYENV
   # Старый стек воркеров (проект srs-prod) смотрит в базу на VPS по tailnet —
   # после переезда его работа уходила бы в никуда.
   docker compose -p srs-prod -f docker-compose.yml -f docker-compose.home.yml stop 2>/dev/null | tail -2
