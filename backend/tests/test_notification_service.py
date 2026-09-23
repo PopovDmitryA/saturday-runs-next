@@ -24,6 +24,7 @@ from app.models import (
     RunResult,
     User,
 )
+from app.notification_kinds import KIND_BY_CODE, NOTIFICATION_KINDS, NotificationKind, kind_enabled
 from app.notification_markup import to_email_html, to_plain, to_telegram_html
 from app.services import activity_notification_service as activity
 from app.services import notification_channels_service as channels
@@ -714,3 +715,26 @@ def test_markup_renders_bold_link_label() -> None:
     assert to_telegram_html(text) == ('📍 <a href="https://run5k.test/locations/m"><b>Мещерский</b></a> · 5 вёрст')
     # Адрес — отдельной строкой: иначе он разрывает фразу пополам.
     assert to_plain(text) == "📍 Мещерский · 5 вёрст\nhttps://run5k.test/locations/m"
+
+
+def test_new_kind_is_on_for_existing_users(db_session: Session) -> None:
+    """Правило Дмитрия 24.09.2026: вид, появившийся позже, включается сам у тех,
+    у кого уведомления уже работают. Держится тем, что в prefs.kinds лежат
+    только виды, тумблер которых человек трогал сам."""
+    user = _make_user(db_session, chat_id=100)
+    _on(db_session, user)
+    # Человек давно настроил свои виды — про будущий вид он ничего не знает.
+    notify.update_prefs(db_session, user.id, kinds={"runs": False})
+    db_session.commit()
+
+    fresh = NotificationKind(code="brand_new", title="Новый вид", description="Появился после настройки")
+    monkey = dict(KIND_BY_CODE)
+    monkey[fresh.code] = fresh
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("app.notification_kinds.KIND_BY_CODE", monkey)
+        mp.setattr("app.notification_kinds.NOTIFICATION_KINDS", (*NOTIFICATION_KINDS, fresh))
+        prefs = notify.get_prefs(db_session, user.id)
+        assert kind_enabled(prefs.kinds if prefs else None, fresh.code) is True
+        assert notify.notify_user(db_session, user, fresh.code, title="t", text="x", dedupe_key="new-kind") is not None
+        # Собственный выбор человека при этом не трогается.
+        assert kind_enabled(prefs.kinds if prefs else None, "runs") is False
