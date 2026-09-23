@@ -138,123 +138,124 @@ def test_upcoming_saturday_rolls_over_on_sunday() -> None:
     assert cancellations.upcoming_saturday(date(2026, 9, 27)) == date(2026, 10, 3)  # воскресенье
 
 
-def test_compose_cancelled_and_restored() -> None:
+def test_compose_single_cancellation() -> None:
     title, text = cancellations.compose(
-        _change("meshcherskiy", name="Мещерский", reason="Работы в парке"),
+        [_change("meshcherskiy", name="Мещерский", reason="Работы в парке")],
         base_url="https://run5k.test",
         today=date(2026, 9, 23),
     )
     assert title == "🚫 Отмена старта: Мещерский"
-    assert "**Мещерский** (5 вёрст) — ближайший старт 26.09 отменён." in text
-    assert "Причина: Работы в парке" in text
+    assert "🚫 **Старт 26.09 отменён**" in text
+    assert "**Мещерский** · 5 вёрст" in text and "Работы в парке" in text
     assert "[Страница локации](https://run5k.test/locations/meshcherskiy)" in text
 
+
+def test_compose_batch_mixes_cancelled_and_restored() -> None:
     title, text = cancellations.compose(
-        _change("meshcherskiy", name="Мещерский", cancelled=False),
+        [
+            _change("a", name="Лихославль"),
+            _change("b", name="Иваново", platform="s95"),
+            _change("c", name="Серов", cancelled=False),
+        ],
         base_url="https://run5k.test",
         today=date(2026, 9, 23),
     )
-    assert title == "✅ Отмена снята: Мещерский"
-    assert "снова состоится" in text
+    assert title == "🚫 Изменения по отменам стартов 26.09"
+    assert "**Лихославль** · 5 вёрст" in text and "**Иваново** · С95" in text
+    assert "✅ **Отмена снята**" in text and "**Серов** · 5 вёрст" in text
+    # Ссылок на каждую площадку не даём — одна общая на каталог.
+    assert text.count("[") == 1 and "[Все локации](https://run5k.test/locations)" in text
 
 
-# ---------------------------------------------------------------------------
-# Кому
-
-
-def test_recipients_are_home_and_recent_visitors(db_session: Session) -> None:
-    platform = _platform(db_session, "five_verst", "5 вёрст")
-    location = _location(db_session, platform, slug="meshcherskiy", name="Мещерский")
-    today = date.today()
-
-    runner = _user(db_session, name="Бегун", chat_id=101)
-    _ran_at(db_session, runner, location, platform, when=today - timedelta(days=30))
-    volunteer = _user(db_session, name="Волонтёр", chat_id=102)
-    _ran_at(db_session, volunteer, location, platform, when=today - timedelta(days=60), volunteer=True)
-    old = _user(db_session, name="Давний турист", chat_id=103)
-    _ran_at(db_session, old, location, platform, when=today - timedelta(days=400))
-    homer = _user(db_session, name="Домашний", chat_id=104)
-    homer.home_location_key = f"location:{location.id}"
-    db_session.commit()
-    stranger = _user(db_session, name="Посторонний", chat_id=105)
-
-    found = cancellations.find_recipients(db_session, _change("meshcherskiy", name="Мещерский"), today=today)
-    assert found is not None
-    assert found.user_ids == {runner.id, volunteer.id, homer.id}
-    assert old.id not in found.user_ids and stranger.id not in found.user_ids
-
-
-def test_recipients_ignore_users_without_notifications(db_session: Session) -> None:
-    platform = _platform(db_session, "five_verst", "5 вёрст")
-    location = _location(db_session, platform, slug="silent", name="Тихий")
-    quiet = User(display_name="Без уведомлений", telegram_id=201, telegram_chat_id=201)
-    db_session.add(quiet)
-    db_session.commit()
-    _ran_at(db_session, quiet, location, platform, when=date.today() - timedelta(days=7))
-
-    found = cancellations.find_recipients(db_session, _change("silent", name="Тихий"), today=date.today())
-    assert found is not None and found.user_ids == set()
-
-
-def test_unknown_location_is_skipped(db_session: Session) -> None:
-    _platform(db_session, "five_verst", "5 вёрст")
-    assert cancellations.find_recipients(db_session, _change("nowhere", name="Нигде")) is None
+def test_compose_plural_titles() -> None:
+    title, _ = cancellations.compose(
+        [_change("a", name="Первый"), _change("b", name="Второй")],
+        base_url="https://run5k.test",
+        today=date(2026, 9, 23),
+    )
+    assert title == "🚫 Отмены стартов 26.09: 2"
+    title, _ = cancellations.compose(
+        [_change("a", name="Первый", cancelled=False)],
+        base_url="https://run5k.test",
+        today=date(2026, 9, 23),
+    )
+    assert title == "✅ Отмена снята: Первый"
 
 
 # ---------------------------------------------------------------------------
 # Рассылка
 
 
-def test_notify_sends_once_per_change_and_dedupes(db_session: Session, _no_broker: list[UUID]) -> None:
+def test_notify_goes_to_every_subscriber_regardless_of_location(db_session: Session, _no_broker: list[UUID]) -> None:
+    """Отмены рассылаются по всей стране: бегал человек там или нет — неважно."""
     platform = _platform(db_session, "five_verst", "5 вёрст")
-    location = _location(db_session, platform, slug="meshcherskiy", name="Мещерский")
-    runner = _user(db_session, name="Бегун", chat_id=111)
-    _ran_at(db_session, runner, location, platform, when=date.today() - timedelta(days=14))
-    change = _change("meshcherskiy", name="Мещерский", reason="Ремонт дорожек")
-
-    assert cancellations.notify_cancellation_subscribers(db_session, [change]) == 1
-    row = db_session.query(NotificationDelivery).filter_by(user_id=runner.id, kind="cancellations").one()
-    assert row.payload["title"] == "🚫 Отмена старта: Мещерский"
-    assert row.payload["url"].endswith("/locations/meshcherskiy")
-    assert _no_broker == [row.id]
-
-    # Повтор того же изменения на той же неделе — тишина.
-    assert cancellations.notify_cancellation_subscribers(db_session, [change]) == 0
-    # Снятие отмены — отдельное сообщение.
-    assert (
-        cancellations.notify_cancellation_subscribers(
-            db_session, [_change("meshcherskiy", name="Мещерский", cancelled=False)]
-        )
-        == 1
+    far_away = _location(db_session, platform, slug="vladivostok", name="Владивосток")
+    local = _user(db_session, name="Москвич", chat_id=111)
+    _ran_at(
+        db_session,
+        local,
+        _location(db_session, platform, slug="meshcherskiy", name="Мещерский"),
+        platform,
+        when=date.today() - timedelta(days=14),
     )
-    assert db_session.query(NotificationDelivery).filter_by(user_id=runner.id, kind="cancellations").count() == 2
+    newcomer = _user(db_session, name="Новичок без пробежек", chat_id=112)
+    silent = User(display_name="Без уведомлений", telegram_id=113, telegram_chat_id=113)
+    db_session.add(silent)
+    db_session.commit()
+
+    change = _change(far_away.external_key, name="Владивосток", reason="Штормовое предупреждение")
+    assert cancellations.notify_cancellation_subscribers(db_session, [change]) == 2
+    rows = db_session.query(NotificationDelivery).filter_by(kind="cancellations").all()
+    assert {row.user_id for row in rows} == {local.id, newcomer.id}
+    assert rows[0].payload["title"] == "🚫 Отмена старта: Владивосток"
+    assert rows[0].payload["url"].endswith("/locations/vladivostok")
+    assert set(_no_broker) == {row.id for row in rows}
+
+
+def test_batch_is_one_message_and_dedupes(db_session: Session) -> None:
+    _platform(db_session, "five_verst", "5 вёрст")
+    user = _user(db_session, name="Подписчик", chat_id=121)
+    batch = [_change("a", name="Первый"), _change("b", name="Второй")]
+
+    assert cancellations.notify_cancellation_subscribers(db_session, batch) == 1
+    row = db_session.query(NotificationDelivery).filter_by(user_id=user.id, kind="cancellations").one()
+    day = cancellations.upcoming_saturday(date.today()).strftime("%d.%m")
+    assert row.payload["title"] == f"🚫 Отмены стартов {day}: 2"
+    assert "Первый" in row.payload["text"] and "Второй" in row.payload["text"]
+
+    # Тот же набор на той же неделе (реестр и наблюдатель видят его по очереди).
+    assert cancellations.notify_cancellation_subscribers(db_session, batch) == 0
+    # Другой набор — новое сообщение.
+    assert cancellations.notify_cancellation_subscribers(db_session, [_change("c", name="Третий")]) == 1
 
 
 def test_platform_filter_and_kind_toggle(db_session: Session) -> None:
-    five = _platform(db_session, "five_verst", "5 вёрст")
-    s95 = _platform(db_session, "s95", "S95")
-    five_loc = _location(db_session, five, slug="park-5v", name="Парк 5в")
-    s95_loc = _location(db_session, s95, slug="park-s95", name="Парк S95")
-    user = _user(db_session, name="Только 5 вёрст", chat_id=121)
-    _ran_at(db_session, user, five_loc, five, when=date.today() - timedelta(days=10))
-    _ran_at(db_session, user, s95_loc, s95, when=date.today() - timedelta(days=10))
-
+    _platform(db_session, "five_verst", "5 вёрст")
+    _platform(db_session, "s95", "S95")
+    user = _user(db_session, name="Только 5 вёрст", chat_id=131)
     notify.update_prefs(db_session, user.id, cancellation_platforms=["five_verst"])
     db_session.commit()
+
+    # Из смешанной пачки в сообщение попадает только своя система.
+    mixed = [_change("park-5v", name="Парк 5в"), _change("park-s95", name="Парк S95", platform="s95")]
+    assert cancellations.notify_cancellation_subscribers(db_session, mixed) == 1
+    row = db_session.query(NotificationDelivery).filter_by(user_id=user.id, kind="cancellations").one()
+    assert "Парк 5в" in row.payload["text"] and "Парк S95" not in row.payload["text"]
+
+    # Только чужая система — молчим.
     assert (
         cancellations.notify_cancellation_subscribers(
-            db_session, [_change("park-s95", name="Парк S95", platform="s95")]
+            db_session, [_change("other-s95", name="Другой S95", platform="s95")]
         )
         == 0
     )
-    assert cancellations.notify_cancellation_subscribers(db_session, [_change("park-5v", name="Парк 5в")]) == 1
 
     # Пустой список систем = все.
     notify.update_prefs(db_session, user.id, cancellation_platforms=[])
     db_session.commit()
     assert (
         cancellations.notify_cancellation_subscribers(
-            db_session, [_change("park-s95", name="Парк S95", platform="s95")]
+            db_session, [_change("other-s95", name="Другой S95", platform="s95")]
         )
         == 1
     )
@@ -269,7 +270,7 @@ def test_platform_filter_and_kind_toggle(db_session: Session) -> None:
 
 
 def test_update_prefs_rejects_unknown_platform(db_session: Session) -> None:
-    user = _user(db_session, name="Тест", chat_id=131)
+    user = _user(db_session, name="Тест", chat_id=141)
     with pytest.raises(ValueError):
         notify.update_prefs(db_session, user.id, cancellation_platforms=["strava"])
 

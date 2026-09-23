@@ -42,8 +42,8 @@ NOTIFICATION_KINDS: tuple[NotificationKind, ...] = (
     NotificationKind(
         code="cancellations",
         title="Отмены стартов",
-        description="Ближайший старт на вашей локации отменён или отмена снята. "
-        "Считаются домашняя локация и те, где вы бегали или волонтёрили за последний год.",
+        description="Ближайший старт отменён или отмена снята — по всей стране, "
+        "чтобы узнать заранее и о локации, куда только собираетесь.",
     ),
     NotificationKind(
         code="backlog",
