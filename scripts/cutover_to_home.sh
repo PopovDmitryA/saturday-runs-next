@@ -38,6 +38,10 @@ preflight)
   # Без него бот дома молчит: api.telegram.org из домашней сети недоступен.
   [ -f "$HOME_DIR/deploy/tg-proxy/config.json" ] && say "✓ конфиг tg-proxy на месте" ||
     say "✗ нет deploy/tg-proxy/config.json — забрать с прода"
+  # Шаг db создаёт report_ro с паролем из REPORT_DATABASE_URL (или REPORT_RO_PASSWORD).
+  grep -qE '^(REPORT_RO_PASSWORD=.|REPORT_DATABASE_URL=[^:]+://[^:@/]+:[^@]+@)' "$HOME_DIR/.env" &&
+    say "✓ пароль report_ro есть в .env" ||
+    say "✗ нет пароля report_ro в .env — отчёты и выборки для дайджеста дома не войдут"
   sudo -n test -d /etc/letsencrypt/live/run5k.run &&
     say "✓ сертификаты run5k.run на месте" || say "✗ сертификатов нет — шаг certs"
   [ -d "$HOME_DIR/data/og" ] && say "✓ медиа: $(du -sh "$HOME_DIR/data" | cut -f1)" || say "✗ медиа не скопированы — шаг media"
@@ -114,14 +118,24 @@ db)
   "${COMPOSE[@]}" exec -T postgres psql -U "${POSTGRES_USER:-saturday_runs}" -d postgres \
     -c "create database ${POSTGRES_DB:-saturday_runs_lk} owner ${POSTGRES_USER:-saturday_runs}" >/dev/null || die "не создалась база"
 
-  # Роль отчётов создаём ДО восстановления: иначе 40 GRANT'ов отваливаются и
-  # внутренний отчётный доступ приезжает без прав (проверено на репетиции).
-  "${COMPOSE[@]}" exec -T postgres psql -U "${POSTGRES_USER:-saturday_runs}" -d "${POSTGRES_DB:-saturday_runs_lk}" \
-    -c "do \$\$ begin if not exists (select 1 from pg_roles where rolname='report_ro') then create role report_ro login password '${REPORT_RO_PASSWORD:-change-me}'; end if; end \$\$;" >/dev/null
-
+  # Права из дампа не везём (--no-acl): в нём права по умолчанию висят на роли
+  # postgres, которой в контейнерной базе нет, и из-за этого таблицы новых
+  # миграций остались бы для report_ro закрыты, как на VPS. Права report_ro
+  # целиком выдаёт скрипт роли сразу после восстановления.
   say "восстанавливаю"
   "${COMPOSE[@]}" exec -T postgres pg_restore -U "${POSTGRES_USER:-saturday_runs}" \
-    -d "${POSTGRES_DB:-saturday_runs_lk}" -j 6 --no-owner "/dump/$dump" 2>&1 | tail -2
+    -d "${POSTGRES_DB:-saturday_runs_lk}" -j 6 --no-owner --no-acl "/dump/$dump" 2>&1 | tail -2
+
+  # Пароль report_ro — тот же, что в REPORT_DATABASE_URL: под ним после
+  # переезда входят отчётный API и выборки для дайджеста.
+  # Сайт от этой роли не зависит, поэтому сбой здесь шаг не валит.
+  ro_pw="${REPORT_RO_PASSWORD:-$(python3 -c 'import os, urllib.parse as u; print(u.unquote(u.urlsplit(os.environ.get("REPORT_DATABASE_URL", "")).password or ""))')}"
+  if [ -z "$ro_pw" ]; then
+    say "✗ report_ro не создана: нет ни REPORT_RO_PASSWORD, ни пароля в REPORT_DATABASE_URL"
+  elif ! "${COMPOSE[@]}" exec -T postgres psql -U "${POSTGRES_USER:-saturday_runs}" -d "${POSTGRES_DB:-saturday_runs_lk}" \
+      -q -At -v ON_ERROR_STOP=1 -v report_password="$ro_pw" -f - <scripts/create_report_ro_role.sql | tail -2; then
+    say "✗ report_ro не настроилась — повторить scripts/create_report_ro_role.sql руками (команда в его шапке)"
+  fi
   rows=$("${COMPOSE[@]}" exec -T postgres psql -U "${POSTGRES_USER:-saturday_runs}" -d "${POSTGRES_DB:-saturday_runs_lk}" -At -c "select count(*) from run_results")
   say "run_results дома: $rows; весь шаг занял $(( $(date +%s) - t0 )) с"
   ;;
@@ -156,15 +170,24 @@ mark)
   # прочитал бы именно .env и ушёл писать на прод. Переписываем: боевой адрес
   # становится локальным, прежний остаётся под именем PROD_DATABASE_URL —
   # он нужен шагу db, чтобы снимать дамп.
+  #
+  # REPORT_DATABASE_URL compose НЕ перекрывает, api читает его прямо из .env.
+  # На VPS это хостовый Postgres за мостом docker0 (172.17.0.1), а дома там
+  # слушает только 127.0.0.1 — отчётный API упёрся бы в отказ соединения.
+  # Дома база — сервис postgres в той же docker-сети.
+  report_on_vps=$(grep -c '^REPORT_DATABASE_URL=.*@172\.17\.0\.1:5432/' "$HOME_DIR/.env")
   python3 - "$HOME_DIR/.env" <<'PYENV'
 import pathlib, sys, re
 p = pathlib.Path(sys.argv[1])
 lines = p.read_text().splitlines()
-out, prod_url = [], None
+out, prod_url, report_moved = [], None, False
 for line in lines:
     if line.startswith("DATABASE_URL=") and "@100.93.200.8:" in line:
         prod_url = line.split("=", 1)[1]
         out.append(re.sub(r"@100\.93\.200\.8:5432", "@127.0.0.1:5433", line))
+    elif line.startswith("REPORT_DATABASE_URL=") and "@172.17.0.1:5432/" in line:
+        out.append(line.replace("@172.17.0.1:5432/", "@postgres:5432/"))
+        report_moved = True
     else:
         out.append(line)
 if prod_url and not any(l.startswith("PROD_DATABASE_URL=") for l in out):
@@ -172,7 +195,13 @@ if prod_url and not any(l.startswith("PROD_DATABASE_URL=") for l in out):
     out.append(f"PROD_DATABASE_URL={prod_url}")
 p.write_text("\n".join(out) + "\n")
 print("   .env: DATABASE_URL переключён на локальную базу" if prod_url else "   .env: боевой адрес уже локальный")
+if report_moved:
+    print("   .env: REPORT_DATABASE_URL смотрит на сервис postgres")
 PYENV
+  # Настройки api читает один раз при старте — без перезапуска адрес не подхватится.
+  if [ "$report_on_vps" != 0 ]; then
+    "${COMPOSE[@]}" restart api >/dev/null && say "api перезапущен: отчётный API ходит в домашнюю базу"
+  fi
   # Старый стек воркеров (проект srs-prod) смотрит в базу на VPS по tailnet —
   # после переезда его работа уходила бы в никуда.
   docker compose -p srs-prod -f docker-compose.yml -f docker-compose.home.yml stop 2>/dev/null | tail -2

@@ -180,6 +180,9 @@ docker compose restart nginx
 - **Доступ на чтение** — эндпоинт ходит под ролью `report_ro` (`GRANT SELECT`,
   `REPORT_DATABASE_URL`); плюс транзакция `READ ONLY` + `statement_timeout` + лимит
   строк. Запись/DDL невозможны. Скрипт роли: `scripts/create_report_ro_role.sql`.
+  Для роли закрыты `login_events`, `user_geo_pings`, `email_login_requests`,
+  `user_notification_channels`, `auth_login_requests` (список — в скрипте);
+  таблицы новых миграций ей открываются сами.
 - **Из cloud-сессии** нужен egress на `run5k.run` (Custom network access → Allowed
   domains).
 
