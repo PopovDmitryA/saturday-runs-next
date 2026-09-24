@@ -119,6 +119,7 @@ type LocationSortKey =
   | "platform"
   | "ratings"
   | "comments"
+  | "with_photos"
   | "voters"
   | "overall"
   | "organization"
@@ -139,6 +140,8 @@ function compareLocations(
       return a.ratings - b.ratings;
     case "comments":
       return a.comments - b.comments;
+    case "with_photos":
+      return a.with_photos - b.with_photos;
     case "voters":
       return a.voters - b.voters;
     case "overall":
@@ -479,6 +482,7 @@ function AdminRatingsContent() {
                   <LocationSortTh label="Система" sortKey="platform" />
                   <LocationSortTh label="Оценок" sortKey="ratings" />
                   <LocationSortTh label="С комментарием" sortKey="comments" />
+                  <LocationSortTh label="С фото" sortKey="with_photos" />
                   <LocationSortTh label="Оценивших" sortKey="voters" />
                   <LocationSortTh label="Общая" sortKey="overall" />
                   <LocationSortTh label="Организация" sortKey="organization" />
@@ -489,7 +493,7 @@ function AdminRatingsContent() {
               <tbody>
                 {locations && visibleLocations.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="muted">
+                    <td colSpan={10} className="muted">
                       {locations.locations.length === 0 ? "Пока нет оценок" : "Ничего не найдено"}
                     </td>
                   </tr>
@@ -514,6 +518,7 @@ function AdminRatingsContent() {
                     <td>{loc.current_platform ? <PlatformBadge code={loc.current_platform} /> : "—"}</td>
                     <td>{loc.ratings}</td>
                     <td>{loc.comments}</td>
+                    <td>{loc.with_photos}</td>
                     <td>{loc.voters}</td>
                     <td className="admin-ratings-avg">{num(loc.avg_overall)}</td>
                     <td>{num(loc.avg_organization)}</td>
@@ -687,7 +692,8 @@ function AdminRatingsContent() {
           <>
             <p className="muted admin-ratings-lead">
               Оценок: {locationReviews.length}, с комментарием:{" "}
-              {locationReviews.filter((r) => r.comment).length}. Здесь все отзывы, включая
+              {locationReviews.filter((r) => r.comment).length}, с фото:{" "}
+              {locationReviews.filter((r) => r.photos.length > 0).length}. Здесь все отзывы, включая
               местных, — фильтр «Без местных» на список не действует.
             </p>
             {!raw ? (

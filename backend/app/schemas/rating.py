@@ -125,6 +125,8 @@ class AdminLocationRatingRow(BaseModel):
     current_platform: str | None = None
     # Отзывы с непустым комментарием.
     comments: int = 0
+    # Отзывы хотя бы с одним фото.
+    with_photos: int = 0
     voters: int
     ratings: int
     avg_overall: float | None = None

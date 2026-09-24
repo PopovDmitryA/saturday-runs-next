@@ -980,6 +980,9 @@ def location_rating_aggregates(
         .all()
     )
     catalog_index = LocationCatalogIndex(db)
+    rated_with_photos = {
+        rating_id for (rating_id,) in db.query(LocationRatingPhoto.rating_id).distinct()
+    }
 
     home_keys: dict[UUID, str | None] = {}
     if exclude_locals:
@@ -1000,6 +1003,7 @@ def location_rating_aggregates(
                 "latest_platform": None,
                 "voters": set(),
                 "comments": 0,
+                "with_photos": 0,
                 "overall": [],
                 "organization": [],
                 "route": [],
@@ -1019,6 +1023,8 @@ def location_rating_aggregates(
         cast("set[UUID]", bucket["voters"]).add(rating.user_id)
         if rating.comment and rating.comment.strip():
             bucket["comments"] = cast(int, bucket["comments"]) + 1
+        if rating.id in rated_with_photos:
+            bucket["with_photos"] = cast(int, bucket["with_photos"]) + 1
         cast("list[int]", bucket["overall"]).append(rating.score_overall)
         if rating.score_organization is not None:
             cast("list[int]", bucket["organization"]).append(rating.score_organization)
@@ -1036,6 +1042,7 @@ def location_rating_aggregates(
                 "location_name": bucket["location_name"],
                 "current_platform": bucket["current_platform"] or bucket["latest_platform"],
                 "comments": bucket["comments"],
+                "with_photos": bucket["with_photos"],
                 "voters": len(cast("set[UUID]", bucket["voters"])),
                 "ratings": len(overall),
                 "avg_overall": _avg(overall),

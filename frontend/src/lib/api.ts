@@ -2257,6 +2257,8 @@ export type AdminLocationRatingRow = {
   current_platform: string | null;
   /** Отзывы с непустым комментарием. */
   comments: number;
+  /** Отзывы хотя бы с одним фото. */
+  with_photos: number;
   voters: number;
   ratings: number;
   avg_overall: number | null;
