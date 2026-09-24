@@ -36,13 +36,33 @@ now)
 
 back-dump)
   say "снимаю домашнюю базу и заливаю обратно на прод"
-  stamp=$(date +%Y%m%d-%H%M%S); dump="home_back_${stamp}.dump"
+  stamp=$(date +%Y%m%d-%H%M%S)
+  dump="home_back_${stamp}.sql.gz"; ro_sql="home_back_${stamp}_report_ro.sql"
   cd "$HOME_DIR"
+  # Обычный SQL, а не -Fc: архив pg_dump 16 (формат 1.15) pg_restore 14 на VPS
+  # не читает — «unsupported version (1.15) in file header», причём уже после
+  # dropdb. Владельцев и права не везём: объекты создаёт сама роль сайта
+  # (SET ROLE ниже), права report_ro выдаёт её скрипт.
   "${COMPOSE[@]}" exec -T postgres pg_dump -U "${POSTGRES_USER:-saturday_runs}" \
-    -Fc -Z6 "${POSTGRES_DB:-saturday_runs_lk}" > "$DUMP_DIR/$dump" || exit 1
+    --no-owner --no-acl "${POSTGRES_DB:-saturday_runs_lk}" | gzip > "$DUMP_DIR/$dump" || exit 1
   scp -q -o BatchMode=yes "$DUMP_DIR/$dump" "$VPS:/tmp/$dump" || exit 1
+  # Скрипт роли везём из домашнего клона: его список закрытых таблиц должен
+  # совпадать со схемой этой базы, а на проде лежит код последнего деплоя.
+  scp -q -o BatchMode=yes scripts/create_report_ro_role.sql "$VPS:/tmp/$ro_sql" || exit 1
+  # Обрезанный файл psql может доиграть без единой ошибки (обрыв на границе
+  # строки) и закоммитить полбазы — проверяем до того, как сносить базу прода.
+  ssh -o BatchMode=yes "$VPS" "gzip -t /tmp/$dump" || { say "дамп на проде битый — не восстанавливать"; exit 1; }
+  say "дамп на проде цел: $(du -h "$DUMP_DIR/$dump" | cut -f1)"
+  # Без SET ROLE всё восстановленное досталось бы postgres, а права владельца
+  # pg_dump не пишет: сайт получил бы permission denied на каждую таблицу,
+  # миграции — must be owner. --force: после шага now api и воркеры прода
+  # держат соединения, и простой dropdb отказывает. -1: упало — база пустая,
+  # команду можно повторить.
   say "дальше НА ПРОДЕ, под root (база перезаписывается целиком):"
-  say "  sudo -u postgres dropdb saturday_runs_lk && sudo -u postgres createdb -O saturday_runs saturday_runs_lk"
-  say "  sudo -u postgres pg_restore -d saturday_runs_lk -j 4 --no-owner /tmp/$dump"
+  say "  touch $REMOTE_DIR/deploy/nginx/maintenance_on"
+  say "  sudo -u postgres dropdb --force saturday_runs_lk && sudo -u postgres createdb -O saturday_runs saturday_runs_lk"
+  say "  zcat /tmp/$dump | sudo -u postgres psql -X -1 -v ON_ERROR_STOP=1 -d saturday_runs_lk -c 'SET ROLE saturday_runs' -f - >/dev/null"
+  say "  sudo -u postgres psql -X -q -d saturday_runs_lk -v ON_ERROR_STOP=1 -f - < /tmp/$ro_sql"
+  say "  rm -f $REMOTE_DIR/deploy/nginx/maintenance_on"
   ;;
 esac
