@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminShell } from "./AdminShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
+import { DetailModal } from "../../components/DetailModal";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
   getAdminLocationRatings,
@@ -115,7 +116,9 @@ function Pagination({
 
 type LocationSortKey =
   | "location"
+  | "platform"
   | "ratings"
+  | "comments"
   | "voters"
   | "overall"
   | "organization"
@@ -130,8 +133,12 @@ function compareLocations(
   switch (key) {
     case "location":
       return a.location_name.localeCompare(b.location_name, "ru");
+    case "platform":
+      return (a.current_platform ?? "").localeCompare(b.current_platform ?? "");
     case "ratings":
       return a.ratings - b.ratings;
+    case "comments":
+      return a.comments - b.comments;
     case "voters":
       return a.voters - b.voters;
     case "overall":
@@ -228,6 +235,10 @@ function AdminRatingsContent() {
   const [locationDirection, setLocationDirection] = useState<SortDir>("desc");
   const [locationPage, setLocationPage] = useState(1);
   const [locationPageSize, setLocationPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  // Локация, чьи отзывы открыты в модалке. Отзывы берём из сырья, оно уже
+  // загружено целиком — отдельный запрос не нужен.
+  const [reviewsLocation, setReviewsLocation] = useState<AdminLocationRatingRow | null>(null);
+  const closeReviews = useCallback(() => setReviewsLocation(null), []);
 
   const loadRaw = useCallback(() => {
     getAdminRatings()
@@ -272,8 +283,8 @@ function AdminRatingsContent() {
       setLocationDirection((current) => (current === "desc" ? "asc" : "desc"));
     } else {
       setLocationSort(key);
-      // Числовые столбцы интереснее сверху вниз, название — по алфавиту.
-      setLocationDirection(key === "location" ? "asc" : "desc");
+      // Числовые столбцы интереснее сверху вниз, название и система — по алфавиту.
+      setLocationDirection(key === "location" || key === "platform" ? "asc" : "desc");
     }
     setLocationPage(1);
   };
@@ -313,6 +324,19 @@ function AdminRatingsContent() {
     if (locationDirection === "desc") sorted.reverse();
     return sorted;
   }, [locations, locationSearch, onlyThreshold, locationSort, locationDirection]);
+
+  // Свежие старты сверху, внутри дня — сначала отзывы с комментарием.
+  const locationReviews = useMemo(() => {
+    if (!raw || !reviewsLocation) return [];
+    return raw.ratings
+      .filter((r) => r.location_key === reviewsLocation.location_key)
+      .sort(
+        (a, b) =>
+          b.event_date.localeCompare(a.event_date) ||
+          Number(Boolean(b.comment)) - Number(Boolean(a.comment)) ||
+          b.created_at.localeCompare(a.created_at),
+      );
+  }, [raw, reviewsLocation]);
 
   // Страница могла «уехать» за конец после смены фильтра — возвращаемся к последней.
   const pageCount = Math.max(1, Math.ceil(visibleRatings.length / pageSize));
@@ -452,7 +476,9 @@ function AdminRatingsContent() {
               <thead>
                 <tr>
                   <LocationSortTh label="Локация" sortKey="location" />
+                  <LocationSortTh label="Система" sortKey="platform" />
                   <LocationSortTh label="Оценок" sortKey="ratings" />
+                  <LocationSortTh label="С комментарием" sortKey="comments" />
                   <LocationSortTh label="Оценивших" sortKey="voters" />
                   <LocationSortTh label="Общая" sortKey="overall" />
                   <LocationSortTh label="Организация" sortKey="organization" />
@@ -463,7 +489,7 @@ function AdminRatingsContent() {
               <tbody>
                 {locations && visibleLocations.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="muted">
+                    <td colSpan={9} className="muted">
                       {locations.locations.length === 0 ? "Пока нет оценок" : "Ничего не найдено"}
                     </td>
                   </tr>
@@ -471,14 +497,23 @@ function AdminRatingsContent() {
                 {pagedLocations.map((loc) => (
                   <tr key={loc.location_key}>
                     <td>
-                      {loc.location_name}
+                      <button
+                        type="button"
+                        className="admin-ratings-location-link"
+                        onClick={() => setReviewsLocation(loc)}
+                        title="Открыть все отзывы локации"
+                      >
+                        {loc.location_name}
+                      </button>
                       {loc.meets_threshold && (
                         <span className="badge admin-ratings-threshold" title="Достаточно оценивших для показа">
                           порог
                         </span>
                       )}
                     </td>
+                    <td>{loc.current_platform ? <PlatformBadge code={loc.current_platform} /> : "—"}</td>
                     <td>{loc.ratings}</td>
+                    <td>{loc.comments}</td>
                     <td>{loc.voters}</td>
                     <td className="admin-ratings-avg">{num(loc.avg_overall)}</td>
                     <td>{num(loc.avg_organization)}</td>
@@ -642,6 +677,91 @@ function AdminRatingsContent() {
           </div>
         </section>
       </div>
+
+      <DetailModal
+        open={reviewsLocation != null}
+        title={reviewsLocation ? `Отзывы: ${reviewsLocation.location_name}` : ""}
+        onClose={closeReviews}
+      >
+        {reviewsLocation && (
+          <>
+            <p className="muted admin-ratings-lead">
+              Оценок: {locationReviews.length}, с комментарием:{" "}
+              {locationReviews.filter((r) => r.comment).length}. Здесь все отзывы, включая
+              местных, — фильтр «Без местных» на список не действует.
+            </p>
+            {!raw ? (
+              <p className="muted">Загрузка…</p>
+            ) : locationReviews.length === 0 ? (
+              <p className="muted">Отзывов нет</p>
+            ) : (
+              <div className="table-scroll">
+                <table className="data-table admin-ratings-reviews-table">
+                  <thead>
+                    <tr>
+                      <th>Дата пробежки</th>
+                      <th>Кто</th>
+                      <th>Система</th>
+                      <th>Общая</th>
+                      <th>Орг.</th>
+                      <th>Трасса</th>
+                      <th>Сообщ.</th>
+                      <th>Комментарий</th>
+                      <th>Фото</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {locationReviews.map((r) => (
+                      <tr key={r.id}>
+                        <td className="admin-ratings-nowrap" title={`Оценка: ${formatDateTime(r.created_at)}`}>
+                          {formatDate(r.event_date)}
+                        </td>
+                        <td>
+                          {r.user_serial != null ? (
+                            <a
+                              href={`/users/${r.user_serial}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="admin-platform-link"
+                            >
+                              {r.user_display}
+                            </a>
+                          ) : (
+                            r.user_display
+                          )}
+                          {!r.is_public && <span className="muted"> · аноним</span>}
+                          {r.participation_type === "volunteer" && <span className="muted"> · волонтёр</span>}
+                        </td>
+                        <td><PlatformBadge code={r.platform_code} /></td>
+                        <td className="admin-ratings-avg">{r.score_overall}</td>
+                        <td>{r.score_organization ?? "—"}</td>
+                        <td>{r.score_route ?? "—"}</td>
+                        <td>{r.score_community ?? "—"}</td>
+                        <td className="admin-ratings-review-comment">{r.comment || "—"}</td>
+                        <td className="admin-ratings-photos">
+                          {r.photos.length > 0
+                            ? r.photos.map((photo, index) => (
+                                <button
+                                  key={photo.id}
+                                  type="button"
+                                  className="admin-ratings-photo-thumb"
+                                  onClick={() => setPhotoPreview(photo.url)}
+                                  title={`Фото ${index + 1} из ${r.photos.length} — открыть`}
+                                >
+                                  <img src={photo.url} alt="" loading="lazy" />
+                                </button>
+                              ))
+                            : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </DetailModal>
 
       {photoPreview && (
         <div

@@ -2253,6 +2253,10 @@ export function getAdminRatings() {
 export type AdminLocationRatingRow = {
   location_key: string;
   location_name: string;
+  /** Система, где локация бегает сейчас. */
+  current_platform: string | null;
+  /** Отзывы с непустым комментарием. */
+  comments: number;
   voters: number;
   ratings: number;
   avg_overall: number | null;

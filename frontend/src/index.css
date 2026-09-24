@@ -8191,6 +8191,23 @@ a.admin-system-chip:hover {
   background: var(--tint-green-bg-strong);
   color: var(--tint-green-text);
 }
+.admin-ratings-location-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.admin-ratings-location-link:hover { text-decoration: underline; }
+.admin-ratings-review-comment {
+  min-width: 220px;
+  max-width: 420px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+}
 .admin-ratings-comment {
   max-width: 280px;
   white-space: normal;
