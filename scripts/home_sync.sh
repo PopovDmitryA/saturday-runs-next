@@ -77,6 +77,7 @@ sync_workers_checkout() {
 
 # Источник правды переезжает вместе с сайтом: пока он на VPS — маркер там,
 # после переезда — в домашнем боевом клоне (его пишет scripts/deploy_home.sh).
+# Откат переезда снимает маркер «сайт дома», и сверка снова идёт с VPS.
 if [ -f "${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}" ]; then
     remote_sha=$(cat "${HOME_PROD_DIR:-$HOME/srs-prod}/.deployed_sha" 2>/dev/null | tr -d '\r\n')
     log "сайт дома: сверяюсь с домашним маркером"

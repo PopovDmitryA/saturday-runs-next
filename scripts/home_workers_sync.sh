@@ -10,7 +10,7 @@
 # origin/main нельзя: main бывает впереди прода, а воркер обязан совпадать с
 # ним по схеме базы.
 #
-# Запуск: bash scripts/home_workers_sync.sh [--force]
+# Запуск: bash scripts/home_workers_sync.sh [--force | --keep-code]
 set -uo pipefail
 
 VPS="${VPS_HOST:-viewer@195.58.34.112}"
@@ -26,6 +26,7 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
 # После переезда сайта домой воркеры живут в общем стеке (docker-compose.home-site.yml)
 # и ходят в локальную базу. Этот скрипт поднял бы ВТОРОЙ комплект воркеров,
 # смотрящий в брошенную базу на VPS, — поэтому он просто отходит в сторону.
+# Откат переезда снимает маркер и зовёт этот скрипт с --keep-code.
 if [ -f "${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}" ]; then
     log "сайт переехал домой — воркеры живут в общем стеке, синхронизировать нечего"
     exit 0
@@ -43,6 +44,18 @@ if [ ! -f "$HOME_DIR/deploy/tg-proxy/config.json" ]; then
 elif [ "$(stat -c '%A' "$HOME_DIR/deploy/tg-proxy/config.json" | cut -c8)" != "r" ]; then
     log "deploy/tg-proxy/config.json не читается чужим uid — выставляю 644"
     chmod 644 "$HOME_DIR/deploy/tg-proxy/config.json"
+fi
+
+# --keep-code: поднять воркеры на том коде, что сейчас в клоне, git не трогая.
+# Так зовёт откат переезда (scripts/cutover_rollback.sh now): из этого клона
+# идёт сам откат, а шаг back-dump везёт отсюда скрипт роли под схему домашней
+# базы — сдвинуть клон на коммит VPS посреди отката значило бы подменить обоим
+# код. С VPS клон сверит обычный запуск.
+if [ "${1:-}" = "--keep-code" ]; then
+    cd "$HOME_DIR" || exit 1
+    "${COMPOSE[@]}" up -d --build $SERVICES || { log "воркеры не поднялись"; exit 1; }
+    log "воркеры на $(git rev-parse --short HEAD), код не трогал: $("${COMPOSE[@]}" ps --status running --services | tr '\n' ' ')"
+    exit 0
 fi
 
 remote_sha=$(ssh -o BatchMode=yes -o ConnectTimeout=20 "$VPS" "cat $REMOTE_DIR/.deployed_sha 2>/dev/null" | tr -d '\r\n')

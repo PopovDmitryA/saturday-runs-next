@@ -14,7 +14,7 @@
 #   ... перевод DNS руками: A → домашний IP, AAAA удалить ...
 #   bash scripts/cutover_to_home.sh outside     # проверить снаружи, с прода
 #
-# Откат: scripts/cutover_rollback.sh (DNS обратно + поднять прод).
+# Откат: scripts/cutover_rollback.sh (поднять прод, отменить mark, DNS обратно).
 set -uo pipefail
 
 VPS="${VPS_HOST:-viewer@195.58.34.112}"
@@ -161,6 +161,8 @@ mark)
   # Маркер «сайт дома»: по нему разбор очереди профилей начинает писать в
   # локальную базу, а синхронизаторы перестают тянуть код с VPS. Без него
   # очередь молча продолжила бы писать в БРОШЕННУЮ базу на проде.
+  # Всё, что делает этот шаг, отменяет откат: scripts/cutover_rollback.sh now
+  # снимает маркер, возвращает .env и поднимает srs-prod обратно.
   touch "${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}"
   say "маркер поставлен: ${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}"
 
