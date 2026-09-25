@@ -171,7 +171,7 @@ PYENV
     say "  а если будет back-dump — после заливки: база приедет со схемой домашнего кода"
   fi
 
-  say "ВЕРНИ DNS: A у run5k.run, www, app, grafana → 195.58.34.112; AAAA у run5k.run и www → 2a03:6f00:a::47dc"
+  say "ВЕРНИ DNS: A у run5k.run, app, grafana → 195.58.34.112; AAAA у run5k.run → 2a03:6f00:a::47dc (www повторяет run5k.run сам)"
   say "проверка: curl -s -o /dev/null -w '%{http_code}' https://run5k.run/"
   # Шаг mark просил выключить крон бэкапа на VPS, а домашний бэкап без маркера
   # молчит: не вернёшь крон — живую базу не бэкапит никто.

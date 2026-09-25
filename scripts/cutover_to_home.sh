@@ -12,8 +12,9 @@
 #   bash scripts/cutover_to_home.sh start-full  # фон: бот, beat, воркеры — ТОЛЬКО после mark
 #   bash scripts/cutover_to_home.sh warm        # прогреть кэши ДО переключения
 #   bash scripts/cutover_to_home.sh verify      # проверить дом до перевода DNS
-#   ... перевод DNS руками: A run5k.run, www, app, grafana → домашний IP;
-#       AAAA у run5k.run и www удалить (дома IPv6 нет) ...
+#   ... перевод DNS руками: A run5k.run, app, grafana → домашний IP;
+#       AAAA у run5k.run удалить (дома IPv6 нет). www в панели Timeweb нет:
+#       он сам повторяет записи run5k.run ...
 #   bash scripts/cutover_to_home.sh outside     # проверить снаружи, с прода
 #
 # Откат: scripts/cutover_rollback.sh (поднять прод, отменить mark, DNS обратно).
@@ -124,7 +125,7 @@ preflight)
       say "  $h $rr $addr: $t"
     done
   done
-  say "  AAAA у run5k.run и www удаляются в момент переключения (дома IPv6 нет)"
+  say "  AAAA у run5k.run удаляется в момент переключения (дома IPv6 нет); www Timeweb повторяет за run5k.run сам"
   [ -f "$MARKER" ] && say "! маркер «сайт дома» уже стоит" || say "✓ маркера «сайт дома» нет"
   "${COMPOSE[@]}" config --quiet && say "✓ compose валиден"
   ;;
@@ -431,7 +432,8 @@ verify)
   bind=$(docker port "$("${COMPOSE[@]}" ps -q edge)" 443/tcp 2>/dev/null | head -1)
   case "$bind" in 0.0.0.0:*|'[::]:'*) say "✓ край слушает наружу ($bind)" ;;
     *) say "✗ край слушает $bind — снаружи сайта не будет: unset EDGE_BIND и cutover_to_home.sh start" ;; esac
-  say "теперь DNS: A у run5k.run, www, app и grafana → $HOME_IP; AAAA у run5k.run и www удалить (дома IPv6 нет)"
+  say "теперь DNS: A у run5k.run, app и grafana → $HOME_IP; AAAA у run5k.run удалить (дома IPv6 нет)"
+  say "  www в панели нет — Timeweb повторяет за run5k.run сам (проверено 26.09.2026)"
   say "  все четыре имени — обязательно: certbot продлевает их сертификаты отсюда"
   ;;
 

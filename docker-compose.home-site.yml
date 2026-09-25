@@ -107,7 +107,8 @@ services:
   # Продление сертификатов: раз в сутки пробуем. Край подхватывает новый файл
   # своим reload раз в 6 часов (см. edge.command). Ходит через тот же
   # /.well-known, что отдаёт edge, — поэтому все имена сертификатов (run5k.run,
-  # www, app, grafana) обязаны смотреть в DNS сюда, иначе продление упадёт.
+  # www, app, grafana) обязаны смотреть в DNS сюда, иначе продление упадёт; www
+  # Timeweb повторяет за run5k.run сам.
   certbot:
     image: certbot/certbot:latest
     volumes:
