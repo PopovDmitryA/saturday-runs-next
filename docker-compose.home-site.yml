@@ -21,6 +21,15 @@
 x-home-env: &home-env
   DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
   REDIS_URL: redis://redis:6379/0
+  # parkrun с домашнего адреса не трогаем вовсе: он общий со всем домом, и его
+  # бан аукнулся бы всему, что отсюда ходит наружу (scripts/home_queue_run.sh
+  # по той же причине не стартует без VPN-выходов). Серверный путь сайта —
+  # «Обновить» parkrun и разбор очереди в :07/:37 — ходит браузером без прокси,
+  # поэтому дома он выключен: заявки уходят в очередь профилей, её разбирает
+  # pm-site-queue через VPN-выходы. Проверено 25.09.2026: на VPS этот путь
+  # ходил в parkrun с адреса датацентра и ловил капчу.
+  PARKRUN_SERVER_FETCH_ENABLED: "false"
+  PARKRUN_SERVER_QUEUE_ENABLED: "false"
 
 services:
   postgres:
@@ -67,9 +76,17 @@ services:
 
   edge:
     image: nginx:1.27-alpine
+    # nginx читает сертификат только при старте и reload, а certbot ниже кладёт
+    # продлённый файл молча. Без перечитывания край отдавал бы старый
+    # сертификат до его истечения (у run5k.run — 09.11.2026), и сайт открылся бы
+    # у всех с ошибкой, а HSTS не дал бы её обойти. Раз в 6 часов — reload,
+    # новые соединения получают свежий сертификат, живые не рвутся.
+    command: ["/bin/sh", "-c", "while :; do sleep 6h; nginx -s reload; done & exec nginx -g 'daemon off;'"]
+    # EDGE_BIND=127.0.0.1 — репетиция: стек поднят целиком, но снаружи его нет.
+    # Боевое значение (0.0.0.0) ставится только в момент переключения.
     ports:
-      - "80:80"
-      - "443:443"
+      - "${EDGE_BIND:-0.0.0.0}:80:80"
+      - "${EDGE_BIND:-0.0.0.0}:443:443"
     volumes:
       - ./deploy/nginx/home/edge.conf:/etc/nginx/conf.d/default.conf:ro
       - ./deploy/nginx:/maintenance:ro
@@ -87,8 +104,10 @@ services:
         max-size: "20m"
         max-file: "3"
 
-  # Продление сертификатов: раз в сутки пробуем, nginx перечитывает конфиг сам.
-  # Ходит через тот же /.well-known, что отдаёт edge.
+  # Продление сертификатов: раз в сутки пробуем. Край подхватывает новый файл
+  # своим reload раз в 6 часов (см. edge.command). Ходит через тот же
+  # /.well-known, что отдаёт edge, — поэтому все имена сертификатов (run5k.run,
+  # www, app, grafana) обязаны смотреть в DNS сюда, иначе продление упадёт.
   certbot:
     image: certbot/certbot:latest
     volumes:
@@ -105,6 +124,10 @@ services:
   worker-s95:
     environment: *home-env
   worker-five-verst:
+    environment: *home-env
+  # Свежесть 5 вёрст отдельным воркером: приоритет очередей внутри одного
+  # воркера оказался случайным (разобрано другой сессией 20.09.2026).
+  worker-five-verst-fresh:
     environment: *home-env
   worker-five-verst-user:
     environment: *home-env

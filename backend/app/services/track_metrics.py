@@ -57,7 +57,30 @@ ELEVATION_NOISE_M = 1.0
 # С какого уклона участок считается подъёмом, а не «плоско», в процентах.
 GRADE_FLAT_PERCENT = 1.0
 # Отдельный подъём трассы: короче этого не показываем как «главный».
+# Во сколько раз интервал должен превысить обычный ритм записи, чтобы
+# считаться пропуском, и ниже какой длины провал вообще не считаем.
+GAP_RATIO = 3.0
+GAP_ABSOLUTE_SEC = 15.0
+# Плотность записи в метрах между точками. Плотнее DENSE — запись подробная
+# (посекундная у бегуна даёт 3-4 м); до SPARSE — для личного разбора годится,
+# для замера трассы уже нет; реже — трек слишком грубый.
+DENSE_SPACING_M = 5.0
+SPARSE_SPACING_M = 12.0
 MIN_CLIMB_M = 50.0
+# Подъём считаем подъёмом, только если он действительно поднимает: иначе на
+# равнине «главным подъёмом» объявлялся весь трек. Иваново 12.09.2026 —
+# 3463 м с уклоном 0,1%, то есть 3,4 м набора за три с половиной километра.
+MIN_CLIMB_RISE_M = 5.0
+# Уклон держим низким намеренно: на пятёрке подъём в 20 м, растянутый на два с
+# половиной километра, — это 0,8%, и он настоящий. Отсекаем только то, что
+# вообще не поднимается.
+MIN_CLIMB_GRADE_PERCENT = 0.5
+# Насколько близко должны сойтись старт и финиш, чтобы считать трассу
+# замкнутой: у субботних пятёрок финишный створ рядом со стартовым.
+LOOP_CLOSURE_M = 120.0
+# Больше этого расхождение на замкнутой трассе — уже не дрейф барометра,
+# а что-то другое (склейка двух записей, сбой прибора). Не трогаем.
+MAX_DRIFT_M = 30.0
 
 
 def haversine(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -132,7 +155,15 @@ def compute_metrics(
     metrics.update(_laps(smoothed, cumulative, total_m))
     metrics.update(_speed_marks(smoothed, cumulative, speeds, total_m))
     if elevations:
-        metrics.update(_elevation(cumulative, elevations, total_m))
+        corrected = _drift_corrected(smoothed, elevations, metrics["start_end_gap_m"])
+        # Сколько именно уползло: показываем это в разборе трека, иначе
+        # поправка выглядела бы подгонкой цифр без объяснения.
+        if corrected is not elevations:
+            last = elevations[-1]
+            fixed = corrected[-1]
+            if last is not None and fixed is not None:
+                metrics["elevation_drift_m"] = round(last - fixed, 1)
+        metrics.update(_elevation(cumulative, corrected, total_m))
     return metrics
 
 
@@ -234,6 +265,55 @@ def _geometry(smoothed: list[tuple[float, float, float]], cumulative: list[float
         "u_turn_count": sum(1 for t in turn_groups if abs(t) > U_TURN_DEG),
         "longest_straight_m": longest["meters"],
         "longest_straight_from_m": longest["from_m"],
+        **_footprint(resampled),
+    }
+
+
+# Шаг перебора угла при поиске самого тесного прямоугольника, градусы.
+# Прямоугольник симметричен через 90°, поэтому дальше идти незачем; на градусе
+# площадь уже не «дышит» — проверено на трассах от 150 м до 2,5 км в поперечнике.
+FOOTPRINT_ANGLE_STEP_DEG = 1
+
+
+def _footprint(resampled: list[tuple[float, float, float]]) -> dict[str, Any]:
+    """Самый тесный прямоугольник, в который влезает трасса.
+
+    Не по сторонам света: прямоугольник поворачиваем вместе с трассой и берём
+    угол с наименьшей площадью. Иначе диагональная аллея давала бы огромный
+    «квадрат» только оттого, что лежит наискосок к меридиану.
+
+    Пять километров, уложенные в 150 × 300 м, — это про то, как густо
+    намотана трасса; сама по себе цифра нагляднее, чем число кругов.
+    """
+    if len(resampled) < 5:
+        return {}
+
+    lat0 = sum(point[0] for point in resampled) / len(resampled)
+    # Локальная плоскость: на масштабе трассы (километры) искажение меньше
+    # метра, а считать в метрах и проще, и честнее.
+    scale_lon = math.cos(math.radians(lat0)) * math.pi * EARTH_RADIUS_M / 180
+    scale_lat = math.pi * EARTH_RADIUS_M / 180
+    lon0 = sum(point[1] for point in resampled) / len(resampled)
+    plane = [((point[1] - lon0) * scale_lon, (point[0] - lat0) * scale_lat) for point in resampled]
+
+    best: tuple[float, float, float] | None = None
+    for step in range(0, 90, FOOTPRINT_ANGLE_STEP_DEG):
+        angle = math.radians(step)
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        xs = [x * cos_a + y * sin_a for x, y in plane]
+        ys = [-x * sin_a + y * cos_a for x, y in plane]
+        width = max(xs) - min(xs)
+        height = max(ys) - min(ys)
+        area = width * height
+        if best is None or area < best[0]:
+            best = (area, width, height)
+
+    area, width, height = best  # type: ignore[misc]
+    short, long = sorted((width, height))
+    return {
+        "box_short_m": round(short),
+        "box_long_m": round(long),
+        "box_area_m2": round(area),
     }
 
 
@@ -341,6 +421,44 @@ def _speed_marks(
     return marks
 
 
+def _drift_corrected(
+    points: list[tuple[float, float, float]],
+    elevations: list[float | None],
+    start_end_gap_m: float,
+) -> list[float | None]:
+    """Убирает уползание барометра у трассы, которая финиширует там же, где стартовала.
+
+    Давление за полчаса меняется, и прибор честно показывает это высотой: в
+    Иваново 12.09.2026 старт и финиш — одна и та же точка в пяти метрах друг
+    от друга, а высота разошлась на 3 метра при всём рельефе трассы в 5 м.
+    Маятниковая трасса из-за этого переставала быть зеркальной: путь «туда» и
+    путь «обратно» расходились по высоте до 3,6 м.
+
+    Раз физически это одна точка, вся разница — ошибка прибора. Считаем её
+    равномерной по времени и вычитаем. После поправки расхождение «туда» и
+    «обратно» падает до 1,7 м — остаётся уже собственный шум барометра.
+    """
+    if start_end_gap_m > LOOP_CLOSURE_M:
+        return elevations
+
+    measured = [index for index, value in enumerate(elevations) if value is not None]
+    if len(measured) < 2:
+        return elevations
+
+    first, last = measured[0], measured[-1]
+    seconds = points[last][2] - points[first][2]
+    drift = (elevations[last] or 0.0) - (elevations[first] or 0.0)
+    if seconds <= 0 or abs(drift) > MAX_DRIFT_M:
+        return elevations
+
+    rate = drift / seconds
+    base = points[first][2]
+    return [
+        None if value is None else value - rate * (points[index][2] - base)
+        for index, value in enumerate(elevations)
+    ]
+
+
 def _elevation(cumulative: list[float], elevations: list[float | None], total_m: float) -> dict[str, Any]:
     """Профиль трассы: высота по километражу плюс подъёмы, спуски и главная горка.
 
@@ -429,7 +547,11 @@ def _main_climb(profile: list[tuple[float, float]]) -> dict[str, Any]:
         nonlocal best
         length = profile[to_index][0] - profile[from_index][0]
         rise = profile[to_index][1] - profile[from_index][1]
-        if length >= MIN_CLIMB_M and rise > best.get("climb_rise_m", 0):
+        if length < MIN_CLIMB_M or rise < MIN_CLIMB_RISE_M:
+            return
+        if rise / length * 100 < MIN_CLIMB_GRADE_PERCENT:
+            return
+        if rise > best.get("climb_rise_m", 0):
             best = {
                 "climb_from_m": round(profile[from_index][0]),
                 "climb_length_m": round(length),
@@ -461,22 +583,46 @@ def assess_quality(points: list[tuple[float, float, float]]) -> tuple[str, dict[
     if not intervals:
         return "C", {"reason": "у точек нет времени"}
     sample_interval = median(intervals)
-    gaps = sum(1 for value in intervals if value > 5)
+    # Пропуск — это провал НА ФОНЕ собственного ритма записи, а не любой
+    # интервал длиннее пяти секунд. Умные часы пишут точки неравномерно: у
+    # Forerunner 965 на прогулке 29.11.2025 медиана 5 с, а 44% интервалов
+    # ровно по 6 с — по старому правилу трек объявлялся «рваным», хотя самый
+    # большой разрыв во всей записи был те же 6 секунд.
+    gap_threshold = max(GAP_ABSOLUTE_SEC, sample_interval * GAP_RATIO)
+    gaps = sum(1 for value in intervals if value > gap_threshold)
     gap_share = gaps / len(intervals)
 
     smoothed = _smooth(points)
     offsets = [haversine(points[i][:2], smoothed[i][:2]) for i in range(len(points))]
     noise_m = median(offsets) if offsets else 0.0
 
+    # Для замера трассы важен не интервал в секундах, а РАССТОЯНИЕ между
+    # точками: оно и есть разрешающая способность записи. Прогулка с записью
+    # раз в 5 секунд даёт 8 м между точками, а бег с той же записью — 17 м,
+    # и это записи разного качества, хотя интервал одинаковый.
+    steps = [haversine(points[i][:2], points[i + 1][:2]) for i in range(len(points) - 1)]
+    steps = [value for value in steps if value > 0]
+    spacing_m = median(steps) if steps else 0.0
+
     quality: dict[str, Any] = {
         "sample_interval_sec": round(sample_interval, 2),
         "gap_share": round(gap_share, 3),
+        # Чтобы вердикт можно было проверить, а не принимать на веру.
+        "gap_count": gaps,
+        "gap_threshold_sec": round(gap_threshold, 1),
+        "max_gap_sec": round(max(intervals), 1),
         "noise_m": round(noise_m, 2),
+        "meters_per_point": round(spacing_m, 1),
         "point_count": len(points),
     }
 
-    if sample_interval <= 2 and gap_share < 0.02 and noise_m <= 3.0:
+    # Класс считаем по плотности, а не по секундам: она прямо отвечает на
+    # вопрос «насколько подробно записана трасса». Замер 23.09.2026 показал,
+    # где проходят границы — при 5 м между точками суммарный поворот уже
+    # занижается на 16-29%, при 8 м на 27-42% (см. COURSE_SPACING_M
+    # в track_validation).
+    if spacing_m <= DENSE_SPACING_M and gap_share < 0.02 and noise_m <= 3.0:
         return "A", quality
-    if sample_interval <= 5 and gap_share < 0.1:
+    if spacing_m <= SPARSE_SPACING_M and gap_share < 0.1:
         return "B", quality
     return "C", quality

@@ -48,6 +48,18 @@ def deliver(delivery_id: str) -> str:
         db.close()
 
 
+@celery_app.task(name="notifications.flush_admin_copies", **LIMITS_SHORT)
+def flush_admin_copies() -> int:
+    """Раз в минуту: копии рассылок, которые закончились, — админу одной
+    сводкой на каждый текст (см. notification_admin_copy)."""
+    from app.services.notification_admin_copy import flush_ready
+
+    sent = flush_ready()
+    if sent:
+        logger.info("notify: admin copies flushed %d", sent)
+    return sent
+
+
 @celery_app.task(name="notifications.scan_activity", **LIMITS_MEDIUM)
 def scan_activity(user_ids: list[str]) -> dict[str, int]:
     """Новые пробежки, рейтинги, уровни и вехи у перечисленных людей."""
@@ -194,6 +206,22 @@ def weekly_ratings() -> dict[str, int]:
     summary = {"scanned": scanned, "queued": queued, "failed": failed}
     logger.info("notify: weekly ratings %s", summary)
     return summary
+
+
+@celery_app.task(name="notifications.friday_cancellations", **LIMITS_MEDIUM)
+def friday_cancellations() -> int:
+    """Раз в час по пятницам и субботам (МСК): итог отмен на завтра тем, у
+    кого по домашней локации сейчас вечер пятницы."""
+    from app.services.cancellation_notification_service import send_friday_summaries
+
+    db = get_session_factory()()
+    try:
+        queued = send_friday_summaries(db)
+    finally:
+        db.close()
+    if queued:
+        logger.info("notify: friday cancellations summary queued %d", queued)
+    return queued
 
 
 @celery_app.task(name="notifications.retry_queued", **LIMITS_MEDIUM)

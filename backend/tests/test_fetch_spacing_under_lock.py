@@ -71,6 +71,7 @@ def _parkrun_settings() -> SimpleNamespace:
         parkrun_fetch_lock_blocking_seconds=30,
         parkrun_use_cdp_for_fetch=False,
         parkrun_cdp_url="",
+        parkrun_server_fetch_enabled=True,
     )
 
 

@@ -29,12 +29,17 @@ from app.services.location_course_service import rebuild_for_tracks
 from app.services.run_track_service import build_track
 from app.services.track_parsing import TrackParseError, parse_garmin_link, parse_upload
 
-# Где лежат распакованные файлы до подтверждения. Переживать перезапуск
-# контейнера им не нужно: незавершённую сессию проще собрать заново.
-STAGING_ROOT = Path("/tmp/run5k_track_imports")
+# Где лежат распакованные файлы до подтверждения. Не /tmp: он живёт внутри
+# контейнера, и деплой посреди разбора уносил очередь вместе с ним — архив
+# на 205 файлов приходилось загружать заново (поймано 23.09.2026). /data
+# смонтирован с хоста и перезапуск переживает.
+STAGING_ROOT = Path("/data/track_imports")
 TRACK_SUFFIXES = (".fit", ".gpx", ".tcx")
 # Архив выгрузки Garmin за годы — это десятки мегабайт и сотни файлов.
-MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+# Тот же потолок стоит на nginx (location /api/admin/track-imports в
+# nginx/conf.d/default.conf): без него запрос не доходил до приложения и
+# админ видел HTML-страницу «413 Request Entity Too Large» вместо ошибки.
+MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_FILES_PER_BATCH = 2000
 # Вложенные архивы: выгрузка аккаунта кладёт zip внутрь zip.
 MAX_ARCHIVE_DEPTH = 3
@@ -182,7 +187,12 @@ def _build_from_source(db: Session, target_user: User, item: dict[str, str]) -> 
     if item["kind"] == "link":
         parsed = parse_garmin_link(item["path"])
     else:
-        data = Path(item["path"]).read_bytes()
+        source = Path(item["path"])
+        if not source.exists():
+            # Старые сессии держали файлы в /tmp контейнера — после его
+            # пересоздания дорешать такую загрузку нечем.
+            raise TrackParseError("Файл больше не лежит на сервере — загрузите архив заново")
+        data = source.read_bytes()
         parsed = parse_upload(item["name"], data)
         # Внутри архива имена одинаковые, поэтому ключом делаем отпечаток
         # содержимого: он же ловит повторную загрузку того же файла.
@@ -226,6 +236,63 @@ def _is_duplicate(
     )
 
 
+# Ниже какой длины трек — точно не субботняя пятёрка, а обрывок записи:
+# забыли остановить часы, перезапустили посреди старта, записали заминку.
+# 3 км выбраны с большим запасом: реальные пятёрки короче 4,6 км не бывают
+# (нижняя граница годности трека — в track_validation.py).
+JUNK_DISTANCE_M = 3000
+# Выше этого трек содержит явно не только пробежку — например, дорогу домой.
+LONG_DISTANCE_M = 9000
+
+
+def _better_of(left: RunTrack, right: RunTrack) -> RunTrack:
+    """Какой из двух треков одной пробежки считать основным.
+
+    Сначала годность для измерения трассы, затем близость к времени
+    протокола, затем длина ближе к пяти километрам.
+    """
+    def rank(track: RunTrack) -> tuple[int, int, float]:
+        delta = abs(track.protocol_delta_sec) if track.protocol_delta_sec is not None else 10**6
+        distance_miss = abs((track.distance_m or 0) - 5000)
+        return (0 if track.is_course_eligible else 1, delta, distance_miss)
+
+    return left if rank(left) <= rank(right) else right
+
+
+def _suggestions(tracks: list[RunTrack]) -> dict[UUID, tuple[bool, str | None]]:
+    """Что предлагаем взять по умолчанию, чтобы админ смотрел только спорное.
+
+    Правило: берём всё, кроме явных отклонений. Снимаем галочку у треков без
+    пробежки в протоколе (это будние тренировки, сайту они не нужны), у
+    обрывков и слишком длинных записей и у второго трека на ту же пробежку —
+    из дублей остаётся лучший.
+    """
+    best_for_run: dict[UUID, RunTrack] = {}
+    for track in tracks:
+        if track.run_result_id is None:
+            continue
+        current = best_for_run.get(track.run_result_id)
+        best_for_run[track.run_result_id] = track if current is None else _better_of(current, track)
+
+    result: dict[UUID, tuple[bool, str | None]] = {}
+    for track in tracks:
+        if track.run_result_id is None:
+            result[track.id] = (False, "пробежки нет в протоколе — похоже на обычную тренировку")
+            continue
+        distance = track.distance_m or 0
+        if distance < JUNK_DISTANCE_M:
+            result[track.id] = (False, "слишком короткий для пятёрки — обрывок записи")
+            continue
+        if distance > LONG_DISTANCE_M:
+            result[track.id] = (False, "слишком длинный — в записи не только сам старт")
+            continue
+        if best_for_run.get(track.run_result_id) is not track:
+            result[track.id] = (False, "на эту пробежку уже есть трек лучше")
+            continue
+        result[track.id] = (True, None)
+    return result
+
+
 def preview_items(db: Session, batch: AdminTrackImport) -> list[dict[str, Any]]:
     """Что получилось разобрать: по треку на строку, с найденной пробежкой."""
     rows = db.execute(
@@ -236,9 +303,11 @@ def preview_items(db: Session, batch: AdminTrackImport) -> list[dict[str, Any]]:
         .order_by(RunTrack.started_at.asc().nullsfirst())
     ).all()
 
+    suggestions = _suggestions([track for track, _event, _location in rows])
     items: list[dict[str, Any]] = []
     for track, event, location in rows:
         metrics = track.metrics or {}
+        suggested, suggestion_note = suggestions[track.id]
         items.append(
             {
                 "track_id": track.id,
@@ -259,21 +328,46 @@ def preview_items(db: Session, batch: AdminTrackImport) -> list[dict[str, Any]]:
                 "is_course_eligible": track.is_course_eligible,
                 "exclusion_reason": track.exclusion_reason,
                 "exclusion_note": track.exclusion_note,
+                "suggested": suggested,
+                "suggestion_note": suggestion_note,
             }
         )
     return items
 
 
-def apply_batch(db: Session, batch: AdminTrackImport) -> AdminTrackImport:
-    """Подтверждение: треки становятся видимыми в кабинете участника."""
+def apply_batch(
+    db: Session,
+    batch: AdminTrackImport,
+    *,
+    track_ids: list[UUID] | None = None,
+) -> AdminTrackImport:
+    """Подтверждение: отмеченные треки становятся видимыми в кабинете.
+
+    `track_ids` — что именно админ отметил галочками в предпросмотре;
+    остальные разобранные треки удаляются вместе с сессией. None означает
+    «взять всё разобранное» (так ведут себя старые вызовы и тесты).
+    """
     if batch.status not in {"collecting", "previewing"}:
         raise TrackImportError("Эта загрузка уже закрыта.")
     if batch.pending:
         raise TrackImportError("Сначала дождитесь разбора всех файлов.")
 
-    tracks = list(db.scalars(select(RunTrack).where(RunTrack.import_batch_id == batch.id)))
+    parsed = list(db.scalars(select(RunTrack).where(RunTrack.import_batch_id == batch.id)))
+    if track_ids is None:
+        tracks, dropped = parsed, []
+    else:
+        chosen = set(track_ids)
+        tracks = [track for track in parsed if track.id in chosen]
+        dropped = [track for track in parsed if track.id not in chosen]
+    if not tracks:
+        raise TrackImportError("Не отмечено ни одного трека.")
+
+    for track in dropped:
+        db.delete(track)
     for track in tracks:
         track.status = "ok"
+    batch.imported_count = len(tracks)
+    batch.skipped_count = batch.skipped_count + len(dropped)
     db.flush()
     # Паспорта трасс пересобираем сразу: иначе локация покажет старые цифры.
     rebuild_for_tracks(db, tracks)

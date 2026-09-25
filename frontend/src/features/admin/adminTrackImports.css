@@ -212,3 +212,40 @@
 .track-import-table tr.excluded td {
   background: color-mix(in srgb, #64748b 10%, transparent);
 }
+
+/* Отбор перед записью: галочки страница расставляет сама, админ правит. */
+.track-import-select-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+  margin: 0.6rem 0 0.4rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-faint) 8%, transparent);
+  font-size: 0.85rem;
+}
+
+.track-import-select-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+/* Галочка снята — строка остаётся видимой, но глушится: так понятно, что
+   именно не поедет в кабинет, и решение можно передумать. */
+.track-import-table tr.dropped td {
+  opacity: 0.45;
+}
+
+.track-import-table tr.dropped td:first-child {
+  opacity: 1;
+}
+
+/* Почему сняли галочку — прямо под строкой «куда ляжет». */
+.track-import-why {
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}

@@ -1,4 +1,4 @@
-// Рейтинг трасс: перепад высот и прямолинейность по трекам участников.
+// Рейтинг трасс: перепад высот, прямолинейность и пятачок — по трекам участников.
 // Устройство страницы — как у остальных рейтингов: крошки, шапка, панель
 // фильтров с поиском, сортируемая таблица и карточки на узком экране.
 
@@ -25,13 +25,48 @@ const PAGE_STEP = 100;
 const METRIC_TABS: { value: CourseRatingMetric; label: string }[] = [
   { value: "elevation", label: COURSE_METRIC_LABELS.elevation },
   { value: "straightness", label: COURSE_METRIC_LABELS.straightness },
+  { value: "footprint", label: "Пятачок" },
 ];
+
+// У этих метрик «лучше» значит «меньше»: меньше градусов — прямее, меньше
+// площадь — теснее намотана трасса.
+type SortKey =
+  | "value"
+  | "distance"
+  | "elevation"
+  | "turns"
+  | "straight"
+  | "laps"
+  | "box"
+  | "tracks"
+  | "name";
+
+const LOWER_IS_BETTER: CourseRatingMetric[] = ["straightness", "footprint"];
+
+// Какой столбец данных повторяет выбранную метрику. Его прячем: значение уже
+// стоит слева, в колонке метрики, и дважды одно и то же читать незачем.
+// У перепада высот пары нет — «Набор» это другая величина.
+const METRIC_OWN_COLUMN: Partial<Record<CourseRatingMetric, SortKey>> = {
+  straightness: "turns",
+  footprint: "box",
+};
+
+/** Метрика из адреса: на главную рейтингов ведут три разные карточки. */
+function metricFromUrl(): CourseRatingMetric | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const value = new URLSearchParams(window.location.search).get("metric");
+  return value && value in COURSE_METRIC_LABELS ? (value as CourseRatingMetric) : null;
+}
 
 const METRIC_HINT =
   "Перепад — разница между низшей и высшей точкой трассы. Берём его, а не набор высоты: " +
   "набор у барометра пляшет от погоды, на одной трассе выходило от 7 до 42 м. " +
   "Прямолинейность — суммарный поворот за дистанцию: один полный оборот это 360°, " +
-  "чем меньше градусов, тем прямее трасса.";
+  "чем меньше градусов, тем прямее трасса. " +
+  "Пятачок — самый тесный прямоугольник, в который влезает вся трасса: видно, " +
+  "на каком клочке земли умещаются пять километров.";
 
 const COLUMN_HINTS: Record<string, string> = {
   value: "Столбец выбранной метрики: по нему и построен рейтинг.",
@@ -47,14 +82,17 @@ const COLUMN_HINTS: Record<string, string> = {
   straight:
     "Самый длинный участок без заметных поворотов — место, где можно разогнаться и обогнать.",
   laps: "Сколько раз трасса повторяет один и тот же круг. Одна петля без повторов — это 1.",
+  box:
+    "Самый тесный прямоугольник, в который влезает трасса целиком. Ищется перебором угла, " +
+    "а не по сторонам света, иначе диагональная аллея давала бы огромный «квадрат». " +
+    "Рядом со сторонами — площадь в гектарах, по ней и строится сортировка: " +
+    "чем она меньше, тем гуще намотаны пять километров.",
   tracks: "Сколько треков учтено в расчёте. Наведите на число — увидите, от скольких разных людей.",
 };
 
 const EMPTY_HINT =
   "Локации без треков из рейтинга не убираем: по ним видно, где данных ещё нет. " +
   "Цифры появятся, когда участники приложат треки.";
-
-type SortKey = "value" | "distance" | "elevation" | "turns" | "straight" | "laps" | "tracks" | "name";
 
 type SortState = { key: SortKey; direction: "asc" | "desc" };
 
@@ -66,6 +104,7 @@ const DEFAULT_DIRECTION: Record<SortKey, SortState["direction"]> = {
   turns: "desc",
   straight: "desc",
   laps: "desc",
+  box: "asc",
   tracks: "desc",
   name: "asc",
 };
@@ -84,6 +123,8 @@ function sortValue(row: CourseRatingItem, key: SortKey): number | string | null 
       return row.longest_straight_m;
     case "laps":
       return row.lap_count;
+    case "box":
+      return row.box_area_m2;
     case "tracks":
       return row.tracks_count;
     default:
@@ -134,7 +175,26 @@ function formatKm(meters: number | null): string {
   return meters == null ? "—" : (meters / 1000).toFixed(2).replace(".", ",");
 }
 
+function formatBox(row: CourseRatingItem): string {
+  // Стороны нагляднее площади: «150 × 300 м» сразу рисует картинку.
+  return row.box_short_m != null && row.box_long_m != null
+    ? `${Math.round(row.box_short_m)} × ${Math.round(row.box_long_m)} м`
+    : "—";
+}
+
+/** Площадь пятачка в гектарах: по ней и строится рейтинг. */
+function formatBoxArea(row: CourseRatingItem): string {
+  if (row.box_area_m2 == null) {
+    return "—";
+  }
+  const hectares = row.box_area_m2 / 10000;
+  return `${hectares.toFixed(hectares < 10 ? 2 : 1).replace(".", ",")} га`;
+}
+
 function formatMetric(metric: CourseRatingMetric, row: CourseRatingItem): string {
+  if (metric === "footprint") {
+    return formatBox(row);
+  }
   if (row.value == null) {
     return "—";
   }
@@ -154,7 +214,10 @@ function LocationCell({ row }: { row: CourseRatingItem }) {
 
 export function CourseRatingPage() {
   const narrowViewport = useNarrowViewport();
-  const [metric, setMetric] = useRestorableState<CourseRatingMetric>("courses.metric", "elevation");
+  const [metric, setMetric] = useRestorableState<CourseRatingMetric>(
+    "courses.metric",
+    metricFromUrl() ?? "elevation",
+  );
   const [query, setQuery] = useRestorableState("courses.query", "");
   const [showEmpty, setShowEmpty] = useRestorableState("courses.empty", false);
   const [visibleCount, setVisibleCount] = useRestorableState("courses.visible", PAGE_STEP);
@@ -180,6 +243,23 @@ export function CourseRatingPage() {
   useEffect(() => {
     load(metric);
   }, [load, metric]);
+
+  // Вкладка метрики живёт и в адресе: ссылку на «Прямолинейность» можно
+  // скопировать и переслать, а карточки с главной рейтингов ведут прямо сюда.
+  // replaceState, а не push: три вкладки одной страницы не должны забивать
+  // историю и ломать кнопку «назад».
+  const selectMetric = useCallback(
+    (value: CourseRatingMetric) => {
+      setMetric(value);
+      if (typeof window === "undefined") {
+        return;
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.set("metric", value);
+      window.history.replaceState(window.history.state, "", url.toString());
+    },
+    [setMetric],
+  );
 
   const toggleSort = useCallback(
     (key: SortKey) => {
@@ -209,9 +289,10 @@ export function CourseRatingPage() {
         .some((value) => String(value).toLowerCase().includes(needle));
     });
 
-    // Прямолинейность читается от меньшего: чем меньше градусов, тем прямее.
+    // Прямолинейность и пятачок читаются от меньшего: меньше градусов — прямее,
+    // меньше площадь — теснее намотано.
     const direction =
-      sort.key === "value" && metric === "straightness" && sort.direction === "desc"
+      sort.key === "value" && LOWER_IS_BETTER.includes(metric) && sort.direction === "desc"
         ? "asc"
         : sort.direction;
     const factor = direction === "asc" ? 1 : -1;
@@ -231,7 +312,9 @@ export function CourseRatingPage() {
   }, [data, metric, query, showEmpty, sort]);
 
   const visibleRows = rows.slice(0, visibleCount);
-  const metricLabel = metric === "elevation" ? "Перепад" : "Поворот";
+  const metricLabel =
+    metric === "elevation" ? "Перепад" : metric === "straightness" ? "Поворот" : "Пятачок";
+  const ownColumn = METRIC_OWN_COLUMN[metric];
 
   return (
     <PortalSectionShell sidebar={{ active: "ratings" }}>
@@ -245,8 +328,8 @@ export function CourseRatingPage() {
         <header className="lb-header">
           <h1>Трассы локаций</h1>
           <p className="lb-description">
-            Какие на самом деле трассы у субботних пятёрок: перепад высот и извилистость, посчитанные по
-            трекам участников.
+            Какие на самом деле трассы у субботних пятёрок: перепад высот, извилистость и размер пятачка,
+            посчитанные по трекам участников.
           </p>
         </header>
 
@@ -268,7 +351,7 @@ export function CourseRatingPage() {
                     type="button"
                     aria-pressed={metric === tab.value}
                     className={`lb-gender-tab${metric === tab.value ? " lb-gender-tab-active" : ""}`}
-                    onClick={() => setMetric(tab.value)}
+                    onClick={() => selectMetric(tab.value)}
                   >
                     {tab.label}
                   </button>
@@ -349,7 +432,7 @@ export function CourseRatingPage() {
                       </div>
                       <div className="rowcard-sub">
                         {row.has_data
-                          ? `${formatKm(row.distance_m)} км · ${row.lap_count ?? 1} кр. · треков ${row.tracks_count}`
+                          ? `${formatKm(row.distance_m)} км · ${row.lap_count ?? 1} кр. · ${formatBox(row)} (${formatBoxArea(row)}) · треков ${row.tracks_count}`
                           : "треков пока нет"}
                       </div>
                     </div>
@@ -372,9 +455,14 @@ export function CourseRatingPage() {
                       <SortableHeader label={metricLabel} sortKey="value" sort={sort} onSort={toggleSort} />
                       <SortableHeader label="Длина, км" sortKey="distance" sort={sort} onSort={toggleSort} />
                       <SortableHeader label="Набор" sortKey="elevation" sort={sort} onSort={toggleSort} />
-                      <SortableHeader label="Поворот" sortKey="turns" sort={sort} onSort={toggleSort} />
+                      {ownColumn !== "turns" && (
+                        <SortableHeader label="Поворот" sortKey="turns" sort={sort} onSort={toggleSort} />
+                      )}
                       <SortableHeader label="Прямая" sortKey="straight" sort={sort} onSort={toggleSort} />
                       <SortableHeader label="Кругов" sortKey="laps" sort={sort} onSort={toggleSort} />
+                      {ownColumn !== "box" && (
+                        <SortableHeader label="Пятачок" sortKey="box" sort={sort} onSort={toggleSort} />
+                      )}
                       <SortableHeader label="Треков" sortKey="tracks" sort={sort} onSort={toggleSort} />
                       <th>Система</th>
                     </tr>
@@ -389,18 +477,33 @@ export function CourseRatingPage() {
                         <td>
                           <LocationCell row={row} />
                         </td>
-                        <td className="num strong">{formatMetric(metric, row)}</td>
+                        <td className="num strong">
+                          {formatMetric(metric, row)}
+                          {metric === "footprint" && row.box_area_m2 != null && (
+                            <span className="lb-muted"> · {formatBoxArea(row)}</span>
+                          )}
+                        </td>
                         <td className="num">{formatKm(row.distance_m)}</td>
                         <td className="num">
                           {row.elevation_gain_m != null ? `${Math.round(row.elevation_gain_m)} м` : "—"}
                         </td>
-                        <td className="num">
-                          {row.turn_sum_deg != null ? `${formatInt(row.turn_sum_deg)}°` : "—"}
-                        </td>
+                        {ownColumn !== "turns" && (
+                          <td className="num">
+                            {row.turn_sum_deg != null ? `${formatInt(row.turn_sum_deg)}°` : "—"}
+                          </td>
+                        )}
                         <td className="num">
                           {row.longest_straight_m != null ? `${Math.round(row.longest_straight_m)} м` : "—"}
                         </td>
                         <td className="num">{row.lap_count ?? "—"}</td>
+                        {ownColumn !== "box" && (
+                          <td className="num">
+                            {formatBox(row)}
+                            {row.box_area_m2 != null && (
+                              <span className="lb-muted"> · {formatBoxArea(row)}</span>
+                            )}
+                          </td>
+                        )}
                         <td className="num" title={`Участников: ${row.unique_user_count}`}>
                           {row.tracks_count || "—"}
                         </td>

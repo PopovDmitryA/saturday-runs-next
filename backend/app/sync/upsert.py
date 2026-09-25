@@ -27,6 +27,7 @@ from app.models import (
     VolunteerResult,
 )
 from app.pace import resolve_run_pace
+from app.parkrun.protocol_gaps import release_placeholder
 from app.platform_adapters.canonical import (
     CanonicalEventSummary,
     CanonicalLocation,
@@ -700,6 +701,10 @@ def upsert_run_results(
         )
         now = datetime.now(timezone.utc)
         if row is None:
+            if platform.code == "parkrun":
+                # Дыру в протоколе русского parkrun занимает заглушка
+                # «неизвестного» — настоящий финишёр встаёт на её место.
+                release_placeholder(db, event.id, item.position)
             row = RunResult(
                 event_id=event.id,
                 participant_id=participant.id,

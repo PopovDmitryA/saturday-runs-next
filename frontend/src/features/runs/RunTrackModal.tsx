@@ -3,6 +3,7 @@ import { DetailModal } from "../../components/DetailModal";
 import { ElevationProfile } from "./ElevationProfile";
 import { RunTrackMap } from "./RunTrackMap";
 import {
+  confirmRunTrack,
   deleteRunTrack,
   getRunTrack,
   importRunTrackLink,
@@ -38,15 +39,52 @@ function splitLabel(split: RunTrackSplit): string {
   return split.km != null ? `${split.km}-й км` : `последние ${split.meters} м`;
 }
 
-/** Словесная оценка записи: человеку важно не число, а годится ли его трек. */
+function secondsLabel(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded.toString().replace(".", ",")} с`;
+}
+
+/** Оценка записи с цифрами: голый вердикт «редкая или рваная» проверить нельзя. */
 function qualityText(track: RunTrackDetail): string {
+  const quality = track.quality ?? {};
+  const interval = track.sample_interval_sec ?? quality.sample_interval_sec;
+  const parts: string[] = [];
+
   if (track.quality_class === "A") {
-    return "Запись посекундная, без пропусков.";
+    parts.push("Запись подробная, без пропусков.");
+  } else if (track.quality_class === "B") {
+    parts.push("Запись пореже: для личного разбора хватает, для замера трассы — нет.");
+  } else {
+    parts.push("Запись грубая: точки идут далеко друг от друга или с пропусками.");
   }
-  if (track.quality_class === "B") {
-    return "Запись с интервалом в несколько секунд: для разбора хватает, для замера трассы — нет.";
+
+  const details: string[] = [];
+  if (interval != null) {
+    details.push(`точка раз в ${secondsLabel(interval)}`);
   }
-  return "Запись редкая или с пропусками.";
+  if (quality.meters_per_point != null) {
+    details.push(`${quality.meters_per_point.toFixed(1).replace(".", ",")} м между точками`);
+  }
+  if (quality.max_gap_sec != null) {
+    details.push(`самый большой разрыв ${secondsLabel(quality.max_gap_sec)}`);
+  }
+  if (quality.gap_count != null && quality.gap_threshold_sec != null) {
+    details.push(
+      quality.gap_count === 0
+        ? "пропусков нет"
+        : `пропусков ${quality.gap_count} (длиннее ${secondsLabel(quality.gap_threshold_sec)})`,
+    );
+  }
+  if (track.point_count != null) {
+    details.push(`точек ${track.point_count}`);
+  }
+  if (quality.noise_m != null) {
+    details.push(`дрожание ${quality.noise_m.toFixed(1).replace(".", ",")} м`);
+  }
+  if (details.length > 0) {
+    parts.push(`${details.join(", ")}.`);
+  }
+  return parts.join(" ");
 }
 
 export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
@@ -55,6 +93,9 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState("");
+  // Что именно сейчас разбирается: без этого человек выбирал файл и сидел
+  // перед неизменившимся окном, не понимая, идёт ли что-нибудь.
+  const [pending, setPending] = useState<string | null>(null);
 
   useEffect(() => {
     if (!run.track_id) {
@@ -90,11 +131,16 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
       try {
         const detail = await action;
         setTrack(detail);
-        onChanged(detail.id);
+        // Черновик в таблицу пробежек не попадает: значок появится только
+        // после «Сохранить».
+        if (detail.status !== "preview") {
+          onChanged(detail.id);
+        }
       } catch (cause) {
         setError((cause as Error).message);
       } finally {
         setBusy(false);
+        setPending(null);
       }
     },
     [onChanged],
@@ -102,6 +148,7 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
 
   const handleFile = (file: File | undefined) => {
     if (file) {
+      setPending(file.name);
       void accept(uploadRunTrack(file));
     }
   };
@@ -109,7 +156,25 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
   const handleLink = () => {
     const value = url.trim();
     if (value) {
+      setPending("ссылку на активность");
       void accept(importRunTrackLink(value));
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!track) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await confirmRunTrack(track.id);
+      setTrack(saved);
+      onChanged(saved.id);
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -129,12 +194,15 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
     }
   };
 
+  const isDraft = track?.status === "preview";
   const title = `Трек пробежки · ${formatDateLong(run.event_date)}`;
 
   return (
     <DetailModal open title={title} onClose={onClose}>
       {loading && <p className="muted">Загружаем трек…</p>}
-      {error && <p className="form-error">{error}</p>}
+      {/* Ошибку показываем рядом с самим действием: наверху модалки её
+          проглядывали, а при загрузке взгляд остаётся на кнопке выбора. */}
+      {error && track && <p className="form-error">{error}</p>}
 
       {!loading && !track && (
         <div className="run-track-upload">
@@ -150,8 +218,24 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
               disabled={busy}
               onChange={(event) => handleFile(event.target.files?.[0])}
             />
-            <span>Выбрать файл</span>
+            <span>{busy ? "Разбираем…" : "Выбрать файл"}</span>
           </label>
+
+          {busy && pending && (
+            <p className="run-track-progress">
+              <span className="run-track-spinner" aria-hidden />
+              Разбираем {pending} — это занимает несколько секунд.
+            </p>
+          )}
+
+          {error && (
+            <div className="form-error">
+              <b>Трек не загрузился.</b> {error}
+              <span className="run-track-error-hint">
+                Выберите другой файл или приложите ссылку на активность — окно можно не закрывать.
+              </span>
+            </div>
+          )}
           <div className="run-track-link">
             <input
               type="url"
@@ -195,6 +279,16 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
             <div>
               <b>{track.elevation_gain_m != null ? `${Math.round(track.elevation_gain_m)} м` : "—"}</b>
               <span>набор высоты</span>
+            </div>
+            {/* Плотность записи — главный показатель того, можно ли верить
+                геометрии: при 8 м между точками поворот занижается на треть. */}
+            <div className={track.is_course_eligible ? "" : "run-track-fact-warn"}>
+              <b>
+                {track.quality?.meters_per_point != null
+                  ? `${track.quality.meters_per_point.toFixed(1).replace(".", ",")} м`
+                  : "—"}
+              </b>
+              <span>между точками{track.is_course_eligible ? "" : " · точность низкая"}</span>
             </div>
           </div>
 
@@ -255,15 +349,48 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
               {track.device_name ? ` Устройство: ${track.device_name}.` : ""}
             </li>
             {!track.is_course_eligible && track.exclusion_note && (
-              <li>В измерения трассы не идёт: {track.exclusion_note.toLowerCase()}.</li>
+              <li>
+                В измерения трассы не идёт: {track.exclusion_note.toLowerCase()}. Паспорт трассы считается
+                только по посекундным записям — на более редких суммарный поворот занижается вдвое.
+              </li>
             )}
           </ul>
 
-          <div className="run-track-actions">
-            <button type="button" className="btn btn-danger" disabled={busy} onClick={() => void handleDelete()}>
-              Удалить трек
-            </button>
-          </div>
+          {isDraft ? (
+            <div className="run-track-actions run-track-actions-draft">
+              <p className="run-track-draft-note">
+                Трек пока никуда не записан — это разбор приложенного файла. Сохраните, чтобы он появился
+                в вашем профиле
+                {track.is_course_eligible
+                  ? " и пошёл в измерения трассы."
+                  : ". В измерения трассы он не пойдёт — причина ниже, но на ваш личный разбор это не влияет."}
+              </p>
+              <div className="run-track-actions-row">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={busy}
+                  onClick={() => void handleConfirm()}
+                >
+                  Сохранить трек
+                </button>
+                <button type="button" className="btn" disabled={busy} onClick={() => void handleDelete()}>
+                  Отменить
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="run-track-actions">
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={busy}
+                onClick={() => void handleDelete()}
+              >
+                Удалить трек
+              </button>
+            </div>
+          )}
         </div>
       )}
     </DetailModal>

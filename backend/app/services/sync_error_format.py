@@ -105,6 +105,11 @@ def humanize_sync_error_message(raw: str | None, platform: str | None = None) ->
             "Синхронизация временно приостановлена — попробуйте позже."
         )
 
+    # Дом сам в parkrun не ходит (PARKRUN_SERVER_FETCH_ENABLED=false): профиль
+    # уже стоит в очереди сборщика, это не сбой — так и говорим.
+    if "server fetch disabled" in lower:
+        return "Профиль parkrun обновит наш сборщик: заявка уже в очереди, данные появятся в течение часа."
+
     if "cooldown until" in lower or "ban/protection" in lower:
         return (
             f"{_platform_site(platform)} временно недоступен — недавно был отказ в доступе. "

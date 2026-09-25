@@ -10,7 +10,8 @@
 2. `deliver_now(...)` в воркере перебирает каналы: основной из настроек,
    затем резервные в порядке CHANNEL_ORDER. Первый удачный — стоп. Все
    упали — failed, задача-подметальщик повторит позже. После удачной
-   доставки — копия админу (пока включено в конфиге).
+   доставки — копия админу (пока включено в конфиге); одинаковые сообщения
+   разных людей сводятся в одну копию со списком получателей.
 3. Отписка — ссылкой в каждом сообщении, без входа на сайт: токен HMAC на
    app_secret_key (как у рассылки новостей), внутри user_id и вид или «all».
 
@@ -36,9 +37,11 @@ from app.config import Settings, get_settings
 from app.core.email_templates import notification_email
 from app.models import NotificationDelivery, User, UserNotificationPrefs
 from app.notification_kinds import KIND_BY_CODE, NOTIFICATION_KINDS, kind_enabled
-from app.notification_markup import to_email_html, to_telegram_html
+from app.notification_markup import to_email_html
+from app.services import notification_admin_copy as admin_copy
 from app.services import notification_channels_service as channels
-from app.services.notification_senders import SENDERS, OutgoingMessage, send_telegram_html
+from app.services.notification_senders import SENDERS, OutgoingMessage
+from app.services.platform_titles import PLATFORM_TITLES
 
 logger = logging.getLogger(__name__)
 
@@ -160,12 +163,20 @@ def update_prefs(
     *,
     primary_channel: str | None | object = ...,
     kinds: dict[str, bool] | None = None,
+    cancellation_platforms: list[str] | None = None,
 ) -> UserNotificationPrefs:
     prefs = touch_settings(db, user_id)
     if primary_channel is not ...:
         if primary_channel is not None and primary_channel not in channels.CHANNEL_ORDER:
             raise ValueError("Неизвестный канал")
         prefs.primary_channel = primary_channel
+    if cancellation_platforms is not None:
+        unknown = [code for code in cancellation_platforms if code not in PLATFORM_TITLES]
+        if unknown:
+            raise ValueError("Неизвестная система")
+        # Порядок держим канонический (5 вёрст, S95, parkrun, RunPark), дубли
+        # снимаем: список едет в интерфейс как есть.
+        prefs.cancellation_platforms = [c for c in PLATFORM_TITLES if c in set(cancellation_platforms)]
     if kinds:
         merged = dict(prefs.kinds or {})
         for code, value in kinds.items():
@@ -199,22 +210,59 @@ def settings_state(db: Session, user: User) -> dict[str, Any]:
     return {
         "enabled": channels.is_enabled(db, user.id),
         "primary_channel": prefs.primary_channel if prefs is not None else None,
+        "cancellation_platforms": list(prefs.cancellation_platforms or []) if prefs is not None else [],
         "channels": channels.channels_state(db, user),
         "kinds": kinds_state(prefs),
     }
 
 
 def nudge_state(db: Session, user: User) -> dict[str, Any]:
-    """Показывать ли баннер «Включите уведомления» и что даст кнопка.
+    """Что показать человеку: призыв включить уведомления или тревогу о том,
+    что включённые не доходят.
 
-    Показываем, пока уведомления выключены, баннер не закрывали и есть хоть
-    одна привязка, из которой канал можно сделать.
+    `kind`:
+      * `enable` — уведомления выключены, есть привязка, из которой можно
+        сделать канал, и призыв ещё не закрывали навсегда;
+      * `fix_delivery` — уведомления включены, но НИ ОДИН включённый канал не
+        может доставить (бот заблокирован, сообщество без разрешения). Это
+        не реклама, а поломка, поэтому «больше не напоминать» тут не слушаем;
+      * `null` — всё в порядке.
     """
     prefs = get_prefs(db, user.id)
     enabled = channels.is_enabled(db, user.id)
     dismissed = prefs is not None and prefs.nudge_dismissed_at is not None
     linked = [c for c in channels.CHANNEL_ORDER if channels._address_for(db, user, c)]
-    return {"show": not enabled and not dismissed and bool(linked), "enabled": enabled, "linked_channels": linked}
+
+    if not enabled:
+        kind = "enable" if (linked and not dismissed) else None
+        return {"kind": kind, "show": kind is not None, "enabled": False, "linked_channels": linked, "broken": []}
+
+    state = channels.channels_state(db, user)
+    on = [item for item in state if item["enabled"]]
+    broken = [item for item in on if item["deliverable"] is False]
+    # Хотя бы один рабочий канал — сообщение дойдёт, тревожить незачем.
+    if not broken or len(broken) < len(on):
+        return {"kind": None, "show": False, "enabled": True, "linked_channels": linked, "broken": []}
+    for item in broken:
+        if item["channel"] == channels.CHANNEL_TELEGRAM:
+            # Персональная ссылка: по ней бот и спросит разрешение, и вернёт
+            # актуальный chat_id, если человек пишет боту с другого аккаунта.
+            item["bot_url"] = channels.telegram_connect_url(user) or item["bot_url"]
+    return {
+        "kind": "fix_delivery",
+        "show": True,
+        "enabled": True,
+        "linked_channels": linked,
+        "broken": [
+            {
+                "channel": item["channel"],
+                "title": item["title"],
+                "problem": item["problem"],
+                "action_url": item["bot_url"] or item["allow_url"],
+            }
+            for item in broken
+        ],
+    }
 
 
 def dismiss_nudge(db: Session, user_id: UUID) -> None:
@@ -458,23 +506,18 @@ def recipient_label(user: User) -> str:
     return f"{name} (№{user.serial_id})"
 
 
-def admin_copy_html(user: User, channel: str, message: OutgoingMessage) -> str:
-    """Копия админу: «Сообщение направлено @ник · канал», ниже само сообщение
-    ровно в том виде, в каком его увидел человек."""
-    head = f"📨 Сообщение направлено {to_telegram_html(recipient_label(user))} · {channels.CHANNEL_TITLES.get(channel, channel)}"
-    return f"{head}\n\n{message.telegram_html()}"
-
-
 def _admin_copy(user: User, channel: str, message: OutgoingMessage) -> None:
-    """Дубль доставленного уведомления в админский Telegram (пока включено
-    NOTIFICATIONS_ADMIN_COPY). Сбой копии доставку не откатывает."""
+    """Копия доставленного уведомления в админский Telegram (пока включено
+    NOTIFICATIONS_ADMIN_COPY). Не сразу: одинаковые сообщения копятся и уходят
+    одной сводкой со списком получателей (notification_admin_copy). Сбой
+    копии доставку не откатывает."""
     settings = get_settings()
     if not settings.notifications_admin_copy or not settings.telegram_admin_chat_id or not settings.telegram_bot_token:
         return
     try:
-        outcome = send_telegram_html(str(settings.telegram_admin_chat_id), admin_copy_html(user, channel, message))
-        if not outcome.ok:
-            logger.warning("notify: admin copy failed: %s", outcome.error)
+        admin_copy.add_copy(
+            recipient_label(user), channels.CHANNEL_TITLES.get(channel, channel), message.telegram_html()
+        )
     except Exception:  # noqa: BLE001 — копия админу не важнее самой доставки
         logger.exception("notify: admin copy failed for user %s", user.id)
 

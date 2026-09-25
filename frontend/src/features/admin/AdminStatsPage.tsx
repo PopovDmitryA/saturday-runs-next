@@ -6,8 +6,10 @@ import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
 import {
   getAdminSiteStats,
   getAdminEmailLoginFunnel,
+  getAdminNotificationStats,
   getAdminUsersGeography,
   type AdminEmailLoginResponse,
+  type AdminNotificationStatsResponse,
   type AdminLinkCombinationRow,
   type AdminLinksByMethodRow,
   type AdminOnboardingCohortRow,
@@ -544,6 +546,223 @@ function EmailLoginFunnel({ periodDays }: { periodDays: number }) {
   );
 }
 
+// Подписчики уведомлений: подписан тот, у кого включён хоть один канал.
+// Наборы каналов точные — человек в одной строке, как у наборов привязок.
+function NotificationSubscribers({ periodDays }: { periodDays: number }) {
+  const [data, setData] = useState<AdminNotificationStatsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const loadSeq = useRef(0);
+
+  useEffect(() => {
+    const seq = ++loadSeq.current;
+    setLoading(true);
+    setError(null);
+    getAdminNotificationStats(periodDays)
+      .then((payload) => {
+        if (seq === loadSeq.current) {
+          setData(payload);
+        }
+      })
+      .catch((err) => {
+        if (seq === loadSeq.current) {
+          setError(err instanceof Error ? err.message : "Не удалось загрузить подписчиков");
+        }
+      })
+      .finally(() => {
+        if (seq === loadSeq.current) {
+          setLoading(false);
+        }
+      });
+  }, [periodDays]);
+
+  const totals = data?.totals;
+  const channelTitle = (code: string) =>
+    data?.channels.find((row) => row.channel === code)?.title ?? code;
+  const subscribers = totals?.subscribers ?? 0;
+
+  return (
+    <section className="card admin-stats-notifications">
+      <h2 className="section-title">Уведомления: подписчики</h2>
+      <p className="muted admin-stats-email-login-lead">
+        Подписчик — человек, у которого включён хотя бы один канал. «Не доходит» — все его
+        включённые каналы не прошли проверку доставки (бот заблокирован, сообществу не разрешено
+        писать): ему показывается окно «Мы не можем вам написать».
+      </p>
+
+      {loading && <p className="muted">Считаем подписчиков…</p>}
+      {error && <p className="form-error">{error}</p>}
+
+      {!loading && !error && data && totals && (
+        <>
+          <div className="admin-stats-grid admin-stats-grid-compact">
+            <StatCard
+              label="Подписчиков"
+              value={totals.subscribers}
+              hint={`${totals.subscribers_share}% от ${formatInt(totals.users_total)} учётных записей`}
+            />
+            <StatCard label="Новых за период" value={totals.new_subscribers_period} />
+            <StatCard
+              label="Не доходит"
+              value={totals.unreachable}
+              hint={`${pct(totals.unreachable, subscribers)} подписчиков`}
+            />
+            <StatCard label="Выключили сами" value={totals.opted_out} hint="Каналы заведены, все выключены" />
+            <StatCard
+              label="«Больше не напоминать»"
+              value={totals.nudge_dismissed}
+              hint="Закрыли призыв включить уведомления"
+            />
+            <StatCard label="Доставлено за период" value={totals.sent_period} hint="Сообщений по всем видам" />
+          </div>
+
+          <h3 className="admin-stats-chart-title">Каналы</h3>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Канал</th>
+                  <th>Включён</th>
+                  <th>Доля подписчиков</th>
+                  <th>Доставка работает</th>
+                  <th>Не проходит проверку</th>
+                  <th>Не проверен</th>
+                  <th>Основной</th>
+                  <th>Выключен</th>
+                  <th>Доставлено за период</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.channels.map((row) => (
+                  <tr key={row.channel}>
+                    <td>{row.title}</td>
+                    <td>{formatInt(row.enabled)}</td>
+                    <td className="muted">{pct(row.enabled, subscribers)}</td>
+                    <td>{formatInt(row.check_ok)}</td>
+                    <td>{formatInt(row.check_failed)}</td>
+                    <td className="muted">{formatInt(row.unchecked)}</td>
+                    <td>{formatInt(row.primary)}</td>
+                    <td className="muted">{formatInt(row.disabled)}</td>
+                    <td>{formatInt(row.sent_period)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <h3 className="admin-stats-chart-title">Наборы каналов</h3>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Набор</th>
+                  <th>Подписчиков</th>
+                  <th>Доля</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.combinations.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="muted">
+                      Подписчиков пока нет
+                    </td>
+                  </tr>
+                )}
+                {data.combinations.map((row) => (
+                  <tr key={row.channels.join("+")}>
+                    <td>{row.channels.map(channelTitle).join(" + ")}</td>
+                    <td>{formatInt(row.users)}</td>
+                    <td className="muted">{pct(row.users, subscribers)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <h3 className="admin-stats-chart-title">О чём присылать</h3>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Вид</th>
+                  <th>Включён у подписчиков</th>
+                  <th>Доля</th>
+                  <th>По умолчанию</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.kinds.map((row) => (
+                  <tr key={row.code}>
+                    <td>{row.title}</td>
+                    <td>{formatInt(row.enabled)}</td>
+                    <td className="muted">{row.share}%</td>
+                    <td className="muted">{row.default_enabled ? "включён" : "выключен"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {data.cancellation_platforms.length > 0 && (
+            <>
+              <h3 className="admin-stats-chart-title">Отмены стартов: какие системы</h3>
+              <ul className="admin-stats-platform-list">
+                {data.cancellation_platforms.map((row) => (
+                  <li key={row.code}>
+                    {row.code !== "all" && <PlatformBadge code={row.code} />}
+                    <span>
+                      {row.code === "all" ? "Все системы" : platformCodeLabel(row.code)}:{" "}
+                      <strong>{formatInt(row.users)}</strong>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          <h3 className="admin-stats-chart-title">Доставки за период по видам</h3>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Вид</th>
+                  <th>Доставлено</th>
+                  <th>Ошибка</th>
+                  <th>В очереди / пропущено</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.deliveries_by_kind.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="muted">
+                      За период уведомлений не было
+                    </td>
+                  </tr>
+                )}
+                {data.deliveries_by_kind.map((row) => (
+                  <tr key={row.code}>
+                    <td>{row.title}</td>
+                    <td>{formatInt(row.sent)}</td>
+                    <td>{formatInt(row.failed)}</td>
+                    <td className="muted">{formatInt(row.other)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <DailyBarChart
+            title="Новые подписчики"
+            data={data.new_by_day}
+            ariaLabel="Новые подписчики уведомлений по дням"
+            chartKey={`notify-${periodDays}`}
+          />
+        </>
+      )}
+    </section>
+  );
+}
+
 function GeographySection({ periodDays }: { periodDays: number }) {
   const [data, setData] = useState<AdminUsersGeographyResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -881,6 +1100,8 @@ function AdminStatsContent() {
             cohorts={data.onboarding_cohorts}
             methods={data.links_by_method_weekly}
           />
+
+          <NotificationSubscribers periodDays={periodDays} />
 
           <EmailLoginFunnel periodDays={periodDays} />
 

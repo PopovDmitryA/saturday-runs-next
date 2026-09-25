@@ -28,9 +28,20 @@ def link(label: str, url: str) -> str:
 
 
 def to_plain(text: str) -> str:
-    """VK и текстовая версия письма: жирный снимается, ссылка — «подпись: адрес»."""
-    text = _LINK.sub(lambda m: f"{m.group(1)}: {m.group(2)}", text)
-    return _BOLD.sub(lambda m: m.group(1), text)
+    """VK и текстовая версия письма: форматирования нет, адрес — своей строкой.
+
+    Подставлять адрес прямо в строку («Ахтубинск: https://… · 5 вёрст») нельзя:
+    длинная ссылка разрывает фразу пополам, и хвост после неё не читается.
+    Поэтому в строке остаётся подпись, а каждый адрес уезжает строкой ниже —
+    VK и почтовые клиенты делают такую ссылку кликабельной сами.
+    """
+    lines: list[str] = []
+    for line in text.split("\n"):
+        urls = [match.group(2) for match in _LINK.finditer(line)]
+        stripped = _LINK.sub(lambda m: _BOLD.sub(lambda b: b.group(1), m.group(1)), line)
+        lines.append(_BOLD.sub(lambda m: m.group(1), stripped))
+        lines.extend(urls)
+    return "\n".join(lines)
 
 
 def to_telegram_html(text: str) -> str:
@@ -54,7 +65,10 @@ def _render_html(text: str, *, newline: str) -> str:
         if m.group(1) is not None:
             out.append(f"<b>{escape(m.group(1))}</b>")
         else:
-            out.append(f'<a href="{escape(m.group(3), quote=True)}">{escape(m.group(2))}</a>')
+            # Подпись ссылки может быть жирной: `[**Мещерский**](…)` — название
+            # локации и кликабельно, и выделено.
+            label = _BOLD.sub(lambda b: f"<b>{escape(b.group(1))}</b>", escape(m.group(2)))
+            out.append(f'<a href="{escape(m.group(3), quote=True)}">{label}</a>')
         pos = m.end()
     out.append(escape(text[pos:]))
     return "".join(out).replace("\n", newline)

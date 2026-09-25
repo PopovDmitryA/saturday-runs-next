@@ -21,7 +21,7 @@ from app.models import (
     User,
     VolunteerResult,
 )
-from app.services.location_catalog_service import LocationCatalogIndex
+from app.services.location_catalog_service import LocationCatalogIndex, normalize_platform_code
 from app.services.photo_service import PhotoPayload, delete_rating_photo, list_rating_photos
 from app.time_format import normalize_finish_time_display
 
@@ -980,6 +980,9 @@ def location_rating_aggregates(
         .all()
     )
     catalog_index = LocationCatalogIndex(db)
+    rated_with_photos = {
+        rating_id for (rating_id,) in db.query(LocationRatingPhoto.rating_id).distinct()
+    }
 
     home_keys: dict[UUID, str | None] = {}
     if exclude_locals:
@@ -995,14 +998,33 @@ def location_rating_aggregates(
             {
                 "location_key": rating.location_key,
                 "location_name": catalog_index.display_name(location, rating.platform_code),
+                "current_platform": None,
+                "latest_event": None,
+                "latest_platform": None,
                 "voters": set(),
+                "comments": 0,
+                "with_photos": 0,
                 "overall": [],
                 "organization": [],
                 "route": [],
                 "community": [],
             },
         )
+        # Система, где локация бегает сейчас: действующая система узла каталога,
+        # а без узла — система самого свежего оценённого старта.
+        catalog = catalog_index.get_for_location(location, rating.platform_code)
+        active = normalize_platform_code(catalog.active_platform) if catalog else None
+        if active:
+            bucket["current_platform"] = active
+        latest = bucket["latest_event"]
+        if latest is None or rating.event_date > cast(date, latest):
+            bucket["latest_event"] = rating.event_date
+            bucket["latest_platform"] = rating.platform_code
         cast("set[UUID]", bucket["voters"]).add(rating.user_id)
+        if rating.comment and rating.comment.strip():
+            bucket["comments"] = cast(int, bucket["comments"]) + 1
+        if rating.id in rated_with_photos:
+            bucket["with_photos"] = cast(int, bucket["with_photos"]) + 1
         cast("list[int]", bucket["overall"]).append(rating.score_overall)
         if rating.score_organization is not None:
             cast("list[int]", bucket["organization"]).append(rating.score_organization)
@@ -1018,6 +1040,9 @@ def location_rating_aggregates(
             {
                 "location_key": bucket["location_key"],
                 "location_name": bucket["location_name"],
+                "current_platform": bucket["current_platform"] or bucket["latest_platform"],
+                "comments": bucket["comments"],
+                "with_photos": bucket["with_photos"],
                 "voters": len(cast("set[UUID]", bucket["voters"])),
                 "ratings": len(overall),
                 "avg_overall": _avg(overall),

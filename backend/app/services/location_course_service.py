@@ -205,6 +205,9 @@ def _fill_profile(profile: LocationCourseProfile, tracks: list[RunTrack]) -> Non
     profile.turn_sum_deg = _median_or_none([item.get("turn_sum_deg") for item in metrics])
     profile.u_turn_count = _median_or_none([item.get("u_turn_count") for item in metrics])
     profile.longest_straight_m = _median_or_none([item.get("longest_straight_m") for item in metrics])
+    profile.box_short_m = _median_or_none([item.get("box_short_m") for item in metrics])
+    profile.box_long_m = _median_or_none([item.get("box_long_m") for item in metrics])
+    profile.box_area_m2 = _median_or_none([item.get("box_area_m2") for item in metrics])
     laps = [int(item["lap_count"]) for item in metrics if item.get("lap_count")]
     profile.lap_count = int(median(laps)) if laps else None
     profile.uphill_share = _median_or_none([item.get("uphill_share") for item in metrics])

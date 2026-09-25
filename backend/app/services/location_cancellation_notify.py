@@ -14,10 +14,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from app.config import get_settings
 from app.services.admin_notify import notify_admin
 from app.services.platform_titles import platform_title
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -58,13 +62,25 @@ def format_cancellation_report(changes: list[CancellationChange], *, base_url: s
     return "\n".join(parts)
 
 
-def notify_cancellation_changes(changes: list[CancellationChange]) -> bool:
-    """Отправить одно сообщение на весь набор изменений. False — не отправляли."""
+def notify_cancellation_changes(changes: list[CancellationChange], db: Session | None = None) -> bool:
+    """Отправить одно сообщение на весь набор изменений. False — не отправляли.
+
+    Админу уходит сводка по всем изменениям сразу, людям — личные уведомления
+    по их локациям (нужна сессия БД: см. cancellation_notification_service).
+    """
 
     if not changes:
         return False
     base_url = get_settings().app_base_url.rstrip("/")
     text = format_cancellation_report(changes, base_url=base_url)
+    if db is not None:
+        try:
+            from app.services.cancellation_notification_service import notify_cancellation_subscribers
+
+            notify_cancellation_subscribers(db, changes)
+        except Exception:
+            # Рассылка не имеет права ронять синк и админский канал.
+            logger.exception("Не удалось разослать уведомления об отмене старта")
     try:
         return notify_admin(text)
     except Exception:

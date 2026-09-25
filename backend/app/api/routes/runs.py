@@ -43,6 +43,7 @@ from app.services.location_course_service import rebuild_for_tracks, rebuild_loc
 from app.services.run_track_service import (
     build_track,
     delete_track,
+    drop_own_previews,
     ensure_consent,
     find_existing,
     get_track,
@@ -174,6 +175,12 @@ def import_run_track_link(
 
 
 def _save_track(db: Session, user: User, parsed) -> TrackDetailResponse:
+    """Разбирает трек и кладёт его ЧЕРНОВИКОМ: человек сначала смотрит разбор.
+
+    В профиль трек попадает только после «Сохранить» (эндпоинт confirm).
+    До этого он не виден ни в списке треков, ни в паспорте трассы локации —
+    приложить файл и передумать должно быть можно без следов.
+    """
     existing = find_existing(db, user.id, parsed.source, parsed.source_ref)
     if existing is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Этот трек уже загружен.")
@@ -187,10 +194,10 @@ def _save_track(db: Session, user: User, parsed) -> TrackDetailResponse:
             status.HTTP_400_BAD_REQUEST,
             f"{track.exclusion_note}. Похоже, это трек другой пробежки.",
         )
-    ensure_consent(db, user)
+    drop_own_previews(db, user.id)
+    track.status = "preview"
     db.add(track)
     db.flush()
-    rebuild_for_tracks(db, [track])
     db.commit()
     db.refresh(track)
     return TrackDetailResponse.model_validate(track)
@@ -204,9 +211,35 @@ def get_run_track(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> TrackDetailResponse:
     _ensure_tracks_visible(user, settings)
-    track = get_track(db, user.id, track_id)
+    # include_preview: свой черновик человек должен видеть, пока решает,
+    # сохранять его или отменить.
+    track = get_track(db, user.id, track_id, include_preview=True)
     if track is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Трек не найден.")
+    return TrackDetailResponse.model_validate(track)
+
+
+@router.post("/runs/tracks/{track_id}/confirm", response_model=TrackDetailResponse)
+def confirm_run_track(
+    track_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> TrackDetailResponse:
+    """«Сохранить»: черновик становится треком пробежки в профиле."""
+    _ensure_tracks_visible(user, settings)
+    track = get_track(db, user.id, track_id, include_preview=True)
+    if track is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Трек не найден.")
+    if track.status != "ok":
+        ensure_consent(db, user)
+        track.status = "ok"
+        db.flush()
+        # Паспорт трассы локации пересобираем только сейчас: черновик в
+        # измерения трассы не идёт.
+        rebuild_for_tracks(db, [track])
+        db.commit()
+        db.refresh(track)
     return TrackDetailResponse.model_validate(track)
 
 

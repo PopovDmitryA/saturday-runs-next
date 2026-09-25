@@ -121,6 +121,12 @@ class AdminRatingsResponse(BaseModel):
 class AdminLocationRatingRow(BaseModel):
     location_key: str
     location_name: str
+    # Система, где локация бегает сейчас (действующая в каталоге).
+    current_platform: str | None = None
+    # Отзывы с непустым комментарием.
+    comments: int = 0
+    # Отзывы хотя бы с одним фото.
+    with_photos: int = 0
     voters: int
     ratings: int
     avg_overall: float | None = None

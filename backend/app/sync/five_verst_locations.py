@@ -523,7 +523,7 @@ def sync_locations_registry(
                 [item.slug for item in result.cancellation_changes],
                 "синк реестра 5 вёрст",
             )
-            notify_cancellation_changes(result.cancellation_changes)
+            notify_cancellation_changes(result.cancellation_changes, db)
         return result
     except Exception as exc:
         db.rollback()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -24,8 +25,10 @@ from app.models import (
     RunResult,
     User,
 )
+from app.notification_kinds import KIND_BY_CODE, NOTIFICATION_KINDS, NotificationKind, kind_enabled
 from app.notification_markup import to_email_html, to_plain, to_telegram_html
 from app.services import activity_notification_service as activity
+from app.services import notification_admin_copy as admin_copy
 from app.services import notification_channels_service as channels
 from app.services import notification_service as notify
 from app.services.backlog_service import (
@@ -68,6 +71,7 @@ def _settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setattr(notify, "get_settings", lambda: settings)
     monkeypatch.setattr(channels, "get_settings", lambda: settings)
     monkeypatch.setattr(activity, "get_settings", lambda: settings)
+    monkeypatch.setattr(admin_copy, "get_settings", lambda: settings)
     return settings
 
 
@@ -116,11 +120,11 @@ def test_markup_renders_per_channel() -> None:
     assert (
         to_telegram_html(text) == '<b>Жирно</b> и <a href="https://run5k.test/x">ссылка</a> &lt;b&gt;не тег&lt;/b&gt;'
     )
-    assert to_plain(text) == "Жирно и ссылка: https://run5k.test/x <b>не тег</b>"
+    assert to_plain(text) == "Жирно и ссылка <b>не тег</b>\nhttps://run5k.test/x"
     assert to_email_html("a\nb") == "a<br>b"
 
 
-def test_outgoing_message_telegram_html_has_title_link_and_unsubscribe() -> None:
+def test_outgoing_message_telegram_html_has_title_link_and_settings() -> None:
     message = OutgoingMessage(
         title="🏃 Пробежка попала на сайт",
         text="**📍 Парк** · 20 сентября\n⏱ 24:31",
@@ -132,11 +136,13 @@ def test_outgoing_message_telegram_html_has_title_link_and_unsubscribe() -> None
     html = message.telegram_html()
     assert html.startswith("<b>🏃 Пробежка попала на сайт</b>\n\n<b>📍 Парк</b> · 20 сентября\n⏱ 24:31")
     assert '<a href="https://run5k.test/users/1/runs">Мои пробежки</a>' in html
-    assert html.endswith(
-        '<a href="https://run5k.test/api/notifications/unsubscribe?token=abc">Отписаться от таких сообщений</a>'
-    )
+    # Подвал ведёт в настройки: отписка одним кликом остаётся в письмах.
+    assert html.endswith('──────────\n⚙️ <a href="https://run5k.test/settings#notifications">Настроить уведомления</a>')
+    assert "unsubscribe" not in html
+
     plain = message.plain_text()
     assert "<b>" not in plain and "Мои пробежки: https://run5k.test/users/1/runs" in plain
+    assert plain.endswith("──────────\n⚙️ Настроить уведомления: https://run5k.test/settings#notifications")
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +280,6 @@ def test_deliver_falls_back_to_next_channel(db_session: Session, monkeypatch: py
     user = _make_user(db_session, chat_id=100, email="runner@example.com")
     _on(db_session, user, "telegram")
     _on(db_session, user, "email")
-    monkeypatch.setattr(notify, "send_telegram_html", lambda target, html: SendOutcome(ok=True))
     calls = _fake_senders(
         monkeypatch,
         {"telegram": SendOutcome(ok=False, error="403 blocked", permanent=True), "email": SendOutcome(ok=True)},
@@ -325,6 +330,14 @@ def test_deliver_skips_when_unsubscribed_meanwhile(db_session: Session, monkeypa
     assert notify.deliver_now(db_session, delivery.id) == "skipped"
 
 
+def _capture_admin_copies(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    copies: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        admin_copy, "send_telegram_html", lambda target, html: copies.append((target, html)) or SendOutcome(ok=True)
+    )
+    return copies
+
+
 def test_delivered_notification_is_copied_to_admin_as_html(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -332,14 +345,15 @@ def test_delivered_notification_is_copied_to_admin_as_html(
     user.telegram_username = "runner"
     _on(db_session, user)
     _fake_senders(monkeypatch, {"telegram": SendOutcome(ok=True)})
-    copies: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        notify, "send_telegram_html", lambda target, html: copies.append((target, html)) or SendOutcome(ok=True)
-    )
+    copies = _capture_admin_copies(monkeypatch)
     delivery = notify.notify_user(db_session, user, "runs", title="🏃 Пробежка", text="**📍 Парк**", dedupe_key="k")
     assert delivery is not None
 
     assert notify.deliver_now(db_session, delivery.id) == "sent"
+    # Копия не уходит сразу — ждёт, пока рассылка затихнет.
+    assert copies == []
+    assert admin_copy.flush_ready() == 0
+    assert admin_copy.flush_ready(now=time.time() + admin_copy.QUIET_SECONDS + 1) == 1
     assert len(copies) == 1
     target, html = copies[0]
     assert target == "4242"
@@ -350,7 +364,58 @@ def test_delivered_notification_is_copied_to_admin_as_html(
     monkeypatch.setattr(notify, "get_settings", lambda: settings.model_copy(update={"notifications_admin_copy": False}))
     second = notify.notify_user(db_session, user, "runs", title="t", text="x", dedupe_key="k2")
     assert second is not None and notify.deliver_now(db_session, second.id) == "sent"
+    admin_copy.flush_ready(force=True)
     assert copies == []
+
+
+def test_same_message_to_many_is_one_admin_copy(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Рассылка одного текста — одна копия со списком всех получателей;
+    другой текст — своя копия."""
+    users = [_make_user(db_session, name=f"Бегун {i}", chat_id=100 + i) for i in range(3)]
+    users[0].telegram_username = "first"
+    for user in users:
+        _on(db_session, user)
+    _fake_senders(monkeypatch, {"telegram": SendOutcome(ok=True)})
+    copies = _capture_admin_copies(monkeypatch)
+
+    for user in users:
+        delivery = notify.notify_user(
+            db_session, user, "cancellations", title="⛔ Отмены", text="**Парк** отменён", dedupe_key="c1"
+        )
+        assert delivery is not None and notify.deliver_now(db_session, delivery.id) == "sent"
+    other = notify.notify_user(db_session, users[1], "runs", title="🏃 Пробежка", text="x", dedupe_key="r1")
+    assert other is not None and notify.deliver_now(db_session, other.id) == "sent"
+
+    assert admin_copy.flush_ready(force=True) == 2
+    assert admin_copy.flush_ready(force=True) == 0
+    grouped = next(html for _, html in copies if "Отмены" in html)
+    head, _, body = grouped.partition("\n\n")
+    assert head.startswith("📨 Сообщение направлено 3 получателям:")
+    assert "• @first · Telegram" in head
+    assert f"• Бегун 1 (№{users[1].serial_id}) · Telegram" in head
+    assert f"• Бегун 2 (№{users[2].serial_id}) · Telegram" in head
+    assert body.startswith("<b>⛔ Отмены</b>")
+    single = next(html for _, html in copies if "Пробежка" in html)
+    assert single.startswith(f"📨 Сообщение направлено Бегун 1 (№{users[1].serial_id}) · Telegram\n\n")
+
+
+def test_admin_copy_long_rollout_is_not_held_forever(monkeypatch: pytest.MonkeyPatch) -> None:
+    copies = _capture_admin_copies(monkeypatch)
+    start = 1_000_000.0
+    # Копии идут каждые 30 секунд — тишины нет, но потолок ожидания выходит.
+    for step in range(0, admin_copy.MAX_WAIT_SECONDS + 60, 30):
+        admin_copy.add_copy(f"user{step}", "Telegram", "<b>body</b>", now=start + step)
+        admin_copy.flush_ready(now=start + step)
+    assert len(copies) == 1
+    assert "… и ещё" not in copies[0][1]
+
+
+def test_admin_copy_list_is_trimmed_to_telegram_limit() -> None:
+    html = admin_copy.summary_html([f"@runner_{i} · Telegram" for i in range(500)], "<b>body</b>")
+    assert len(html) < 4096
+    assert "… и ещё" in html
+    assert html.startswith("📨 Сообщение направлено 500 получателям:")
+    assert admin_copy.summary_html(["a", "b"] * 10 + ["c"], "x").startswith("📨 Сообщение направлено 21 получателю:")
 
 
 def test_message_carries_unsubscribe_and_settings_links(db_session: Session, _settings: Settings) -> None:
@@ -704,3 +769,34 @@ def test_scan_skips_disabled(db_session: Session, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(activity, "compute_challenges", lambda db, user_id: called.append(user_id) or {})
     assert activity.scan_user_activity(db_session, user.id) == {"skipped": "disabled"}
     assert called == []
+
+
+def test_markup_renders_bold_link_label() -> None:
+    """Название площадки — и ссылка, и жирное: `[**Имя**](url)`."""
+    text = "📍 [**Мещерский**](https://run5k.test/locations/m) · 5 вёрст"
+    assert to_telegram_html(text) == ('📍 <a href="https://run5k.test/locations/m"><b>Мещерский</b></a> · 5 вёрст')
+    # Адрес — отдельной строкой: иначе он разрывает фразу пополам.
+    assert to_plain(text) == "📍 Мещерский · 5 вёрст\nhttps://run5k.test/locations/m"
+
+
+def test_new_kind_is_on_for_existing_users(db_session: Session) -> None:
+    """Правило Дмитрия 24.09.2026: вид, появившийся позже, включается сам у тех,
+    у кого уведомления уже работают. Держится тем, что в prefs.kinds лежат
+    только виды, тумблер которых человек трогал сам."""
+    user = _make_user(db_session, chat_id=100)
+    _on(db_session, user)
+    # Человек давно настроил свои виды — про будущий вид он ничего не знает.
+    notify.update_prefs(db_session, user.id, kinds={"runs": False})
+    db_session.commit()
+
+    fresh = NotificationKind(code="brand_new", title="Новый вид", description="Появился после настройки")
+    monkey = dict(KIND_BY_CODE)
+    monkey[fresh.code] = fresh
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("app.notification_kinds.KIND_BY_CODE", monkey)
+        mp.setattr("app.notification_kinds.NOTIFICATION_KINDS", (*NOTIFICATION_KINDS, fresh))
+        prefs = notify.get_prefs(db_session, user.id)
+        assert kind_enabled(prefs.kinds if prefs else None, fresh.code) is True
+        assert notify.notify_user(db_session, user, fresh.code, title="t", text="x", dedupe_key="new-kind") is not None
+        # Собственный выбор человека при этом не трогается.
+        assert kind_enabled(prefs.kinds if prefs else None, "runs") is False

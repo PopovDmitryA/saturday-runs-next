@@ -154,7 +154,9 @@ services:
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: !reset
+    # !override, не !reset: !reset отбрасывает мапу под собой (см. шапку), и до
+    # 25.09.2026 у worker-warm зависимости от redis не было вовсе.
+    depends_on: !override
       redis:
         condition: service_healthy
 

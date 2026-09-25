@@ -1,4 +1,4 @@
-"""Рейтинги трасс: перепад высот и прямолинейность.
+"""Рейтинги трасс: перепад высот, прямолинейность и пятачок.
 
 Обе метрики берутся из паспорта трассы локации. Локации, где треков ещё
 недостаточно, из рейтинга не выкидываются — они показываются серыми: так
@@ -30,6 +30,9 @@ METRICS = {
     "elevation": ("elevation_span_m", True),
     # Прямолинейность: суммарный поворот за круг дистанции, меньше — прямее.
     "straightness": ("turn_sum_deg", False),
+    # Пятачок: площадь самого тесного прямоугольника вокруг трассы. Меньше —
+    # теснее намотано, и именно это интересно: пять километров на клочке земли.
+    "footprint": ("box_area_m2", False),
 }
 
 
@@ -88,6 +91,9 @@ def list_course_ratings(db: Session, metric: str) -> list[dict[str, Any]]:
                 "turn_sum_deg": shown.turn_sum_deg if shown else None,
                 "longest_straight_m": shown.longest_straight_m if shown else None,
                 "lap_count": shown.lap_count if shown else None,
+                "box_short_m": shown.box_short_m if shown else None,
+                "box_long_m": shown.box_long_m if shown else None,
+                "box_area_m2": shown.box_area_m2 if shown else None,
             }
         )
 

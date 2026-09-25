@@ -14,6 +14,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Вторая линия защиты (первая — в deploy_prod.sh, до git reset): после переезда
+# сайта домой VPS не поднимает ни бота, ни beat, ни воркеров. См. .site-moved-home
+# в scripts/cutover_to_home.sh (freeze) и scripts/cutover_rollback.sh (now).
+if [ -f "$ROOT/.site-moved-home" ] && [ "${ALLOW_VPS_DEPLOY:-0}" != "1" ]; then
+  echo "DEPLOY REFUSED: сайт работает на домашнем сервере — здесь ничего не пересоздаю." >&2
+  echo "  Осознанно на VPS: ALLOW_VPS_DEPLOY=1 bash scripts/deploy_prod.sh" >&2
+  exit 1
+fi
+
 # Функция, а не eval: eval ломает кавычки внутри --format / python -c.
 # --profile telegram: сервисы bot и tg-proxy сидят под профилем, чтобы НЕ подниматься
 # на Маке (второй long-poll на том же токене воровал бы апдейты у прод-бота). На проде
@@ -39,8 +48,11 @@ SERVICES="worker worker-warm worker-five-verst-user worker-parkrun api nginx bea
 # брокер остались здесь, поэтому прод обязан их НЕ поднимать: иначе задачи
 # разбирались бы в двух местах сразу. Деплой приводит прод к этому состоянию
 # сам — чтобы поднятый вручную на время аварии воркер не остался жить навсегда.
-# Откат (дом недоступен, всё разбираем на проде): KEEP_HOME_WORKERS=1 ./deploy
-# и руками `compose up -d $HOME_SERVICES`.
+# Откат (дом недоступен, всё разбираем на проде): руками
+# `compose up -d $HOME_SERVICES`, а деплоить — KEEP_HOME_WORKERS=1 bash
+# scripts/deploy_prod.sh (флаг доезжает сюда с 25.09.2026). Когда дом вернётся,
+# его контейнеры поднимутся сами — перед этим погасить воркеры здесь, иначе у
+# очередей будет по два потребителя.
 HOME_SERVICES="worker-s95 worker-five-verst worker-five-verst-fresh worker-runpark"
 
 # NB: `docker compose exec/run -T` всё равно цепляет контейнер к stdin, поэтому

@@ -21,7 +21,7 @@ type ElevationProfileProps = {
 
 export function ElevationProfile({ metrics, deviceGainM }: ElevationProfileProps) {
   const profile = metrics.elevation_profile ?? [];
-  const [hover, setHover] = useState<{ distance: number; height: number } | null>(null);
+  const [hover, setHover] = useState<{ distance: number; height: number; index: number } | null>(null);
 
   const geometry = useMemo(() => {
     if (profile.length < 2) {
@@ -66,16 +66,45 @@ export function ElevationProfile({ metrics, deviceGainM }: ElevationProfileProps
   const climbLength = metrics.climb_length_m;
   const hasClimb = climbFrom != null && climbLength != null && climbLength > 0;
 
-  const handleMove = (event: React.MouseEvent<SVGSVGElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const ratio = (event.clientX - rect.left) / rect.width;
-    const distance = Math.max(0, Math.min(maxDistance, ratio * WIDTH >= PADDING.left
-      ? ((ratio * WIDTH - PADDING.left) / (WIDTH - PADDING.left - PADDING.right)) * maxDistance
-      : 0));
-    const index = Math.round((distance / maxDistance) * (profile.length - 1));
-    const point = profile[Math.max(0, Math.min(profile.length - 1, index))];
-    setHover({ distance: point[0], height: point[1] });
+  // Уклон в точке считаем по соседям: одна пара точек профиля — это 25 метров
+  // на пятёрке, на таком плече уклон уже осмысленный, а шум ещё не правит бал.
+  const gradeAt = (index: number): number | null => {
+    const from = profile[Math.max(0, index - 1)];
+    const to = profile[Math.min(profile.length - 1, index + 1)];
+    const run = to[0] - from[0];
+    return run > 0 ? ((to[1] - from[1]) / run) * 100 : null;
   };
+
+  const pick = (clientX: number, target: SVGSVGElement) => {
+    const rect = target.getBoundingClientRect();
+    const plotWidth = WIDTH - PADDING.left - PADDING.right;
+    const insideSvg = ((clientX - rect.left) / rect.width) * WIDTH;
+    const distance = Math.max(
+      0,
+      Math.min(maxDistance, ((insideSvg - PADDING.left) / plotWidth) * maxDistance),
+    );
+    const index = Math.max(
+      0,
+      Math.min(profile.length - 1, Math.round((distance / maxDistance) * (profile.length - 1))),
+    );
+    setHover({ distance: profile[index][0], height: profile[index][1], index });
+  };
+
+  const handleMove = (event: React.MouseEvent<SVGSVGElement>) => pick(event.clientX, event.currentTarget);
+  // Палец работает так же, как мышь: на телефоне график иначе просто мёртвый.
+  const handleTouch = (event: React.TouchEvent<SVGSVGElement>) => {
+    const touch = event.touches[0];
+    if (touch) {
+      pick(touch.clientX, event.currentTarget);
+    }
+  };
+
+  const hoverGrade = hover ? gradeAt(hover.index) : null;
+  // За серединой графика подсказку вешаем слева от курсора, иначе у правого
+  // края она упиралась в стенку окна.
+  const hoverOnRight = hover != null && x(hover.distance) > WIDTH / 2;
+  const inClimb =
+    hasClimb && hover != null && hover.distance >= climbFrom && hover.distance <= climbFrom + climbLength;
 
   return (
     <figure className="run-track-elevation">
@@ -90,6 +119,9 @@ export function ElevationProfile({ metrics, deviceGainM }: ElevationProfileProps
         aria-label="График высоты по дистанции"
         onMouseMove={handleMove}
         onMouseLeave={() => setHover(null)}
+        onTouchStart={handleTouch}
+        onTouchMove={handleTouch}
+        onTouchEnd={() => setHover(null)}
       >
         {hasClimb && (
           // Подсветка главного подъёма — фоном под графиком, чтобы не спорить с линией.
@@ -124,19 +156,69 @@ export function ElevationProfile({ metrics, deviceGainM }: ElevationProfileProps
           </g>
         )}
       </svg>
+      {/* Подсказку рисуем не в SVG, а слоем поверх: ширину текста в SVG не
+          измерить, и коробочка фиксированной ширины вылезала за край окна.
+          Здесь ширину считает браузер, а край ловится обычным left/right. */}
+      {hover && (
+        <div
+          className="run-track-hover"
+          style={
+            hoverOnRight
+              ? { right: `${(1 - x(hover.distance) / WIDTH) * 100}%` }
+              : { left: `${(x(hover.distance) / WIDTH) * 100}%` }
+          }
+        >
+          <b>
+            {(hover.distance / 1000).toFixed(2).replace(".", ",")} км ·{" "}
+            {hover.height.toFixed(1).replace(".", ",")} м
+          </b>
+          <span>
+            {hoverGrade == null
+              ? "уклон —"
+              : Math.abs(hoverGrade) < 0.3
+                ? "ровно"
+                : `уклон ${hoverGrade > 0 ? "+" : "−"}${Math.abs(hoverGrade)
+                    .toFixed(1)
+                    .replace(".", ",")}%`}
+            {" · "}
+            {hover.height === maxHeight
+              ? "высшая точка"
+              : hover.height === minHeight
+                ? "низшая точка"
+                : `+${(hover.height - minHeight).toFixed(1).replace(".", ",")} м от низа`}
+            {inClimb && " · главный подъём"}
+          </span>
+        </div>
+      )}
       <p className="run-track-elevation-note">
-        {hover
-          ? `${(hover.distance / 1000).toFixed(2).replace(".", ",")} км — ${hover.height.toFixed(1).replace(".", ",")} м`
-          : hasClimb
-            ? `Главный подъём — ${climbLength} м ${
-                // «на 0,0 км» читается как ошибка: у подъёма от самого старта
-                // пишем словами.
-                climbFrom < 100
-                  ? "сразу от старта"
-                  : `на ${(climbFrom / 1000).toFixed(1).replace(".", ",")} км`
-              }, уклон ${String(metrics.climb_grade_percent).replace(".", ",")}%.`
-            : "Ровная трасса: заметных подъёмов нет."}
+        {hasClimb ? (
+          <>
+            {/* Подсветку надо назвать: иначе непонятно, что за цветной
+                прямоугольник на части графика. */}
+            <span className="climb-legend" aria-hidden />
+            {`Закрашен главный подъём — ${climbLength} м ${
+              // «на 0,0 км» читается как ошибка: у подъёма от самого старта
+              // пишем словами.
+              climbFrom < 100
+                ? "сразу от старта"
+                : `на ${(climbFrom / 1000).toFixed(1).replace(".", ",")} км`
+            }, набор ${String(metrics.climb_rise_m).replace(".", ",")} м, уклон ${String(
+              metrics.climb_grade_percent,
+            ).replace(".", ",")}%.`}
+          </>
+        ) : (
+          "Ровная трасса: заметных подъёмов нет."
+        )}
       </p>
+      {metrics.elevation_drift_m != null && Math.abs(metrics.elevation_drift_m) >= 1 && (
+        // Честно говорим, что высоты правлены: иначе цифры расходятся с тем,
+        // что человек видит в приложении часов.
+        <p className="run-track-elevation-note muted">
+          Барометр за пробежку уполз на{" "}
+          {Math.abs(metrics.elevation_drift_m).toFixed(1).replace(".", ",")} м — это видно по тому, что
+          финиш «выше» старта, хотя это одна и та же точка. Дрейф снят, профиль показан без него.
+        </p>
+      )}
     </figure>
   );
 }

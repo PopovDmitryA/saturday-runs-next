@@ -205,6 +205,13 @@ celery_app.conf.update(
             "schedule": crontab(minute="*/10"),
             "options": {"queue": "celery", "expires": 9 * 60},
         },
+        # Копии уведомлений админу копятся в Redis и уходят сводкой на текст:
+        # раз в минуту отправляем рассылки, которые затихли.
+        "notifications-flush-admin-copies": {
+            "task": "notifications.flush_admin_copies",
+            "schedule": crontab(),
+            "options": {"queue": "celery", "expires": 55},
+        },
         # Результаты, записанные мимо воркеров (parkrun с Mac-демона): раз в
         # десять минут ищем у включивших уведомления новые строки run_results.
         "notifications-scan-new-results": {
@@ -218,6 +225,14 @@ celery_app.conf.update(
             "task": "notifications.weekly_ratings",
             "schedule": crontab(hour=14, minute=0, day_of_week="0"),
             "options": {"queue": "celery", "expires": 6 * 3600},
+        },
+        # Пятничный итог отмен на завтра — в 21:00 по местному времени каждого
+        # (по домашней локации). Beat ходит по часам МСК, поэтому заходы и в
+        # субботу: вечер пятницы на западе наступает, когда в Москве уже она.
+        "notifications-friday-cancellations": {
+            "task": "notifications.friday_cancellations",
+            "schedule": crontab(minute=0, day_of_week="fri,sat"),
+            "options": {"queue": "celery", "expires": 50 * 60},
         },
         "five-verst-registry-daily": {
             "task": "five_verst_sync.sync_locations_registry",

@@ -36,6 +36,10 @@ class TrackImportItem(BaseModel):
     is_course_eligible: bool = True
     exclusion_reason: str | None = None
     exclusion_note: str | None = None
+    # Предлагаем ли взять этот трек по умолчанию и почему нет. Галочку в
+    # предпросмотре админ может переставить руками — это только подсказка.
+    suggested: bool = True
+    suggestion_note: str | None = None
 
 
 class TrackImportBatch(BaseModel):
@@ -63,3 +67,10 @@ class TrackImportBatchDetail(TrackImportBatch):
 
 class TrackImportListResponse(BaseModel):
     items: list[TrackImportBatch] = Field(default_factory=list)
+
+
+class TrackImportApplyRequest(BaseModel):
+    """Что именно админ отметил галочками в предпросмотре."""
+
+    # None — подтвердить всё разобранное (поведение до появления галочек).
+    track_ids: list[UUID] | None = None

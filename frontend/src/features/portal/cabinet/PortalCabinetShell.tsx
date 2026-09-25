@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
-import { NotificationsIntroModal } from "../../../components/NotificationsIntroModal";
+import { NotificationsPromptModal } from "../../../components/NotificationsPromptModal";
 import type { User } from "../../../lib/api";
 import { PortalFooter } from "../PortalFooter";
 import { PortalHeader } from "../PortalHeader";
@@ -91,7 +91,7 @@ export function PortalCabinetShell({
 
   return (
     <div className="portal-cab">
-      <NotificationsIntroModal />
+      <NotificationsPromptModal />
       {/* Та же шапка, что и на главной портала — с этого экрана вы уже
           авторизованы, так что навигация (Локации/Рейтинги/О проекте) и
           переход в кабинет по клику на ник работают идентично. */}

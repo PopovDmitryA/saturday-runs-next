@@ -406,6 +406,21 @@ def test_unknown_runner_marked(db_session: Session) -> None:
     assert rows["НЕИЗВЕСТНЫЙ"]["is_unknown"] is True
 
 
+def test_placeholder_without_participant_is_named_unknown(db_session: Session) -> None:
+    """Заглушка пропущенного места parkrun: участника нет, но строка подписана."""
+    parkrun = _platform(db_session, "parkrun", "parkrun")
+    location = _location(db_session, parkrun, "gap", "Парк с дырой")
+    event = _event(db_session, parkrun, location, date(2021, 6, 26))
+    runner = _participant(db_session, parkrun, "first", "Первый БЕГУН")
+    _result(db_session, event, runner, position=1, finish_time_sec=1200)
+    _result(db_session, event, None, position=2, finish_time_sec=None)
+
+    payload = _build(db_session, "proto-gap", "parkrun", date(2021, 6, 26))
+    placeholder = next(row for row in payload["results"] if row["position"] == 2)
+    assert placeholder["name"] == "НЕИЗВЕСТНЫЙ"
+    assert placeholder["is_unknown"] is True
+
+
 def test_age_grade_parsing() -> None:
     assert _age_grade("70.13%") == 70.13
     assert _age_grade("54,38%") == 54.38

@@ -9,6 +9,7 @@ import {
   applyTrackImport,
   createTrackImport,
   discardTrackImport,
+  getTrackImport,
   listAdminUsers,
   listTrackImports,
   processTrackImport,
@@ -44,9 +45,32 @@ function formatStart(value: string | null): string {
   return value ? formatDateTime(value) : "—";
 }
 
-function PreviewRow({ item }: { item: TrackImportItem }) {
+function PreviewRow({
+  item,
+  checked,
+  onToggle,
+}: {
+  item: TrackImportItem;
+  checked: boolean;
+  onToggle: (trackId: string) => void;
+}) {
+  const rowClass = [
+    item.matched_run ? (item.is_course_eligible ? "" : "excluded") : "no-match",
+    checked ? "" : "dropped",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <tr className={item.matched_run ? (item.is_course_eligible ? "" : "excluded") : "no-match"}>
+    <tr className={rowClass}>
+      <td className="center">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={() => onToggle(item.track_id)}
+          aria-label="брать этот трек"
+          title={item.suggestion_note ?? "берём"}
+        />
+      </td>
       <td>{formatStart(item.started_at)}</td>
       <td>
         {item.matched_run ? (
@@ -57,6 +81,7 @@ function PreviewRow({ item }: { item: TrackImportItem }) {
         ) : (
           <span className="dim">пробежка в протоколе не найдена</span>
         )}
+        {item.suggestion_note && <div className="track-import-why">{item.suggestion_note}</div>}
       </td>
       <td className="num">{formatDistance(item.distance_m)}</td>
       <td className="num">{formatDuration(item.duration_sec)}</td>
@@ -97,7 +122,7 @@ function GarminHowTo() {
   return (
     <section className="track-import-howto">
       <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen((value) => !value)}>
-        {open ? "Свернуть" : "Как попросить выгрузку из Garmin или COROS (с рельефом)"}
+        {open ? "Свернуть" : "Как попросить выгрузку из Garmin, COROS или Polar (с рельефом)"}
       </button>
       {open && (
         <div className="track-import-howto-body">
@@ -176,10 +201,35 @@ function GarminHowTo() {
             нужная активность → значок «Поделиться» справа сверху → «Экспорт».
           </p>
 
+          <h4>Если у человека Polar</h4>
+          <p>
+            Файлы подходят, но <b>массовой выгрузки в нужном виде у Polar нет</b>. Архив всех данных с{" "}
+            <code>account.polar.com</code> («Download your data») приходит набором JSON — наш разбор его не
+            понимает, и высот там всё равно нет. Поэтому только по одной пробежке.
+          </p>
+          <ol>
+            <li>
+              Открыть <code>flow.polar.com</code> на компьютере и зайти в <b>«Дневник»</b> (Diary).
+            </li>
+            <li>Открыть нужную субботнюю тренировку.</li>
+            <li>
+              Справа сверху нажать <b>«Экспорт»</b> (Export) и выбрать <b>FIT</b> — в нём и маршрут, и
+              высоты. Если FIT недоступен, подойдёт <b>TCX</b>; <b>CSV брать не надо</b>, его мы не читаем.
+            </li>
+            <li>Прислать файлы — можно пачкой, можно сложить в один zip.</li>
+          </ol>
+          <p className="dim">
+            Барометр стоит не во всех часах Polar: у старших моделей высоты точные, у младших считаются по
+            GPS и бывают шумными. Проверять это заранее не нужно — в таблице ниже видно, есть ли в файле
+            профиль рельефа. Сторонним сайтам, которые предлагают «выгрузить весь Polar Flow» за логин и
+            пароль, доступ к чужому аккаунту давать не надо.
+          </p>
+
           <h4>Чего просить не надо</h4>
           <ul>
             <li>
-              <b>Пароль от Garmin</b> — никогда. Человек выгружает файлы сам и присылает их.
+              <b>Пароль от Garmin, COROS или Polar</b> — никогда. Человек выгружает файлы сам и присылает
+              их.
             </li>
             <li>
               <b>Ссылку на активность</b> — только если файл получить не выходит: рельефа в ней нет.
@@ -200,6 +250,7 @@ function AdminTrackImportsContent() {
   const [batch, setBatch] = useState<TrackImportBatchDetail | null>(null);
   const [recent, setRecent] = useState<TrackImportBatch[]>([]);
   const [busy, setBusy] = useState(false);
+  const [chosen, setChosen] = useState<Map<string, boolean>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
   const reloadRecent = useCallback(() => {
@@ -235,14 +286,68 @@ function AdminTrackImportsContent() {
   }, [query]);
 
   // Разбор идёт порциями: длинный архив не должен упираться в таймаут.
+  // Одна сорвавшаяся порция не повод бросать весь архив — сервер её всё
+  // равно досчитывает, поэтому пробуем ещё дважды, прежде чем сдаться.
   const runProcessing = useCallback(async (started: TrackImportBatchDetail) => {
     let current = started;
+    let misses = 0;
     while (current.pending_count > 0) {
-      current = await processTrackImport(current.id);
+      try {
+        current = await processTrackImport(current.id);
+        misses = 0;
+      } catch (cause) {
+        misses += 1;
+        if (misses > 2) {
+          throw cause;
+        }
+        // Перечитываем состояние: порция могла досчитаться уже после отказа.
+        const refreshed = await getTrackImport(current.id);
+        if (refreshed.pending_count >= current.pending_count) {
+          throw cause;
+        }
+        current = refreshed;
+      }
       setBatch(current);
     }
     return current;
   }, []);
+
+  // `chosen` хранит ТОЛЬКО ручные правки админа, а не все галочки. Иначе
+  // при разборе порциями решение по треку застывало бы на момент его первого
+  // появления: дубль, приехавший позже настоящей пятёрки, уже не смог бы её
+  // подвинуть, и в кабинет уехали бы оба. Для нетронутых строк галочка
+  // каждый раз берётся из свежей подсказки сервера.
+  const isChosen = useCallback(
+    (item: TrackImportItem) => chosen.get(item.track_id) ?? item.suggested,
+    [chosen],
+  );
+
+  const toggleChosen = useCallback(
+    (trackId: string) => {
+      const item = batch?.items.find((candidate) => candidate.track_id === trackId);
+      if (!item) {
+        return;
+      }
+      const current = chosen.get(trackId) ?? item.suggested;
+      setChosen((previous) => {
+        const next = new Map(previous);
+        next.set(trackId, !current);
+        return next;
+      });
+    },
+    [batch, chosen],
+  );
+
+  const setAllChosen = useCallback(
+    (value: boolean | "suggested") => {
+      if (!batch) {
+        return;
+      }
+      // «Вернуть предложенное» — просто забыть ручные правки.
+      setChosen(value === "suggested" ? new Map() : new Map(batch.items.map((item) => [item.track_id, value])));
+    },
+    [batch],
+  );
 
   const handleUpload = async () => {
     if (!targetUser) {
@@ -263,13 +368,32 @@ function AdminTrackImportsContent() {
     }
   };
 
+  // Разбор мог оборваться — закрыли вкладку, пропала сеть. Сессия остаётся
+  // в базе вместе с очередью, поэтому её достаточно открыть и дорешать.
+  const handleResume = async (batchId: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const opened = await getTrackImport(batchId);
+      setChosen(new Map());
+      setBatch(opened);
+      await runProcessing(opened);
+      reloadRecent();
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleApply = async () => {
     if (!batch) {
       return;
     }
     setBusy(true);
     try {
-      setBatch(await applyTrackImport(batch.id));
+      setBatch(await applyTrackImport(batch.id, selectedIds));
+      setChosen(new Map());
       setFiles([]);
       setLinks("");
       reloadRecent();
@@ -287,6 +411,7 @@ function AdminTrackImportsContent() {
     setBusy(true);
     try {
       setBatch(await discardTrackImport(batch.id));
+      setChosen(new Map());
       reloadRecent();
     } catch (cause) {
       setError((cause as Error).message);
@@ -295,6 +420,8 @@ function AdminTrackImportsContent() {
     }
   };
 
+  const selectedIds = (batch?.items ?? []).filter(isChosen).map((item) => item.track_id);
+  const allChosen = (batch?.items.length ?? 0) > 0 && selectedIds.length === batch?.items.length;
   const withProfile = batch?.items.filter((item) => item.has_elevation_profile).length ?? 0;
   const matched = batch?.items.filter((item) => item.matched_run).length ?? 0;
   const eligible = batch?.items.filter((item) => item.is_course_eligible).length ?? 0;
@@ -417,10 +544,42 @@ function AdminTrackImportsContent() {
           )}
 
           {batch.items.length > 0 && (
+            <div className="track-import-select-bar">
+              <b>
+                Отмечено {selectedIds.length} из {batch.items.length}
+              </b>
+              <span className="dim">
+                Галочки расставлены сами: снимаем их у треков без пробежки в протоколе, у обрывков записи и
+                у дублей на одну пробежку. Всё остальное берём — правьте, что считаете нужным.
+              </span>
+              <span className="track-import-select-actions">
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllChosen("suggested")}>
+                  вернуть предложенное
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllChosen(true)}>
+                  отметить все
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllChosen(false)}>
+                  снять все
+                </button>
+              </span>
+            </div>
+          )}
+
+          {batch.items.length > 0 && (
             <div className="track-import-table-wrap">
               <table className="track-import-table">
                 <thead>
                   <tr>
+                    <th className="center">
+                      <input
+                        type="checkbox"
+                        checked={allChosen}
+                        onChange={() => setAllChosen(!allChosen)}
+                        aria-label="отметить все"
+                        title="отметить или снять все"
+                      />
+                    </th>
                     <th>начало</th>
                     <th>куда ляжет</th>
                     <th className="num">длина</th>
@@ -435,7 +594,12 @@ function AdminTrackImportsContent() {
                 </thead>
                 <tbody>
                   {batch.items.map((item) => (
-                    <PreviewRow key={item.track_id} item={item} />
+                    <PreviewRow
+                      key={item.track_id}
+                      item={item}
+                      checked={isChosen(item)}
+                      onToggle={toggleChosen}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -478,10 +642,10 @@ function AdminTrackImportsContent() {
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={busy || batch.pending_count > 0 || batch.imported_count === 0}
+                disabled={busy || batch.pending_count > 0 || selectedIds.length === 0}
                 onClick={() => void handleApply()}
               >
-                Подтвердить и записать в кабинет
+                Записать в кабинет отмеченные ({selectedIds.length})
               </button>
               <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void handleDiscard()}>
                 Отменить загрузку
@@ -502,6 +666,7 @@ function AdminTrackImportsContent() {
                 <th className="num">треков</th>
                 <th className="num">пропущено</th>
                 <th>статус</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -512,6 +677,18 @@ function AdminTrackImportsContent() {
                   <td className="num">{item.imported_count}</td>
                   <td className="num">{item.skipped_count}</td>
                   <td>{STATUS_LABELS[item.status] ?? item.status}</td>
+                  <td>
+                    {(item.status === "collecting" || item.status === "previewing") && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={busy}
+                        onClick={() => void handleResume(item.id)}
+                      >
+                        открыть и дорешать
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

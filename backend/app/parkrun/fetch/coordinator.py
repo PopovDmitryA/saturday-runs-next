@@ -45,6 +45,25 @@ def _check_ban_cooldown() -> None:
         )
 
 
+SERVER_FETCH_DISABLED_MESSAGE = (
+    "parkrun server fetch disabled on this host: the profile is queued for the "
+    "home collector (VPN exits), no request to parkrun was made"
+)
+
+
+def _check_server_fetch_allowed() -> None:
+    """Не пускает сервер сайта в parkrun, если это запрещено настройкой.
+
+    Проверяется только на серверном пути: демон очереди (daemon_session выше)
+    ходит через VPN-выходы и сюда не попадает. ParkrunBanDetected выбран
+    намеренно — на него импорт профиля уже умеет отвечать постановкой строки в
+    profile_fetch_pending, то есть «Обновить» parkrun превращается в заявку для
+    домашней очереди, а не в запрос с адреса сервера.
+    """
+    if not get_settings().parkrun_server_fetch_enabled:
+        raise ParkrunBanDetected(SERVER_FETCH_DISABLED_MESSAGE)
+
+
 def _set_ban_cooldown() -> None:
     until = escalate_ban_cooldown()
     logger.warning(
@@ -77,6 +96,7 @@ def fetch_page_html(url: str, *, reason: str = "fetch", extra_wait_ms: int | Non
             return daemon.fetch_page_html(url, reason=reason, extra_wait_ms=extra_wait_ms)
 
     check_cancelled()
+    _check_server_fetch_allowed()
     _check_ban_cooldown()
     # Пауза ДО замка — чтобы не спать, держа очередь; интервал под замком
     # проверяется ещё раз (ниже).

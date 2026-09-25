@@ -186,7 +186,7 @@ def watch_s95_cancellations(db: Session, *, notify: bool = True) -> S95Cancellat
         flush_location_catalog_caches("наблюдатель отмен s95")
         flush_location_page_caches(db, [item.slug for item in changes], "наблюдатель отмен s95")
         if notify:
-            notify_cancellation_changes(changes)
+            notify_cancellation_changes(changes, db)
 
     return result
 

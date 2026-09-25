@@ -7,6 +7,7 @@ import math
 
 import pytest
 
+from app.services.admin_track_import_service import _suggestions
 from app.services.track_metrics import assess_quality, compute_metrics
 from app.services.track_parsing import (
     TrackParseError,
@@ -315,3 +316,212 @@ def test_geometry_fingerprint_tells_same_course_from_another_one() -> None:
     base_cells = _cells([[lat, lon] for lat, lon, _ in base])
     assert similarity(base_cells, _cells([[lat, lon] for lat, lon, _ in same])) > 0.8
     assert similarity(base_cells, _cells([[lat, lon] for lat, lon, _ in other])) == 0.0
+
+
+# --- что предлагаем взять при импорте из админки -----------------------------
+
+
+class _FakeTrack:
+    """Минимум полей RunTrack, на которые смотрит отбор."""
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        run_result_id: object | None,
+        distance_m: float,
+        protocol_delta_sec: int | None = 0,
+        is_course_eligible: bool = True,
+    ) -> None:
+        self.id = name
+        self.run_result_id = run_result_id
+        self.distance_m = distance_m
+        self.protocol_delta_sec = protocol_delta_sec
+        self.is_course_eligible = is_course_eligible
+
+
+def test_import_suggests_everything_except_clear_outliers() -> None:
+    # Случай Дмитрия 03.06.2023: к пробежке в Дружбе приехали два трека —
+    # настоящая пятёрка и обрывок на 370 метров. Галочка должна остаться
+    # только у пятёрки, и разбираться руками с этим админ не обязан.
+    good = _FakeTrack("good", run_result_id="run-1", distance_m=5010.0)
+    scrap = _FakeTrack("scrap", run_result_id="run-1", distance_m=370.0, protocol_delta_sec=-1384)
+    weekday = _FakeTrack("weekday", run_result_id=None, distance_m=6610.0)
+    verdict = _suggestions([good, scrap, weekday])
+
+    assert verdict["good"] == (True, None)
+    assert verdict["scrap"][0] is False
+    assert "обрывок" in verdict["scrap"][1]
+    assert verdict["weekday"][0] is False
+    assert "протокол" in verdict["weekday"][1]
+
+
+def test_import_keeps_the_better_of_two_tracks_for_one_run() -> None:
+    # Оба трека похожи на пятёрку — тогда выигрывает тот, что ближе к
+    # протоколу, а второй остаётся в списке со снятой галочкой.
+    close = _FakeTrack("close", run_result_id="run-2", distance_m=5020.0, protocol_delta_sec=2)
+    far = _FakeTrack("far", run_result_id="run-2", distance_m=5040.0, protocol_delta_sec=40)
+    verdict = _suggestions([far, close])
+
+    assert verdict["close"] == (True, None)
+    assert verdict["far"][0] is False
+    assert "лучше" in verdict["far"][1]
+
+
+def test_privacy_trim_keeps_the_whole_course_not_just_the_two_km_circle() -> None:
+    # Набережная Чебоксар: «туда и обратно», разворот в 2,5 км от старта.
+    # Отбор по расстоянию выкусывал из середины кусок самой трассы.
+    from app.services.run_track_service import _trim_to_location
+
+    class _Loc:
+        latitude = 56.1400
+        longitude = 47.2500
+
+    class _Pt:
+        def __init__(self, elevation_m: float | None) -> None:
+            self.elevation_m = elevation_m
+
+    # Бежим строго на север от локации и обратно: 0 → 2,5 км → 0.
+    # 0.00001 широты ≈ 1,11 м, поэтому 2,5 км — это примерно 0.0225.
+    steps = [i / 100 * 0.0225 for i in range(101)]
+    series = [(_Loc.latitude + shift, _Loc.longitude, float(i)) for i, shift in enumerate(steps)]
+    series += [(_Loc.latitude + shift, _Loc.longitude, float(101 + i)) for i, shift in enumerate(reversed(steps))]
+    points = [_Pt(None) for _ in series]
+
+    kept = _trim_to_location(points, series, _Loc())  # type: ignore[arg-type]
+
+    # Дальняя точка разворота обязана остаться: без неё линия обрывается.
+    assert max(lat for lat, _lon, _offset, _ele in kept) == max(lat for lat, _lon, _t in series)
+    # И ничего не выкушено из середины — точки идут подряд по времени.
+    offsets = [offset for _lat, _lon, offset, _ele in kept]
+    assert offsets == sorted(offsets)
+    assert len(kept) == len(series)
+
+
+def test_footprint_rectangle_turns_with_the_course() -> None:
+    # Прямая, положенная строго по диагонали: шаг 10 м на север и 10 м на
+    # восток, то есть 14,1 м пути, и на 79 шагах выходит около 1120 м.
+    # Прямоугольник по сторонам света дал бы «квадрат» 790 × 790 м на ровном
+    # месте; тесный обязан лечь вдоль трассы и получиться узким.
+    from app.services.track_metrics import _footprint
+
+    steps = 80
+    resampled = [(55.75 + i * 0.00009, 37.60 + i * 0.00016, i * 10.0) for i in range(steps)]
+    box = _footprint(resampled)
+
+    assert box["box_short_m"] <= 5
+    assert 1100 <= box["box_long_m"] <= 1140
+
+
+def test_footprint_measures_the_patch_a_lap_is_wound_on() -> None:
+    # Замкнутая петля примерно 300 × 150 м: именно такие цифры и должны выйти.
+    import math
+
+    from app.services.track_metrics import _footprint
+
+    lat0, lon0 = 56.40, 38.71
+    half_long, half_short = 150.0, 75.0
+    per_deg_lat = 111320.0
+    per_deg_lon = per_deg_lat * math.cos(math.radians(lat0))
+    resampled = []
+    for i in range(120):
+        angle = 2 * math.pi * i / 120
+        x = half_long * math.cos(angle)
+        y = half_short * math.sin(angle)
+        resampled.append((lat0 + y / per_deg_lat, lon0 + x / per_deg_lon, i * 10.0))
+    box = _footprint(resampled)
+
+    assert 140 <= box["box_short_m"] <= 160
+    assert 290 <= box["box_long_m"] <= 310
+    # Площадь — произведение сторон, на ней и строится рейтинг.
+    assert abs(box["box_area_m2"] - box["box_short_m"] * box["box_long_m"]) < 500
+
+
+def test_barometer_drift_is_removed_on_a_course_that_returns_to_the_start() -> None:
+    # Иваново 12.09.2026: маятниковая трасса, старт и финиш в пяти метрах друг
+    # от друга, а высота за 22 минуты уползла на 3 м при рельефе в 5 м. Из-за
+    # этого «туда» и «обратно» переставали совпадать.
+    from app.services.track_metrics import _drift_corrected
+
+    points = [(56.0 + i * 0.00001, 40.0, float(i)) for i in range(100)]
+    # Ровная трасса плюс равномерный дрейф в 3 метра за всю запись.
+    elevations: list[float | None] = [100.0 + 3.0 * i / 99 for i in range(100)]
+
+    fixed = _drift_corrected(points, elevations, start_end_gap_m=5.7)
+
+    assert fixed[0] == pytest.approx(100.0, abs=0.01)
+    assert fixed[-1] == pytest.approx(100.0, abs=0.01)
+    assert max(fixed) - min(fixed) < 0.05  # type: ignore[type-var]
+
+
+def test_drift_is_not_touched_when_start_and_finish_are_different_places() -> None:
+    # Трасса из точки в точку: разница высот там настоящая, править нельзя.
+    from app.services.track_metrics import _drift_corrected
+
+    points = [(56.0 + i * 0.0001, 40.0, float(i)) for i in range(100)]
+    elevations: list[float | None] = [100.0 + 3.0 * i / 99 for i in range(100)]
+
+    assert _drift_corrected(points, elevations, start_end_gap_m=900.0) is elevations
+
+
+def test_flat_course_has_no_main_climb() -> None:
+    # До правки на равнине «главным подъёмом» объявлялся весь трек: Иваново —
+    # 3463 м с уклоном 0,1%. Это не подъём, а шум барометра.
+    from app.services.track_metrics import _main_climb
+
+    profile = [(float(i * 25), 100.0 + i * 0.001) for i in range(200)]
+    assert _main_climb(profile) == {}
+
+
+def test_real_climb_is_still_found() -> None:
+    from app.services.track_metrics import _main_climb
+
+    # Первые 800 м поднимаемся на 20 м (уклон 2,5%), дальше ровно.
+    profile = [(float(i * 25), 100.0 + min(i, 32) * 0.625) for i in range(200)]
+    climb = _main_climb(profile)
+
+    assert climb["climb_rise_m"] == pytest.approx(20.0, abs=0.5)
+    assert climb["climb_grade_percent"] == pytest.approx(2.5, abs=0.2)
+
+
+def test_gap_is_measured_against_the_tracks_own_rhythm() -> None:
+    # Дружба 29.11.2025, Forerunner 965 на прогулке: медиана интервала 5 с,
+    # 44% точек идут с шагом 6 с, а самый большой разрыв во всей записи —
+    # те же 6 секунд. Старое правило («интервал больше 5 с = пропуск»)
+    # объявляло такой трек рваным.
+    points: list[tuple[float, float, float]] = []
+    clock = 0.0
+    for index in range(600):
+        clock += 6.0 if index % 2 else 4.0
+        points.append((55.75 + index * 0.00002, 37.6 + index * 0.00002, clock))
+
+    _quality_class, quality = assess_quality(points)
+
+    assert quality["max_gap_sec"] == 6.0
+    assert quality["gap_count"] == 0
+
+
+def test_class_follows_distance_between_points_not_seconds() -> None:
+    # Один и тот же интервал записи даёт разную подробность: у идущего пешком
+    # точки ложатся вдвое плотнее, чем у бегущего.
+    def track(step_m: float) -> list[tuple[float, float, float]]:
+        # 0.00001 широты ≈ 1,11 м.
+        shift = step_m / 111320
+        return [(55.75 + index * shift, 37.6, index * 5.0) for index in range(600)]
+
+    dense_class, dense = assess_quality(track(3.0))
+    sparse_class, sparse = assess_quality(track(17.0))
+
+    assert dense["meters_per_point"] == pytest.approx(3.0, abs=0.2)
+    assert sparse["meters_per_point"] == pytest.approx(17.0, abs=0.3)
+    assert dense_class == "A"
+    assert sparse_class == "C"
+
+
+def test_sparse_track_is_kept_out_of_course_measurements() -> None:
+    # Замер 23.09.2026: при 8 м между точками суммарный поворот занижается на
+    # 27-42%, поэтому в паспорт трассы такой трек не идёт.
+    eligible, reason, note = _fitness(quality_class="B", quality={"meters_per_point": 8.0})
+    assert eligible is False
+    assert reason == "sparse_recording"
+    assert "8 м" in note

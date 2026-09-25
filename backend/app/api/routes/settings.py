@@ -195,6 +195,7 @@ def update_notification_settings(
             user.id,
             primary_channel=fields["primary_channel"] if "primary_channel" in fields else ...,
             kinds=fields.get("kinds"),
+            cancellation_platforms=fields.get("cancellation_platforms"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

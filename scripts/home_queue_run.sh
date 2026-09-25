@@ -9,7 +9,13 @@
 # (код берётся из соседнего parkrun-monitoring), а ходим через пул VPN-выходов —
 # упёрлись в защиту на одном, взяли следующий.
 #
-# База сайта живёт на VPS, поэтому на время прогона поднимаем SSH-туннель.
+# КУДА ПИШЕМ. Пока сайт жил на VPS, базу давал SSH-туннель. После переезда сайта
+# домой база — соседний контейнер, и ходить за море незачем. Развилку держит
+# файл-маркер ~/.srs-site-at-home (кладёт шаг mark в scripts/cutover_to_home.sh,
+# снимает откат — scripts/cutover_rollback.sh now): есть он — работаем с
+# локальной базой, нет — по-старому через туннель. Без этой развилки
+# очередь продолжила бы писать разобранные профили в БРОШЕННУЮ базу на VPS, и
+# потеря была бы молчаливой: прогоны зелёные, а на сайте профилей нет.
 # Redis — свой, локальный: в нём только состояние темпа и капчи текущего прогона,
 # с продовым его смешивать не нужно.
 #
@@ -24,6 +30,9 @@ set -uo pipefail
 ROOT="$HOME/saturday-runs-next"
 VENV="$HOME/queue-venv"
 DB_PORT=5434
+SITE_AT_HOME_MARKER="${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}"
+# Порт локальной базы сайта (docker-compose.home-site.yml публикует её на 127.0.0.1).
+HOME_DB_PORT="${HOME_DB_PORT:-5433}"
 LIMIT="${LIMIT:-40}"
 DELAY="${DELAY:-3}"
 
@@ -45,17 +54,26 @@ close_tunnel() {
     local pid; pid=$(tunnel_pid)
     [ -n "$pid" ] && kill "$pid" 2>/dev/null
 }
-trap close_tunnel EXIT
-
-open_tunnel || { log "не поднялся туннель к базе сайта — выхожу"; exit 1; }
-log "туннель к базе сайта готов"
+if [ -f "$SITE_AT_HOME_MARKER" ]; then
+    SITE_AT_HOME=1
+    log "сайт переехал домой — работаю с локальной базой, туннель не нужен"
+else
+    SITE_AT_HOME=0
+    trap close_tunnel EXIT
+    open_tunnel || { log "не поднялся туннель к базе сайта — выхожу"; exit 1; }
+    log "туннель к базе сайта готов"
+fi
 
 # --- настройки ------------------------------------------------------------
 set -a
 # shellcheck disable=SC1090
 source "$ROOT/.env.prod"
 set +a
-export DATABASE_URL="${DATABASE_URL//@172.17.0.1:5432/@127.0.0.1:$DB_PORT}"
+if [ "$SITE_AT_HOME" = "1" ]; then
+    export DATABASE_URL="${DATABASE_URL//@172.17.0.1:5432/@127.0.0.1:$HOME_DB_PORT}"
+else
+    export DATABASE_URL="${DATABASE_URL//@172.17.0.1:5432/@127.0.0.1:$DB_PORT}"
+fi
 export REDIS_URL="redis://127.0.0.1:6399/0"
 export PARKRUN_MONITORING_DIR="$HOME/parkrun-monitoring"
 

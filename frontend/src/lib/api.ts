@@ -447,6 +447,8 @@ export type RunTrackSummary = {
   sample_interval_sec: number | null;
   quality_class: string | null;
   protocol_delta_sec: number | null;
+  // "preview" — черновик: разбор показан, но «Сохранить» ещё не нажато.
+  status?: string;
   // Годится ли трек как измерение трассы: брак не влияет на личный разбор.
   is_course_eligible: boolean;
   exclusion_reason: string | null;
@@ -484,6 +486,8 @@ export type RunTrackMetrics = {
   // Профиль трассы: [метры от старта, высота]. Есть только у файлов с высотами.
   elevation_profile?: [number, number][];
   elevation_gain_profile_m?: number;
+  // На сколько уползла высота барометра за пробежку: поправка снята.
+  elevation_drift_m?: number;
   elevation_loss_profile_m?: number;
   elevation_min_m?: number;
   elevation_max_m?: number;
@@ -498,7 +502,15 @@ export type RunTrackMetrics = {
 export type RunTrackQuality = {
   sample_interval_sec?: number;
   gap_share?: number;
+  // Пропуск — провал на фоне собственного ритма записи, а не любой интервал
+  // длиннее пяти секунд. Эти три поля позволяют вердикт проверить.
+  gap_count?: number;
+  gap_threshold_sec?: number;
+  max_gap_sec?: number;
   noise_m?: number;
+  // Метров между соседними точками — разрешающая способность записи. Для
+  // замера трассы важна именно она, а не интервал в секундах.
+  meters_per_point?: number;
   point_count?: number;
   reason?: string;
 };
@@ -698,10 +710,21 @@ function extractApiErrorDetail(body: unknown, status: number, rawText: string): 
     }
   }
   const trimmed = rawText.trim();
-  if (trimmed) {
-    return sanitizeApiErrorMessage(trimmed);
+  // Ответ мог прийти не от приложения, а от nginx: при слишком большом теле
+  // запроса или падении апстрима он отдаёт свою HTML-страницу. Показывать её
+  // целиком бессмысленно — 23.09.2026 админ при загрузке архива треков увидел
+  // в интерфейсе разметку «413 Request Entity Too Large» вместе с комментариями
+  // для MSIE. Разбираем такие ответы по коду и говорим человеческим языком.
+  if (!trimmed || /^\s*<(!doctype|html)/i.test(trimmed)) {
+    if (status === 413) {
+      return "Файл слишком большой — сервер не принял запрос. Разбейте архив на части.";
+    }
+    if (status === 502 || status === 503 || status === 504) {
+      return "Сервер сейчас недоступен. Попробуйте через минуту.";
+    }
+    return `Не удалось выполнить запрос (HTTP ${status})`;
   }
-  return `Не удалось выполнить запрос (HTTP ${status})`;
+  return sanitizeApiErrorMessage(trimmed);
 }
 
 // Тот же разбор detail, что у apiFetch, но для «сырых» fetch-запросов
@@ -2230,6 +2253,12 @@ export function getAdminRatings() {
 export type AdminLocationRatingRow = {
   location_key: string;
   location_name: string;
+  /** Система, где локация бегает сейчас. */
+  current_platform: string | null;
+  /** Отзывы с непустым комментарием. */
+  comments: number;
+  /** Отзывы хотя бы с одним фото. */
+  with_photos: number;
   voters: number;
   ratings: number;
   avg_overall: number | null;
@@ -2347,6 +2376,12 @@ export async function importRunTrackLink(url: string): Promise<RunTrackDetail> {
     method: "POST",
     body: JSON.stringify({ url }),
   });
+}
+
+// «Сохранить»: черновик становится треком пробежки в профиле. До этого
+// приложенный файл виден только тому, кто его приложил.
+export async function confirmRunTrack(trackId: string): Promise<RunTrackDetail> {
+  return apiFetch<RunTrackDetail>(`/runs/tracks/${trackId}/confirm`, { method: "POST" });
 }
 
 export async function deleteRunTrack(trackId: string): Promise<void> {
@@ -2892,6 +2927,9 @@ export type LocationEventRow = {
   best_female_runner_serial_id: number | null;
   avg_time_sec: number | null;
   avg_time_display: string | null;
+  /** Время замыкающего финишёра; только у стартов с полным протоколом. */
+  last_finisher_time_sec: number | null;
+  last_finisher_time_display: string | null;
   // Дебютанты системы и «впервые здесь» не пересекаются: у дебютанта старт
   // здесь тоже первый, но в first_at_location он не попадает (иначе сумма
   // «новичков» считала бы его дважды).
@@ -3609,6 +3647,8 @@ export type NotificationKindState = {
 export type NotificationSettingsState = {
   enabled: boolean;
   primary_channel: NotificationChannelCode | null;
+  // Системы для «Отмен стартов»; пустой список = все.
+  cancellation_platforms: string[];
   channels: NotificationChannelState[];
   kinds: NotificationKindState[];
 };
@@ -3616,12 +3656,23 @@ export type NotificationSettingsState = {
 export type NotificationSettingsUpdate = {
   primary_channel?: NotificationChannelCode | null;
   kinds?: Record<string, boolean>;
+  cancellation_platforms?: string[];
+};
+
+export type NotificationBrokenChannel = {
+  channel: NotificationChannelCode;
+  title: string;
+  problem: string | null;
+  action_url: string | null;
 };
 
 export type NotificationNudgeState = {
+  // enable — призыв включить; fix_delivery — включено, но не доходит.
+  kind: "enable" | "fix_delivery" | null;
   show: boolean;
   enabled: boolean;
   linked_channels: NotificationChannelCode[];
+  broken: NotificationBrokenChannel[];
 };
 
 export function getNotificationSettings() {
@@ -3976,6 +4027,9 @@ export type TrackImportItem = {
   is_course_eligible: boolean;
   exclusion_reason: string | null;
   exclusion_note: string | null;
+  // Предлагает ли сервер взять этот трек по умолчанию и почему нет.
+  suggested: boolean;
+  suggestion_note: string | null;
 };
 
 export type TrackImportBatch = {
@@ -4021,10 +4075,17 @@ export async function createTrackImport(
   return (await response.json()) as TrackImportBatchDetail;
 }
 
+// Разбор порции — единственный заведомо долгий запрос админки: 25 файлов
+// FIT с расчётом метрик занимают десятки секунд, а на общем таймауте в 20 с
+// страница сдавалась посреди архива, хотя сервер продолжал работать.
+const TRACK_IMPORT_PROCESS_TIMEOUT_MS = 180_000;
+
 export function processTrackImport(batchId: string, limit = 25) {
-  return apiFetch<TrackImportBatchDetail>(`/admin/track-imports/${batchId}/process?limit=${limit}`, {
-    method: "POST",
-  });
+  return apiFetch<TrackImportBatchDetail>(
+    `/admin/track-imports/${batchId}/process?limit=${limit}`,
+    { method: "POST" },
+    { timeoutMs: TRACK_IMPORT_PROCESS_TIMEOUT_MS },
+  );
 }
 
 export function getTrackImport(batchId: string) {
@@ -4035,8 +4096,14 @@ export function listTrackImports(limit = 20) {
   return apiFetch<{ items: TrackImportBatch[] }>(`/admin/track-imports?limit=${limit}`);
 }
 
-export function applyTrackImport(batchId: string) {
-  return apiFetch<TrackImportBatchDetail>(`/admin/track-imports/${batchId}/apply`, { method: "POST" });
+// trackIds — что админ отметил галочками; не переданное удаляется вместе
+// с сессией. undefined означает «взять всё разобранное».
+export function applyTrackImport(batchId: string, trackIds?: string[]) {
+  return apiFetch<TrackImportBatchDetail>(
+    `/admin/track-imports/${batchId}/apply`,
+    { method: "POST", body: JSON.stringify({ track_ids: trackIds ?? null }) },
+    { timeoutMs: TRACK_IMPORT_PROCESS_TIMEOUT_MS },
+  );
 }
 
 export function discardTrackImport(batchId: string) {
@@ -5051,6 +5118,41 @@ export type AdminEmailLoginResponse = {
 
 // Воронка входа по почте: сколько писем с кодом ушло и сколько сработало.
 // Отдельный запрос от /admin/stats — это отчёт про доставку писем.
+export type AdminNotificationStatsResponse = {
+  period_days: number;
+  totals: {
+    users_total: number;
+    subscribers: number;
+    subscribers_share: number;
+    new_subscribers_period: number;
+    opted_out: number;
+    unreachable: number;
+    nudge_dismissed: number;
+    sent_period: number;
+  };
+  channels: {
+    channel: string;
+    title: string;
+    enabled: number;
+    disabled: number;
+    check_ok: number;
+    check_failed: number;
+    unchecked: number;
+    primary: number;
+    sent_period: number;
+  }[];
+  combinations: { channels: string[]; users: number }[];
+  kinds: { code: string; title: string; default_enabled: boolean; enabled: number; share: number }[];
+  /** code "all" — выбор пустой, то есть все системы. */
+  cancellation_platforms: { code: string; users: number }[];
+  deliveries_by_kind: { code: string; title: string; sent: number; failed: number; other: number }[];
+  new_by_day: { date: string; value: number }[];
+};
+
+export function getAdminNotificationStats(periodDays = 30) {
+  return apiFetch<AdminNotificationStatsResponse>(`/admin/stats/notifications?period_days=${periodDays}`);
+}
+
 export function getAdminEmailLoginFunnel(periodDays = 30) {
   return apiFetch<AdminEmailLoginResponse>(`/admin/email-login?period_days=${periodDays}`);
 }
