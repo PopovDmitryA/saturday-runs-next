@@ -1347,19 +1347,27 @@
   },
   {
     "parkrun_location": "Ramenskoe Gorodskoy Park",
-    "canonical_name": "Раменское Городской парк",
-    "active_platform": "five_verst",
+    "canonical_name": "Раменское",
+    "active_platform": "s95",
     "legacy_parkrun_slug": "ramenskoegorodskoypark",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (ramenskoegorodskoypark → ramenskoegorodskoypark). Источник: run5k general_link. Добавлена связка RunPark (runpark-ramenskoegorodskoypark) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
+    "notes": "Сопоставлено по slug parkrun → 5verst (ramenskoegorodskoypark → ramenskoegorodskoypark). Источник: run5k general_link. Добавлена связка RunPark (runpark-ramenskoegorodskoypark) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026. 26.09.2026: локация перешла из 5 вёрст в S95 (s95.ru/events/ramenskoe), основная система — S95; добавлена вторая parkrun-связка ramenskoe-gorodskoy-park (42 протокола 2021–2022, слаг из официального каталога parkrun).",
     "links": [
       {
         "platform": "parkrun",
         "external_key": "ramenskoegorodskoypark"
       },
       {
+        "platform": "parkrun",
+        "external_key": "ramenskoe-gorodskoy-park"
+      },
+      {
         "platform": "five_verst",
         "external_key": "ramenskoegorodskoypark"
+      },
+      {
+        "platform": "s95",
+        "external_key": "ramenskoe"
       },
       {
         "platform": "runpark",
