@@ -27,6 +27,14 @@ COMPOSE=(docker compose -p "${HOME_PROJECT:-srs_home}" -f docker-compose.yml -f 
 step="${1:-}"
 say() { echo "$(date '+%H:%M:%S') $*"; }
 die() { echo "СТОП: $*" >&2; exit 1; }
+# Ночной бэкап базы дома — scripts/home_pg_backup.sh по таймеру srs-pg-backup.
+# Таймер ставится руками и один раз; до шага mark бэкап молчит (нет маркера),
+# поэтому включать его можно заранее.
+backup_timer() {
+  systemctl is-active --quiet srs-pg-backup.timer &&
+    say "✓ таймер домашнего бэкапа базы включён (srs-pg-backup.timer, 23:30)" ||
+    say "✗ таймер домашнего бэкапа базы не включён: sudo cp $HOME_DIR/deploy/systemd/srs-pg-backup.* /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now srs-pg-backup.timer"
+}
 cd "$HOME_DIR" 2>/dev/null || die "нет $HOME_DIR"
 
 case "$step" in
@@ -45,6 +53,7 @@ preflight)
   sudo -n test -d /etc/letsencrypt/live/run5k.run &&
     say "✓ сертификаты run5k.run на месте" || say "✗ сертификатов нет — шаг certs"
   [ -d "$HOME_DIR/data/og" ] && say "✓ медиа: $(du -sh "$HOME_DIR/data" | cut -f1)" || say "✗ медиа не скопированы — шаг media"
+  backup_timer
   ttl=$(dig +noall +answer A run5k.run | head -1 | awk '{print $2}')
   [ "${ttl:-999}" -le 120 ] 2>/dev/null && say "✓ TTL $ttl" || say "✗ TTL ${ttl:-?} — снизить до 60 заранее"
   aaaa=$(dig +short AAAA run5k.run | head -1)
@@ -162,7 +171,8 @@ mark)
   # локальную базу, а синхронизаторы перестают тянуть код с VPS. Без него
   # очередь молча продолжила бы писать в БРОШЕННУЮ базу на проде.
   # Всё, что делает этот шаг, отменяет откат: scripts/cutover_rollback.sh now
-  # снимает маркер, возвращает .env и поднимает srs-prod обратно.
+  # снимает маркер, возвращает .env, поднимает srs-prod обратно и напоминает
+  # включить крон бэкапа на VPS.
   touch "${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}"
   say "маркер поставлен: ${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}"
 
@@ -208,6 +218,12 @@ PYENV
   # после переезда его работа уходила бы в никуда.
   docker compose -p srs-prod -f docker-compose.yml -f docker-compose.home.yml stop 2>/dev/null | tail -2
   say "старый стек домашних воркеров остановлен — они теперь часть общего стека"
+
+  # Бэкап базы переезжает вместе с сайтом: с маркером ночной бэкап снимает
+  # домашнюю базу — в тот же путь бакета, куда пишет крон VPS. Тот с этой минуты
+  # лил бы туда дампы замороженной базы; он в crontab root, выключается руками.
+  backup_timer
+  say "ВЫКЛЮЧИ бэкап на VPS (под root): crontab -e — закомментировать строку с pg_backup.sh"
   ;;
 
 start-full)
