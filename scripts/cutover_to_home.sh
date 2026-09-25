@@ -106,12 +106,25 @@ preflight)
     say "✗ EDGE_BIND=$EDGE_BIND — снаружи сайта не будет: unset EDGE_BIND"
   busy=$(ss -tlnH 2>/dev/null | awk '{print $4}' | grep -E ':(80|443)$' | tr '\n' ' ')
   [ -z "$busy" ] && say "✓ порты 80/443 свободны" || say "! 80/443 уже слушают: $busy (свой край srs_home — это нормально)"
+  # TTL — у самих DNS-серверов домена (у Timeweb их четыре), а не в кэше
+  # резолвера: кэш показывает остаток, а зеркала .org отстают от .ru (25.09.2026
+  # у них был serial 16 против 19, и TTL 600 против 60). AAAA проверяем тоже:
+  # их удаляют в момент переключения, и с TTL 600 посетители с IPv6 ещё
+  # 10 минут шли бы на VPS.
+  nss=$(dig +short NS run5k.run | tr '\n' ' ')
   for h in $HOSTS; do
-    ttl=$(dig +noall +answer A "$h" | head -1 | awk '{print $2}')
-    aaaa=$(dig +short AAAA "$h" | head -1)
-    [ "${ttl:-999}" -le 120 ] 2>/dev/null && t="TTL $ttl" || t="✗ TTL ${ttl:-?} — снизить до 60 заранее"
-    say "  $h: A $(dig +short A "$h" | head -1), $t${aaaa:+, ! AAAA $aaaa — удалить в момент переключения}"
+    for rr in A AAAA; do
+      ttls=$(for ns in $nss; do dig -4 @"$ns" +noall +answer +time=4 +tries=1 "$rr" "$h" | awk '{print $2}'; done | sort -un | tr '\n' ' ')
+      [ -n "$ttls" ] || continue
+      min=$(echo $ttls | awk '{print $1}'); max=$(echo $ttls | awk '{print $NF}')
+      addr=$(dig +short "$rr" "$h" | head -1)
+      if [ "$max" -le 120 ]; then t="✓ TTL $max"
+      elif [ "$min" -le 120 ]; then t="✗ серверы домена расходятся (TTL ${ttls% }) — зеркала ещё не догнали, проверить позже"
+      else t="✗ TTL $max — снизить до 60 заранее (панель Timeweb)"; fi
+      say "  $h $rr $addr: $t"
+    done
   done
+  say "  AAAA у run5k.run и www удаляются в момент переключения (дома IPv6 нет)"
   [ -f "$MARKER" ] && say "! маркер «сайт дома» уже стоит" || say "✓ маркера «сайт дома» нет"
   "${COMPOSE[@]}" config --quiet && say "✓ compose валиден"
   ;;
