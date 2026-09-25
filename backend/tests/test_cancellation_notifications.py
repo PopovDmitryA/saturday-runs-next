@@ -89,6 +89,7 @@ def _ran_at(
                 platform_id=platform.id,
                 external_user_id=external,
                 external_url=f"https://5verst.ru/userstats/{external}/",
+                participant_id=participant.id,
             )
         )
     event = Event(
@@ -342,3 +343,116 @@ def test_nudge_enable_kind_for_fresh_user(db_session: Session) -> None:
     notify.dismiss_nudge(db_session, user.id)
     db_session.commit()
     assert notify.nudge_state(db_session, user)["kind"] is None
+
+
+# ---------------------------------------------------------------------------
+# Пятничная сводка
+
+
+def _cancelled(slug: str, name: str, *, platform: str = "five_verst", reason: str | None = None):
+    return cancellations.CancelledLocation(platform_code=platform, slug=slug, name=name, reason=reason)
+
+
+def test_summary_text_lists_cancellations_with_count() -> None:
+    title, text = cancellations.compose_summary(
+        [_cancelled("murom", "Муромец", reason="Кросс нации"), _cancelled("tobolsk", "Тобольск")],
+        saturday=date(2026, 9, 26),
+        base_url="https://run5k.test",
+    )
+    assert title == "🗓 Отмены стартов на завтра, 26.09"
+    assert text == (
+        "Завтра старта не будет на 2 локациях:\n\n"
+        "📍 [**Муромец**](https://run5k.test/locations/murom) · 5 вёрст\nКросс нации\n\n"
+        "📍 [**Тобольск**](https://run5k.test/locations/tobolsk) · 5 вёрст"
+    )
+
+
+def test_summary_text_without_cancellations_and_with_platform_filter() -> None:
+    title, text = cancellations.compose_summary(
+        [], saturday=date(2026, 9, 26), base_url="https://run5k.test", platforms=["s95"]
+    )
+    assert title == "✅ Отмен на завтра, 26.09, нет"
+    assert text == "Ни одна локация не сообщила об отмене субботнего старта.\n\nПо системам: С95."
+
+
+def test_summary_text_plurals_and_long_list_is_cut() -> None:
+    one = cancellations.compose_summary([_cancelled("a", "А")], saturday=date(2026, 9, 26), base_url="u")[1]
+    assert one.startswith("Завтра старта не будет на 1 локации:")
+    many = [_cancelled(f"l{i}", f"Локация {i}") for i in range(cancellations.SUMMARY_MAX_LISTED + 3)]
+    text = cancellations.compose_summary(many, saturday=date(2026, 9, 26), base_url="u")[1]
+    assert text.startswith(f"Завтра старта не будет на {len(many)} локациях:")
+    assert text.endswith("… и ещё 3")
+
+
+def test_summary_due_only_friday_evening() -> None:
+    from datetime import datetime
+
+    assert cancellations.summary_due(datetime(2026, 9, 25, 21, 0))
+    assert cancellations.summary_due(datetime(2026, 9, 25, 22, 59))
+    assert not cancellations.summary_due(datetime(2026, 9, 25, 20, 59))
+    assert not cancellations.summary_due(datetime(2026, 9, 25, 23, 0))
+    assert not cancellations.summary_due(datetime(2026, 9, 24, 21, 0))
+
+
+def test_friday_summary_goes_at_local_nine_pm_by_home_location(db_session: Session, _no_broker: list[UUID]) -> None:
+    from datetime import UTC, datetime
+
+    platform = _platform(db_session, "five_verst", "5 вёрст")
+    ekb = _location(db_session, platform, slug=f"ekb-{uuid4().hex[:6]}", name="Екатеринбург")
+    ekb.timezone = "Asia/Yekaterinburg"
+    cancelled = _location(db_session, platform, slug=f"murom-{uuid4().hex[:6]}", name="Муромец")
+    cancelled.is_cancelled = True
+    cancelled.cancel_reason = "Кросс нации"
+    db_session.flush()
+    moscow_user = _user(db_session, name="Москвич", chat_id=501)  # дома нет — Москва
+    ural_user = _user(db_session, name="Уралец", chat_id=502)
+    _ran_at(db_session, ural_user, ekb, platform, when=date(2026, 9, 19))
+
+    def summaries(user: User) -> list[NotificationDelivery]:
+        return (
+            db_session.query(NotificationDelivery)
+            .filter(NotificationDelivery.user_id == user.id, NotificationDelivery.dedupe_key.like("cancel-friday:%"))
+            .all()
+        )
+
+    # 16:00 UTC пятницы: в Екатеринбурге 21:00, в Москве 19:00.
+    cancellations.send_friday_summaries(db_session, now=datetime(2026, 9, 25, 16, 0, tzinfo=UTC))
+    assert len(summaries(ural_user)) == 1 and summaries(moscow_user) == []
+    # 18:00 UTC: в Москве 21:00, в Екатеринбурге уже 23:00 — окно закрыто.
+    cancellations.send_friday_summaries(db_session, now=datetime(2026, 9, 25, 18, 0, tzinfo=UTC))
+    assert len(summaries(moscow_user)) == 1 and len(summaries(ural_user)) == 1
+    # Повторный заход в том же окне ничего не шлёт.
+    cancellations.send_friday_summaries(db_session, now=datetime(2026, 9, 25, 19, 0, tzinfo=UTC))
+    assert len(summaries(moscow_user)) == 1
+
+    delivery = summaries(moscow_user)[0]
+    assert delivery.kind == "cancellations"
+    assert delivery.dedupe_key == "cancel-friday:2026-09-26"
+    assert delivery.payload["title"] == "🗓 Отмены стартов на завтра, 26.09"
+    assert "Муромец" in delivery.payload["text"] and "Кросс нации" in delivery.payload["text"]
+
+
+def test_friday_summary_respects_kind_and_platforms(db_session: Session) -> None:
+    from datetime import UTC, datetime
+
+    platform = _platform(db_session, "five_verst", "5 вёрст")
+    cancelled = _location(db_session, platform, slug=f"murom-{uuid4().hex[:6]}", name="Муромец")
+    cancelled.is_cancelled = True
+    db_session.flush()
+    off = _user(db_session, name="Выключил", chat_id=601)
+    notify.update_prefs(db_session, off.id, kinds={"cancellations": False})
+    s95_only = _user(db_session, name="Только С95", chat_id=602)
+    notify.update_prefs(db_session, s95_only.id, cancellation_platforms=["s95"])
+    db_session.commit()
+
+    cancellations.send_friday_summaries(db_session, now=datetime(2026, 9, 25, 18, 0, tzinfo=UTC))
+    rows = {
+        row.user_id: row
+        for row in db_session.query(NotificationDelivery).filter(
+            NotificationDelivery.dedupe_key == "cancel-friday:2026-09-26",
+            NotificationDelivery.user_id.in_([off.id, s95_only.id]),
+        )
+    }
+    assert off.id not in rows
+    # Отмена у 5 вёрст, а человек смотрит только С95 — для него отмен нет.
+    assert rows[s95_only.id].payload["title"] == "✅ Отмен на завтра, 26.09, нет"

@@ -208,6 +208,22 @@ def weekly_ratings() -> dict[str, int]:
     return summary
 
 
+@celery_app.task(name="notifications.friday_cancellations", **LIMITS_MEDIUM)
+def friday_cancellations() -> int:
+    """Раз в час по пятницам и субботам (МСК): итог отмен на завтра тем, у
+    кого по домашней локации сейчас вечер пятницы."""
+    from app.services.cancellation_notification_service import send_friday_summaries
+
+    db = get_session_factory()()
+    try:
+        queued = send_friday_summaries(db)
+    finally:
+        db.close()
+    if queued:
+        logger.info("notify: friday cancellations summary queued %d", queued)
+    return queued
+
+
 @celery_app.task(name="notifications.retry_queued", **LIMITS_MEDIUM)
 def retry_queued() -> dict[str, int]:
     """Подобрать застрявшие доставки: queued без задачи (брокер моргнул) и

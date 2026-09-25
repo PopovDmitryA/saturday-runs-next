@@ -226,6 +226,14 @@ celery_app.conf.update(
             "schedule": crontab(hour=14, minute=0, day_of_week="0"),
             "options": {"queue": "celery", "expires": 6 * 3600},
         },
+        # Пятничный итог отмен на завтра — в 21:00 по местному времени каждого
+        # (по домашней локации). Beat ходит по часам МСК, поэтому заходы и в
+        # субботу: вечер пятницы на западе наступает, когда в Москве уже она.
+        "notifications-friday-cancellations": {
+            "task": "notifications.friday_cancellations",
+            "schedule": crontab(minute=0, day_of_week="fri,sat"),
+            "options": {"queue": "celery", "expires": 50 * 60},
+        },
         "five-verst-registry-daily": {
             "task": "five_verst_sync.sync_locations_registry",
             # 20:50 — после latest 20:00; до сводки 21:50 успевает (~1.5 мин).
