@@ -7,7 +7,7 @@
 # он уже означает перенос свежих данных обратно (шаг back-dump).
 #
 #   bash scripts/cutover_rollback.sh now        # поднять прод как было
-#   bash scripts/cutover_rollback.sh back-dump  # если дома уже писали
+#   bash scripts/cutover_rollback.sh back-dump  # если дома уже писали — ДО now
 #
 # «Как было» касается и дома. now отменяет шаг mark сценария переезда: снимает
 # маркер «сайт дома», возвращает .env боевого клона, а воркеры сбора снова
@@ -17,11 +17,13 @@
 # крону VPS: его выключали на шаге mark, включают руками под root — now
 # напоминает. Домашний бэкап без маркера молчит сам.
 #
-# Порядок: сначала now, потом back-dump. Маркер и .env шагу back-dump не нужны —
-# дамп он снимает через compose exec из контейнера postgres проекта srs_home,
-# который now как раз не гасит. Очередь профилей после now пишет уже в базу
-# VPS; перезальёт её back-dump — разобранное в промежутке пропадёт, но в
-# домашнем дампе те же строки остались в очереди, и она пройдёт их ещё раз.
+# Порядок.
+#   * Дома ещё ничего не писали (первые минуты) — только now.
+#   * Дома уже писали — back-dump → заливка на проде (команды печатает
+#     back-dump) → now. Именно так, а не наоборот: now поднимает прод и снимает
+#     заглушку, и всё, что прод примет до заливки, заливка сотрёт, а его beat
+#     успеет разослать уведомления по устаревшей базе. back-dump сам ставит дом
+#     на заглушку и гасит там фон — между дампом и переключением никто не пишет.
 set -uo pipefail
 
 VPS="${VPS_HOST:-viewer@195.58.34.112}"
@@ -43,6 +45,13 @@ now)
     worker-s95 worker-five-verst worker-five-verst-fresh worker-five-verst-user \
     worker-parkrun worker-runpark ||
     say "✗ домашний стек не остановился — проверь, что край больше не слушает 80/443"
+  # Бот и beat дома живы — на VPS их не поднимаем: два бота на одном токене
+  # дерутся за getUpdates, два планировщика ставят каждую задачу дважды.
+  still=$("${COMPOSE[@]}" ps --status running --services 2>/dev/null | grep -xE 'bot|beat' | tr '\n' ' ')
+  if [ -n "$still" ]; then
+    say "✗ дома всё ещё работают: $still— прод не поднимаю. Погасить руками: docker compose -p ${HOME_PROJECT:-srs_home} stop bot beat — и повторить now"
+    exit 1
+  fi
 
   # На VPS поднимаем то же, что держал там последний деплой: всё, кроме воркеров
   # сбора. Их список — HOME_SERVICES из remote_deploy.sh самого VPS. Голый
@@ -62,7 +71,8 @@ svcs=$(compose config --services | grep -vxF "$(printf '%s\n' $home)")
 echo "   на VPS: $(echo $svcs)"
 echo "   не поднимаю (живут дома): $home"
 compose up -d $svcs
-rm -f deploy/nginx/maintenance_on deploy/nginx/maintenance_current.html
+# Метка переезда запрещала деплой на VPS (deploy_prod.sh) — сайт снова здесь.
+rm -f deploy/nginx/maintenance_on deploy/nginx/maintenance_current.html .site-moved-home
 VPS_UP
   then
     say "✗ прод не поднялся. Маркер «сайт дома» и .env НЕ трогаю: база сайта по-прежнему домашняя"
@@ -141,6 +151,17 @@ PYENV
     say "✗ воркеры сбора не поднимаю: .env не вернулся. Поправить DATABASE_URL и: bash scripts/home_workers_sync.sh --keep-code"
   fi
 
+  # Заглушка, которую ставил back-dump, дому больше не нужна: повторный
+  # переезд иначе встретил бы людей «обновляемся» с домашнего края.
+  rm -f "$HOME_DIR/deploy/nginx/maintenance_on"
+
+  # Очередь профилей (снова против базы VPS — маркер снят) и синхронизация
+  # кода с VPS: freeze ставил их таймеры на паузу.
+  sudo systemctl start pm-site-queue.timer pm-home-sync.timer || {
+    status=1
+    say "✗ не запустились таймеры: sudo systemctl start pm-site-queue.timer pm-home-sync.timer"
+  }
+
   # Дома код мог уйти вперёд VPS (deploy_home.sh после переезда). Тогда воркеры
   # и база VPS расходятся по схеме, пока прод не выкатят заново.
   vps_sha=$(ssh -o BatchMode=yes "$VPS" "cat $REMOTE_DIR/.deployed_sha 2>/dev/null" | tr -d '\r\n')
@@ -150,9 +171,7 @@ PYENV
     say "  а если будет back-dump — после заливки: база приедет со схемой домашнего кода"
   fi
 
-  say "ВЕРНИ DNS: A run5k.run → 195.58.34.112, AAAA 2a03:6f00:a::47dc"
-  say "  если дома уже писали — сначала back-dump и заливка на проде, DNS потом:"
-  say "  заливка перезаписывает базу VPS целиком, и принятое продом до неё пропадёт"
+  say "ВЕРНИ DNS: A у run5k.run, www, app, grafana → 195.58.34.112; AAAA у run5k.run и www → 2a03:6f00:a::47dc"
   say "проверка: curl -s -o /dev/null -w '%{http_code}' https://run5k.run/"
   # Шаг mark просил выключить крон бэкапа на VPS, а домашний бэкап без маркера
   # молчит: не вернёшь крон — живую базу не бэкапит никто.
@@ -161,14 +180,32 @@ PYENV
   ;;
 
 back-dump)
-  say "снимаю домашнюю базу и заливаю обратно на прод"
+  cd "$HOME_DIR" || exit 1
   stamp=$(date +%Y%m%d-%H%M%S)
   dump="home_back_${stamp}.sql.gz"; ro_sql="home_back_${stamp}_report_ro.sql"
-  cd "$HOME_DIR"
+  # Дамп — последнее слово дома: заглушка на сайте (контейнерный nginx читает
+  # deploy/nginx/maintenance_on) и фон погашен. Иначе то, что дом примет между
+  # дампом и переключением DNS, пропало бы.
+  say "ставлю дом на заглушку и гашу там фон"
+  touch deploy/nginx/maintenance_on
+  "${COMPOSE[@]}" stop beat bot worker worker-warm worker-s95 worker-five-verst worker-five-verst-fresh \
+    worker-five-verst-user worker-parkrun worker-runpark >/dev/null 2>&1
+  # С маркером очередь профилей пишет в домашнюю базу — тоже на паузу.
+  sudo systemctl stop pm-site-queue.timer 2>/dev/null
+  for _ in $(seq 1 120); do systemctl is-active --quiet pm-site-queue.service || break; sleep 5; done
+  systemctl is-active --quiet pm-site-queue.service &&
+    { say "✗ разбор очереди профилей ещё идёт — дождаться (journalctl -u pm-site-queue) и повторить back-dump"; exit 1; }
+  if ! ssh -o BatchMode=yes "$VPS" "test -f $REMOTE_DIR/.site-moved-home"; then
+    say "! прод уже поднят (now был раньше back-dump): всё, что он принял с тех пор, заливка сотрёт."
+    say "  Команды ниже сначала снова закрывают его заглушкой."
+  fi
+
+  say "снимаю домашнюю базу и отправляю на прод"
   # Обычный SQL, а не -Fc: архив pg_dump 16 (формат 1.15) pg_restore 14 на VPS
-  # не читает — «unsupported version (1.15) in file header», причём уже после
-  # dropdb. Владельцев и права не везём: объекты создаёт сама роль сайта
-  # (SET ROLE ниже), права report_ro выдаёт её скрипт.
+  # не читает — «unsupported version (1.15) in file header». Владельцев и права
+  # не везём: объекты создаёт сама роль сайта (SET ROLE ниже), права report_ro
+  # выдаёт её скрипт. Плоский дамп pg_dump 16.10+ начинается с \restrict —
+  # psql на VPS (14.24, проверено 25.09.2026) его понимает.
   "${COMPOSE[@]}" exec -T postgres pg_dump -U "${POSTGRES_USER:-saturday_runs}" \
     --no-owner --no-acl "${POSTGRES_DB:-saturday_runs_lk}" | gzip > "$DUMP_DIR/$dump" || exit 1
   scp -q -o BatchMode=yes "$DUMP_DIR/$dump" "$VPS:/tmp/$dump" || exit 1
@@ -176,19 +213,31 @@ back-dump)
   # совпадать со схемой этой базы, а на проде лежит код последнего деплоя.
   scp -q -o BatchMode=yes scripts/create_report_ro_role.sql "$VPS:/tmp/$ro_sql" || exit 1
   # Обрезанный файл psql может доиграть без единой ошибки (обрыв на границе
-  # строки) и закоммитить полбазы — проверяем до того, как сносить базу прода.
+  # строки) и закоммитить полбазы — проверяем до всего остального.
   ssh -o BatchMode=yes "$VPS" "gzip -t /tmp/$dump" || { say "дамп на проде битый — не восстанавливать"; exit 1; }
   say "дамп на проде цел: $(du -h "$DUMP_DIR/$dump" | cut -f1)"
-  # Без SET ROLE всё восстановленное досталось бы postgres, а права владельца
-  # pg_dump не пишет: сайт получил бы permission denied на каждую таблицу,
-  # миграции — must be owner. --force: после шага now api и воркеры прода
-  # держат соединения, и простой dropdb отказывает. -1: упало — база пустая,
-  # команду можно повторить.
-  say "дальше НА ПРОДЕ, под root (база перезаписывается целиком):"
-  say "  touch $REMOTE_DIR/deploy/nginx/maintenance_on"
-  say "  sudo -u postgres dropdb --force saturday_runs_lk && sudo -u postgres createdb -O saturday_runs saturday_runs_lk"
-  say "  zcat /tmp/$dump | sudo -u postgres psql -X -1 -v ON_ERROR_STOP=1 -d saturday_runs_lk -c 'SET ROLE saturday_runs' -f - >/dev/null"
-  say "  sudo -u postgres psql -X -q -d saturday_runs_lk -v ON_ERROR_STOP=1 -f - < /tmp/$ro_sql"
-  say "  rm -f $REMOTE_DIR/deploy/nginx/maintenance_on"
+
+  # Сессии, дневная статистика, водяной знак рассылки уведомлений — обратно в
+  # Redis VPS (он всё это время работал и опубликован в tailnet).
+  vps_redis=$(sed -n 's/^REDIS_URL=//p' .env | tail -1 | tr -d "'\"")
+  case "$vps_redis" in ""|*//redis:*|*@redis:*|*127.0.0.1*|*localhost*)
+      say "✗ в .env нет адреса Redis VPS — состояние Redis не перенёс (сессии дома потеряются)" ;;
+    *)
+      "${COMPOSE[@]}" run --rm -T --no-deps -e SRC_REDIS_URL=redis://redis:6379/0 -e DST_REDIS_URL="$vps_redis" \
+        api python scripts/copy_redis_state.py </dev/null || say "✗ состояние Redis на VPS не перенеслось — сессии дома потеряются" ;;
+  esac
+
+  # Заливка — РЯДОМ со старой базой, подмена — только после успеха. Раньше
+  # здесь был dropdb перед заливкой: упади она (-1 откатывает всё), прод
+  # остался бы с пустой базой.
+  say "дальше НА ПРОДЕ, под root (сайт на заглушке всё время заливки):"
+  say "  cd $REMOTE_DIR && touch deploy/nginx/maintenance_on"
+  say "  docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile telegram stop beat bot worker worker-warm worker-five-verst-user worker-parkrun"
+  say "  sudo -u postgres createdb -O saturday_runs saturday_runs_lk_back"
+  say "  zcat /tmp/$dump | sudo -u postgres psql -X -1 -v ON_ERROR_STOP=1 -d saturday_runs_lk_back -c 'SET ROLE saturday_runs' -f - >/dev/null"
+  say "  sudo -u postgres psql -X -q -d saturday_runs_lk_back -v ON_ERROR_STOP=1 -f - < /tmp/$ro_sql"
+  say "  sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d postgres -c \"ALTER DATABASE saturday_runs_lk ALLOW_CONNECTIONS false\" -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'saturday_runs_lk'\" -c \"SELECT pg_sleep(2)\" -c \"ALTER DATABASE saturday_runs_lk RENAME TO saturday_runs_lk_before_back_${stamp//-/_}\" -c \"ALTER DATABASE saturday_runs_lk_back RENAME TO saturday_runs_lk\""
+  say "  старая база остаётся рядом (saturday_runs_lk_before_back_${stamp//-/_}); убедишься — sudo -u postgres dropdb её"
+  say "потом ОТСЮДА: bash scripts/cutover_rollback.sh now — поднимет прод и снимет заглушку; DNS — после"
   ;;
 esac
