@@ -7,11 +7,16 @@
  * последней открытой площадки держим в sessionStorage и читаем синхронно на
  * первом рендере — сайдбар рисуется сразу правильным.
  */
+import { rememberRecentLocation } from "./recentLocations";
+
 const STORAGE_KEY = "lastLocationHint";
 
 export type LocationHint = { slug: string; name: string };
 
 export function rememberLocationHint(hint: LocationHint): void {
+  // Та же точка входа кормит и список недавних локаций (колонка «Локации»,
+  // поиск): страница локации всегда зовёт эту функцию, когда знает имя.
+  rememberRecentLocation(hint);
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(hint));
   } catch {

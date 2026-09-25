@@ -453,7 +453,9 @@ function locationsSection(ctx: NavContext): NavSection {
 
 // Те же группы и названия, что на хабе /ratings: человек видит один и тот же
 // рейтинг под одним именем и в меню, и на карточке.
-const RATING_GROUPS: readonly { key: string; title: string; items: readonly NavLink[] }[] = [
+// Экспорт: хаб рейтингов и заголовки страниц берут названия отсюда, чтобы
+// один рейтинг не назывался в меню и на карточке по-разному.
+export const RATING_GROUPS: readonly { key: string; title: string; items: readonly NavLink[] }[] = [
   {
     key: "runners",
     title: "Бегуны",

@@ -40,6 +40,10 @@ export type User = {
   // Публичный адрес участника: /users/{public_slug ?? serial_id}.
   serial_id: number | null;
   public_slug: string | null;
+  // Домашняя локация участника (выбрана руками или определена автоматически)
+  // — для «Моей локации» в навигации и поиске. null — дома нет или ещё не
+  // определён; поле может отсутствовать в ответах старого сервера.
+  home_location?: { slug: string; name: string } | null;
   auth_identities: AuthIdentity[];
   onboarding_no_account_platforms: string[];
 };
