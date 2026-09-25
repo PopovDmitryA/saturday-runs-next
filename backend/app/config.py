@@ -416,6 +416,13 @@ class Settings(BaseSettings):
     # когда Mac-демон не запущен и охлаждение истекло.
     parkrun_server_queue_enabled: bool = True
     parkrun_server_queue_batch_size: int = 5
+    # Может ли сервер сайта сам ходить в parkrun (браузером, без прокси) —
+    # «Обновить» parkrun и серверный разбор очереди. На VPS можно: адрес
+    # датацентра. На домашнем сервере нельзя (docker-compose.home-site.yml):
+    # адрес общий со всем домом, а parkrun оттуда разбирает только очередь через
+    # VPN-выходы (scripts/home_queue_run.sh). Выключено — запрос профиля уходит
+    # в эту очередь, а не в parkrun.
+    parkrun_server_fetch_enabled: bool = True
 
     runpark_mssql_server: str = "runpark.ru"
     runpark_mssql_database: str = "ParkrunLive"
