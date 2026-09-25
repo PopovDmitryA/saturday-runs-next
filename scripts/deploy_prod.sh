@@ -137,6 +137,12 @@ echo "target: ${SSH_USER}@${SSH_HOST}:${REMOTE}"
 
 REMOTE_QUOTED=$(printf '%q' "$REMOTE")
 
+# Флаги для серверной части. Передаём явно: ssh окружение не везёт, и до
+# 25.09.2026 аварийный KEEP_HOME_WORKERS=1 (дом лёг, воркеры сбора подняты на
+# VPS руками) до remote_deploy.sh не доходил — деплой гасил их, и сбора не было
+# нигде. ALLOW_VPS_DEPLOY=1 — осознанный деплой на VPS после переезда сайта.
+REMOTE_FLAGS="KEEP_HOME_WORKERS=$(printf '%q' "${KEEP_HOME_WORKERS:-0}") ALLOW_VPS_DEPLOY=$(printf '%q' "${ALLOW_VPS_DEPLOY:-0}")"
+
 # --- Один SSH-коннект: код + сборка + миграции + рестарт ----------------------
 # Этот heredoc — ТОЛЬКО загрузчик: он приезжает с диска текущей папки, поэтому в
 # нём не должно быть ничего, что меняется от релиза к релизу. Сам сценарий деплоя
@@ -145,9 +151,20 @@ REMOTE_QUOTED=$(printf '%q' "$REMOTE")
 # отстала от origin/main (18.07.2026 из-за этого не поднялся новый сервис worker).
 echo "=== remote deploy (single ssh connection) ==="
 "${SSH_CMD[@]}" "${SSH_USER}@${SSH_HOST}" \
-  "REMOTE=${REMOTE_QUOTED} LOCAL_SHA=${LOCAL_SHA} bash -s" <<'REMOTE_SCRIPT'
+  "REMOTE=${REMOTE_QUOTED} LOCAL_SHA=${LOCAL_SHA} ${REMOTE_FLAGS} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 cd "$REMOTE"
+
+# Сайт переехал на домашний сервер (метку кладёт cutover_to_home.sh freeze,
+# снимает cutover_rollback.sh now). Выкат сюда поднял бы второго бота на тот же
+# токен и второй beat, рассылающий уведомления по замороженной базе. Проверка —
+# ДО git reset: иначе код на диске VPS уехал бы вперёд его базы.
+if [ -f .site-moved-home ] && [ "${ALLOW_VPS_DEPLOY:-0}" != "1" ]; then
+  echo "DEPLOY REFUSED: сайт работает на домашнем сервере ($(cat .site-moved-home))." >&2
+  echo "  Выкат дома: bash scripts/deploy_home.sh (на saturday-run)." >&2
+  echo "  Вернуть сайт на VPS: scripts/cutover_rollback.sh now. Осознанно сюда: ALLOW_VPS_DEPLOY=1" >&2
+  exit 1
+fi
 
 echo "--- sync code: git -> ${LOCAL_SHA} ---"
 # В норме здесь пусто. Непусто = кто-то правил файлы на проде руками (или остатки
