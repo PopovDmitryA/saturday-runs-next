@@ -48,6 +48,8 @@ export function isCabinetTab(active: SiteSidebarActive | undefined): active is C
 
 function sectionFromActive(active: SiteSidebarActive | undefined): NavSectionKey | null {
   if (active == null) return null;
+  // Страница настроек рисуется каркасом кабинета, но относится к аккаунту.
+  if (active === "settings") return "account";
   if (isCabinetTab(active)) return "me";
   if (active === "results" || active === "last-results" || active === "unified-protocol") return "results";
   if (active === "backlog") return "project";

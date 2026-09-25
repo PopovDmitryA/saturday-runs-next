@@ -7,9 +7,11 @@
  * целиком, и люди теряли ориентиры. Теперь панель живёт в шапке сайта и
  * одинакова на любой странице, включая главную, блог и «О проекте».
  *
- * Пять мест: Моё · Результаты · Локации · Рейтинги · Меню. У организаторов
- * «Орг.» встаёт вторым, а «Рейтинги» уезжают в «Меню» (решение Дмитрия
- * 23.09.2026: кабинет организатора — самый посещаемый раздел сайта).
+ * Пять мест: Моё · Итоги · Локации · Рейтинги · Меню. У организаторов «Орг.»
+ * встаёт вторым (кабинет организатора — самый посещаемый раздел сайта), а в
+ * «Меню» уезжают «Итоги»: рейтинги открывают чаще (правка Дмитрия 25.09.2026;
+ * хаб и таблицы рейтингов за месяц — около 2,9 тыс. просмотров против 1,1 тыс.
+ * у последних пробежек и единого протокола).
  *
  * «Меню» — полная карта сайта из того же дерева, что рельс и колонка на
  * компьютере: если чего-то нет в полосе страниц раздела, оно точно есть здесь.
@@ -25,7 +27,7 @@ import { openSiteSearch } from "./siteSearchBus";
 import { canSeeOrganizer, isLinkCurrent, type NavSectionKey } from "./siteNav";
 
 const BASE_KEYS: NavSectionKey[] = ["me", "results", "locations", "ratings"];
-const ORGANIZER_KEYS: NavSectionKey[] = ["me", "organizer", "results", "locations"];
+const ORGANIZER_KEYS: NavSectionKey[] = ["me", "organizer", "locations", "ratings"];
 
 export function SiteBottomNav({ user }: { user: User | null | undefined }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -35,6 +37,8 @@ export function SiteBottomNav({ user }: { user: User | null | undefined }) {
     .map((key) => sections.find((section) => section.key === key))
     .filter((section) => section != null);
   const currentInBar = barSections.some((section) => section.key === current?.key);
+  const accountLinks =
+    sections.find((section) => section.key === "account")?.groups.flatMap((group) => group.items) ?? [];
 
   // Пока шторка открыта, страница под ней не должна прокручиваться.
   useEffect(() => {
@@ -84,7 +88,8 @@ export function SiteBottomNav({ user }: { user: User | null | undefined }) {
               <span className="site-menu-search-icon">{SEARCH_ICON}</span>
               Найти страницу, локацию или участника
             </button>
-            {sections.map((section) => (
+            {/* Аккаунт — не раздел, а служебный блок внизу шторки. */}
+            {sections.filter((section) => section.key !== "account").map((section) => (
               <MenuSection
                 key={section.key}
                 sectionKey={section.key}
@@ -97,6 +102,18 @@ export function SiteBottomNav({ user }: { user: User | null | undefined }) {
               />
             ))}
             <div className="site-menu-footer">
+              {accountLinks.map((link) => (
+                <a
+                  key={link.key}
+                  href={link.href}
+                  className={`site-menu-item${isLinkCurrent(link, pathname) ? " active" : ""}${
+                    link.tone === "admin" ? " site-menu-item-admin" : ""
+                  }`}
+                >
+                  {link.icon && <span className="site-menu-item-icon">{link.icon}</span>}
+                  {link.label}
+                </a>
+              ))}
               {user != null ? (
                 <LogoutButton className="site-menu-logout" />
               ) : user === null ? (

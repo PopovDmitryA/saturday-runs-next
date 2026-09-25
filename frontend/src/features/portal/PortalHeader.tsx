@@ -5,8 +5,8 @@ import {
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../lib/portalRoutes";
-import { userLabel } from "../../lib/userLabel";
 import { useOptionalUser } from "../../lib/useOptionalUser";
+import { AccountMenu } from "./nav/AccountMenu";
 import { SEARCH_ICON } from "./nav/navIcons";
 import { SiteBottomNav } from "./nav/SiteBottomNav";
 import { openSiteSearch } from "./nav/siteSearchBus";
@@ -122,16 +122,9 @@ export function PortalHeader({
           {!hideLogin &&
             authResolved &&
             (user ? (
-              <a
-                className="portal-header-user"
-                href={cabinetTabHref(user, "dashboard")}
-                title="Личный кабинет"
-              >
-                {user.avatar_url && (
-                  <img className="portal-header-user-avatar" src={user.avatar_url} alt="" />
-                )}
-                {userLabel(user)}
-              </a>
+              // Имя открывает меню аккаунта: кабинет, настройки, админка,
+              // выход (см. nav/AccountMenu).
+              <AccountMenu user={user} />
             ) : (
               <a className="btn primary btn-sm" href={PORTAL_LOGIN_HREF}>
                 Войти

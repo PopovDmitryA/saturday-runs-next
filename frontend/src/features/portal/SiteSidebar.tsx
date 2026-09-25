@@ -28,6 +28,7 @@ import {
   RATINGS_ICON,
   RESULTS_ICON,
   SEARCH_ICON,
+  SETTINGS_ICON,
 } from "./nav/navIcons";
 import { resolveNavState, type SiteSidebarActive } from "./nav/navState";
 import { OrganizerSwitcher } from "./nav/OrganizerSwitcher";
@@ -50,6 +51,7 @@ export const SECTION_ICONS: Record<NavSectionKey, ReactNode> = {
   locations: LOCATIONS_ICON,
   ratings: RATINGS_ICON,
   project: PROJECT_ICON,
+  account: SETTINGS_ICON,
 };
 
 // Экспорт: имя пользователя нужно и герою дашборда.
@@ -208,7 +210,11 @@ export function SiteSidebar({
   };
 
   const { pathname, sections, current, organizerPlace } = resolveNavState({ active, user, location, hrefForTab });
-  const visibleSections = hideSecondaryNav ? sections.filter((section) => section.key === "me") : sections;
+  // В рельсе — только места, куда ходят за статистикой: «О проекте» и
+  // аккаунт живут в шапке (см. inRail в siteNav.ts).
+  const visibleSections = sections.filter((section) =>
+    hideSecondaryNav ? section.key === "me" : section.inRail !== false,
+  );
   // Колонка чужого профиля показывает его вкладки; иначе — текущий раздел, а
   // если раздела нет (например, 404) — свой кабинет.
   const columnSection = current ?? (extraGroup ? null : sections[0]);
@@ -255,11 +261,10 @@ export function SiteSidebar({
 
       {!collapsed && (
         <div className="site-col">
-          {user != null && <CabinetUserCard initialUser={user} />}
-          {/* Гостю отдельной карточки «Войти» нет: кнопка уже есть в шапке и
-              первым пунктом рельса, третья была бы лишней. */}
-          {user === undefined && <div className="portal-cab-user portal-cab-user-pending" aria-hidden="true" />}
-
+          {/* Карточки участника в колонке больше нет (25.09.2026): имя с
+              аватаркой уже есть в шапке и открывает меню аккаунта, а без
+              карточки заголовок раздела встаёт вровень с первым пунктом
+              рельса — раньше колонка и рельс начинались на разной высоте. */}
           {extraGroup && <ExtraGroupBlock group={extraGroup} />}
 
           {columnSection && (
@@ -271,7 +276,11 @@ export function SiteSidebar({
             />
           )}
 
-          {user != null && !hideSecondaryNav && <LogoutButton className="site-col-logout" />}
+          {/* «Выйти» живёт в меню аккаунта в шапке; в колонке — только на
+              страницах самого аккаунта (настройки, админка). */}
+          {user != null && !hideSecondaryNav && columnSection?.key === "account" && (
+            <LogoutButton className="site-col-logout" />
+          )}
         </div>
       )}
     </aside>

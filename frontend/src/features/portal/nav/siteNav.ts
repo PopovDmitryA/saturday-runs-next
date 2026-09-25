@@ -29,7 +29,7 @@ import {
   PORTAL_UPDATES_HREF,
 } from "../../../lib/portalRoutes";
 
-export type NavSectionKey = "me" | "organizer" | "results" | "locations" | "ratings" | "project";
+export type NavSectionKey = "me" | "organizer" | "results" | "locations" | "ratings" | "project" | "account";
 
 export type NavLink = {
   key: string;
@@ -64,6 +64,14 @@ export type NavSection = {
   href: string;
   groups: NavGroup[];
   keywords?: readonly string[];
+  /**
+   * Есть ли у раздела иконка в рельсе на компьютере. «О проекте» и аккаунт —
+   * не места, куда ходят за статистикой (правка Дмитрия 25.09.2026): первое
+   * живёт в шапке и подвале, второе — в меню под именем в шапке. В дереве
+   * они остаются ради «Меню» на телефоне, поиска и колонки на своих страницах.
+   * По умолчанию раздел в рельсе есть.
+   */
+  inRail?: boolean;
 };
 
 export type NavPlace = { slug: string; name: string };
@@ -152,34 +160,42 @@ export const CABINET_TABS: readonly CabinetDef[] = [
   },
 ];
 
-const CABINET_SERVICE: readonly CabinetDef[] = [
-  { key: "share", label: "Поделиться", icon: I.CABINET_ICONS.share, keywords: ["сторис", "картинка", "постер", "поделиться результатом"] },
-  {
-    key: "settings",
-    label: "Настройки",
-    icon: I.SETTINGS_ICON,
-    keywords: [
-      "имя",
-      "сменить имя",
-      "аватар",
-      "фото профиля",
-      "привязать профиль",
-      "привязка",
-      "штрихкод",
-      "почта",
-      "email",
-      "телеграм",
-      "вк",
-      "приватность",
-      "закрыть профиль",
-      "домашняя локация",
-      "удалить аккаунт",
-      "уведомления",
-      "рассылка",
-      "способы входа",
-    ],
-  },
-];
+// «Поделиться» — последним пунктом кабинета: это действие над своей
+// статистикой, а не отдельное место, но искать его люди будут именно здесь.
+const CABINET_SHARE: CabinetDef = {
+  key: "share",
+  label: "Поделиться",
+  icon: I.CABINET_ICONS.share,
+  keywords: ["сторис", "картинка", "постер", "поделиться результатом"],
+};
+
+// Настройки — не страница кабинета, а настройки всего сайта и аккаунта
+// (правка Дмитрия 25.09.2026): живут в разделе «Аккаунт».
+const SETTINGS_DEF: CabinetDef = {
+  key: "settings",
+  label: "Настройки",
+  icon: I.SETTINGS_ICON,
+  keywords: [
+    "имя",
+    "сменить имя",
+    "аватар",
+    "фото профиля",
+    "привязать профиль",
+    "привязка",
+    "штрихкод",
+    "почта",
+    "email",
+    "телеграм",
+    "вк",
+    "приватность",
+    "закрыть профиль",
+    "домашняя локация",
+    "удалить аккаунт",
+    "уведомления",
+    "рассылка",
+    "способы входа",
+  ],
+};
 
 export function cabinetHref(ctx: NavContext, key: CabinetTabKey): string {
   const defaultHref =
@@ -210,8 +226,7 @@ function meSection(ctx: NavContext): NavSection {
     groups: anon
       ? []
       : [
-          { key: "tabs", items: CABINET_TABS.map(link) },
-          { key: "service", items: CABINET_SERVICE.map(link) },
+          { key: "tabs", items: [...CABINET_TABS, CABINET_SHARE].map(link) },
         ],
   };
 }
@@ -510,7 +525,7 @@ function ratingsSection(ctx: NavContext): NavSection {
 
 // ---------- О проекте ----------
 
-function projectSection(ctx: NavContext): NavSection {
+function projectSection(): NavSection {
   const items: NavLink[] = [
     {
       key: "about",
@@ -544,6 +559,32 @@ function projectSection(ctx: NavContext): NavSection {
       keywords: ["идеи", "предложить идею", "предложение", "пожелание", "баг", "ошибка", "сообщить об ошибке"],
     },
   ];
+  return {
+    key: "project",
+    label: "О проекте",
+    shortLabel: "Проект",
+    href: PORTAL_ABOUT_HREF,
+    groups: [{ key: "project", items }],
+    inRail: false,
+  };
+}
+
+// ---------- Аккаунт ----------
+
+/**
+ * Настройки и админка — то, что касается аккаунта и сайта целиком. На
+ * компьютере открываются из меню под именем в шапке, на телефоне — внизу
+ * «Меню»; своей иконки в рельсе у раздела нет.
+ */
+function accountSection(ctx: NavContext): NavSection {
+  const link = (def: CabinetDef): NavLink => ({
+    key: def.key,
+    label: def.label,
+    icon: def.icon,
+    href: cabinetHref(ctx, def.key),
+    keywords: def.keywords,
+  });
+  const items: NavLink[] = ctx.user === null ? [] : [link(SETTINGS_DEF)];
   if (ctx.user?.is_admin) {
     items.push({
       key: "admin",
@@ -552,14 +593,16 @@ function projectSection(ctx: NavContext): NavSection {
       href: "/admin/users",
       matches: (pathname) => pathname.startsWith("/admin"),
       tone: "admin",
+      keywords: ["администрирование", "пользователи", "очередь"],
     });
   }
   return {
-    key: "project",
-    label: "О проекте",
-    shortLabel: "Проект",
-    href: PORTAL_ABOUT_HREF,
-    groups: [{ key: "project", items }],
+    key: "account",
+    label: "Аккаунт",
+    shortLabel: "Аккаунт",
+    href: PORTAL_CABINET_SETTINGS_HREF,
+    groups: items.length > 0 ? [{ key: "account", items }] : [],
+    inRail: false,
   };
 }
 
@@ -570,7 +613,7 @@ export function buildSiteNav(ctx: NavContext): NavSection[] {
   if (canSeeOrganizer(ctx.user)) {
     sections.push(organizerSection(ctx));
   }
-  sections.push(resultsSection(), locationsSection(ctx), ratingsSection(ctx), projectSection(ctx));
+  sections.push(resultsSection(), locationsSection(ctx), ratingsSection(ctx), projectSection(), accountSection(ctx));
   return sections;
 }
 
@@ -587,13 +630,14 @@ export function sectionKeyFromPath(pathname: string): NavSectionKey | null {
     pathname.startsWith(PORTAL_ABOUT_HREF) ||
     pathname.startsWith(PORTAL_BLOG_HREF) ||
     pathname.startsWith(PORTAL_UPDATES_HREF) ||
-    pathname.startsWith("/backlog") ||
-    pathname.startsWith("/admin")
+    pathname.startsWith("/backlog")
   ) {
     return "project";
   }
+  if (pathname.startsWith(PORTAL_CABINET_SETTINGS_HREF) || pathname.startsWith("/admin")) {
+    return "account";
+  }
   if (
-    pathname.startsWith(PORTAL_CABINET_SETTINGS_HREF) ||
     pathname.startsWith(PORTAL_CABINET_SHARE_HREF) ||
     pathname.startsWith("/new/")
   ) {
