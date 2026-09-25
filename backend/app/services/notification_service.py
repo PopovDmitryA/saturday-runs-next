@@ -10,7 +10,8 @@
 2. `deliver_now(...)` в воркере перебирает каналы: основной из настроек,
    затем резервные в порядке CHANNEL_ORDER. Первый удачный — стоп. Все
    упали — failed, задача-подметальщик повторит позже. После удачной
-   доставки — копия админу (пока включено в конфиге).
+   доставки — копия админу (пока включено в конфиге); одинаковые сообщения
+   разных людей сводятся в одну копию со списком получателей.
 3. Отписка — ссылкой в каждом сообщении, без входа на сайт: токен HMAC на
    app_secret_key (как у рассылки новостей), внутри user_id и вид или «all».
 
@@ -36,9 +37,10 @@ from app.config import Settings, get_settings
 from app.core.email_templates import notification_email
 from app.models import NotificationDelivery, User, UserNotificationPrefs
 from app.notification_kinds import KIND_BY_CODE, NOTIFICATION_KINDS, kind_enabled
-from app.notification_markup import to_email_html, to_telegram_html
+from app.notification_markup import to_email_html
+from app.services import notification_admin_copy as admin_copy
 from app.services import notification_channels_service as channels
-from app.services.notification_senders import SENDERS, OutgoingMessage, send_telegram_html
+from app.services.notification_senders import SENDERS, OutgoingMessage
 from app.services.platform_titles import PLATFORM_TITLES
 
 logger = logging.getLogger(__name__)
@@ -504,23 +506,18 @@ def recipient_label(user: User) -> str:
     return f"{name} (№{user.serial_id})"
 
 
-def admin_copy_html(user: User, channel: str, message: OutgoingMessage) -> str:
-    """Копия админу: «Сообщение направлено @ник · канал», ниже само сообщение
-    ровно в том виде, в каком его увидел человек."""
-    head = f"📨 Сообщение направлено {to_telegram_html(recipient_label(user))} · {channels.CHANNEL_TITLES.get(channel, channel)}"
-    return f"{head}\n\n{message.telegram_html()}"
-
-
 def _admin_copy(user: User, channel: str, message: OutgoingMessage) -> None:
-    """Дубль доставленного уведомления в админский Telegram (пока включено
-    NOTIFICATIONS_ADMIN_COPY). Сбой копии доставку не откатывает."""
+    """Копия доставленного уведомления в админский Telegram (пока включено
+    NOTIFICATIONS_ADMIN_COPY). Не сразу: одинаковые сообщения копятся и уходят
+    одной сводкой со списком получателей (notification_admin_copy). Сбой
+    копии доставку не откатывает."""
     settings = get_settings()
     if not settings.notifications_admin_copy or not settings.telegram_admin_chat_id or not settings.telegram_bot_token:
         return
     try:
-        outcome = send_telegram_html(str(settings.telegram_admin_chat_id), admin_copy_html(user, channel, message))
-        if not outcome.ok:
-            logger.warning("notify: admin copy failed: %s", outcome.error)
+        admin_copy.add_copy(
+            recipient_label(user), channels.CHANNEL_TITLES.get(channel, channel), message.telegram_html()
+        )
     except Exception:  # noqa: BLE001 — копия админу не важнее самой доставки
         logger.exception("notify: admin copy failed for user %s", user.id)
 

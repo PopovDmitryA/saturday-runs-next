@@ -205,6 +205,13 @@ celery_app.conf.update(
             "schedule": crontab(minute="*/10"),
             "options": {"queue": "celery", "expires": 9 * 60},
         },
+        # Копии уведомлений админу копятся в Redis и уходят сводкой на текст:
+        # раз в минуту отправляем рассылки, которые затихли.
+        "notifications-flush-admin-copies": {
+            "task": "notifications.flush_admin_copies",
+            "schedule": crontab(),
+            "options": {"queue": "celery", "expires": 55},
+        },
         # Результаты, записанные мимо воркеров (parkrun с Mac-демона): раз в
         # десять минут ищем у включивших уведомления новые строки run_results.
         "notifications-scan-new-results": {
