@@ -335,6 +335,62 @@ class LocationCatalogIndex:
         return f"location:{location.id}"
 
 
+def catalog_ids_for_locations(db: Session, locations: dict[UUID, tuple[str, str | None]]) -> dict[UUID, UUID]:
+    """location_id → id узла каталога — ровно как LocationCatalogIndex.get_for_location_key, но дёшево.
+
+    locations — id локации → (код системы, её external_key). Порядок поиска
+    тот же: связка по id локации, затем слаг в системе как есть и
+    нормализованный («readovsky-park» = «readovskypark»). Слагами узла
+    считаются слаг связки, слаг локации связки и legacy_parkrun_slug узла —
+    под кодом системы каждой связки, как их кладёт _index_platform_slug.
+
+    Весь индекс (координаты, паузы, имена по всем локациям) для этого не
+    нужен: связок пара сотен строк. Нужен там, где индекс строить дорого, —
+    /auth/me на каждой загрузке страницы (home_location_brief) и строки
+    поиска. Сравнивать слаги без нормализации нельзя: у 55 parkrun-локаций
+    копии прода ключ узла тогда не находился (ревью 26.09.2026, HOME-4).
+    """
+    if not locations:
+        return {}
+    by_location_id: dict[UUID, UUID] = {}
+    by_platform_slug: dict[tuple[str, str], UUID] = {}
+    rows = (
+        db.query(
+            LocationCatalogLink.catalog_id,
+            LocationCatalogLink.location_id,
+            LocationCatalogLink.external_key,
+            Platform.code,
+            LocationCatalog.legacy_parkrun_slug,
+            Location.external_key,
+        )
+        .join(LocationCatalog, LocationCatalogLink.catalog_id == LocationCatalog.id)
+        .join(Platform, LocationCatalogLink.platform_id == Platform.id)
+        .outerjoin(Location, LocationCatalogLink.location_id == Location.id)
+        .all()
+    )
+    for catalog_id, location_id, link_slug, platform_code, legacy_slug, location_slug in rows:
+        for slug in (link_slug, legacy_slug, location_slug):
+            if not slug:
+                continue
+            by_platform_slug[(platform_code, slug)] = catalog_id
+            normalized = normalize_location_slug(slug)
+            if normalized:
+                by_platform_slug[(platform_code, normalized)] = catalog_id
+        if location_id is not None:
+            by_location_id[location_id] = catalog_id
+    found: dict[UUID, UUID] = {}
+    for location_id, (platform_code, external_key) in locations.items():
+        catalog_id = by_location_id.get(location_id)
+        if catalog_id is None and external_key:
+            catalog_id = by_platform_slug.get((platform_code, external_key))
+            if catalog_id is None:
+                normalized = normalize_location_slug(external_key)
+                catalog_id = by_platform_slug.get((platform_code, normalized)) if normalized else None
+        if catalog_id is not None:
+            found[location_id] = catalog_id
+    return found
+
+
 def identity_key_by_location_id(db: Session, catalog_index: LocationCatalogIndex) -> dict[UUID, str]:
     """location_id → canonical identity key для ВСЕХ площадок каталога.
 

@@ -1,8 +1,9 @@
 """Публичный поиск по сайту и приём журнала поисковых запросов.
 
 Оба адреса открыты анониму. От перебора их закрывает общая защита
-(AbuseProtectionMiddleware) отдельным тарифом «search» — см.
-classify_route в core/abuse_protection.py.
+(AbuseProtectionMiddleware) отдельными тарифами «search» и «search_log» —
+см. classify_route в core/abuse_protection.py; стоимость одного поиска
+ограничивает сам site_search.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_optional_session_user_id
@@ -23,7 +25,7 @@ from app.models import User
 from app.schemas.search import SiteSearchResponse
 from app.services.participant_search_service import MAX_QUERY_LENGTH
 from app.services.search_log_service import record_search
-from app.services.site_search_service import site_search
+from app.services.site_search_service import people_search_slot, site_search
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -32,12 +34,21 @@ _MAX_LOG_BODY_BYTES = 4096
 
 
 @router.get("", response_model=SiteSearchResponse)
-def search_site(
+async def search_site(
     db: Annotated[Session, Depends(get_db)],
     q: Annotated[str, Query(max_length=MAX_QUERY_LENGTH * 2)] = "",
 ) -> SiteSearchResponse:
-    """Локации (от 2 знаков) и люди (от 3 знаков) по одной строке запроса."""
-    return SiteSearchResponse.model_validate(site_search(db, q))
+    """Локации (от 2 знаков) и люди (от 3 знаков) по одной строке запроса.
+
+    Обработчик асинхронный ради одного: места для поиска людей (их три на
+    процесс) запрос ждёт в цикле событий, не занимая поток. Сам поиск —
+    синхронный код с базой — уходит в пул потоков, как у обычного
+    обработчика. Раньше ждали в потоке, и залп поисков с одного адреса
+    занимал весь пул: /health и страницы сайта стояли секундами (SKEP-2).
+    """
+    async with people_search_slot(q) as has_slot:
+        page = await run_in_threadpool(site_search, db, q, people_allowed=has_slot)
+    return SiteSearchResponse.model_validate(page)
 
 
 async def _raw_body(request: Request) -> bytes:

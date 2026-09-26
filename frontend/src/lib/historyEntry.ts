@@ -16,6 +16,11 @@
  */
 
 const KEY_FIELD = "srsEntry";
+/**
+ * Метка записи-заглушки окна поверх страницы (см. nav/useOverlayHistory).
+ * Здесь о ней знаем только затем, чтобы replaceState страницы её не стёр.
+ */
+const OVERLAY_FIELD = "srsOverlay";
 
 export type EntryChange = {
   /** Запись, которую покидаем: под этим ключом сохраняется её снимок. */
@@ -34,14 +39,18 @@ function makeKey(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function keyOf(state: unknown): string | null {
+function stringField(state: unknown, field: string): string | null {
   if (state && typeof state === "object") {
-    const value = (state as Record<string, unknown>)[KEY_FIELD];
+    const value = (state as Record<string, unknown>)[field];
     if (typeof value === "string" && value) {
       return value;
     }
   }
   return null;
+}
+
+function keyOf(state: unknown): string | null {
+  return stringField(state, KEY_FIELD);
 }
 
 function withKey(state: unknown, key: string): Record<string, unknown> {
@@ -95,7 +104,19 @@ export function installHistoryEntries(): void {
   window.history.replaceState = (state: unknown, unused: string, url?: string | URL | null) => {
     // Это та же запись истории — ключ и её снимок остаются прежними. Так
     // страницы могут править адрес под фильтры, не теряя позицию прокрутки.
-    replaceState(withKey(state, activeKey), unused, url);
+    const next = withKey(state, activeKey);
+    // Страница поправила адрес (канонический slug локации, номер страницы
+    // «Обновлений», адрес профиля — после ответа API), пока открыто окно и на
+    // вершине истории его заглушка. Страницы передают state=null и метку окна
+    // стирали: окно, закрытое кнопкой или Esc, больше не узнавало свою запись,
+    // не снимало её, и первое «Назад» после этого ничего видимого не делало
+    // (ревью перед пушем 26.09.2026, NAV-3). Метку переносим, если страница
+    // не передала свою.
+    const overlay = stringField(window.history.state, OVERLAY_FIELD);
+    if (overlay !== null && !(OVERLAY_FIELD in next)) {
+      next[OVERLAY_FIELD] = overlay;
+    }
+    replaceState(next, unused, url);
   };
 
   // Слушатель ставится до монтирования React (см. main.tsx), поэтому к моменту

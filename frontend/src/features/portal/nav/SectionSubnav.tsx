@@ -38,6 +38,7 @@
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { User } from "../../../lib/api";
+import { lockBodyScroll } from "../../../lib/bodyScrollLock";
 import { CHEVRON_DOWN_ICON } from "./navIcons";
 import { resolveNavState, type NavStateInput } from "./navState";
 import { OrganizerSwitcher } from "./OrganizerSwitcher";
@@ -217,20 +218,22 @@ export function SectionSubnav(
     return () => document.documentElement.classList.remove("has-site-subnav-organizer");
   }, [visible, isOrganizer]);
 
-  // Пока список открыт, страница под ним не прокручивается. Экран стал шире
-  // 900px (повернули планшет) — полосы там нет, закрываем и список.
+  // Пока список открыт, страница под ним не прокручивается (общая блокировка
+  // со счётчиком, lib/bodyScrollLock: поиск, открытый поверх списка, забирает
+  // его запись в истории, и список закрывается уже после открытия поиска).
+  // Экран стал шире 900px (повернули планшет) — полосы там нет, закрываем и
+  // список.
   const { dismiss } = overlayHistory;
   useEffect(() => {
     if (!menuOpen) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlock = lockBodyScroll();
     const media = window.matchMedia("(max-width: 900px)");
     const onChange = () => {
       if (!media.matches) dismiss();
     };
     media.addEventListener("change", onChange);
     return () => {
-      document.body.style.overflow = previous;
+      unlock();
       media.removeEventListener("change", onChange);
     };
   }, [menuOpen, dismiss]);

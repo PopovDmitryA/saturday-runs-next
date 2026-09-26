@@ -34,7 +34,7 @@
 import { useCallback, useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { normalizeAppPath } from "../../../hooks/useAppPath";
 import { onEntryChange } from "../../../lib/historyEntry";
-import { scrollForNavigation } from "../../../lib/scrollMemory";
+import { scrollForNavigation, stopScrollRestore } from "../../../lib/scrollMemory";
 
 const OVERLAY_FIELD = "srsOverlay";
 /** Поле с ключом записи — его кладёт обёртка lib/historyEntry. */
@@ -98,9 +98,12 @@ if (typeof window !== "undefined") {
     ghost = ghostOf(event.state);
     // Ушли «Назад» с заглушки на запись этой же страницы — человек этого шага
     // не видел. Делаем за него ещё один, настоящий: одно нажатие — один шаг.
-    // Прокрутку и снимок это не трогает: обе записи — одна страница с одним
-    // ключом, она не пересоздаётся.
+    // Снимок это не трогает: обе записи — одна страница с одним ключом, она не
+    // пересоздаётся. А докрутку этой страницы (после F5 она ещё может идти)
+    // гасим: страница уходит, и докрутка утащила бы прошлую на свою позицию
+    // (NAV-2, см. lib/scrollMemory).
     if (left && overlayTokenOf(event.state) === null && entryKeyOf(event.state) === left.key) {
+      stopScrollRestore();
       window.history.back();
     }
   });

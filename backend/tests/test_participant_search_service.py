@@ -437,3 +437,56 @@ def test_post_login_redirect_targets(db_session: Session, search_user: User) -> 
     )
     db_session.commit()
     assert post_login_redirect_target(db_session, with_link.id) == "dashboard"
+
+
+def test_search_ranks_only_a_bounded_pool_but_keeps_word_start_first(
+    db_session: Session, search_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Балл «с начала слова» считается по пулу кандидатов, а не по всем «…левоглаз…» (ревью, onboarding-search-slower)."""
+    from app.services import participant_search_service
+
+    monkeypatch.setattr(participant_search_service, "CANDIDATE_LIMIT", 2)
+    platform = _five_verst(db_session)
+    for index in range(4):
+        _make_participant(db_session, platform, f"Залевоглаз{index} Онбордингов")
+    wanted = _make_participant(db_session, platform, "Левоглаз Нужный")
+
+    page = search_participants(db_session, search_user, "левоглаз левоглаз ЛЕВОГЛАЗ")
+
+    assert wanted.id in {item.participant_id for item in page.results}
+    assert page.query == "левоглаз левоглаз ЛЕВОГЛАЗ"
+
+
+def test_search_timeout_is_a_clear_error_not_500(
+    db_session: Session, search_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy import text
+
+    from app.services import participant_search_service
+
+    monkeypatch.setattr(participant_search_service, "SEARCH_STATEMENT_TIMEOUT_MS", 50)
+
+    def slow(db: Session, *_args, **_kwargs):  # noqa: ANN202
+        db.execute(text("SELECT pg_sleep(2)"))
+
+    monkeypatch.setattr(participant_search_service, "_name_candidates", slow)
+
+    with pytest.raises(ParticipantSearchError) as timed_out:
+        search_participants(db_session, search_user, "Таймаутов")
+    assert timed_out.value.status_code == 503
+    assert db_session.execute(text("SELECT 1")).scalar() == 1
+
+
+def test_search_of_punctuation_only_finds_nobody(db_session: Session, search_user: User) -> None:
+    """«%%% ___»: без слов условий на имя нет — и выдача не должна стать «первыми попавшимися» (SKEP-4)."""
+    platform = _five_verst(db_session)
+    _make_participant(db_session, platform, "Знаков Онбордингов")
+
+    page = search_participants(db_session, search_user, "%%% ___")
+
+    assert page.results == []
+    assert page.truncated is False
+    assert page.hidden_linked_platform_codes == []
+    # Знак по краю слова — опечатка: «Знаков,» находит Знакова.
+    found = search_participants(db_session, search_user, "Знаков, Онбордингов.")
+    assert [item.display_name for item in found.results] == ["Знаков Онбордингов"]

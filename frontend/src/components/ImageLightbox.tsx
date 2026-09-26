@@ -9,6 +9,7 @@
 
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { lockBodyScroll } from "../lib/bodyScrollLock";
 
 import "./ImageLightbox.css";
 
@@ -32,11 +33,12 @@ export function ImageLightbox({ src, onClose, alt = "" }: Props) {
     };
     window.addEventListener("keydown", onKey, true);
     // Пока картинка открыта, страница под ней не должна прокручиваться.
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // Лайтбокс открывают поверх модалок — блокировка общая со счётчиком
+    // (lib/bodyScrollLock), закрытие картинки не разблокирует модалку под ней.
+    const unlock = lockBodyScroll();
     return () => {
       window.removeEventListener("keydown", onKey, true);
-      document.body.style.overflow = previousOverflow;
+      unlock();
     };
   }, [onClose]);
 

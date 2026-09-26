@@ -39,10 +39,38 @@ depends_on = None
 log = logging.getLogger("alembic.runtime.migration")
 
 
+FOLD_INDEX = "ix_participants_display_name_fold_trgm"
+OLD_INDEX = "ix_participants_display_name_trgm"
+
+
 def _has_pg_trgm() -> bool:
     return bool(
         op.get_bind().execute(sa.text("SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'")).scalar()
     )
+
+
+def _drop_if_invalid(index_name: str) -> None:
+    """Снять огрызок прерванного CREATE INDEX CONCURRENTLY — тоже CONCURRENTLY.
+
+    Прерванный CONCURRENTLY (упал SSH на деплое, отмена, дедлок) оставляет
+    INVALID-индекс с тем же именем, и IF NOT EXISTS тогда молча ничего не
+    строит. Снимать его обычным DROP INDEX нельзя: он берёт ACCESS EXCLUSIVE
+    на всю таблицу participants, встаёт в очередь за самой долгой транзакцией,
+    которая её трогает (прогревы, домашние воркеры), — и все чтения и записи
+    участников сайта ждут уже за ним. DROP INDEX CONCURRENTLY внутри DO-блока
+    Postgres не пускает, поэтому проверка — здесь, в Python, а сам DROP —
+    отдельной командой в autocommit-блоке (ревью 26.09.2026, MIG-1).
+    """
+    invalid = op.get_bind().execute(
+        sa.text(
+            "SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
+            "WHERE c.relname = :name AND NOT i.indisvalid"
+        ),
+        {"name": index_name},
+    ).scalar()
+    if invalid:
+        log.warning("Индекс %s остался INVALID от прерванной сборки — снимаем и строим заново", index_name)
+        op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {index_name}")
 
 
 def upgrade() -> None:
@@ -50,28 +78,21 @@ def upgrade() -> None:
         log.warning("pg_trgm не установлен — индекс для поиска по имени пропущен")
         return
     with op.get_context().autocommit_block():
-        # Прерванный CONCURRENTLY оставляет INVALID-индекс с тем же именем, и
-        # IF NOT EXISTS тогда молча ничего не строит. Снимаем такой огрызок.
+        _drop_if_invalid(FOLD_INDEX)
         op.execute(
-            "DO $$ BEGIN "
-            "IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
-            "WHERE c.relname = 'ix_participants_display_name_fold_trgm' AND NOT i.indisvalid) THEN "
-            "EXECUTE 'DROP INDEX ix_participants_display_name_fold_trgm'; "
-            "END IF; END $$"
-        )
-        op.execute(
-            "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_participants_display_name_fold_trgm "
+            f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {FOLD_INDEX} "
             "ON participants USING gin (translate(lower(display_name), 'ё', 'е') gin_trgm_ops)"
         )
-        op.execute("DROP INDEX CONCURRENTLY IF EXISTS ix_participants_display_name_trgm")
+        op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {OLD_INDEX}")
 
 
 def downgrade() -> None:
     if not _has_pg_trgm():
         return
     with op.get_context().autocommit_block():
+        _drop_if_invalid(OLD_INDEX)
         op.execute(
-            "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_participants_display_name_trgm "
+            f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {OLD_INDEX} "
             "ON participants USING gin (lower(display_name) gin_trgm_ops)"
         )
-        op.execute("DROP INDEX CONCURRENTLY IF EXISTS ix_participants_display_name_fold_trgm")
+        op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {FOLD_INDEX}")

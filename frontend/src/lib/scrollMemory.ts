@@ -99,6 +99,15 @@ function chase(target: number): void {
   frame = requestAnimationFrame(tick);
 }
 
+/**
+ * Бросить докрутку, которая ещё идёт: страница, для которой её начали, уже
+ * уходит. Нужна тем, кто сам шагает по истории (nav/useOverlayHistory делает
+ * второй «Назад» за человека).
+ */
+export function stopScrollRestore(): void {
+  stopChase?.();
+}
+
 export function restoreEntryScroll(key: string): void {
   const target = readEntryValue<number>(NAME, key);
   if (typeof target !== "number") {
@@ -109,6 +118,12 @@ export function restoreEntryScroll(key: string): void {
     return;
   }
   if (target <= 0) {
+    // Докрутку прошлой страницы гасим обязательно: иначе она дотягивает
+    // до ЧУЖОЙ позиции страницу, которой нужен самый верх. Так было при
+    // двойном шаге «Назад» с заглушки окна: первый шаг запускал докрутку
+    // рейтинга до 1500, второй открывал каталог, и тот уезжал на 1500
+    // вместо 0 (ревью перед пушем 26.09.2026, NAV-2).
+    stopChase?.();
     window.scrollTo(0, 0);
     return;
   }
@@ -126,6 +141,13 @@ export function installScrollMemory(): void {
     // Момент перехода — единственный, когда позиция уходящей страницы ещё на
     // экране: React перерисует всё уже после.
     writeEntryValue(NAME, window.scrollY, from);
+    if (reason === "pop" && from === to) {
+      // Шаг между заглушкой окна и записью её же страницы (nav/useOverlayHistory,
+      // ключ у них общий) или replaceAppPath: страница та же, позиция на
+      // месте — восстанавливать нечего. Идущую докрутку (после F5) не трогаем:
+      // она доводит эту же страницу.
+      return;
+    }
     if (reason === "pop") {
       restoreEntryScroll(to);
     } else {

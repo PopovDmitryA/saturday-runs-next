@@ -27,6 +27,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
+  ApiError,
   logSiteSearch,
   searchSite,
   type SiteSearchLocation,
@@ -34,6 +35,7 @@ import {
   type SiteSearchResponse,
   type User,
 } from "../../../lib/api";
+import { lockBodyScroll } from "../../../lib/bodyScrollLock";
 import { formatDate } from "../../../lib/format";
 import { PORTAL_LOGIN_HREF } from "../../../lib/portalRoutes";
 import { getRecentLocations } from "../../../lib/recentLocations";
@@ -59,7 +61,26 @@ import { useOverlayFocus } from "./useOverlayFocus";
 import { useOverlayHistory } from "./useOverlayHistory";
 import "./siteSearch.css";
 
-const DEBOUNCE_MS = 220;
+/**
+ * Пауза в наборе, после которой уходит запрос к серверу. У поиска лимит
+ * запросов в минуту на адрес, и при 220 мс почти каждая набранная на телефоне
+ * буква становилась запросом: 15 букв — 12 запросов, 4–5 имён подряд — и
+ * поиск упирался в 429 (ревью перед пушем 26.09.2026, S2). На телефоне
+ * печатают медленнее, чем на клавиатуре, — там и ждём дольше.
+ */
+const DEBOUNCE_MS = 300;
+const DEBOUNCE_MOBILE_MS = 350;
+/**
+ * Сервер ответил 429: ждём, сколько он сказал в Retry-After (без заголовка —
+ * THROTTLE_FALLBACK_S), но не меньше пары секунд — и шлём один запрос по
+ * последнему набранному, а не запрос на каждую букву: пока пауза не вышла,
+ * каждый из них получил бы тот же отказ. Пауза длиннее минуты (окно лимита
+ * поиска) — это уже блокировка адреса целиком: повторять бессмысленно, окно
+ * честно говорит, что поиск недоступен.
+ */
+const THROTTLE_FALLBACK_S = 4;
+const THROTTLE_MIN_S = 3;
+const THROTTLE_MAX_S = 60;
 const MIN_SERVER_QUERY = 2;
 // Сколько локаций организатора разворачивать в инструменты для поиска: у
 // обычного организатора их одна-две, больше десятка — уже не организатор.
@@ -184,6 +205,7 @@ type Pending = {
   pages: number;
   locations: number;
   people: number;
+  peopleSkipped: boolean;
 };
 
 export function SiteSearchDialog() {
@@ -196,6 +218,15 @@ export function SiteSearchDialog() {
   const [responseFor, setResponseFor] = useState("");
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Сервер попросил подождать (429): на сколько секунд — для текста подсказки.
+  const [throttle, setThrottle] = useState<number | null>(null);
+  // До какого момента (Date.now()) запросы к серверу не шлём. В ref, а не в
+  // состоянии: окно смонтировано всегда, и пауза переживает закрытие и
+  // повторное открытие поиска.
+  const throttledUntilRef = useRef(0);
+  const blockedUntilRef = useRef(0);
+  // Повторить запрос после паузы: эффект запроса перезапускается по этому счётчику.
+  const [retryTick, setRetryTick] = useState(0);
   const [selected, setSelected] = useState(0);
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -214,7 +245,7 @@ export function SiteSearchDialog() {
     const pending = pendingRef.current;
     pendingRef.current = null;
     if (!pending || pending.query.length < 2) return;
-    logSiteSearch({
+    const entry = {
       query: pending.query,
       corrected_query: pending.corrected,
       pages_found: pending.pages,
@@ -223,7 +254,11 @@ export function SiteSearchDialog() {
       clicked_kind: click?.kind ?? null,
       clicked_target: click?.target ?? null,
       is_mobile: isMobileViewport(),
-    });
+      people_skipped: pending.peopleSkipped,
+    };
+    // Запись журнала уходит сразу и один раз: у неё своё ведро лимита на
+    // сервере, пауза поиска после 429 её не касается.
+    logSiteSearch(entry);
   }, []);
 
   // Окно закрылось (любым путём: «Назад», Esc, крестик, переход) — пишем
@@ -298,14 +333,12 @@ export function SiteSearchDialog() {
   }, [openWith]);
 
   // Пока окно открыто, страница под ним не прокручивается. Закрылось (в том
-  // числе переходом по результату) — прокрутка возвращается.
+  // числе переходом по результату) — прокрутка возвращается. Блокировка общая
+  // со счётчиком (lib/bodyScrollLock): поиск открывают поверх «Меню» и списка
+  // полосы, и те закрываются уже после того, как поиск открылся.
   useEffect(() => {
     if (!open) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
+    return lockBodyScroll();
   }, [open]);
 
   // Ушли со страницы или закрыли вкладку с открытым поиском — журнал всё
@@ -370,7 +403,9 @@ export function SiteSearchDialog() {
     [query, sections, user, extraLinks],
   );
 
-  // Запрос к серверу — с задержкой и отменой предыдущего.
+  // Запрос к серверу — с задержкой и отменой предыдущего. Сервер попросил
+  // подождать (429) — ждём конца паузы и шлём один запрос, по последнему
+  // набранному, а не по запросу на каждую букву.
   const serverQuery = plan.serverQuery;
   useEffect(() => {
     if (!open) return;
@@ -379,30 +414,72 @@ export function SiteSearchDialog() {
       setResponseFor("");
       setLoading(false);
       setFailed(false);
+      setThrottle(null);
+      return;
+    }
+    if (blockedUntilRef.current > Date.now()) {
+      // Адрес заблокирован целиком — запросов не шлём, окно говорит, что
+      // поиск недоступен (см. THROTTLE_MAX_S).
+      setLoading(false);
+      setThrottle(null);
+      setFailed(true);
       return;
     }
     const controller = new AbortController();
-    setLoading(true);
-    const timer = window.setTimeout(() => {
-      searchSite(serverQuery, controller.signal)
-        .then((payload) => {
-          setResponse(payload);
-          setResponseFor(serverQuery);
-          setFailed(false);
-        })
-        .catch((error: unknown) => {
-          if (error instanceof DOMException && error.name === "AbortError") return;
-          setFailed(true);
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setLoading(false);
-        });
-    }, DEBOUNCE_MS);
+    const pause = throttledUntilRef.current - Date.now();
+    const debounce = isMobileViewport() ? DEBOUNCE_MOBILE_MS : DEBOUNCE_MS;
+    if (pause > 0) {
+      // Вместо крутилки — спокойная подсказка «подождите».
+      setLoading(false);
+      setThrottle((value) => value ?? Math.ceil(pause / 1000));
+    } else {
+      setLoading(true);
+      setThrottle(null);
+    }
+    const timer = window.setTimeout(
+      () => {
+        setLoading(true);
+        searchSite(serverQuery, controller.signal)
+          .then((payload) => {
+            setResponse(payload);
+            setResponseFor(serverQuery);
+            setFailed(false);
+            setThrottle(null);
+          })
+          .catch((error: unknown) => {
+            if (error instanceof DOMException && error.name === "AbortError") return;
+            if (error instanceof ApiError && error.status === 429) {
+              const asked = error.retryAfterSeconds ?? THROTTLE_FALLBACK_S;
+              if (asked > THROTTLE_MAX_S) {
+                blockedUntilRef.current = Date.now() + asked * 1000;
+                setThrottle(null);
+                setFailed(true);
+                return;
+              }
+              const seconds = Math.max(THROTTLE_MIN_S, asked);
+              throttledUntilRef.current = Date.now() + seconds * 1000;
+              setThrottle(seconds);
+              setFailed(false);
+              // Перезапуск эффекта: он дождётся конца паузы и повторит запрос.
+              setRetryTick((value) => value + 1);
+              return;
+            }
+            // Иная ошибка после паузы: подсказка «подождите, продолжится сам»
+            // больше не правда — оставляем только сообщение о недоступности.
+            setThrottle(null);
+            setFailed(true);
+          })
+          .finally(() => {
+            if (!controller.signal.aborted) setLoading(false);
+          });
+      },
+      Math.max(debounce, pause),
+    );
     return () => {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [open, serverQuery]);
+  }, [open, serverQuery, retryTick]);
 
   const fresh = response && responseFor === serverQuery ? response : null;
   const locations: SiteSearchLocation[] = fresh?.locations ?? [];
@@ -461,6 +538,7 @@ export function SiteSearchDialog() {
       pages: pages.length,
       locations: locations.length,
       people: people.length,
+      peopleSkipped: fresh?.people_skipped === true,
     };
     // pages/locations/people производны от normalized и fresh — их в
     // зависимости не кладём, иначе эффект крутился бы на каждом рендере.
@@ -522,6 +600,11 @@ export function SiteSearchDialog() {
     people.length === 0 &&
     !waiting;
   const findSelf = mode === "find-self";
+  // Не ошибка, а пауза: поиск продолжится сам, как только сервер разрешит.
+  const throttleText =
+    throttle === null
+      ? ""
+      : `Слишком много запросов, подождите ${throttle <= 10 ? "пару секунд" : "до минуты"} — поиск продолжится сам.`;
 
   // Подсказка «допишите название локации»: страница локации названа, а
   // локация — нет. Не нужна, если первой строкой уже стоит страница сайта,
@@ -547,15 +630,17 @@ export function SiteSearchDialog() {
   ].filter(Boolean);
   const statusText = !hasQuery
     ? ""
-    : waiting
-      ? "Ищем…"
-      : nothing
-        ? "Ничего не нашлось"
-        : found.length > 0
-          ? `Найдено: ${found.join(", ")}`
-          : hint
-            ? "Страница есть у каждой локации — допишите название локации"
-            : "";
+    : throttleText
+      ? throttleText
+      : waiting
+        ? "Ищем…"
+        : nothing
+          ? "Ничего не нашлось"
+          : found.length > 0
+            ? `Найдено: ${found.join(", ")}`
+            : hint
+              ? "Страница есть у каждой локации — допишите название локации"
+              : "";
   // aria-controls — только на то, что нарисовано: ссылка на несуществующий
   // список сбивает диктор.
   const listboxIds = [mainListCount > 0 && LISTBOX_ID, partialRegistered.length > 0 && LISTBOX_MORE_ID]
@@ -741,6 +826,8 @@ export function SiteSearchDialog() {
             </p>
           )}
 
+          {throttleText && <p className="site-search-note">{throttleText}</p>}
+
           {mainListCount > 0 && (
             <div role="listbox" id={LISTBOX_ID} aria-label="Результаты поиска">
               {pages.length > 0 && (
@@ -882,6 +969,11 @@ export function SiteSearchDialog() {
           )}
 
           {failed && <p className="site-search-note">Поиск по локациям и людям сейчас недоступен. Попробуйте через минуту.</p>}
+          {!failed && fresh?.people_skipped && (
+            <p className="site-search-note">
+              Сейчас много запросов — людей в этот раз не искали. Повторите поиск через пару секунд.
+            </p>
+          )}
         </div>
 
         <div className="site-search-foot" aria-hidden="true">

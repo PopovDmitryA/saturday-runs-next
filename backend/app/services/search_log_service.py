@@ -20,6 +20,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import SearchQueryLog
+from app.services.participant_search_service import strip_control_chars
 from app.services.site_search_service import normalize_log_query
 
 logger = logging.getLogger(__name__)
@@ -55,8 +56,17 @@ def record_search(db: Session, payload: dict[str, Any], *, is_authed: bool) -> b
     clicked_kind = payload.get("clicked_kind")
     if clicked_kind not in CLICK_KINDS:
         clicked_kind = None
+    if payload.get("people_skipped") is True and clicked_kind is None:
+        # Поиск людей в этом запросе не делался (все места заняты чужим залпом,
+        # таймаут — people_skipped в ответе /api/search): «никого не нашли» тут
+        # неправда, и строка лишь засоряла бы «Не нашлось ничего» и «Искали и
+        # никуда не перешли». С переходом — пишем: человек нашёл, что искал.
+        return False
     clicked_target = payload.get("clicked_target")
-    target = str(clicked_target).strip()[:200] if clicked_kind and clicked_target else None
+    # Управляющие символы — прочь, как и из самого запроса (normalize_log_query):
+    # нулевой байт Postgres в текст не примет, и каждый такой бекон писал бы
+    # трейсбек в лог.
+    target = strip_control_chars(str(clicked_target)).strip()[:200] if clicked_kind and clicked_target else None
     try:
         db.add(
             SearchQueryLog(

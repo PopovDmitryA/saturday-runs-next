@@ -8,6 +8,10 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import threading
+import time
 from collections.abc import Generator
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
@@ -15,6 +19,7 @@ from uuid import uuid4
 import fakeredis
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event, text
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -33,7 +38,8 @@ from app.models import (
     SearchQueryLog,
     User,
 )
-from app.services import site_search_service
+from app.services import location_page_service, participant_search_service, site_search_service
+from app.services.participant_search_service import normalize_query_text, significant_words
 from app.services.search_log_service import get_search_log_report, record_search
 from app.services.site_search_service import (
     normalize_log_query,
@@ -151,8 +157,42 @@ def test_switch_keyboard_layout_both_directions() -> None:
 
 def test_search_route_has_own_abuse_tier() -> None:
     assert classify_route("/api/search", "GET") is RouteTier.search
-    assert classify_route("/api/search/log", "POST") is RouteTier.search
+    # Беконы журнала — своё ведро: иначе они съедали лимит самого поиска.
+    assert classify_route("/api/search/log", "POST") is RouteTier.search_log
     assert classify_route("/api/searching-else", "GET") is RouteTier.default
+
+
+def test_control_chars_are_dropped_from_queries() -> None:
+    """Нулевой байт из адреса (?q=ab%00cd) доходил до LIKE, и поиск отвечал 500 (ревью, NUL-6)."""
+    assert normalize_query_text("ab\x00cd") == "abcd"
+    assert normalize_query_text("\x00Иван\x07 \u200bПетров\ud800") == "Иван Петров"
+    # Табуляция и неразрывный пробел — просто пробелы.
+    assert normalize_query_text("Иван\tПетров\u00a0Сидоров") == "Иван Петров Сидоров"
+    assert normalize_log_query("Ива\x00н") == "иван"
+
+
+def test_significant_words_drop_repeats_and_keep_the_longest() -> None:
+    assert significant_words(["ова"] * 25) == ["ова"]
+    assert significant_words(["Попов", "попов", "Дмитрий", "ПОПОВ"]) == ["Попов", "Дмитрий"]
+    # «Ё» и «е» — одно слово.
+    assert significant_words(["Фёдоров", "Федоров"]) == ["Фёдоров"]
+    # Больше четырёх — оставляем самые длинные, в исходном порядке.
+    assert significant_words(["а", "Иванов", "б", "Иван", "Иванович", "в", "Москва"]) == [
+        "Иванов",
+        "Иван",
+        "Иванович",
+        "Москва",
+    ]
+
+
+def test_significant_words_trim_punctuation() -> None:
+    """Слово из одних знаков — не слово (SKEP-4), знак по краю — опечатка («Попов,»)."""
+    assert significant_words(["%%%", "___", "...", "---", "№№№", "!!!"]) == []
+    assert significant_words(["Попов,", "Д.", "(Москва)"]) == ["Попов", "Д", "Москва"]
+    # Знаки внутри слова — часть имени.
+    assert significant_words(["Римского-Корсакова", "О'Нил"]) == ["Римского-Корсакова", "О'Нил"]
+    # «Попов» и «Попов,» — одно слово.
+    assert significant_words(["Попов", "Попов,"]) == ["Попов"]
 
 
 # ---------------------------------------------------------------------------
@@ -428,6 +468,7 @@ def test_api_response_has_no_external_profile_urls(
         "people",
         "people_truncated",
         "people_place",
+        "people_skipped",
     }
 
 
@@ -847,3 +888,285 @@ def test_search_log_report_no_click_queries(db_session: Session) -> None:
         ("погода", 2, 0),
         ("чего нет", 1, 1),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Стоимость поиска ограничена при любом вводе (ревью 26.09.2026: SRCH-DOS-1,
+# search-heavy-anon, S1, SRCH-COLD-2, NUL-6)
+# ---------------------------------------------------------------------------
+
+
+def _capture_sql(db_session: Session) -> list[str]:
+    statements: list[str] = []
+
+    def remember(_conn, _cursor, statement, *_args) -> None:  # noqa: ANN001
+        statements.append(statement)
+
+    event.listen(db_session.connection(), "before_cursor_execute", remember)
+    return statements
+
+
+def test_repeated_words_cost_as_one_word(db_session: Session, no_locations: None) -> None:
+    """«ова» 25 раз через пробел — 75 регулярок на строку и 5 с на запрос. Теперь — как одно слово."""
+    five = _platform(db_session, "five_verst")
+    _participant(db_session, five, "Повторов Словович")
+
+    statements = _capture_sql(db_session)
+    single = site_search(db_session, "повторов")["people"]
+    single_regexes = max(statement.count(" ~ ") for statement in statements)
+    statements.clear()
+    # 11 раз — 98 знаков: длиннее запрос обрезается на сотом знаке, и хвост
+    # («Повт») честно становится вторым словом.
+    repeated = site_search(db_session, " ".join(["Повторов"] * 11))["people"]
+    repeated_regexes = max(statement.count(" ~ ") for statement in statements)
+
+    assert [person["display_name"] for person in single] == ["Повторов Словович"]
+    assert repeated == single
+    assert repeated_regexes == single_regexes
+
+
+def test_statement_timeout_gives_locations_without_people(
+    monkeypatch: pytest.MonkeyPatch, db_session: Session
+) -> None:
+    """Запрос ушёл в долгий план — Postgres его отменяет, а выдача остаётся: локации есть, людей нет, не 500."""
+    _fake_index(monkeypatch)
+    monkeypatch.setattr(participant_search_service, "SEARCH_STATEMENT_TIMEOUT_MS", 50)
+
+    def slow_people(db: Session, *_args, **_kwargs):  # noqa: ANN202
+        db.execute(text("SELECT pg_sleep(2)"))
+        return [], False
+
+    monkeypatch.setattr(site_search_service, "search_people", slow_people)
+
+    page = site_search(db_session, "сокольники")
+
+    assert page["people"] == []
+    assert page["people_skipped"] is True
+    assert page["locations"][0]["slug"] == "sokolniki"
+    # Транзакцию откатили — сессия снова в строю.
+    assert db_session.execute(text("SELECT 1")).scalar() == 1
+
+
+def test_locations_come_only_from_cache(
+    monkeypatch: pytest.MonkeyPatch, db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Каталога в Redis нет — поиск его не считает (6 с на запрос), а отдаёт людей без локаций (SRCH-COLD-2)."""
+
+    def forbidden(*_args, **_kwargs):  # noqa: ANN202
+        raise AssertionError("каталог локаций не должен считаться в запросе поиска")
+
+    monkeypatch.setattr(location_page_service, "build_locations_index", forbidden)
+    monkeypatch.setattr(location_page_service, "_compute_locations_index", forbidden)
+    five = _platform(db_session, "five_verst")
+    _participant(db_session, five, "Холодов Кэшевич")
+
+    page = site_search(db_session, "холодов")
+
+    assert page["locations"] == []
+    assert [person["display_name"] for person in page["people"]] == ["Холодов Кэшевич"]
+
+    fake_redis.set(
+        location_page_service.LOCATIONS_INDEX_CACHE_KEY,
+        json.dumps(
+            {
+                "items": [
+                    {"slug": "holodny", "name": "Холодный парк", "city": "Холодногорск",
+                     "platform_codes": ["five_verst"], "events_count": 1, "finishers_total": 1}
+                ],
+                "series": [],
+            }
+        ),
+    )
+    assert [item["slug"] for item in site_search(db_session, "холодный")["locations"]] == ["holodny"]
+
+
+def test_api_search_survives_nul_byte(client: TestClient, db_session: Session, no_locations: None) -> None:
+    five = _platform(db_session, "five_verst")
+    _participant(db_session, five, "Нуляев Байтович")
+
+    for query in ("ab\x00cd", "\x00\x00\x00", "нуля\x00ев"):
+        response = client.get("/api/search", params={"q": query})
+        assert response.status_code == 200, query
+    assert [person["display_name"] for person in response.json()["people"]] == ["Нуляев Байтович"]
+
+
+def test_log_beacon_with_nul_byte_is_recorded_clean(client: TestClient, db_session: Session) -> None:
+    db_session.query(SearchQueryLog).delete()
+    response = client.post(
+        "/api/search/log",
+        content='{"query": "Соколь\\u0000ники", "clicked_kind": "location", "clicked_target": "/locations/\\u0000sokolniki"}',
+        headers={"Content-Type": "text/plain"},
+    )
+    assert response.status_code == 204
+    rows = _log_rows(db_session)
+    assert [(row.query, row.clicked_target) for row in rows] == [("сокольники", "/locations/sokolniki")]
+
+
+def test_search_gives_its_slot_back(client: TestClient, db_session: Session, no_locations: None) -> None:
+    five = _platform(db_session, "five_verst")
+    _participant(db_session, five, "Слотов Вернувший")
+    assert client.get("/api/search", params={"q": "слотов"}).json()["people"]
+
+    slots = site_search_service._people_slots
+    taken = [slots.acquire(blocking=False) for _ in range(site_search_service.PEOPLE_SEARCH_SLOTS)]
+    for ok in taken:
+        if ok:
+            slots.release()
+    assert all(taken)
+
+
+def test_busy_search_slots_give_locations_and_say_people_were_skipped(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """Все места поиска заняты залпом: запрос ждёт недолго и честно говорит «людей не искали» (SKEP-2, SKEP-3)."""
+    _fake_index(monkeypatch)
+    busy = threading.BoundedSemaphore(1)
+    busy.acquire()
+    monkeypatch.setattr(site_search_service, "_people_slots", busy)
+    monkeypatch.setattr(site_search_service, "PEOPLE_SLOT_WAIT_SECONDS", 0.05)
+    called: list[bool] = []
+    monkeypatch.setattr(site_search_service, "search_people", lambda *_a, **_k: called.append(True) or ([], False))
+
+    body = client.get("/api/search", params={"q": "сокольники"}).json()
+    assert body["locations"][0]["slug"] == "sokolniki"
+    assert body["people"] == []
+    assert body["people_skipped"] is True
+    # Людей не искали — значит, и «ничего не нашлось» не установлено: ни
+    # другой раскладки, ни «похожих локаций» на запрос, который мог быть именем.
+    typo = client.get("/api/search", params={"q": "сокольнеки"}).json()
+    assert typo["people_skipped"] is True
+    assert typo["locations_similar"] is False
+    assert typo["locations"] == []
+    # Запросу, которому люди не нужны, место и не требуется — пропуском он не считается.
+    abbreviation = client.get("/api/search", params={"q": "мск"}).json()
+    assert abbreviation["people_skipped"] is False
+    assert abbreviation["locations"]
+    assert called == []
+
+
+def test_people_skip_log_is_throttled(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    """Пропуск поиска людей — в лог раз в минуту со счётчиком, а не строкой на каждый (SKEP-3)."""
+    monkeypatch.setattr(site_search_service, "_skip_logged_at", None)
+    monkeypatch.setattr(site_search_service, "_skip_counts", {})
+
+    def logged() -> list[str]:
+        return [record.getMessage() for record in caplog.records if "people search skipped" in record.getMessage()]
+
+    with caplog.at_level(logging.WARNING, logger=site_search_service.logger.name):
+        for _ in range(50):
+            site_search_service._note_people_skip("no_slot")
+        assert logged() == ["site search: people search skipped (no_slot=1)"]
+
+        monkeypatch.setattr(site_search_service, "_skip_logged_at", time.monotonic() - 61)
+        site_search_service._note_people_skip("statement_timeout")
+        assert logged()[-1] == "site search: people search skipped (no_slot=49, statement_timeout=1)"
+
+
+def test_log_ignores_searches_whose_people_were_skipped(client: TestClient, db_session: Session) -> None:
+    """Людей не искали (people_skipped) — «не нашлось ничего» неправда, в журнал такой поиск не идёт."""
+    db_session.query(SearchQueryLog).delete()
+    for body in (
+        '{"query": "попов дмитрий", "people_found": 0, "people_skipped": true}',
+        '{"query": "сокольники", "locations_found": 1, "people_skipped": true,'
+        ' "clicked_kind": "location", "clicked_target": "/locations/sokolniki"}',
+        '{"query": "иван", "people_found": 20, "people_skipped": false}',
+    ):
+        response = client.post("/api/search/log", content=body, headers={"Content-Type": "text/plain"})
+        assert response.status_code == 204
+    assert [row.query for row in _log_rows(db_session)] == ["сокольники", "иван"]
+
+
+def test_punctuation_only_query_does_not_search_people(db_session: Session, no_locations: None) -> None:
+    """«%%%», «___», «№№№» — не слова: без триграмм они шли полным проходом по участникам (SKEP-4)."""
+    five = _platform(db_session, "five_verst")
+    _participant(db_session, five, "Знаков Препинаниев")
+
+    statements = _capture_sql(db_session)
+    for query in ("%%%", "___", "№№№", "--- ___ %%%"):
+        page = site_search(db_session, query)
+        assert page["people"] == [], query
+        assert page["people_skipped"] is False, query
+    assert not any("participants" in statement for statement in statements)
+
+    # Знак по краю слова — опечатка, а не часть имени.
+    people = site_search(db_session, "Знаков, Препинаниев.")["people"]
+    assert [person["display_name"] for person in people] == ["Знаков Препинаниев"]
+
+
+# ---------------------------------------------------------------------------
+# «Имя + место»: малое место — от людей места, большое — от имени с честным
+# пределом (ревью, SKEP-1)
+# ---------------------------------------------------------------------------
+
+
+def _namesakes(db_session: Session) -> tuple[list[str], str]:
+    """Четыре «Частова» в Томске, два в Мытищах и «Зачастов» (только из середины слова) в Мытищах."""
+    five = _platform(db_session, "five_verst")
+    for name in ("Частов Томский", "Частов Северский", "Частов Кедровый", "Частов Асиновский"):
+        _runs(db_session, five, _participant(db_session, five, name), 1, city="Томск")
+    local = ["Частов Альфин", "Частов Бетин"]
+    for name in local:
+        _runs(db_session, five, _participant(db_session, five, name), 1, location_name="Мытищинский парк", city="Мытищи")
+    middle = "Зачастов Серединкин"
+    _runs(db_session, five, _participant(db_session, five, middle), 1, location_name="Мытищинский парк", city="Мытищи")
+    return local, middle
+
+
+def test_small_place_checks_every_namesake(monkeypatch: pytest.MonkeyPatch, db_session: Session) -> None:
+    """«Анна Мытищи»: у малого места проверяются все тёзки, а не первые из пула по имени.
+
+    Пул в 1200 Анн (из 5551) находил в Мытищах семь из 57, подмешивал Сюзанн
+    и Жанн и при этом говорил «показаны все».
+    """
+    _catalog(monkeypatch)
+    # Предел проверки тёзок — только для большого места; малое идёт от людей места.
+    monkeypatch.setattr(site_search_service, "PEOPLE_PLACE_SCAN_LIMIT", 1)
+    local, middle = _namesakes(db_session)
+
+    page = site_search(db_session, "частов мытищи")
+
+    assert page["people_place"] == "Мытищи"
+    names = [person["display_name"] for person in page["people"]]
+    assert sorted(names[:2]) == sorted(local)
+    assert names[2:] == [middle]
+    assert page["people"][2]["partial"] is True
+    assert page["people_truncated"] is False
+
+
+@pytest.mark.parametrize("event_list_limit", [0, 4000])
+def test_big_place_checks_namesakes_tier_by_tier(
+    monkeypatch: pytest.MonkeyPatch, db_session: Session, event_list_limit: int
+) -> None:
+    """Большое место: тёзки ярусами имени, место — у каждого (списком стартов или через события)."""
+    _catalog(monkeypatch)
+    monkeypatch.setattr(site_search_service, "PEOPLE_FROM_PLACE_MAX_FINISHERS", 0)
+    monkeypatch.setattr(site_search_service, "PLACE_EVENT_LIST_LIMIT", event_list_limit)
+    local, middle = _namesakes(db_session)
+
+    page = site_search(db_session, "частов мытищи")
+
+    names = [person["display_name"] for person in page["people"]]
+    assert sorted(names[:2]) == sorted(local)
+    assert names[2:] == [middle]
+    assert page["people_truncated"] is False
+
+
+def test_big_place_scan_limit_is_honest(monkeypatch: pytest.MonkeyPatch, db_session: Session) -> None:
+    """Предел проверки у большого места: «есть ещё», а нижний ярус не встаёт на место непроверенных тёзок."""
+    _catalog(monkeypatch)
+    monkeypatch.setattr(site_search_service, "PEOPLE_FROM_PLACE_MAX_FINISHERS", 0)
+    local, _middle = _namesakes(db_session)
+
+    # Шесть «Частовых» целым словом в предел влезают, «Зачастов» — уже нет.
+    monkeypatch.setattr(site_search_service, "PEOPLE_PLACE_SCAN_LIMIT", 6)
+    page = site_search(db_session, "частов мытищи")
+    assert sorted(person["display_name"] for person in page["people"]) == sorted(local)
+    assert page["people_truncated"] is True
+
+    # Предел меньше яруса «целиком»: найденные — только из него, и «есть ещё»,
+    # даже если среди проверенных в Мытищах не бегал никто.
+    monkeypatch.setattr(site_search_service, "PEOPLE_PLACE_SCAN_LIMIT", 3)
+    page = site_search(db_session, "частов мытищи")
+    assert page["people_truncated"] is True
+    assert page["people_place"] == "Мытищи"
+    assert {person["display_name"] for person in page["people"]} <= set(local)

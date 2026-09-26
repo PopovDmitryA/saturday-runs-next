@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { lockBodyScroll } from "../lib/bodyScrollLock";
 import { PlatformBadge } from "./PlatformBadge";
 import { platformCodeLabel } from "../lib/format";
 
@@ -52,8 +53,7 @@ export function QrCodeModal({ open, platformCode, displayName, code, onClose }: 
     if (!open) {
       return;
     }
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlock = lockBodyScroll();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
@@ -61,7 +61,7 @@ export function QrCodeModal({ open, platformCode, displayName, code, onClose }: 
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      unlock();
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [open, onClose]);

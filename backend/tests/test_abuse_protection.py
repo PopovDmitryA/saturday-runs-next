@@ -54,6 +54,8 @@ def test_classify_route_tiers() -> None:
     assert classify_route("/api/auth/logout", "POST") is RouteTier.default
     assert classify_route("/api/profiles/s95/preview", "POST") is RouteTier.expensive
     assert classify_route("/api/dashboard", "GET") is RouteTier.default
+    assert classify_route("/api/search", "GET") is RouteTier.search
+    assert classify_route("/api/search/log", "POST") is RouteTier.search_log
 
 
 def test_global_rate_limit_blocks(
@@ -171,3 +173,85 @@ def test_session_violations_do_not_ban_the_shared_ip(
 
     blocked, _retry_after = is_client_blocked("10.0.0.3")
     assert blocked is False
+
+
+def test_search_over_limit_gives_429_without_penalty(
+    fake_redis: fakeredis.FakeRedis,
+    abuse_settings: Settings,
+) -> None:
+    """Быстрый набор в поиске — это 429 и пауза, а не блокировка всего сайта для адреса.
+
+    Поиск шлёт запрос на каждую паузу в наборе, за мобильным NAT адрес общий на
+    десятки гостей: с очками за каждый отказ несколько имён подряд копили бан
+    всех /api на 15 минут (ревью 26.09.2026, SRCH-ABUSE-3).
+    """
+    settings = abuse_settings.model_copy(
+        update={"abuse_global_limit_per_ip": 1000, "abuse_search_limit_per_ip": 2, "abuse_search_log_limit_per_ip": 1}
+    )
+    for _ in range(2):
+        assert check_abuse_request("10.0.0.7", "/api/search", "GET", settings).allowed is True
+    for _ in range(10):
+        decision = check_abuse_request("10.0.0.7", "/api/search", "GET", settings)
+        assert decision.allowed is False
+        assert decision.reason == "search_rate_limit"
+
+    blocked, _retry_after = is_client_blocked("10.0.0.7")
+    assert blocked is False
+    assert fake_redis.get("abuse:score:10.0.0.7") is None
+    # Остальной сайт для этого адреса работает.
+    assert check_abuse_request("10.0.0.7", "/api/dashboard", "GET", settings).allowed is True
+
+
+def test_search_log_has_its_own_bucket(
+    fake_redis: fakeredis.FakeRedis,
+    abuse_settings: Settings,
+) -> None:
+    settings = abuse_settings.model_copy(
+        update={"abuse_global_limit_per_ip": 1000, "abuse_search_limit_per_ip": 2, "abuse_search_log_limit_per_ip": 1}
+    )
+    assert classify_route("/api/search/log", "POST") is RouteTier.search_log
+    for _ in range(2):
+        assert check_abuse_request("10.0.0.8", "/api/search", "GET", settings).allowed is True
+    assert check_abuse_request("10.0.0.8", "/api/search", "GET", settings).allowed is False
+    # Поиск исчерпан — журнал всё равно принимается: ведро своё.
+    assert check_abuse_request("10.0.0.8", "/api/search/log", "POST", settings).allowed is True
+    over = check_abuse_request("10.0.0.8", "/api/search/log", "POST", settings)
+    assert over.allowed is False
+    assert over.reason == "search_log_rate_limit"
+    assert fake_redis.get("abuse:score:10.0.0.8") is None
+
+
+def test_other_tiers_still_penalize(
+    fake_redis: fakeredis.FakeRedis,
+    abuse_settings: Settings,
+) -> None:
+    """Без очков — только поиск: у остальных тарифов перебор по-прежнему ведёт к блокировке."""
+    settings = abuse_settings.model_copy(update={"abuse_global_limit_per_ip": 1000})
+    for _ in range(6):
+        check_abuse_request("10.0.0.9", "/api/stats/summary", "GET", settings)
+    blocked, _retry_after = is_client_blocked("10.0.0.9")
+    assert blocked is True
+
+
+def test_search_does_not_eat_the_address_budget(
+    fake_redis: fakeredis.FakeRedis,
+    abuse_settings: Settings,
+) -> None:
+    """Поиск и журнал не идут в общее ведро адреса: иначе 150 + 30 в минуту съедали весь
+    общий потолок, и страницы с того же адреса получали 429 с очками — до блокировки
+    всего сайта (ревью, SKEP-5). У поиска свои вёдра."""
+    settings = abuse_settings.model_copy(
+        update={"abuse_global_limit_per_ip": 3, "abuse_search_limit_per_ip": 20, "abuse_search_log_limit_per_ip": 10}
+    )
+    for _ in range(20):
+        assert check_abuse_request("10.0.0.11", "/api/search", "GET", settings).allowed is True
+    for _ in range(10):
+        assert check_abuse_request("10.0.0.11", "/api/search/log", "POST", settings).allowed is True
+    # Своё ведро поиска по-прежнему ограничено — отказом без очков.
+    assert check_abuse_request("10.0.0.11", "/api/search", "GET", settings).reason == "search_rate_limit"
+
+    for _ in range(3):
+        assert check_abuse_request("10.0.0.11", "/api/dashboard", "GET", settings).allowed is True
+    assert fake_redis.get("abuse:score:10.0.0.11") is None
+    # Общий потолок для остального сайта работает как раньше.
+    assert check_abuse_request("10.0.0.11", "/api/dashboard", "GET", settings).reason == "global_rate_limit"

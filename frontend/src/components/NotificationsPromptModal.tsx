@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { lockBodyScroll } from "../lib/bodyScrollLock";
 import { dismissNotificationNudge, getNotificationNudge, type NotificationNudgeState } from "../lib/api";
 import { PORTAL_NOTIFICATIONS_SETTINGS_HREF } from "../lib/portalRoutes";
 
@@ -51,11 +52,7 @@ export function NotificationsPromptModal() {
     if (!state) {
       return;
     }
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
+    return lockBodyScroll();
   }, [state]);
 
   if (!state || !state.kind) {

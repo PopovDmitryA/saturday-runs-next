@@ -33,6 +33,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { User } from "../../../lib/api";
+import { lockBodyScroll } from "../../../lib/bodyScrollLock";
 import { LogoutButton, SECTION_ICONS } from "../SiteSidebar";
 import { CHEVRON_DOWN_ICON, CLOSE_ICON, MENU_ICON, SEARCH_ICON } from "./navIcons";
 import { resolveNavState } from "./navState";
@@ -103,15 +104,16 @@ export function SiteBottomNav({ user }: { user: User | null | undefined }) {
 
   // Пока окно открыто, страница под ним не прокручивается и недоступна ни
   // пальцу, ни клавиатуре, ни экранному диктору (inert). Сама панель и окно
-  // живут в портале вне #root — их это не касается.
+  // живут в портале вне #root — их это не касается. Прокрутку держит общая
+  // блокировка со счётчиком (lib/bodyScrollLock): из «Меню» открывают поиск,
+  // и окна закрываются не в том порядке, в каком открылись.
   useEffect(() => {
     if (overlay === null) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlock = lockBodyScroll();
     const root = document.getElementById("root");
     root?.setAttribute("inert", "");
     return () => {
-      document.body.style.overflow = previous;
+      unlock();
       root?.removeAttribute("inert");
     };
   }, [overlay]);

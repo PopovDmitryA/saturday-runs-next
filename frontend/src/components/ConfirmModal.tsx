@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { lockBodyScroll } from "../lib/bodyScrollLock";
 
 type ConfirmModalProps = {
   open: boolean;
@@ -31,8 +32,9 @@ export function ConfirmModal({
     if (!open) {
       return;
     }
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // Общая блокировка со счётчиком: подтверждение бывает поверх другой
+    // модалки, и закрываются они не обязательно по очереди.
+    const unlock = lockBodyScroll();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !confirmLoading) {
         onCancel();
@@ -40,7 +42,7 @@ export function ConfirmModal({
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      unlock();
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [open, confirmLoading, onCancel]);

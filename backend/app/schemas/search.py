@@ -85,6 +85,11 @@ class SiteSearchResponse(BaseModel):
     people_truncated: bool = False
     # Людей нашли по имени и месту («Попов Дмитрий Королёв»): подпись места.
     people_place: str | None = None
+    # Поиск людей этому запросу был нужен, но не сделан — все места поиска в
+    # процессе заняты или запрос отменён по времени. Пустой people тогда
+    # значит «не искали», а не «не нашли»: так и надо сказать человеку и не
+    # писать этот поиск в журнал как пустой (ревью, SKEP-3).
+    people_skipped: bool = False
 
 
 class SearchLogTopQuery(BaseModel):

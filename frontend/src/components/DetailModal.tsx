@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { lockBodyScroll } from "../lib/bodyScrollLock";
 
 type DetailModalProps = {
   open: boolean;
@@ -31,11 +32,13 @@ export function DetailModal({ open, title, children, onClose, footer, width = "w
     const previousPosition = body.style.position;
     const previousTop = body.style.top;
     const previousWidth = body.style.width;
-    const previousOverflow = body.style.overflow;
     body.style.position = "fixed";
     body.style.top = `-${scrollY}px`;
     body.style.width = "100%";
-    body.style.overflow = "hidden";
+    // overflow — через общую блокировку со счётчиком (lib/bodyScrollLock):
+    // поверх модалки бывают другие окна (фото в лайтбоксе, подтверждение),
+    // и закрываются они не обязательно по очереди.
+    const unlock = lockBodyScroll();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
@@ -46,7 +49,7 @@ export function DetailModal({ open, title, children, onClose, footer, width = "w
       body.style.position = previousPosition;
       body.style.top = previousTop;
       body.style.width = previousWidth;
-      body.style.overflow = previousOverflow;
+      unlock();
       window.scrollTo(0, scrollY);
       document.removeEventListener("keydown", handleKeyDown);
     };

@@ -16,10 +16,29 @@ class RouteTier(str, Enum):
     auth = "auth"
     expensive = "expensive"
     # Поиск по сайту: открыт анониму и ищет по всей базе участников — удобная
-    # мишень для выкачивания имён перебором. Своё ведро, чтобы потолок был
-    # ниже общего и поиск не съедал лимит остального сайта.
+    # мишень для выкачивания имён перебором. Своё ведро, чтобы поиск не съедал
+    # лимит остального сайта.
     search = "search"
+    # Журнал поиска (/api/search/log, sendBeacon раз на поиск) — отдельное
+    # ведро: иначе беконы съедали лимит самого поиска.
+    search_log = "search_log"
     default = "default"
+
+
+# Тарифы, превышение которых отвечает 429, но штрафных очков адресу НЕ
+# начисляет. Поиск шлёт запрос на каждую паузу в наборе (на телефоне — почти
+# на каждую букву), и за мобильным NAT десятки гостей делят один адрес: с
+# очками быстрый набор нескольких имён подряд копил блокировку ВСЕГО сайта на
+# 15 минут для всех за этим адресом (ревью 26.09.2026, SRCH-ABUSE-3, S2).
+# Дорого перебирать поиск и так нельзя: стоимость запроса ограничена
+# (site_search_service), а потолок у каждого из этих тарифов свой.
+#
+# В общее ведро адреса (abuse_global_*) эти запросы тоже не идут. Иначе
+# поиск и журнал (150 + 30 в минуту) съедали весь общий потолок в 180, и
+# следующий же запрос страницы с того же адреса получал 429 с очками — около
+# полутора десятков таких, и весь сайт закрыт для адреса на 15 минут
+# (ревью, SKEP-5). Поиск ограничен своим ведром, сайт — своим.
+_UNPENALIZED_TIERS = frozenset({RouteTier.search, RouteTier.search_log})
 
 
 @dataclass(frozen=True)
@@ -100,6 +119,9 @@ def classify_route(path: str, method: str) -> RouteTier:
     if normalized.startswith("/api/sync/refresh"):
         return RouteTier.expensive
 
+    if normalized == "/api/search/log":
+        return RouteTier.search_log
+
     if normalized == "/api/search" or normalized.startswith("/api/search/"):
         return RouteTier.search
 
@@ -120,6 +142,8 @@ def _tier_limits(tier: RouteTier, settings: Settings) -> tuple[int, int] | None:
         return settings.abuse_expensive_limit_per_ip, settings.abuse_expensive_window_seconds
     if tier is RouteTier.search:
         return settings.abuse_search_limit_per_ip, settings.abuse_search_window_seconds
+    if tier is RouteTier.search_log:
+        return settings.abuse_search_log_limit_per_ip, settings.abuse_search_log_window_seconds
     return settings.abuse_default_limit_per_ip, settings.abuse_default_window_seconds
 
 
@@ -196,8 +220,9 @@ def check_abuse_request(
         if not is_session:
             record_abuse_score(client_ip, score, settings)
 
+    tier = classify_route(path, method)
     global_key = f"abuse:global:{identity}"
-    if not check_rate_limit(
+    if tier not in _UNPENALIZED_TIERS and not check_rate_limit(
         global_key,
         settings.abuse_global_limit_per_ip,
         settings.abuse_global_window_seconds,
@@ -210,13 +235,13 @@ def check_abuse_request(
             reason="global_rate_limit",
         )
 
-    tier = classify_route(path, method)
     tier_limits = _tier_limits(tier, settings)
     if tier_limits is not None:
         limit, window = tier_limits
         tier_key = f"abuse:tier:{tier.value}:{identity}"
         if not check_rate_limit(tier_key, limit, window):
-            penalize(settings.abuse_tier_violation_score)
+            if tier not in _UNPENALIZED_TIERS:
+                penalize(settings.abuse_tier_violation_score)
             retry_after = get_counter_ttl(tier_key) or window
             return AbuseDecision(
                 allowed=False,

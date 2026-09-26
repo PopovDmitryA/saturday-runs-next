@@ -5,11 +5,27 @@ const DEFAULT_FETCH_TIMEOUT_MS = 20_000;
 
 export class ApiError extends Error {
   status: number;
+  /**
+   * Через сколько секунд сервер разрешает повторить запрос (заголовок
+   * Retry-After у ответа 429). null — сервер не сказал.
+   */
+  retryAfterSeconds: number | null;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, retryAfterSeconds: number | null = null) {
     super(message);
     this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+/** Retry-After бывает числом секунд или HTTP-датой — понимаем оба вида. */
+function parseRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  const at = Date.parse(trimmed);
+  if (Number.isNaN(at)) return null;
+  return Math.max(0, Math.ceil((at - Date.now()) / 1000));
 }
 
 export type User = {
@@ -813,7 +829,11 @@ async function apiFetch<T>(
         body = null;
       }
     }
-    throw new ApiError(extractApiErrorDetail(body, response.status, rawText), response.status);
+    throw new ApiError(
+      extractApiErrorDetail(body, response.status, rawText),
+      response.status,
+      parseRetryAfter(response.headers.get("Retry-After")),
+    );
   }
 
   if (!rawText) {
@@ -5420,6 +5440,12 @@ export type SiteSearchResponse = {
   people_truncated: boolean;
   /** Людей нашли по имени и месту («Попов Дмитрий Королёв»): подпись места. */
   people_place: string | null;
+  /**
+   * Людей искать было нужно, но сервер пропустил этот шаг (все места поиска
+   * заняты или вышел отведённый срок) — пустой список людей тут не значит
+   * «никого нет». Поле может отсутствовать в ответе старого сервера.
+   */
+  people_skipped?: boolean;
 };
 
 export function searchSite(query: string, signal?: AbortSignal) {
@@ -5435,6 +5461,8 @@ export type SiteSearchLogEntry = {
   clicked_kind: "page" | "location" | "person" | null;
   clicked_target: string | null;
   is_mobile: boolean;
+  /** Людей в этом поиске не искали (нагрузка) — сервер такую запись не хранит. */
+  people_skipped?: boolean;
 };
 
 /**

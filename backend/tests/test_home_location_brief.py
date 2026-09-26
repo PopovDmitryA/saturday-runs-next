@@ -32,6 +32,7 @@ from app.models import (
 )
 from app.services import home_location_brief_service, location_page_service
 from app.services.home_location_brief_service import home_location_brief, reset_home_location_memo
+from app.services.location_catalog_service import LocationCatalogIndex, identity_key_by_location_id
 
 
 @pytest.fixture(autouse=True)
@@ -226,3 +227,54 @@ def test_auth_me_returns_home_location(db_session: Session, monkeypatch: pytest.
 
     assert response.status_code == 200, response.text
     assert response.json()["home_location"] == {"slug": "meshchersky", "name": "Мещерский"}
+
+
+def test_auto_matches_catalog_slugs_like_the_catalog_index(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Слаг parkrun в связке каталога и у локации пишут по-разному: «nizhny-prud» и «nizhnyprud».
+
+    Без нормализации пробежки на таких локациях выпадали из подсчёта, и «Моя:»
+    показывала не ту локацию (ревью 26.09.2026, HOME-4: 55 parkrun-локаций
+    копии прода, «Нижний пруд» стал «Зеленоградом»).
+    """
+    parkrun = _platform(db_session, "parkrun")
+    five = _platform(db_session, "five_verst")
+    user, participant = _runner(db_session, parkrun)
+    tag = uuid4().hex[:8]
+    pond = Location(platform_id=parkrun.id, external_key=f"nizhnyprud{tag}", name="Nizhny Prud", city="Город")
+    old = Location(platform_id=parkrun.id, external_key=f"staryslug{tag}", name="Stary Park", city="Город")
+    db_session.add_all([pond, old])
+    db_session.flush()
+    elsewhere = _location(db_session, five, "Другая")
+    pond_node = LocationCatalog(canonical_name="Нижний пруд")
+    old_node = LocationCatalog(canonical_name="Старый парк", legacy_parkrun_slug=f"stary-slug-{tag}")
+    db_session.add_all([pond_node, old_node])
+    db_session.flush()
+    # Связки без location_id — только слагом системы, записанным через дефис.
+    db_session.add_all(
+        [
+            LocationCatalogLink(catalog_id=pond_node.id, platform_id=parkrun.id, external_key=f"nizhny-prud-{tag}"),
+            LocationCatalogLink(catalog_id=old_node.id, platform_id=parkrun.id, external_key=f"novy-slug-{tag}"),
+        ]
+    )
+    db_session.flush()
+    _runs(db_session, participant, pond, 4, date(2021, 1, 2))
+    _runs(db_session, participant, old, 3, date(2020, 1, 4))
+    _runs(db_session, participant, elsewhere, 2, date(2026, 1, 3))
+    _index(
+        monkeypatch,
+        [
+            {"identity_key": f"catalog:{pond_node.id}", "slug": "nizhny-prud", "name": "Нижний пруд"},
+            {"identity_key": f"catalog:{old_node.id}", "slug": "stary-park", "name": "Старый парк"},
+            {"identity_key": f"location:{elsewhere.id}", "slug": "drugaya", "name": "Другая"},
+        ],
+    )
+
+    assert home_location_brief(db_session, user) == {"slug": "nizhny-prud", "name": "Нижний пруд"}
+    # Ключи узлов — ровно те, что даёт эталон (LocationCatalogIndex), в том
+    # числе по старому слагу parkrun, записанному по-другому.
+    reference = identity_key_by_location_id(db_session, LocationCatalogIndex(db_session))
+    ids = [pond.id, old.id, elsewhere.id]
+    assert home_location_brief_service._identity_keys(db_session, ids) == {
+        location_id: reference[location_id] for location_id in ids
+    }
+    assert reference[old.id] == f"catalog:{old_node.id}"

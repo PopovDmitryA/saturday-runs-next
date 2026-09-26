@@ -10,7 +10,8 @@ build_user_unique_location_details). Только дешёвые шаги:
 1. Выбранная вручную (users.home_location_key) — ищем её в каталоге локаций,
    который и так лежит в Redis (прогрев locations_warm).
 2. Иначе — где у человека больше всего пробежек: один group by по его
-   пробежкам и сопоставление локаций с узлами каталога по связкам. Это первая
+   пробежкам и сопоставление локаций с узлами каталога по связкам (так же,
+   как LocationCatalogIndex, — catalog_ids_for_locations). Это первая
    и третья ступени автоотбора из home_location_service (пробежки, при ничьей
    — где начал); волонтёрства как второй признак здесь не считаем — ради них
    пришлось бы строить ту самую детализацию. Расхождения возможны только при
@@ -33,14 +34,13 @@ from sqlalchemy.orm import Session
 from app.models import (
     Event,
     Location,
-    LocationCatalog,
-    LocationCatalogLink,
     Participant,
     Platform,
     PlatformLink,
     RunResult,
     User,
 )
+from app.services.location_catalog_service import catalog_ids_for_locations
 
 logger = logging.getLogger(__name__)
 
@@ -102,43 +102,23 @@ def _user_participant_ids(db: Session, user_id: UUID) -> list[UUID]:
 def _identity_keys(db: Session, location_ids: list[UUID]) -> dict[UUID, str]:
     """location_id → ключ узла, как canonical_identity_key, но без загрузки всего каталога.
 
-    Связка каталога ищется по location_id, затем по (система, слаг), затем по
-    слагу эпохи parkrun. Не нашлась — площадка сама себе узел «location:<id>».
+    Узел ищется ровно как в LocationCatalogIndex (catalog_ids_for_locations):
+    по связке, затем по слагу в системе — как есть и нормализованному, со
+    слагами эпохи parkrun. Не нашёлся — площадка сама себе узел «location:<id>».
     """
-    keys: dict[UUID, str] = {}
-    for location_id, catalog_id in db.query(LocationCatalogLink.location_id, LocationCatalogLink.catalog_id).filter(
-        LocationCatalogLink.location_id.in_(location_ids)
-    ):
-        if location_id is not None:
-            keys[location_id] = f"catalog:{catalog_id}"
-    rest = [location_id for location_id in location_ids if location_id not in keys]
-    if rest:
-        rows = (
-            db.query(Location.id, Location.platform_id, Location.external_key, Platform.code)
-            .join(Platform, Location.platform_id == Platform.id)
-            .filter(Location.id.in_(rest))
-            .all()
-        )
-        pairs = [(platform_id, external_key) for _id, platform_id, external_key, _code in rows]
-        by_slug = {
-            (platform_id, external_key): catalog_id
-            for platform_id, external_key, catalog_id in db.query(
-                LocationCatalogLink.platform_id, LocationCatalogLink.external_key, LocationCatalogLink.catalog_id
-            ).filter(tuple_(LocationCatalogLink.platform_id, LocationCatalogLink.external_key).in_(pairs))
-        } if pairs else {}
-        parkrun_slugs = [external_key for _id, _platform, external_key, code in rows if code == "parkrun"]
-        by_legacy = {
-            slug: catalog_id
-            for catalog_id, slug in db.query(LocationCatalog.id, LocationCatalog.legacy_parkrun_slug).filter(
-                LocationCatalog.legacy_parkrun_slug.in_(parkrun_slugs)
-            )
-        } if parkrun_slugs else {}
-        for location_id, platform_id, external_key, code in rows:
-            catalog_id = by_slug.get((platform_id, external_key))
-            if catalog_id is None and code == "parkrun":
-                catalog_id = by_legacy.get(external_key)
-            keys[location_id] = f"catalog:{catalog_id}" if catalog_id else f"location:{location_id}"
-    return keys
+    rows = (
+        db.query(Location.id, Platform.code, Location.external_key)
+        .join(Platform, Location.platform_id == Platform.id)
+        .filter(Location.id.in_(location_ids))
+        .all()
+    )
+    catalog_ids = catalog_ids_for_locations(
+        db, {location_id: (platform_code, external_key) for location_id, platform_code, external_key in rows}
+    )
+    return {
+        location_id: f"catalog:{catalog_ids[location_id]}" if location_id in catalog_ids else f"location:{location_id}"
+        for location_id in location_ids
+    }
 
 
 def _auto_identity(db: Session, user_id: UUID, known: dict[str, dict[str, str]]) -> str | None:

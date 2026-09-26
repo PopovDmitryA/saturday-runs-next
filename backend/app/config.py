@@ -232,11 +232,18 @@ class Settings(BaseSettings):
     abuse_auth_window_seconds: int = 600
     abuse_expensive_limit_per_ip: int = 20
     abuse_expensive_window_seconds: int = 60
-    # Поиск по сайту (/api/search и его журнал). Фронт шлёт запрос с паузой
-    # после набора, так что живой человек делает единицы запросов в минуту;
-    # 60 — с большим запасом на быстрый набор, но перебор имён упирается сразу.
-    abuse_search_limit_per_ip: int = 60
+    # Поиск по сайту (/api/search). Фронт шлёт запрос на каждую паузу в наборе
+    # (220 мс), на телефоне — почти на каждую букву: 60 в минуту — это четыре-
+    # пять имён подряд, и человек упирался в 429 посреди поиска. Стоимость
+    # одного запроса теперь ограничена (пул кандидатов, statement_timeout,
+    # три места на процесс — site_search_service), поэтому потолок выше;
+    # штрафных очков за его превышение нет, и в общее ведро адреса
+    # (abuse_global_*) поиск не идёт (_UNPENALIZED_TIERS).
+    abuse_search_limit_per_ip: int = 150
     abuse_search_window_seconds: int = 60
+    # Журнал поиска (/api/search/log): один бекон на поиск, своё ведро.
+    abuse_search_log_limit_per_ip: int = 30
+    abuse_search_log_window_seconds: int = 60
     abuse_block_score_threshold: int = 200
     abuse_block_duration_seconds: int = 900
     abuse_severe_block_score_threshold: int = 400

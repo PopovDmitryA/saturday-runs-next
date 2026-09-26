@@ -868,10 +868,12 @@ div.site-col-extra-head {
 
 /* ---------- окно поиска ---------- */
 
+/* Выше модалок сайта (.modal-overlay — 300): Ctrl+K или «/» при открытой
+   модалке открывали поиск под её затемнением, и текст уходил в невидимое поле. */
 .site-search-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: 350;
   display: flex;
   justify-content: center;
   align-items: flex-start;
