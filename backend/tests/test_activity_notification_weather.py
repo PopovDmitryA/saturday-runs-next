@@ -45,3 +45,31 @@ def test_bold_link_and_plain_render() -> None:
     assert to_telegram_html(text) == '🏆 <a href="https://x.test/users/7/achievements"><b>Челленджи:</b></a>'
     # VK: подпись в строке, адрес — строкой ниже.
     assert to_plain(text) == "🏆 Челленджи:\nhttps://x.test/users/7/achievements"
+
+
+def test_renamed_location_does_not_resurrect_milestones() -> None:
+    """Раменское Городской парк → Раменское: старые вехи не должны стать «новыми»."""
+    from app.services.activity_notification_service import milestone_key, new_milestones
+
+    old = {
+        "kind": "volunteer_club",
+        "event_date": "2026-04-04",
+        "platform_code": "five_verst",
+        "location_name": "Раменское Городской парк",
+        "number": 100,
+    }
+    renamed = {**old, "location_name": "Раменское"}
+    assert new_milestones([milestone_key(old)], [milestone_key(renamed)], [renamed]) == []
+
+
+def test_old_milestones_are_not_announced() -> None:
+    """Новый ключ, но веха полугодовой давности — пересчёт истории, не новость."""
+    from app.services.activity_notification_service import milestone_key, new_milestones
+
+    old = {"kind": "run_club", "event_date": "2026-03-07", "number": 100}
+    today = {"kind": "saturday_volunteer_streak", "event_date": date(2026, 9, 26), "number": 110}
+    items = [old, today]
+    fresh = new_milestones([], [milestone_key(i) for i in items], items, since=date(2026, 9, 12))
+    assert fresh == [today]
+    # Первый снимок по-прежнему молчит.
+    assert new_milestones(None, [milestone_key(today)], [today], since=date(2026, 9, 12)) == []

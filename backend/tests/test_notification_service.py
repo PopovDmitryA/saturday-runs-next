@@ -824,6 +824,43 @@ def test_scan_run_and_volunteering_in_one_message(
     assert "🙌 Замыкающий" in delivery.payload["text"]
 
 
+def test_first_time_here_checks_own_history_not_the_system_flag(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, _no_broker: list[UUID]
+) -> None:
+    """Система пометила «впервые», а человек бегал здесь раньше — флаг не показываем."""
+    user = _make_user(db_session, chat_id=100)
+    _fake_sources(monkeypatch, levels={}, ranks={}, milestones=[])
+    today = datetime.now(UTC).date()
+    earlier = _run_for(db_session, user, event_date=today - timedelta(days=70))
+    location_id = db_session.get(Event, earlier.event_id).location_id
+    _enable_with_seeds(db_session, user, levels={}, ranks={}, keys=[])
+    platform = _platform(db_session)
+    event = Event(
+        platform_id=platform.id,
+        location_id=location_id,
+        external_event_key=f"ev-{uuid4().hex[:8]}",
+        event_date=today - timedelta(days=1),
+        event_number=124,
+    )
+    db_session.add(event)
+    db_session.flush()
+    db_session.add(
+        RunResult(
+            event_id=event.id,
+            participant_id=earlier.participant_id,
+            external_result_key=f"r-{uuid4().hex[:8]}",
+            position=7,
+            finish_time_sec=1600,
+            is_first_run_at_location=True,
+        )
+    )
+    db_session.commit()
+
+    assert activity.scan_user_activity(db_session, user.id)["runs"] == 1
+    text = db_session.query(NotificationDelivery).filter_by(user_id=user.id).one().payload["text"]
+    assert "первый раз здесь" not in text
+
+
 def test_scan_levels_only_message(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     user = _make_user(db_session, chat_id=100)
     _enable_with_seeds(db_session, user, levels={"positions": {"easy": None}}, ranks={}, keys=[])

@@ -51,6 +51,7 @@ from app.services import notification_channels_service as channels
 from app.services import notification_service as notifications
 from app.services.achievements_service import TIER_LABELS, compute_challenges
 from app.services.leaderboard_service import get_my_leaderboard_row
+from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.my_history_service import get_my_history
 from app.services.platform_titles import PLATFORM_TITLES
 from app.services.start_weather_service import weather_for_pairs, weather_line
@@ -166,6 +167,7 @@ def _new_runs(db: Session, user_id: UUID, *, since: datetime, until: datetime, t
     )
     pairs = [(event.location_id, event.event_date) for _result, event, _location, _platform in rows]
     weather = _weather_for_runs(db, pairs)
+    first_here = _first_time_here(db, user_id, rows)
     return [
         NewRun(
             result_id=result.id,
@@ -176,13 +178,57 @@ def _new_runs(db: Session, user_id: UUID, *, since: datetime, until: datetime, t
             finish_time_sec=result.finish_time_sec,
             position=result.position,
             is_pr=bool(result.is_pr),
-            is_first_run_at_location=bool(result.is_first_run_at_location),
+            is_first_run_at_location=result.id in first_here,
             location_id=event.location_id,
             weather=weather_line(weather.get((event.location_id, event.event_date))),
             protocol_path=protocol_path(location, platform.code, event.event_date),
         )
         for result, event, location, platform in rows
     ]
+
+
+def _first_time_here(db: Session, user_id: UUID, rows: list[Any]) -> set[UUID]:
+    """Пробежки, которые действительно первые на этой физической локации.
+
+    Флаг is_first_run_at_location ставит система, и считает она только свои
+    старты: Раменское перешло из 5 вёрст в S95, и человек со ста пробежками
+    там получил «🆕 первый раз здесь» от первого же протокола S95 (26.09.2026).
+    Сверяем по узлу каталога через все системы — как «Новая локация» в истории.
+    """
+    candidates = [row for row in rows if row[0].is_first_run_at_location]
+    if not candidates:
+        return set()
+    index = LocationCatalogIndex(db)
+    earliest: dict[str, date] = {}
+    history = (
+        db.query(Event.event_date, Location, Platform.code)
+        .select_from(RunResult)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(Participant, RunResult.participant_id == Participant.id)
+        .join(
+            PlatformLink,
+            and_(
+                PlatformLink.platform_id == Participant.platform_id,
+                PlatformLink.external_user_id == Participant.external_user_id,
+            ),
+        )
+        .filter(PlatformLink.user_id == user_id, Event.is_test_event.is_(False))
+        .distinct()
+        .all()
+    )
+    for event_date, location, platform_code in history:
+        identity = index.canonical_identity_key(location, platform_code)
+        known = earliest.get(identity)
+        if known is None or event_date < known:
+            earliest[identity] = event_date
+    first: set[UUID] = set()
+    for result, event, location, platform in candidates:
+        identity = index.canonical_identity_key(location, platform.code)
+        if earliest.get(identity, event.event_date) >= event.event_date:
+            first.add(result.id)
+    return first
 
 
 def protocol_path(location: Location, platform_code: str, event_date: date) -> str | None:
@@ -348,11 +394,62 @@ def milestones_snapshot(db: Session, user_id: UUID) -> tuple[list[str], list[dic
     return [milestone_key(item) for item in items], items
 
 
-def new_milestones(previous: list[str] | None, keys: list[str], items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+_MILESTONE_LOCATION_FIELD = 3
+
+
+def _milestone_identity(key: str) -> str:
+    """Ключ вехи без названия локации — для сравнения со снимком.
+
+    Название — подпись, а не суть вехи: переименование «Раменское Городской
+    парк» → «Раменское» (26.09.2026) превратило все старые вехи на этой
+    локации в «новые», и люди получили «100-е волонтёрство» годичной
+    давности. Хранимый формат не меняем — старые снимки сравниваются так же.
+    """
+    parts = key.split("|")
+    if len(parts) > _MILESTONE_LOCATION_FIELD:
+        parts[_MILESTONE_LOCATION_FIELD] = ""
+    return "|".join(parts)
+
+
+def _milestone_date(item: dict[str, Any]) -> date | None:
+    value = item.get("event_date")
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def new_milestones(
+    previous: list[str] | None,
+    keys: list[str],
+    items: list[dict[str, Any]],
+    *,
+    since: date | None = None,
+) -> list[dict[str, Any]]:
+    """Вехи, которых не было в прошлом снимке.
+
+    since — вехи старше этой даты не объявляем, даже если ключ новый:
+    пересчёт истории (переименование, склейка локаций, перенос протоколов)
+    не должен присылать достижения прошлых лет как свежие.
+    """
     if previous is None:
         return []
-    seen = set(previous)
-    return [item for key, item in zip(keys, items, strict=True) if key not in seen]
+    seen = {_milestone_identity(key) for key in previous}
+    fresh: list[dict[str, Any]] = []
+    for key, item in zip(keys, items, strict=True):
+        if _milestone_identity(key) in seen:
+            continue
+        when = _milestone_date(item)
+        if since is not None and when is not None and when < since:
+            continue
+        fresh.append(item)
+    return fresh
 
 
 # ---------------------------------------------------------------------------
@@ -619,7 +716,12 @@ def scan_user_activity(db: Session, user_id: UUID, *, now: datetime | None = Non
         prefs.challenge_levels = current_levels
 
         keys, items = milestones_snapshot(db, user_id)
-        fresh = new_milestones(prefs.milestones_seen, keys, items)
+        fresh = new_milestones(
+            prefs.milestones_seen,
+            keys,
+            items,
+            since=now.date() - timedelta(days=settings.notifications_runs_window_days),
+        )
         prefs.milestones_seen = keys
     if volunteering_on:
         volunteerings = _new_volunteerings(db, user_id, since=since, until=now, today=now.date())
@@ -651,8 +753,10 @@ def scan_user_activity(db: Session, user_id: UUID, *, now: datetime | None = Non
                 + [f"{u.code}:{u.tier}:{u.level}" for u in ups]
                 + [milestone_key(m) for m in fresh]
             ),
-            url=f"{base}/users/{handle}/volunteering" if only_volunteering else f"{base}/users/{handle}/runs",
-            url_label="Моё волонтёрство на сайте" if only_volunteering else "Мои пробежки на сайте",
+            # Ссылка — туда, о чём сообщение: без пробежки (пусть и с вехами)
+            # «Мои пробежки» ведут не туда.
+            url=f"{base}/users/{handle}/volunteering" if volunteerings and not runs else f"{base}/users/{handle}/runs",
+            url_label="Моё волонтёрство на сайте" if volunteerings and not runs else "Мои пробежки на сайте",
             commit=False,
         )
     db.commit()
