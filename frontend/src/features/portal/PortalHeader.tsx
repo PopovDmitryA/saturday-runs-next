@@ -2,6 +2,7 @@ import { useEffect, type MouseEvent } from "react";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { PORTAL_HOME_HREF, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
+import { BrandMark } from "./BrandMark";
 import { AccountMenu } from "./nav/AccountMenu";
 import { SEARCH_ICON } from "./nav/navIcons";
 import { resolveNavState } from "./nav/navState";
@@ -103,25 +104,7 @@ export function PortalHeader({
       <div className="portal-header-inner">
         <a href={PORTAL_HOME_HREF} className="portal-brand" aria-label="run5k.run — на главную">
           <span className="portal-brand-stack">
-            <span className="portal-brand-row">
-              <span className="portal-brand-name">
-                run5k<span className="portal-brand-tld">.run</span>
-              </span>
-              <svg
-                className="portal-brand-pulse"
-                viewBox="0 0 34 14"
-                fill="none"
-                aria-hidden="true"
-              >
-                <polyline
-                  points="1,12 8,10 14,11 20,6 26,7 32,2"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <circle cx="32" cy="2" r="2.4" />
-              </svg>
-            </span>
+            <BrandMark />
             <span className="portal-brand-tagline">Статистика парковых пробежек</span>
           </span>
         </a>

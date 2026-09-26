@@ -35,6 +35,7 @@ import { clearCachedUser, useOptionalUser } from "../../lib/useOptionalUser";
 import {
   CHEVRON_LEFT_ICON,
   CHEVRON_RIGHT_ICON,
+  HOME_ICON,
   LOCATIONS_ICON,
   ME_ICON,
   ORGANIZER_ICON,
@@ -59,6 +60,7 @@ export type { CabinetTabKey } from "./nav/siteNav";
 export { userLabel };
 
 export const SECTION_ICONS: Record<NavSectionKey, ReactNode> = {
+  home: HOME_ICON,
   me: ME_ICON,
   organizer: ORGANIZER_ICON,
   results: RESULTS_ICON,
@@ -181,7 +183,8 @@ export function SiteSidebar({ active, user: userProp, location, onCollapsedChang
   const visibleSections = sections.filter((section) => section.inRail !== false);
   // Колонка чужого профиля показывает его вкладки; иначе — текущий раздел, а
   // если раздела нет — свой кабинет.
-  const columnSection = current ?? (extraGroup ? null : sections[0]);
+  const columnSection =
+    current ?? (extraGroup ? null : (sections.find((section) => section.key === "me") ?? null));
 
   const asideRef = useRef<HTMLElement>(null);
   const colRef = useRef<HTMLElement>(null);

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { PORTAL_ABOUT_PRIVACY_HREF, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF, PORTAL_UPDATES_HREF } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
+import { BrandMark } from "./BrandMark";
 import { resolveNavState } from "./nav/navState";
 import { CABINET_LABEL, CABINET_TABS, type NavSection } from "./nav/siteNav";
 import { fetchLatestReleaseVersion } from "./releaseTypes";
@@ -37,6 +38,7 @@ function footerColumns(sections: NavSection[]): FooterColumn[] {
   const stats: FooterColumn = {
     title: "Статистика",
     links: [
+      ...sectionLink(byKey("home")),
       ...sectionLink(results),
       // «Единый протокол» — вторая страница «Итогов»; первая и есть /results.
       ...itemsOf(results)
@@ -125,8 +127,8 @@ export function PortalFooter() {
       <div className="portal-footer-inner">
         <div className="portal-footer-top">
           <div className="portal-footer-about">
-            <a className="portal-footer-brand" href={PORTAL_HOME_HREF}>
-              run5k<span className="portal-footer-tld">.run</span>
+            <a className="portal-footer-brand" href={PORTAL_HOME_HREF} aria-label="run5k.run — на главную">
+              <BrandMark />
             </a>
             <p className="portal-footer-tagline">Статистика парковых пробежек</p>
             <p className="portal-footer-note">

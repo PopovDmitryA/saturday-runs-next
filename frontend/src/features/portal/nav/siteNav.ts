@@ -39,7 +39,15 @@ import {
   PORTAL_UPDATES_HREF,
 } from "../../../lib/portalRoutes";
 
-export type NavSectionKey = "me" | "organizer" | "results" | "locations" | "ratings" | "project" | "account";
+export type NavSectionKey =
+  | "home"
+  | "me"
+  | "organizer"
+  | "results"
+  | "locations"
+  | "ratings"
+  | "project"
+  | "account";
 
 export type NavLink = {
   key: string;
@@ -140,6 +148,9 @@ export function isLinkCurrent(link: NavLink, pathname: string): boolean {
  * на /users/{свой хендл} — это решает navState, адрес тут не перечислить.
  */
 export const SECTION_PATH_PREFIXES: Record<NavSectionKey, readonly string[]> = {
+  // Главная — один адрес «/», префиксом его не выразить (он покрыл бы весь
+  // сайт); её узнаёт sectionKeyFromPath отдельной проверкой.
+  home: [],
   me: [PORTAL_CABINET_SHARE_HREF, "/new/"],
   organizer: ["/organizer"],
   results: ["/results", "/protocol"],
@@ -159,6 +170,7 @@ function pathHasPrefix(pathname: string, prefix: string): boolean {
  * (главная, блог, «О проекте») и для нижней панели, которая живёт в шапке.
  */
 export function sectionKeyFromPath(pathname: string): NavSectionKey | null {
+  if (pathname === PORTAL_HOME_HREF) return "home";
   for (const [key, prefixes] of Object.entries(SECTION_PATH_PREFIXES) as [NavSectionKey, readonly string[]][]) {
     if (prefixes.some((prefix) => pathHasPrefix(pathname, prefix))) return key;
   }
@@ -545,7 +557,7 @@ function personalLocationLinks(ctx: NavContext): { home: NavLink | null; recent:
         key: `home:${homePlace.slug}`,
         label: `Моя: ${homePlace.name}`,
         chipLabel: homePlace.name,
-        icon: I.HOME_ICON,
+        icon: I.MY_PLACE_ICON,
         href: `/locations/${homePlace.slug}`,
         keywords: ["моя локация", "домашняя локация", "мой парк", homePlace.name.toLowerCase()],
         // Ярлык, а не страница: на обзоре своей локации текущим отмечен
@@ -767,10 +779,43 @@ function accountSection(ctx: NavContext): NavSection {
   };
 }
 
+// ---------- Главная ----------
+
+/**
+ * Главная — первым пунктом рельса и «Меню» (правка Дмитрия 26.09.2026). Раньше
+ * туда вёл только логотип в шапке: ссылки «Главная» в шапке страниц с рельсом
+ * не стало, и из кабинета вернуться на главную было неочевидно.
+ */
+function homeSection(): NavSection {
+  return {
+    key: "home",
+    label: "Главная",
+    shortLabel: "Главная",
+    href: PORTAL_HOME_HREF,
+    keywords: ["главная", "главная страница", "начало", "стартовая", "на главную"],
+    groups: [
+      {
+        key: "home",
+        items: [
+          {
+            key: "home",
+            label: "Главная",
+            icon: I.HOME_ICON,
+            href: PORTAL_HOME_HREF,
+            matches: (pathname) => pathname === PORTAL_HOME_HREF,
+            keywords: ["главная", "главная страница", "начало", "стартовая", "на главную"],
+          },
+        ],
+      },
+    ],
+    pathPrefixes: SECTION_PATH_PREFIXES.home,
+  };
+}
+
 // ---------- сборка ----------
 
 export function buildSiteNav(ctx: NavContext): NavSection[] {
-  const sections: NavSection[] = [meSection(ctx)];
+  const sections: NavSection[] = [homeSection(), meSection(ctx)];
   if (canSeeOrganizer(ctx.user)) {
     sections.push(organizerSection(ctx));
   }
@@ -780,19 +825,9 @@ export function buildSiteNav(ctx: NavContext): NavSection[] {
 
 /**
  * Страницы, которых нет ни в одном меню, но которые должен находить поиск по
- * сайту. Главная — не раздел (на неё ведёт логотип), но «главная» — частый
- * запрос, и без этой строки он уводил в обзор кабинета.
+ * сайту. Сейчас пусто: «Главная» с 26.09.2026 — раздел дерева.
  */
-export const EXTRA_SEARCH_LINKS: readonly NavLink[] = [
-  {
-    key: "home",
-    label: "Главная",
-    icon: I.HOME_ICON,
-    href: PORTAL_HOME_HREF,
-    matches: (pathname) => pathname === PORTAL_HOME_HREF,
-    keywords: ["главная", "главная страница", "начало", "стартовая", "на главную"],
-  },
-];
+export const EXTRA_SEARCH_LINKS: readonly NavLink[] = [];
 
 /** Все ссылки дерева одним списком — для поиска по страницам. */
 export function flattenNav(sections: NavSection[]): { section: NavSection; group: NavGroup; link: NavLink }[] {

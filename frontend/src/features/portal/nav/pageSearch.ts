@@ -151,7 +151,7 @@ function namesPage(word: string, haystack: string[]): boolean {
  * протокол» (457) выше «Последних пробежек» (658).
  */
 const PAGE_WEIGHTS: Record<string, number> = {
-  "extra:home": 1993,
+  "home:home": 1993,
   "me:dashboard": 900,
   "me:achievements": 120,
   "me:runs": 110,
