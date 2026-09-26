@@ -14,7 +14,14 @@ from uuid import UUID
 from sqlalchemy import and_
 
 from app.db.session import get_session_factory
-from app.models import NotificationDelivery, Participant, PlatformLink, RunResult, UserNotificationChannel
+from app.models import (
+    NotificationDelivery,
+    Participant,
+    PlatformLink,
+    RunResult,
+    UserNotificationChannel,
+    VolunteerResult,
+)
 from app.workers.celery_app import celery_app
 from app.workers.time_limits import LIMITS_MEDIUM, LIMITS_SHORT
 
@@ -141,31 +148,36 @@ def scan_new_results() -> dict[str, int]:
     # Курсор снимаем ДО запроса: записанное во время скана достанется следующему.
     cursor = now
     db = get_session_factory()()
+    user_ids: set[UUID] = set()
     try:
-        rows = (
-            db.query(PlatformLink.user_id)
-            .select_from(RunResult)
-            .join(Participant, RunResult.participant_id == Participant.id)
-            .join(
-                PlatformLink,
-                and_(
-                    PlatformLink.platform_id == Participant.platform_id,
-                    PlatformLink.external_user_id == Participant.external_user_id,
-                ),
+        # Пробежки и волонтёрства: организатор, не бежавший в субботу, тоже
+        # ждёт сообщения о своём старте.
+        for model in (RunResult, VolunteerResult):
+            rows = (
+                db.query(PlatformLink.user_id)
+                .select_from(model)
+                .join(Participant, model.participant_id == Participant.id)
+                .join(
+                    PlatformLink,
+                    and_(
+                        PlatformLink.platform_id == Participant.platform_id,
+                        PlatformLink.external_user_id == Participant.external_user_id,
+                    ),
+                )
+                .join(
+                    UserNotificationChannel,
+                    and_(
+                        UserNotificationChannel.user_id == PlatformLink.user_id,
+                        UserNotificationChannel.enabled.is_(True),
+                    ),
+                )
+                .filter(model.created_at > since, model.created_at <= cursor)
+                .distinct()
+                .all()
             )
-            .join(
-                UserNotificationChannel,
-                and_(
-                    UserNotificationChannel.user_id == PlatformLink.user_id, UserNotificationChannel.enabled.is_(True)
-                ),
-            )
-            .filter(RunResult.created_at > since, RunResult.created_at <= cursor)
-            .distinct()
-            .all()
-        )
+            user_ids.update(row[0] for row in rows)
     finally:
         db.close()
-    user_ids = {row[0] for row in rows}
     scheduled = schedule_activity_scan(user_ids)
     _save_watermark(cursor)
     result = {"users": len(user_ids), "scheduled": scheduled}

@@ -44,6 +44,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, LocationDescription, Platform, StartWeather
+from app.services.location_freshness import mark_location_results_changed
 from app.services.location_schedule_service import start_time_for_date
 
 logger = logging.getLogger(__name__)
@@ -138,7 +139,12 @@ def call_weight(start: date, end: date) -> int:
 # --------------------------------------------------------------------------- scope
 
 
-def list_scope_locations(db: Session, name_filters: Sequence[str] | None = None) -> list[WeatherLocation]:
+def list_scope_locations(
+    db: Session,
+    name_filters: Sequence[str] | None = None,
+    *,
+    location_ids: Sequence[UUID] | None = None,
+) -> list[WeatherLocation]:
     """Локации в периметре сбора: РФ любой системы + зарубежные RunPark/S95, с координатами и стартами."""
 
     stmt = (
@@ -158,6 +164,8 @@ def list_scope_locations(db: Session, name_filters: Sequence[str] | None = None)
         .where(select(Event.id).where(Event.location_id == Location.id, Event.is_test_event.is_(False)).exists())
         .order_by(Platform.code, Location.name)
     )
+    if location_ids is not None:
+        stmt = stmt.where(Location.id.in_(list(location_ids)))
     rows = db.execute(stmt).all()
     result: list[WeatherLocation] = []
     for row in rows:
@@ -200,11 +208,13 @@ def dates_to_fetch(dates: Sequence[date], stored: dict[date, str], *, preliminar
 
     Архивный прогон берёт всё, что ещё не окончательно: пустые даты,
     предварительные строки и строки best_match, до которых ERA5 уже дошёл.
-    Предварительный прогон — только даты, которых нет вовсе.
+    Предварительный прогон — пустые даты и свои же предварительные строки:
+    утром погоду кладёт загрузка протокола (collect_event_weather), вечерний
+    прогон переписывает её на данные модели за прошедший день.
     """
 
     if preliminary:
-        return [d for d in dates if d not in stored]
+        return [d for d in dates if stored.get(d, SOURCE_FORECAST) == SOURCE_FORECAST]
     return [d for d in dates if stored.get(d) != SOURCE_ERA5]
 
 
@@ -659,6 +669,64 @@ def collect_location_weather(
             if pause_seconds:
                 _time.sleep(pause_seconds)
     return stats
+
+
+def event_weather_needed(event_date: date, *, today: date | None = None) -> bool:
+    """Старт свежий: архив его ещё не отдаёт, а день уже наступил."""
+
+    today = today or date.today()
+    return today - timedelta(days=ARCHIVE_LAG_DAYS) < event_date <= today
+
+
+def collect_event_weather(
+    db: Session,
+    client: httpx.Client,
+    location_id: UUID,
+    event_date: date,
+    *,
+    today: date | None = None,
+) -> int:
+    """Предварительная погода одного свежего старта — в момент загрузки протокола.
+
+    Уведомление «пробежка попала на сайт» уходит в тот же час, а общий сбор
+    идёт только в 17:00 субботы: без этого сообщение и журнал локации
+    оставались бы без погоды до вечера. Уже лежащую строку не трогаем —
+    обновит её вечерний прогон (см. dates_to_fetch), а окончательную —
+    ночной архивный. Возвращает число записанных строк (0 или 1).
+    """
+
+    if not event_weather_needed(event_date, today=today):
+        return 0
+    exists = db.execute(
+        select(StartWeather.source).where(StartWeather.location_id == location_id, StartWeather.obs_date == event_date)
+    ).first()
+    if exists is not None:
+        return 0
+    locations = list_scope_locations(db, location_ids=[location_id])
+    if not locations:
+        # Вне периметра (зарубежный parkrun) или без координат.
+        return 0
+    location = locations[0]
+    # Закрыть транзакцию чтения до похода в сеть (idle-in-transaction на проде).
+    db.rollback()
+    payload = fetch_archive(
+        client,
+        location.latitude,
+        location.longitude,
+        event_date,
+        event_date,
+        retries=2,
+        wait_hourly_reset=False,
+        endpoint=OPEN_METEO_FORECAST_URL,
+        model=MODEL_FORECAST_NAME,
+    )
+    remember_timezone(db, location.id, payload.get("timezone"))
+    rows, _skipped = build_rows(payload, location, [event_date], fetched_at=datetime.now(UTC), source=SOURCE_FORECAST)
+    written = upsert_rows(db, rows)
+    if written:
+        mark_location_results_changed(db, [location.id], reason="погода старта")
+    db.commit()
+    return written
 
 
 def coverage_summary(db: Session) -> tuple[int, int]:

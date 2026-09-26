@@ -556,6 +556,13 @@ def upsert_event_for_summary(
         db.flush()
     summary_row.event_id = row.id
     db.flush()
+    if not summary.is_test_event:
+        # Погода свежего старта — сразу с протоколом, а не в 17:00: с ней
+        # уходит уведомление «пробежка попала на сайт». Старт с погодой задача
+        # пропустит одним SELECT'ом, старые даты отсекаются здесь же.
+        from app.workers.tasks.weather_collect import schedule_event_weather
+
+        schedule_event_weather(location.id, summary.event_date)
     return row
 
 

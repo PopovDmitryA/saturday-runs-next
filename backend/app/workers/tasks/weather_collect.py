@@ -16,16 +16,25 @@ source='forecast'; ночной архивный прогон в понедел�
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import httpx
 
 from app.core.rate_limit import get_redis
+from app.core.runtime_env import is_test_run
 from app.db.session import get_session_factory
 from app.services.admin_telegram_notify import send_admin_report
-from app.services.weather_service import ScopeRunSummary, collect_scope, format_run_report
+from app.services.weather_service import (
+    ScopeRunSummary,
+    collect_event_weather,
+    collect_scope,
+    event_weather_needed,
+    format_run_report,
+)
 from app.workers.celery_app import celery_app
+from app.workers.time_limits import LIMITS_SHORT
 
 logger = logging.getLogger(__name__)
 
@@ -101,3 +110,40 @@ def collect_preliminary_task() -> dict[str, object]:
         "locations_touched": summary.locations_touched,
         "error": summary.error,
     }
+
+
+@celery_app.task(name="weather.collect_event", **LIMITS_SHORT)
+def collect_event_weather_task(location_id: str, event_date: str) -> int:
+    """Погода одного свежего старта — ставится при записи нового события."""
+    db = get_session_factory()()
+    try:
+        with httpx.Client(headers={"User-Agent": "run5k.run weather collector"}) as client:
+            return collect_event_weather(db, client, UUID(location_id), date.fromisoformat(event_date))
+    except Exception:  # noqa: BLE001 — не критично: доберут уведомление или вечерний прогон
+        logger.exception("Погода старта %s %s не собрана", location_id, event_date)
+        db.rollback()
+        return 0
+    finally:
+        db.close()
+
+
+# Пауза перед сбором: задача ставится из транзакции синка, и у новой локации
+# без закоммиченного события периметр сбора её ещё не видит.
+EVENT_WEATHER_COUNTDOWN_SECONDS = 30
+
+
+def schedule_event_weather(location_id: UUID, event_date: date) -> bool:
+    """Поставить сбор погоды свежего старта. Брокер лёг — просто пропускаем:
+    погоду доберёт уведомление о пробежке или вечерний прогон."""
+    if is_test_run() or not event_weather_needed(event_date):
+        return False
+    try:
+        collect_event_weather_task.apply_async(
+            args=[str(location_id), event_date.isoformat()],
+            countdown=EVENT_WEATHER_COUNTDOWN_SECONDS,
+            queue="celery",
+        )
+    except Exception:  # noqa: BLE001 — недоступность Redis не должна ронять синк
+        logger.exception("Не удалось поставить сбор погоды старта %s %s", location_id, event_date)
+        return False
+    return True

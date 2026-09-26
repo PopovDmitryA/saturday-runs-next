@@ -185,8 +185,9 @@ def test_observation_dates_upper_override_and_dates_to_fetch() -> None:
         date(2026, 9, 19),
         date(2026, 9, 26),
     ]
-    # Предварительный: только то, чего нет вовсе.
-    assert dates_to_fetch(dates, stored, preliminary=True) == [date(2026, 9, 26)]
+    # Предварительный: пустые даты и свои предварительные строки — утреннюю
+    # погоду, положенную загрузкой протокола, вечерний прогон переписывает.
+    assert dates_to_fetch(dates, stored, preliminary=True) == [date(2026, 9, 19), date(2026, 9, 26)]
 
 
 def test_chunks_split_fresh_dates_from_history() -> None:
@@ -329,3 +330,88 @@ def test_old_rows_keep_the_old_rain_threshold() -> None:
     assert rain_kind(0.5, new_row) == "rain"
     # Без отметки времени считаем строку новой — так ведут себя свежие данные.
     assert is_rain(0.5)
+
+
+def test_event_weather_needed_only_for_fresh_starts() -> None:
+    from app.services.weather_service import event_weather_needed
+
+    today = date(2026, 9, 26)
+    assert event_weather_needed(date(2026, 9, 26), today=today)
+    assert event_weather_needed(date(2026, 9, 25), today=today)
+    # Дальше лага архива — погоду берёт ночной архивный прогон.
+    assert not event_weather_needed(date(2026, 9, 24), today=today)
+    assert not event_weather_needed(date(2026, 9, 27), today=today)
+
+
+def _one_day_payload(day: date) -> dict[str, object]:
+    return {
+        "timezone": "Europe/Moscow",
+        "hourly": {
+            "time": [f"{day.isoformat()}T{h:02d}:00" for h in range(24)],
+            "temperature_2m": [12.0] * 24,
+            "apparent_temperature": [11.0] * 24,
+            "relative_humidity_2m": [70] * 24,
+            "precipitation": [0.0] * 24,
+            "snowfall": [0.0] * 24,
+            "snow_depth": [0.0] * 24,
+            "weather_code": [1] * 24,
+            "cloud_cover": [20] * 24,
+            "wind_speed_10m": [3.0] * 24,
+            "wind_gusts_10m": [5.0] * 24,
+        },
+    }
+
+
+def test_collect_event_weather_writes_forecast_row_once(db_session) -> None:  # type: ignore[no-untyped-def]
+    """Загрузка протокола кладёт предварительную погоду; второй раз в сеть не ходит."""
+    import httpx
+    import pytest
+
+    from app.models import Event, Location, Platform, StartWeather
+    from app.services.weather_service import SOURCE_FORECAST, collect_event_weather
+
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        pytest.skip("five_verst platform not seeded")
+    location = Location(
+        platform_id=platform.id,
+        external_key=f"weather-event-{uuid4().hex[:8]}",
+        name="Погодный парк",
+        country="Россия",
+        latitude=55.667,
+        longitude=37.404,
+        source_url="https://5verst.ru/weather-event/",
+    )
+    db_session.add(location)
+    db_session.flush()
+    day = date(2026, 9, 26)
+    db_session.add(
+        Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"{location.external_key}:1:{day.isoformat()}",
+            event_date=day,
+            title="Погодный парк",
+        )
+    )
+    # Сбор откатывает транзакцию перед походом в сеть — подготовку фиксируем.
+    db_session.commit()
+
+    calls: list[dict[str, str]] = []
+
+    class FakeClient:
+        def get(self, url, params, timeout):  # type: ignore[no-untyped-def]
+            calls.append(params)
+            return httpx.Response(200, json=_one_day_payload(day), request=httpx.Request("GET", url))
+
+    assert collect_event_weather(db_session, FakeClient(), location.id, day, today=day) == 1  # type: ignore[arg-type]
+    row = db_session.query(StartWeather).filter(StartWeather.location_id == location.id).one()
+    assert row.source == SOURCE_FORECAST
+    assert row.temperature_c == Decimal("12.0")
+    assert calls[0]["start_date"] == calls[0]["end_date"] == "2026-09-26"
+
+    assert collect_event_weather(db_session, FakeClient(), location.id, day, today=day) == 0  # type: ignore[arg-type]
+    assert len(calls) == 1
+    # Старт старше лага архива — сеть не трогаем вовсе.
+    assert collect_event_weather(db_session, FakeClient(), location.id, date(2026, 9, 12), today=day) == 0  # type: ignore[arg-type]
+    assert len(calls) == 1

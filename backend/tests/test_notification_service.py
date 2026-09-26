@@ -24,6 +24,7 @@ from app.models import (
     PlatformLink,
     RunResult,
     User,
+    VolunteerResult,
 )
 from app.notification_kinds import KIND_BY_CODE, NOTIFICATION_KINDS, NotificationKind, kind_enabled
 from app.notification_markup import to_email_html, to_plain, to_telegram_html
@@ -687,7 +688,7 @@ def test_scan_composes_single_digest(
     )
 
     summary = activity.scan_user_activity(db_session, user.id)
-    assert summary == {"runs": 1, "level_ups": 1, "milestones": 1, "queued": True}
+    assert summary == {"runs": 1, "volunteerings": 0, "level_ups": 1, "milestones": 1, "queued": True}
 
     delivery = db_session.query(NotificationDelivery).filter_by(user_id=user.id).one()
     assert delivery.kind == "runs"
@@ -751,6 +752,70 @@ def test_scan_first_snapshots_are_silent_and_old_runs_ignored(
     db_session.refresh(prefs)
     assert prefs.challenge_levels == {"seconds": {"easy": "gold"}}
     assert prefs.milestones_seen == [activity.milestone_key({"kind": "first_run", "event_date": today})]
+
+
+def _volunteer_for(db: Session, user: User, event_id: UUID, roles: list[str]) -> None:
+    platform = _platform(db)
+    external = f"9{user.serial_id:011d}"
+    participant = db.query(Participant).filter_by(platform_id=platform.id, external_user_id=external).one()
+    for role in roles:
+        db.add(
+            VolunteerResult(
+                event_id=event_id,
+                participant_id=participant.id,
+                external_result_key=f"v-{uuid4().hex[:8]}",
+                role=role,
+            )
+        )
+    db.commit()
+
+
+def test_scan_reports_volunteering_without_a_run(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, _no_broker: list[UUID]
+) -> None:
+    """Организатор, не бежавший в субботу, тоже получает сообщение — роли одним блоком."""
+    user = _make_user(db_session, chat_id=100)
+    _fake_sources(monkeypatch, levels={}, ranks={}, milestones=[])
+    today = datetime.now(UTC).date()
+    # Участник и событие — через готовый хелпер, пробежку убираем: человек только волонтёрил.
+    run = _run_for(db_session, user, event_date=today - timedelta(days=1))
+    event_id = run.event_id
+    db_session.delete(run)
+    db_session.commit()
+    _enable_with_seeds(db_session, user, levels={}, ranks={}, keys=[])
+    _volunteer_for(db_session, user, event_id, ["Организатор", "Обработка результатов"])
+
+    summary = activity.scan_user_activity(db_session, user.id)
+    assert summary["volunteerings"] == 1 and summary["runs"] == 0 and summary["queued"] is True
+    delivery = db_session.query(NotificationDelivery).filter_by(user_id=user.id).one()
+    assert delivery.kind == "volunteering"
+    assert delivery.payload["title"] == "🦺 Волонтёрство попало на сайт"
+    assert "**🦺 Мещерский парк (5 вёрст) №123 · " in delivery.payload["text"]
+    assert "🙌 Обработка результатов, Организатор" in delivery.payload["text"]
+    assert delivery.payload["url"].endswith(f"/users/{user.serial_id}/volunteering")
+
+    # Вид выключен — молчим.
+    notify.update_prefs(db_session, user.id, kinds={"volunteering": False})
+    _volunteer_for(db_session, user, event_id, ["Фотограф"])
+    assert activity.scan_user_activity(db_session, user.id)["volunteerings"] == 0
+
+
+def test_scan_run_and_volunteering_in_one_message(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, _no_broker: list[UUID]
+) -> None:
+    user = _make_user(db_session, chat_id=100)
+    _fake_sources(monkeypatch, levels={}, ranks={}, milestones=[])
+    _enable_with_seeds(db_session, user, levels={}, ranks={}, keys=[])
+    today = datetime.now(UTC).date()
+    run = _run_for(db_session, user, event_date=today - timedelta(days=1))
+    _volunteer_for(db_session, user, run.event_id, ["Замыкающий"])
+
+    assert activity.scan_user_activity(db_session, user.id)["queued"] is True
+    delivery = db_session.query(NotificationDelivery).filter_by(user_id=user.id).one()
+    assert delivery.kind == "runs"
+    assert delivery.payload["title"] == "🏃 Пробежка и волонтёрство на сайте"
+    assert "**📍 Мещерский парк" in delivery.payload["text"]
+    assert "🙌 Замыкающий" in delivery.payload["text"]
 
 
 def test_scan_levels_only_message(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
