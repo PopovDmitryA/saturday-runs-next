@@ -183,7 +183,7 @@ export function OrganizerSwitcher({
         type="button"
         className="site-org-switch-button"
         aria-expanded={open}
-        aria-controls={listId}
+        aria-controls={open ? listId : undefined}
         title="Другая локация"
         onClick={() => setOpen((value) => !value)}
       >

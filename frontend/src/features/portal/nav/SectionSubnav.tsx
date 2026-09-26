@@ -18,6 +18,9 @@
  * выходит за полосу, Esc закрывает и возвращает фокус на кнопку. Разметка —
  * «раскрывашка» (кнопка с aria-expanded и обычный список ссылок), а не
  * role=menu: меню без стрелок сбивало экранных дикторов (ревью, a11y-2).
+ * Пока список открыт, затемнение лежит и над шапкой, и над нижней панелью, и
+ * над плашкой «вы» в рейтингах: раньше они оставались нажимаемыми поверх
+ * затемнения, а плашка закрывала последний пункт списка (проверка 26.09.2026).
  *
  * Страницы берутся из дерева навигации (siteNav.ts) по текущему разделу. Чужой
  * профиль — не раздел сайта, его вкладки страница передаёт сама (`custom`):
@@ -27,7 +30,9 @@
  * таблиц и полоса «Кратко | Полно» отсчитывают свой верх от шапки сайта
  * вместе с этой полосой (см. siteNav.css), иначе полоса их закрывала бы.
  * Эта же метка прячет хлебные крошки над заголовком страницы (полоса уже
- * говорит, где человек, см. siteNavMobile.css).
+ * говорит, где человек, см. siteNavMobile.css). Кроме кабинета организатора
+ * (метка has-site-subnav-organizer): там в крошках единственная ссылка из
+ * кабинета на публичную страницу локации, и полоса её не заменяет.
  *
  * На компьютере полосы нет: там эту роль играет колонка SiteSidebar.
  */
@@ -103,19 +108,22 @@ function PickerDropdown({
   groups,
   pathname,
   onDismiss,
-  onLinkClick,
 }: {
   id: string;
   groups: NavGroup[];
   pathname: string;
   onDismiss: () => void;
-  onLinkClick: (event: React.MouseEvent) => void;
 }) {
+  // Переходы по ссылкам списка (и по любым другим, пока он открыт) ловит
+  // useOverlayHistory на всём документе: сначала снимает запись списка из
+  // истории, потом переходит.
   return (
     <>
-      {/* Затемнение под списком: тап мимо закрывает его. */}
+      {/* Затемнение — выше полосы (над шапкой) и ниже неё, до низа экрана;
+          сама полоса остаётся яркой. Тап мимо закрывает список. */}
+      <div className="site-subnav-scrim site-subnav-scrim-top" onClick={onDismiss} role="presentation" />
       <div className="site-subnav-scrim" onClick={onDismiss} role="presentation" />
-      <div id={id} className="site-subnav-dropdown" onClick={onLinkClick}>
+      <div id={id} className="site-subnav-dropdown">
         {groups.map((group) => (
           <div
             key={group.key}
@@ -202,6 +210,13 @@ export function SectionSubnav(
     return () => document.documentElement.classList.remove("has-site-subnav");
   }, [visible]);
 
+  const isOrganizer = !custom && current?.key === "organizer" && organizerPlace != null;
+  useEffect(() => {
+    if (!visible || !isOrganizer) return;
+    document.documentElement.classList.add("has-site-subnav-organizer");
+    return () => document.documentElement.classList.remove("has-site-subnav-organizer");
+  }, [visible, isOrganizer]);
+
   // Пока список открыт, страница под ним не прокручивается. Экран стал шире
   // 900px (повернули планшет) — полосы там нет, закрываем и список.
   const { dismiss } = overlayHistory;
@@ -233,7 +248,6 @@ export function SectionSubnav(
 
   if ((!custom && !current) || !visible) return null;
 
-  const isOrganizer = !custom && current?.key === "organizer" && organizerPlace != null;
   if (links.length <= TABS_LIMIT && !isOrganizer) {
     return (
       <nav className="site-subnav" aria-label={`Страницы раздела: ${sectionLabel}`}>
@@ -298,7 +312,6 @@ export function SectionSubnav(
           groups={groups}
           pathname={pathname}
           onDismiss={overlayHistory.dismiss}
-          onLinkClick={overlayHistory.interceptLinks}
         />
       )}
     </nav>

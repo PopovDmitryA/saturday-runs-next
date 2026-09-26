@@ -30,6 +30,10 @@ class SearchRegisteredPersonResponse(BaseModel):
     last_run_date: dt.date | None = None
     top_location_name: str | None = None
     platform_codes: list[str] = Field(default_factory=list)
+    # Слово запроса нашлось только в середине слова имени («лев» в
+    # «Михалевском»): такие строки идут после всех совпадений с начала слова,
+    # и окно показывает их отдельной группой.
+    partial: bool = False
 
 
 class SearchParticipantResponse(BaseModel):
@@ -47,6 +51,7 @@ class SearchParticipantResponse(BaseModel):
     top_location_name: str | None = None
     top_location_city: str | None = None
     platform_codes: list[str] = Field(default_factory=list)
+    partial: bool = False
 
 
 SearchPersonResponse = Annotated[

@@ -50,10 +50,8 @@ function MomentPreview({ subject }: { subject: ShareSubject }) {
   );
 }
 
-// Тело страницы без каркаса: его рисует кабинет (PortalCabinetShell). Проп
-// bare остался от старой обёртки AppShell (удалена 26.09.2026) и ни на что не
-// влияет.
-export function SharingContent(_props: { bare?: boolean } = {}) {
+// Тело страницы без каркаса: его рисует кабинет (PortalCabinetShell).
+export function SharingContent() {
   const sheet = useOptionalShareSheet();
   const user = useOptionalUser();
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);

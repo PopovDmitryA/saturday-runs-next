@@ -108,10 +108,18 @@ export function useFloatingTableHead(
       if (needsRebuild) rebuild();
       float.hidden = false;
       float.style.top = `${offset}px`;
-      float.style.left = `${box.left}px`;
-      float.style.width = `${box.width}px`;
+      // Рамка обёртки (border) не листается: копия встаёт ровно на её
+      // прокручиваемую область. По внешнему краю она была шире на две рамки и
+      // стояла на пиксель левее колонок таблицы.
+      float.style.left = `${box.left + wrap.clientLeft}px`;
+      float.style.width = `${wrap.clientWidth}px`;
       float.style.height = `${height}px`;
-      inner.style.transform = `translateX(${-wrap.scrollLeft}px)`;
+      // Копию листаем её собственной прокруткой (overflow: hidden это
+      // позволяет), а не сдвигом через transform: так ячейки, липкие по
+      // горизонтали («Место» и «Участник» в рейтингах), прилипают и в копии,
+      // как в самой таблице. Со сдвигом копия уезжала целиком, и над именами
+      // висели подписи чужих колонок — «5 вёрст», «С95» (проверка 26.09.2026).
+      float.scrollLeft = wrap.scrollLeft;
     };
 
     const schedule = () => {

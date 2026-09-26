@@ -137,6 +137,21 @@ export function organizerEntryPlace(user: User | null | undefined): { slug: stri
   return null;
 }
 
+/**
+ * Есть ли у организатора выбор между локациями: больше одной своей или он
+ * админ (у админа в кабинете весь каталог). Тогда «Мои локации» остаются в
+ * дереве, даже когда «Оргкабинет» уже ведёт в запомненную локацию: иначе
+ * список не находил поиск и не показывало «Меню» на телефоне (V9).
+ */
+export function organizerHasManyPlaces(user: User | null | undefined): boolean {
+  if (user === null) return false;
+  if (user?.is_admin) return true;
+  // Пока сессия проверяется — по тому, кого браузер помнит организатором.
+  const userId = user?.id ?? readNav()?.userId;
+  if (!userId) return false;
+  return (readOrganizerLocations(userId)?.length ?? 0) > 1;
+}
+
 /** Выход из аккаунта: роль, последняя локация и список — всё чужое следующему. */
 export function forgetOrganizer(): void {
   try {

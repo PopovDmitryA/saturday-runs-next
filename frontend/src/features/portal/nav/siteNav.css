@@ -17,7 +17,9 @@
   align-items: stretch;
   gap: 12px;
   margin-top: 20px;
-  max-height: calc(100vh - 96px);
+  /* --site-nav-max-h ставит SiteSidebar, когда снизу поднимается подвал:
+     меню становится ниже, а не уезжает под шапку (desk-12). */
+  max-height: var(--site-nav-max-h, calc(100vh - 96px));
 }
 
 .site-rail {
@@ -33,7 +35,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 14px;
-  max-height: calc(100vh - 96px);
+  max-height: var(--site-nav-max-h, calc(100vh - 96px));
   overflow-y: auto;
 }
 
@@ -120,7 +122,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: calc(100vh - 96px);
+  max-height: var(--site-nav-max-h, calc(100vh - 96px));
   overflow-y: auto;
   padding: 6px;
   background: var(--surface);
@@ -431,6 +433,15 @@ div.site-col-extra-head {
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
 }
 
+/* Список из полосы (свёрнутая колонка, телефон): чип узкий, а список по
+   умолчанию был бы шириной с него — «Все мои локации» переносилось на две
+   строки (V12). В колонке так нельзя: она прокручивается и обрезала бы
+   список, там он шириной с колонку. */
+.site-org-switch-chip .site-org-switch-menu {
+  width: max-content;
+  max-width: min(320px, calc(100vw - 32px));
+}
+
 .site-org-switch-item {
   display: flex;
   flex-direction: column;
@@ -601,6 +612,16 @@ div.site-col-extra-head {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* 320px: пятая часть экрана — 63px, а «Оргкабинет» в 10.5px — 70px и
+     обрезался многоточием (V13). Сократить слово нельзя: раздел везде
+     называется одинаково, поэтому ужимаем шрифт только на этой ширине. */
+  @media (max-width: 340px) {
+    .site-bottomnav-item {
+      font-size: 9.5px;
+      letter-spacing: -0.04em;
+    }
   }
 
   /* шторка «Меню» */
@@ -1345,6 +1366,16 @@ a.site-search-row:hover {
     font-weight: 500;
   }
 
+  /* 360–389px: «Туристы · Уникальные ло…», «Туристы · Дальность от …» —
+     группа съедала место у названия страницы. На самых узких экранах
+     оставляем только страницу: группа видна в раскрытом списке, полное имя —
+     в H1 (проверка 26.09.2026). */
+  @media (max-width: 389px) {
+    .site-subnav-picker-group {
+      display: none;
+    }
+  }
+
   .site-subnav-picker-label {
     font-weight: 700;
   }
@@ -1537,8 +1568,8 @@ a.site-search-row:hover {
   display: flex;
 }
 
+/* Предел ширины кнопки (220px) — у .portal-header-user в portal.css. */
 .account-menu-button {
-  max-width: 220px;
   font-family: inherit;
   cursor: pointer;
 }

@@ -64,3 +64,32 @@ def test_frontend_has_no_links_to_foreign_profiles() -> None:
                     continue
                 offenders.append(f"{path.relative_to(frontend)}:{number}: {line.strip()}")
     assert not offenders, "ссылки на чужие профили:\n" + "\n".join(offenders)
+
+
+# Адрес профиля в беговой системе собирается во фронтенде из номера участника
+# (lib/platformProfileUrl.ts) — такая ссылка сторожу выше не видна: в ней нет
+# profile_url. Её поймал проверяющий на чужом профиле (26.09.2026). Разрешено
+# только там, где человек видит СВОИ привязки, и в админке.
+PLATFORM_PROFILE_URL_ALLOWED = {
+    "lib/platformProfileUrl.ts",  # сама функция
+    "components/ProfileLinkSection.tsx",  # карточка своей привязки в настройках
+    "features/admin/AdminUsersPage.tsx",  # админка
+}
+
+
+def test_platform_profile_url_only_for_own_links() -> None:
+    frontend = _frontend_dir()
+    files = [*frontend.rglob("*.ts"), *frontend.rglob("*.tsx")]
+    assert len(files) > 50, f"подозрительно мало файлов для проверки: {len(files)}"
+    offenders: list[str] = []
+    for path in files:
+        relative = path.relative_to(frontend).as_posix()
+        if relative in PLATFORM_PROFILE_URL_ALLOWED:
+            continue
+        for number, line in enumerate(path.read_text().splitlines(), start=1):
+            if "platformProfileUrl" in line:
+                offenders.append(f"{relative}:{number}: {line.strip()}")
+    assert not offenders, (
+        "platformProfileUrl собирает ссылку на профиль в чужой системе — "
+        "только для своих привязок и админки:\n" + "\n".join(offenders)
+    )

@@ -206,6 +206,23 @@
   min-width: 0;
 }
 
+/* Выбор события (FilterSelect): длинная подпись «№ … · дата · …» не
+   переносится, и на 360–390px кнопка распирала страницу вбок до 467px
+   (/organizer/…/report). Карточка — сетка с колонкой auto, и ряд задавал ей
+   ширину своим min-content. Разрешаем ужиматься по цепочке ряд → label →
+   .fp-select → кнопка → подпись; подпись обрезается многоточием
+   (.fp-select-value). */
+.org-toolbar-row,
+.org-toolbar-row .fp-select,
+.org-toolbar-row .fp-select-button,
+.org-toolbar-row .fp-select-value {
+  min-width: 0;
+}
+
+.org-toolbar-row .fp-select-button {
+  max-width: 100%;
+}
+
 .org-toolbar-row .btn {
   flex: 0 0 auto;
 }

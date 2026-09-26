@@ -2587,6 +2587,17 @@ input[type="search"]:focus,
   position: static;
 }
 
+/* Ширина ячейки копии — ровно ширина оригинала (её выставляет хук): без
+   сброса min/max-width из стилей таблицы (у рейтингов на телефоне «Место»
+   и «Участник» зажаты в 4.4rem и 8.5rem) ячейки копии сжимались на 7–22px, и
+   подписи вставали не над своими числами (проверка 26.09.2026). !important —
+   потому что правила таблиц весят по три-четыре класса, а сброс должен
+   перебить любое из них. */
+.float-thead thead th {
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
 .data-table-filterable thead th {
   padding: 0.5rem 0.65rem;
   vertical-align: middle;
@@ -4039,8 +4050,12 @@ button.badge-platform-btn:hover {
   gap: 0.5rem;
 }
 
+/* Длинный адрес https://run5k.run/users/… без пробелов не переносился и на
+   360px уводил /settings вбок до 377px (V16). */
 .profile-slug-current {
   margin: 0.75rem 0 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .profile-slug-field {
@@ -4049,6 +4064,8 @@ button.badge-platform-btn:hover {
   gap: 0;
   margin-top: 0.75rem;
   max-width: 26rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
   border: 1px solid var(--border, var(--border-strong));
   border-radius: 0.5rem;
   overflow: hidden;
@@ -11688,9 +11705,13 @@ a.admin-system-chip:hover {
 
 /* То же в новой раскладке (рельс + колонка): .shell-content там нет, и правило
    выше не срабатывает. Ширина уже 1440px у .portal-cab-layout, осталось
-   подрезать вылезающие вбок подсказки. */
-.portal-cab-main:has(.loc-wide-page) {
-  overflow-x: clip;
+   подрезать вылезающие вбок подсказки. Только на компьютере: на телефоне
+   обрезка по main срезала бы края липкой полосы страниц — там подрезается
+   вся раскладка по краям экрана (nav/siteNavMobile.css). */
+@media (min-width: 901px) {
+  .portal-cab-main:has(.loc-wide-page) {
+    overflow-x: clip;
+  }
 }
 
 /* Карточка каталога (и «Результатов последней субботы») — сетка .card с одной
@@ -11701,6 +11722,18 @@ a.admin-system-chip:hover {
    ширине карточки, а широкие таблицы листаются внутри своих рамок. */
 .card.loc-wide-page {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* «Система» в фильтрах каталога («Все · 5 вёрст · С95 · RunPark») на 360–390
+   не помещается в свою рамку: «RunPark» обрезался посередине и уезжал в
+   прокрутку, о которой ничто не намекало (проверка 26.09.2026). На узком
+   телефоне кнопки переносятся второй строкой — все варианты на виду. */
+@media (max-width: 480px) {
+  .loc-wide-page .fp-tabs {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    border-radius: 1.2rem;
+  }
 }
 
 .loc-index-table td.td-location {

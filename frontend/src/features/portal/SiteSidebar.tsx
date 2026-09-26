@@ -19,13 +19,20 @@
  * Интерфейс компонента прежний (active, location, user, extraGroup…), поэтому
  * три десятка страниц менять не пришлось.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { logout, type User } from "../../lib/api";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { userLabel } from "../../lib/userLabel";
 import { clearCachedUser, useOptionalUser } from "../../lib/useOptionalUser";
 import {
-  CABINET_ICONS,
   CHEVRON_LEFT_ICON,
   CHEVRON_RIGHT_ICON,
   LOCATIONS_ICON,
@@ -45,15 +52,11 @@ import "./cabinet/cabinet.css";
 import "./nav/siteNav.css";
 import "./nav/siteNavDesktop.css";
 
-export { icon } from "./nav/navIcons";
-export { isCabinetTab, type SiteSidebarActive } from "./nav/navState";
+export type { SiteSidebarActive } from "./nav/navState";
+// CabinetTabKey и userLabel забирает отсюда каркас кабинета
+// (cabinet/PortalCabinetShell) и раздаёт своим страницам.
 export type { CabinetTabKey } from "./nav/siteNav";
-// Имя пользователя нужно и герою дашборда; живёт в lib/userLabel, отсюда —
-// ради старых импортов.
 export { userLabel };
-
-/** Иконки вкладок кабинета — ими же рисует вкладки чужой профиль. */
-export const NAV_ICONS = CABINET_ICONS;
 
 export const SECTION_ICONS: Record<NavSectionKey, ReactNode> = {
   me: ME_ICON,
@@ -119,7 +122,8 @@ export type SiteSidebarProps = {
 
 export function SiteSidebar({ active, user: userProp, location, onCollapsedChange, extraGroup }: SiteSidebarProps) {
   // Хук вызывается всегда (правила хуков); если user передан пропом — он главнее.
-  const detectedUser = useOptionalUser();
+  // unknownAsPending: сбой /auth/me — не повод перестраивать рельс в гостевой.
+  const detectedUser = useOptionalUser({ unknownAsPending: true });
   const user = userProp !== undefined ? userProp : detectedUser;
 
   const [collapsed, setCollapsed] = useState(() => {
@@ -179,13 +183,19 @@ export function SiteSidebar({ active, user: userProp, location, onCollapsedChang
   // если раздела нет — свой кабинет.
   const columnSection = current ?? (extraGroup ? null : sections[0]);
 
+  const asideRef = useRef<HTMLElement>(null);
   const colRef = useRef<HTMLElement>(null);
-  useColumnScroll(colRef, `${pathname}|${collapsed}|${columnSection?.key ?? ""}`);
+  useColumnScroll(colRef, columnSection?.key ?? "extra", `${pathname}|${collapsed}`);
+  useNavFitsAboveContentEnd(asideRef);
 
   const collapseLabel = collapsed ? "Показать меню" : "Свернуть меню";
 
   return (
-    <aside className={`site-nav${collapsed ? " site-nav-collapsed" : ""}`} aria-label="Навигация по сайту">
+    <aside
+      ref={asideRef}
+      className={`site-nav${collapsed ? " site-nav-collapsed" : ""}`}
+      aria-label="Навигация по сайту"
+    >
       <nav className="site-rail" aria-label="Разделы сайта">
         {visibleSections.map((section) => {
           const isCurrent = section.key === current?.key;
@@ -247,16 +257,28 @@ export function SiteSidebar({ active, user: userProp, location, onCollapsedChang
 }
 
 /**
- * Колонка на невысоком экране: при открытии страницы прокручиваем её к
- * текущему пункту — сама по себе она стояла в начале, и «Регионы» или «Мы и
- * соседи» на ноутбуке 1366×768 оказывались ниже края (desk-8). Прокручиваем
- * только колонку, не страницу: scrollIntoView сдвинул бы и окно. Пока ниже
- * есть пункты, внизу колонки — затухание (класс site-col-more).
+ * Где колонка была прокручена в последний раз — по разделу. Колонка
+ * пересоздаётся на каждом переходе (страница собирается заново, см.
+ * hooks/useEntryKey) и начинала с начала: прокрутил её, нажал пункт — и
+ * список под курсором прыгал (V8). Живёт в модуле: переходы идут без
+ * перезагрузки, а после F5 начать с начала — нормально.
  */
-function useColumnScroll(colRef: RefObject<HTMLElement | null>, trigger: string): void {
+const columnScrollMemory = new Map<string, number>();
+
+/**
+ * Колонка на невысоком экране: при открытии страницы возвращаем её прокрутку
+ * и докручиваем, только если текущий пункт оказался за краем — сама по себе
+ * она стояла в начале, и «Регионы» или «Мы и соседи» на ноутбуке 1366×768
+ * оказывались ниже края (desk-8). Прокручиваем только колонку, не страницу:
+ * scrollIntoView сдвинул бы и окно. Пока ниже есть пункты, внизу колонки —
+ * затухание (класс site-col-more).
+ */
+function useColumnScroll(colRef: RefObject<HTMLElement | null>, memoryKey: string, trigger: string): void {
   useLayoutEffect(() => {
     const col = colRef.current;
     if (!col) return;
+    const remembered = columnScrollMemory.get(memoryKey);
+    if (remembered !== undefined) col.scrollTop = remembered;
     const active = col.querySelector<HTMLElement>('[aria-current="page"]');
     if (active) {
       const box = col.getBoundingClientRect();
@@ -271,17 +293,82 @@ function useColumnScroll(colRef: RefObject<HTMLElement | null>, trigger: string)
     const update = () => {
       col.classList.toggle("site-col-more", col.scrollHeight - col.scrollTop - col.clientHeight > 2);
     };
+    const onScroll = () => {
+      columnScrollMemory.set(memoryKey, col.scrollTop);
+      update();
+    };
     update();
-    col.addEventListener("scroll", update, { passive: true });
+    col.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", update);
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
     observer?.observe(col);
     return () => {
-      col.removeEventListener("scroll", update);
+      col.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", update);
       observer?.disconnect();
     };
-  }, [colRef, trigger]);
+  }, [colRef, memoryKey, trigger]);
+}
+
+// Меню не ниже этого: дальше его уже можно отдать подвалу, как раньше. На
+// ноутбуке 1280×650 в самом конце страницы места под меню ~220px — рельс в
+// нём прокручивается, но не уходит под шапку.
+const NAV_MIN_HEIGHT = 200;
+
+/**
+ * Рельс с колонкой не уходят под шапку в конце длинной страницы (desk-12).
+ * Липкое меню не может выйти за низ своего контейнера, а контейнер кончается
+ * вместе с содержимым страницы: когда снизу подъезжал подвал, меню
+ * выталкивало вверх, и под шапку уходили «Кабинет», заголовок колонки и
+ * первые группы. Теперь, пока подвал поднимается, меню становится ниже
+ * (колонка прокручивается внутри себя, затухание подсказывает это), а верх
+ * остаётся на месте.
+ *
+ * Только когда содержимое страницы выше самого меню: тогда высота контейнера
+ * от меню не зависит, и ужатие не запускает цепочку «меню ниже → страница
+ * короче → меню ещё ниже». На короткой странице всё как было.
+ */
+function useNavFitsAboveContentEnd(asideRef: RefObject<HTMLElement | null>): void {
+  useLayoutEffect(() => {
+    const aside = asideRef.current;
+    const main = aside?.parentElement?.querySelector<HTMLElement>(":scope > main");
+    if (!aside || !main) return;
+    let frame = 0;
+    let applied = "";
+    const apply = (value: string) => {
+      if (value === applied) return;
+      applied = value;
+      if (value) aside.style.setProperty("--site-nav-max-h", value);
+      else aside.style.removeProperty("--site-nav-max-h");
+    };
+    const measure = () => {
+      frame = 0;
+      // На телефоне меню нет — там нижняя панель.
+      if (window.innerWidth <= 900) return apply("");
+      const screenLimit = window.innerHeight - 96;
+      const mainBox = main.getBoundingClientRect();
+      if (mainBox.height < screenLimit) return apply("");
+      const stickyTop = parseFloat(getComputedStyle(aside).top) || 76;
+      const room = Math.floor(mainBox.bottom - stickyTop);
+      apply(room >= screenLimit ? "" : `${Math.max(room, NAV_MIN_HEIGHT)}px`);
+    };
+    const schedule = () => {
+      if (!frame) frame = window.requestAnimationFrame(measure);
+    };
+    measure();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    // Содержимое дорисовывается после загрузки данных — высота main меняется.
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(schedule) : null;
+    observer?.observe(main);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      observer?.disconnect();
+      aside.style.removeProperty("--site-nav-max-h");
+    };
+  }, [asideRef]);
 }
 
 function SectionColumn({
@@ -337,6 +424,7 @@ function SectionColumn({
                 aria-current={isCurrent ? "page" : undefined}
                 // Короткая подпись — полное имя во всплывающей подсказке.
                 title={text !== link.label ? link.label : undefined}
+                onMouseEnter={text === link.label ? showFullLabelIfCut : undefined}
               >
                 {link.icon && <span className="site-col-item-icon">{link.icon}</span>}
                 <span className="site-col-item-label">{text}</span>
@@ -347,6 +435,18 @@ function SectionColumn({
       ))}
     </div>
   );
+}
+
+/**
+ * Подпись пункта обрезана многоточием (длинное название недавней или своей
+ * локации) — показываем полное имя подсказкой при наведении (V11). Меряем в
+ * момент наведения: ширина зависит от шрифта и заранее неизвестна.
+ */
+function showFullLabelIfCut(event: ReactMouseEvent<HTMLAnchorElement>): void {
+  const item = event.currentTarget;
+  const label = item.querySelector<HTMLElement>(".site-col-item-label");
+  if (!label || item.title) return;
+  if (label.scrollWidth > label.clientWidth + 1) item.title = label.textContent ?? "";
 }
 
 function ExtraGroupBlock({ group }: { group: SidebarExtraGroup }) {

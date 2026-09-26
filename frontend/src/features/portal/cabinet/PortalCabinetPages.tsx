@@ -1,6 +1,6 @@
 /**
  * Страницы личного кабинета в портальном дизайне (тёмный запуск: /new/*).
- * Контент вкладок переиспользуется из существующих страниц в bare-режиме,
+ * Контент вкладок переиспользуется из существующих страниц (их тела без каркаса),
  * каркас с сайдбаром и портальный рескин даёт PortalCabinetShell + cabinet.css.
  */
 import { RequireAuth } from "../../../components/RequireAuth";
@@ -39,7 +39,7 @@ export function PortalCabinetRunsPage() {
     "runs",
     "Пробежки",
     "Все финиши по всем привязанным системам — с фильтрами, сортировкой и оценками стартов.",
-    () => <RunsContent bare />,
+    () => <RunsContent />,
   );
 }
 
@@ -48,7 +48,7 @@ export function PortalCabinetVolunteeringPage() {
     "volunteering",
     "Волонтёрство",
     "Все волонтёрские позиции по всем привязанным системам.",
-    () => <VolunteeringContent bare />,
+    () => <VolunteeringContent />,
   );
 }
 
@@ -57,7 +57,7 @@ export function PortalCabinetAchievementsPage() {
     "achievements",
     "Цели и достижения",
     "Медали, челленджи, клубы и личные цели на год.",
-    () => <AchievementsContent bare />,
+    () => <AchievementsContent />,
   );
 }
 
@@ -79,7 +79,7 @@ export function PortalCabinetMapPage() {
     "map",
     "Карта",
     "Посещённые локации и регионы — по пробежкам и волонтёрствам.",
-    () => <MapsContent bare />,
+    () => <MapsContent />,
   );
 }
 
@@ -106,7 +106,7 @@ export function PortalCabinetSharePage() {
     "share",
     "Поделиться",
     "Готовые сюжеты из вашей статистики: постер для сториз или чата — в один тап.",
-    () => <SharingContent bare />,
+    () => <SharingContent />,
   );
 }
 
@@ -115,6 +115,6 @@ export function PortalCabinetSettingsPage() {
     "settings",
     "Настройки",
     "Приватность, привязка профилей, домашняя локация и способы входа.",
-    () => <SettingsContent bare />,
+    () => <SettingsContent />,
   );
 }

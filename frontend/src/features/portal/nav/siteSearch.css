@@ -82,3 +82,23 @@
     margin-top: 2px;
   }
 }
+
+/* Пример в подсказке («погода коломенское») — нажимается и подставляется в
+   поле, как примеры в пустом окне. */
+.site-search .site-search-note button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--accent-indigo-text);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+/* Совпадения из середины имени — после основной выдачи, отбиты чертой. */
+.site-search .site-search-partial {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}

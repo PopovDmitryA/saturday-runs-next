@@ -101,21 +101,39 @@ function stem(word: string): string {
   return word;
 }
 
-function wordMatches(word: string, haystack: string[]): { hit: boolean; exact: boolean } {
-  const base = stem(word);
-  let hit = false;
-  for (const token of haystack) {
-    if (token === word) return { hit: true, exact: true };
-    if (token.startsWith(base)) hit = true;
-  }
-  return { hit, exact: false };
-}
-
 // Падежные окончания: «погоду», «протоколах», «топы». «-ов» и «-ин» сюда не
 // входят нарочно — иначе «Морозов» и «Погодин» считались бы словами-страницами
 // («мороз», «погода») и не доходили бы до поиска людей.
 const CASE_ENDINGS = ["", "а", "я", "у", "ю", "е", "ы", "и", "ой", "ей", "ам", "ям", "ах", "ях", "ами", "ями", "ом", "ем"];
 const VOWELS = new Set(["а", "я", "о", "е", "ы", "и", "у", "ю", "ь", "й"]);
+
+/** word — то же слово, что token, в другом падеже: «карту» — «карта», «клубы» — «клуб». */
+function isCaseForm(word: string, token: string): boolean {
+  if (token.length < 3) return false;
+  const bases = VOWELS.has(token[token.length - 1]) ? [token, token.slice(0, -1)] : [token];
+  return bases.some((base) => word.startsWith(base) && CASE_ENDINGS.includes(word.slice(base.length)));
+}
+
+const DIGITS = /^\d+$/;
+// Короче пяти букв основа ловит чужие слова: «вёрст» → «верс» → «версия»
+// (и «5 вёрст» находил «Обновления»), «бегал» → «бега».
+const MIN_STEM = 5;
+
+function wordMatches(word: string, haystack: string[]): { hit: boolean; exact: boolean } {
+  // Цифры — только целиком: «5» не должно находить «50 стартов».
+  const digits = DIGITS.test(word);
+  const base = stem(word);
+  const byStem = !digits && base.length >= MIN_STEM;
+  let hit = false;
+  for (const token of haystack) {
+    if (token === word) return { hit: true, exact: true };
+    if (digits) continue;
+    // Начало слова (человек ещё печатает), основа длинного слова или то же
+    // слово в другом падеже.
+    if (token.startsWith(word) || (byStem && token.startsWith(base)) || isCaseForm(word, token)) hit = true;
+  }
+  return { hit, exact: false };
+}
 
 /**
  * Слово точно называет страницу: совпадает со словом названия или синонима
@@ -123,15 +141,7 @@ const VOWELS = new Set(["а", "я", "о", "е", "ы", "и", "у", "ю", "ь", "�
  * поиск людей, и ошибка здесь прятала бы живых людей по фамилии.
  */
 function namesPage(word: string, haystack: string[]): boolean {
-  for (const token of haystack) {
-    if (token === word) return true;
-    if (token.length < 3) continue;
-    const bases = VOWELS.has(token[token.length - 1]) ? [token, token.slice(0, -1)] : [token];
-    for (const base of bases) {
-      if (word.startsWith(base) && CASE_ENDINGS.includes(word.slice(base.length))) return true;
-    }
-  }
-  return false;
+  return haystack.some((token) => token === word || isCaseForm(word, token));
 }
 
 /**
@@ -242,10 +252,11 @@ type Entry = {
   pageWordTokens: string[];
   personalKeywords: boolean;
   /**
-   * Инструмент чужой (не открытой) локации организатора: находится только
-   * по своему слову («юбилеи», «пост»), а не по одному названию парка — иначе
-   * «сокольники» у организатора выдавали бы дюжину инструментов вместо самой
-   * локации.
+   * Инструмент локации организатора: находится только по своему слову
+   * («юбилеи», «пост»), а не по одному названию парка — иначе «сокольники»
+   * у организатора выдавали бы дюжину инструментов вместо самой локации. И
+   * только когда совпали ВСЕ значимые слова: «протоколы сокольники» не
+   * должны находить «Протоколы · Кузьминки» по одному слову «протоколы».
    */
   needsStrong: boolean;
 };
@@ -273,10 +284,13 @@ function makeEntry(
   const keywordTokens = tokens(keywordText);
   const contextTokens = [...tokens(opts.contextWords.join(" ")), ...placeTokens];
   const placeLink = link.href.startsWith("/locations/");
+  // У инструмента локации организатора имя парка из названия уже вычтено
+  // (labelTokens) — «Календарь юбилеев» словом-страницей быть может, а
+  // «Сокольники» остаются поиску локаций и людей.
   const pageWordTokens = placeLink
     ? []
     : opts.placeName !== undefined
-      ? keywordTokens
+      ? [...labelTokens, ...keywordTokens]
       : [...labelTokens, ...keywordTokens, ...contextTokens];
   return {
     key: opts.key,
@@ -319,6 +333,21 @@ function buildEntries(sections: NavSection[], ctx: SearchContext): Entry[] {
   if (ctx.guest) {
     push(makeEntry(LOGIN_LINK, { key: "extra:login", weightKey: "extra:login", context: LOGIN_CONTEXT, sectionKey: "me", contextWords: [], kind: "login" }));
   }
+  // Инструменты организатора — раньше дерева: у инструментов открытой сейчас
+  // локации тот же адрес, и побеждает запись, которая знает свою локацию
+  // (placeName) и не находится по названию чужой.
+  for (const extra of ctx.extraLinks ?? []) {
+    push(
+      makeEntry(extra.link, {
+        key: `org:${extra.link.href}`,
+        weightKey: extra.weightKey,
+        context: extra.context,
+        sectionKey: "organizer",
+        contextWords: [extra.context],
+        placeName: extra.placeName ?? "",
+      }),
+    );
+  }
   for (const { section, group, link } of flattenNav(sections)) {
     const context = [section.label, group.title].filter(Boolean).join(" · ");
     push(
@@ -333,18 +362,6 @@ function buildEntries(sections: NavSection[], ctx: SearchContext): Entry[] {
   }
   for (const link of EXTRA_SEARCH_LINKS) {
     push(makeEntry(link, { key: `extra:${link.key}`, weightKey: `extra:${link.key}`, context: "run5k.run", sectionKey: "extra", contextWords: [] }));
-  }
-  for (const extra of ctx.extraLinks ?? []) {
-    push(
-      makeEntry(extra.link, {
-        key: `org:${extra.link.href}`,
-        weightKey: extra.weightKey,
-        context: extra.context,
-        sectionKey: "organizer",
-        contextWords: [extra.context],
-        placeName: extra.placeName ?? "",
-      }),
-    );
   }
   return entries;
 }
@@ -371,8 +388,14 @@ export type PageSearchPlan = {
    * предлагаем для текущей, своей и недавней локации.
    */
   placeless: boolean;
-  /** Главное слово-страница из запроса — для подсказки «погода сокольники». */
-  placelessWord: string;
+  /**
+   * Как человек назвал страницу локации — для подсказки «допишите название»:
+   * фраза целиком («самые быстрые», «как добраться») или синоним в
+   * начальной форме («погоду» → «погода»).
+   */
+  placelessPhrase: string;
+  /** В запросе «мой», «я», «себя»: человек ищет своё. */
+  personal: boolean;
 };
 
 const EMPTY_PLAN: PageSearchPlan = {
@@ -381,8 +404,24 @@ const EMPTY_PLAN: PageSearchPlan = {
   pages: [],
   locationPages: [],
   placeless: false,
-  placelessWord: "",
+  placelessPhrase: "",
+  personal: false,
 };
+
+/** Как в запросе названа страница локации — см. PageSearchPlan.placelessPhrase. */
+function locationPagePhrase(page: LocationPageDef, words: string[], named: string[]): string {
+  // У «Обзора» название — общее слово, как и в поиске: только синонимы.
+  const phrases = [...(page.suffix === "" ? [] : [page.label]), ...page.keywords].map(normalizeQuery).filter(Boolean);
+  const whole = phrases
+    .filter((phrase) => phrase.split(" ").every((token) => words.includes(token)))
+    .sort((a, b) => b.split(" ").length - a.split(" ").length)[0];
+  if (whole) return whole;
+  for (const word of named) {
+    const single = phrases.find((phrase) => !phrase.includes(" ") && namesPage(word, [phrase]));
+    if (single) return single;
+  }
+  return named.join(" ");
+}
 
 export function planSearch(raw: string, sections: NavSection[], ctx: SearchContext): PageSearchPlan {
   const words = tokens(raw);
@@ -433,8 +472,9 @@ export function planSearch(raw: string, sections: NavSection[], ctx: SearchConte
       personal && ((significant.length === 0 && entry.sectionKey === "me") || entry.kind === "login");
     const enough =
       significant.length > 0 &&
-      (entry.needsStrong ? strong : true) &&
-      (matched === significant.length || (strong && matched * 2 >= significant.length));
+      (entry.needsStrong
+        ? strong && matched === significant.length
+        : matched === significant.length || (strong && matched * 2 >= significant.length));
     if (!enough && !personalOnly) continue;
     if (personal && (entry.sectionKey === "me" || entry.personalKeywords)) score += 2;
     // Полное совпадение с названием страницы — первым: «самые быстрые» —
@@ -460,13 +500,13 @@ export function planSearch(raw: string, sections: NavSection[], ctx: SearchConte
 
   // ---- страницы локации: «погода сокол» → «Погода · Сокольники» ----
   const locationPages: LocationPageDef[] = [];
-  let placelessWord = "";
+  let placelessPhrase = "";
   for (const { page, allTokens } of LOCATION_PAGE_ENTRIES) {
     const named = significant.filter((word) => word.length >= 3 && namesPage(word, allTokens));
     if (named.length > 0) {
       locationPages.push(page);
       named.forEach((word) => pageWords.add(word));
-      placelessWord ||= named[0];
+      placelessPhrase ||= locationPagePhrase(page, words, named);
     }
   }
 
@@ -477,6 +517,12 @@ export function planSearch(raw: string, sections: NavSection[], ctx: SearchConte
     if (STOP_WORDS.has(word) || PERSONAL_WORDS.has(word) || pageWords.has(word)) return;
     serverWords.push(aligned ? original[index] : word);
   });
+  // Запрос из одних служебных слов — это, скорее всего, фамилия: «Ли» —
+  // частица, но и корейская фамилия. Страниц у такого запроса нет, так что
+  // пусть его посмотрит сервер.
+  if (serverWords.length === 0 && significant.length === 0 && !personal && pageWords.size === 0) {
+    words.forEach((word, index) => serverWords.push(aligned ? original[index] : word));
+  }
   const placeless = locationPages.length > 0 && serverWords.length === 0;
 
   return {
@@ -485,7 +531,8 @@ export function planSearch(raw: string, sections: NavSection[], ctx: SearchConte
     pages: hits.slice(0, 6).map(({ weight: _weight, ...hit }) => hit),
     locationPages,
     placeless,
-    placelessWord,
+    placelessPhrase,
+    personal,
   };
 }
 

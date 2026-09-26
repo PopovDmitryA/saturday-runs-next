@@ -5,6 +5,14 @@
    кнопка «Закрыть» в окнах, список страниц раздела над панелью (идея В),
    экономия первого экрана (идея Б). Все цвета — переменные темы. */
 
+/* Пока открыто окно навигации («Меню», список раздела, выпадающий список
+   полосы, поиск), кнопка «Наверх страницы» (z-index 400) лежала поверх него,
+   не затемнялась и закрывала правый край пунктов, а над списком полосы её
+   можно было нажать (проверка 26.09.2026). Метку ставит nav/useOverlayHistory. */
+html.site-overlay-open .scroll-top-btn {
+  display: none;
+}
+
 @media (max-width: 900px) {
   /* Фокус с клавиатуры не прячется под нижней панелью (a11y-11). */
   html.has-site-bottomnav {
@@ -199,12 +207,50 @@
     white-space: nowrap;
   }
 
+  /* ---------- полоса страниц: обрезка и слои ---------- */
+
+  /* Полоса растянута на всю ширину экрана отрицательными полями (siteNav.css),
+     а index.css на страницах локаций и едином протоколе подрезает вбок всю
+     колонку контента — от вылезающих подсказок гистограмм. Полоса теряла по
+     20px с каждого края: «Обзор» читался как «бзор», фон и нижняя граница не
+     доходили до краёв экрана (проверка 26.09.2026, mob-12). На телефоне
+     подрезаем не колонку, а раскладку целиком — по краям экрана: подсказки
+     всё так же не дают странице прокручиваться вбок, а полоса цела.
+     html — чтобы перебить правило index.css той же силы: стили разделов в
+     сборке идут раньше index.css. */
+  html .portal-cab-main:has(.loc-wide-page) {
+    overflow-x: visible;
+  }
+
+  html .portal-cab-layout:has(.loc-wide-page) {
+    overflow-x: clip;
+  }
+
+  /* Открытый выпадающий список — над плашкой «вы» в рейтингах (z-index 61):
+     она закрывала последний пункт списка, и тап по нему попадал в «Показать».
+     И над нижней панелью (60): затемнение списка теперь лежит и на ней, и на
+     шапке — тап туда закрывает список, а не уводит со страницы с «лишней»
+     записью в истории. Ниже «Меню» (70–75) и поиска (200). */
+  .site-subnav.open {
+    z-index: 66;
+  }
+
+  /* Вторая половина затемнения — над шапкой сайта; первая (siteNav.css)
+     начинается под полосой. Одним слоем нельзя: он лёг бы и на саму полосу. */
+  .site-subnav-scrim.site-subnav-scrim-top {
+    top: 0;
+    bottom: auto;
+    height: var(--site-header-base-h);
+  }
+
   /* ---------- первый экран (идея Б) ---------- */
 
   /* Где есть полоса страниц раздела, хлебные крошки над заголовком её
      повторяют («← Все рейтинги / Бегуны · Самые быстрые» под полосой «Бегуны ·
-     Самые быстрые») и отодвигают таблицу. Полоса уже говорит, где человек. */
-  html.has-site-subnav .loc-header-breadcrumb,
+     Самые быстрые») и отодвигают таблицу. Полоса уже говорит, где человек.
+     Кроме кабинета организатора: в его крошках — единственная ссылка из
+     кабинета на публичную страницу локации (проверка 26.09.2026). */
+  html.has-site-subnav:not(.has-site-subnav-organizer) .loc-header-breadcrumb,
   html.has-site-subnav .lb-breadcrumb {
     display: none;
   }
@@ -221,19 +267,35 @@
     -webkit-line-clamp: 2;
     line-clamp: 2;
     overflow: hidden;
+  }
+
+  /* Рука и кольцо фокуса — только у описаний, которые и правда обрезаны
+     (метку ставит хук): короткое описание — просто текст. */
+  [data-lead-clamped] {
     cursor: pointer;
+  }
+
+  [data-lead-clamped]:focus-visible {
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 
   .portal-cab-pagehead-sub[data-lead-open],
   .lb-header > .lb-description[data-lead-open],
   .loc-header > p.muted[data-lead-open],
   .loc-header > .loc-header-lead[data-lead-open],
-  .loc-header > .protocol-subtitle[data-lead-open] {
+  .loc-header > .protocol-subtitle[data-lead-open],
+  /* Ссылка внутри свёрнутого описания получила фокус с клавиатуры — её надо
+     видеть: раскрываем описание. */
+  .portal-cab-pagehead-sub:has(:focus-visible),
+  .lb-header > .lb-description:has(:focus-visible),
+  .loc-header > p.muted:not(.loc-header-breadcrumb):has(:focus-visible),
+  .loc-header > .loc-header-lead:has(:focus-visible),
+  .loc-header > .protocol-subtitle:has(:focus-visible) {
     display: block;
     -webkit-line-clamp: unset;
     line-clamp: none;
     overflow: visible;
-    cursor: auto;
   }
 }
 

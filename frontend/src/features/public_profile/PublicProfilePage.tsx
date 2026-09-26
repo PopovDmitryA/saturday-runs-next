@@ -7,6 +7,7 @@ import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { ImageLightbox } from "../../components/ImageLightbox";
 import { PortalFooter } from "../portal/PortalFooter";
 import { PortalHeader } from "../portal/PortalHeader";
+import { NotFoundPage } from "../NotFoundPage";
 import { CABINET_TAB_SEGMENTS, profileTabHref } from "../../lib/portalRoutes";
 import { SiteSidebar, type SidebarExtraGroup } from "../portal/SiteSidebar";
 import { SectionSubnav, type SectionSubnavCustom } from "../portal/nav/SectionSubnav";
@@ -23,7 +24,6 @@ import { HistoryContent } from "../history/HistoryPage";
 import { CoRunnersContent } from "../co_runners/CoRunnersPage";
 import { ProfileComparePanel } from "./ProfileComparePanel";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import { platformProfileUrl } from "../../lib/platformProfileUrl";
 import {
   ApiError,
   getCurrentUser,
@@ -41,7 +41,7 @@ import {
   type AdminUserPreviewDashboard,
   type User,
 } from "../../lib/api";
-import { platformCodeLabel, runsCapLabel, volunteeringCapLabel } from "../../lib/format";
+import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 
 // Карта (leaflet) нужна только на вкладке «карта» — грузится по обращению.
 const UserMapPanel = lazyPage(() => import("../maps/UserMapPanel"), (m) => m.UserMapPanel);
@@ -81,7 +81,16 @@ function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
 // Порядок платформ в шапке — как везде на сайте (кабинет, админка).
 const PLATFORM_ORDER: Record<string, number> = { five_verst: 0, s95: 1, parkrun: 2, runpark: 3 };
 
-/** Привязанные системы участника: бейдж — ссылка в его профиль на самой системе. */
+/**
+ * Привязанные системы участника — просто метки, без ссылок.
+ *
+ * Раньше бейдж вёл в профиль человека на самой системе (5 вёрст, S95, parkrun,
+ * RunPark). Правило Дмитрия от 04.09.2026: на сайте нет кликабельных ссылок на
+ * профили людей в чужих системах — ни в кабинете организатора, ни в рейтингах,
+ * ни где-либо ещё; ссылка допустима только на профиль внутри сайта. Чужой
+ * профиль — это «где-либо ещё» (проверка 26.09.2026). Свои профили на системах
+ * человек открывает из своего кабинета.
+ */
 function ProfilePlatformLinks({ links }: { links: AdminPlatformLinkBrief[] }) {
   const sorted = [...links].sort(
     (a, b) => (PLATFORM_ORDER[a.platform_code] ?? 99) - (PLATFORM_ORDER[b.platform_code] ?? 99),
@@ -90,12 +99,7 @@ function ProfilePlatformLinks({ links }: { links: AdminPlatformLinkBrief[] }) {
   return (
     <div className="public-profile-platforms">
       {sorted.map((link) => (
-        <PlatformBadge
-          key={link.platform_code}
-          code={link.platform_code}
-          href={platformProfileUrl(link)}
-          title={`Открыть профиль на ${platformCodeLabel(link.platform_code)}`}
-        />
+        <PlatformBadge key={link.platform_code} code={link.platform_code} />
       ))}
     </div>
   );
@@ -117,7 +121,7 @@ function ProfileShell({
   profileAvatarUrl?: string | null;
   /** Оригинал аватарки участника — раскрывается по клику на неё. */
   profileAvatarFullUrl?: string | null;
-  /** Привязанные системы — бейджи-ссылки под именем участника. */
+  /** Привязанные системы — метки под именем участника. */
   platformLinks?: AdminPlatformLinkBrief[];
   /** Вкладки профиля для единого сайдбара (группа с именем участника). */
   tabsGroup?: SidebarExtraGroup;
@@ -431,13 +435,9 @@ function PublicProfileContent({
   }
 
   if (notFound) {
-    return (
-      <ProfileShell currentUser={currentUser} profileName={null}>
-        <div className="card">
-          <p className="muted">Участник не найден.</p>
-        </div>
-      </ProfileShell>
-    );
+    // Та же страница 404, что у любого неизвестного адреса: в каркасе сайта,
+    // с поиском по хендлу из адреса и кнопками «На главную» / «В кабинет».
+    return <NotFoundPage />;
   }
 
   return (
@@ -665,18 +665,9 @@ export function PublicProfilePage({
     );
   }
   if (state === "not-found" || serialId == null) {
-    return (
-      <>
-        <PortalHeader />
-        <div className="shell">
-          <div className="shell-content">
-            <div className="card">
-              <p className="muted">Участник не найден.</p>
-            </div>
-          </div>
-        </div>
-      </>
-    );
+    // Хендл не нашёлся — обычная страница 404 (V7): каркас сайта, поиск по
+    // хендлу из адреса, «На главную» и «В кабинет» / «Войти».
+    return <NotFoundPage />;
   }
   return (
     <PublicProfileContent

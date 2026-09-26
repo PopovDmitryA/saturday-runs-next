@@ -1273,9 +1273,14 @@ a.lb-hub-card:hover {
    листались вовсе. Когда таблица помещается целиком, sticky ничего не меняет.
    Ширину «Участника» здесь НЕ навязываем: на десктопе колонка живёт по своему
    набору (11rem у туризма, 13rem у остальных) и переносит длинные имена по
-   словам — обрезать их многоточием, как на телефоне, незачем. */
+   словам — обрезать их многоточием, как на телефоне, незачем.
+   .float-thead — плавающая копия шапки (useFloatingTableHead): она лежит не в
+   .lb-table-wrap, а в секции страницы, и без неё в списке ячейки копии не
+   прилипали — при листании таблицы вбок над именами висели «5 вёрст» и «С95»,
+   а «Место» и «Участник» уезжали за край (проверка 26.09.2026). Телефонному
+   блоку выше предок не нужен, копия получает липкость и там. */
 @media (min-width: 821px) {
-  .lb-table-wrap .lb-table {
+  :is(.lb-table-wrap, .float-thead) .lb-table {
     --lb-sticky-rank-w: 4.4rem;
   }
 
@@ -1284,7 +1289,7 @@ a.lb-hub-card:hover {
     min-width: 100%;
   }
 
-  .lb-table-wrap .lb-table.lb-table-full .lb-col-rank {
+  :is(.lb-table-wrap, .float-thead) .lb-table.lb-table-full .lb-col-rank {
     position: sticky;
     left: 0;
     z-index: 2;
@@ -1294,15 +1299,15 @@ a.lb-hub-card:hover {
     max-width: var(--lb-sticky-rank-w);
   }
 
-  .lb-table-wrap .lb-table.lb-table-full .lb-col-name {
+  :is(.lb-table-wrap, .float-thead) .lb-table.lb-table-full .lb-col-name {
     position: sticky;
     left: var(--lb-sticky-rank-w);
     z-index: 2;
     background: var(--surface);
   }
 
-  .lb-table-wrap .lb-table.lb-table-full thead .lb-col-rank,
-  .lb-table-wrap .lb-table.lb-table-full thead .lb-col-name {
+  :is(.lb-table-wrap, .float-thead) .lb-table.lb-table-full thead .lb-col-rank,
+  :is(.lb-table-wrap, .float-thead) .lb-table.lb-table-full thead .lb-col-name {
     z-index: 4;
   }
 
@@ -2071,6 +2076,24 @@ a.lb-hub-card:hover {
   white-space: nowrap;
 }
 
+/* «Полно» на телефоне: у быстрых, как у всех рейтингов, «Место» и «Участник»
+   липкие (lb-table-full), и доля 55% с минимумом 11rem превращала их в стену
+   шириной 345px из 348 — листать вбок было нечего видеть. Имя — той же узкой
+   колонкой с многоточием, что у остальных рейтингов, а остаток уходит
+   «Локации», у которой без доли ширина по содержимому. Четыре класса —
+   перебивают и долю быстрых, и общий телефонный блок липкости. */
+@media (max-width: 820px) {
+  .lb-table.lb-fastest-table.lb-table-full .lb-col-name {
+    width: var(--lb-sticky-name-w);
+    min-width: var(--lb-sticky-name-w);
+    max-width: var(--lb-sticky-name-w);
+  }
+
+  .lb-table.lb-fastest-table.lb-table-full .lb-col-home {
+    width: auto;
+  }
+}
+
 /* Панель фильтров рейтинга быстрых — два намеренных ряда.
    Одной строкой все шесть органов управления не помещаются ни на каком
    мониторе, и поиск оставался висеть в одиночестве справа («как не пришей
@@ -2344,30 +2367,92 @@ a.lb-hub-card:hover {
   min-width: 0;
 }
 
-/* Плавающая копия шапки (useFloatingTableHead) клонирует таблицу вместе с
-   классами и выставляет каждой ячейке ширину оригинала. max-width: 0 эту
-   ширину обнулял бы, и колонки копии разъезжались с колонками таблицы. */
-.float-thead .lb-table.lb-table-short .lb-col-name {
-  max-width: none;
+/* Узкий телефон (до 480px): «Место» и колонка значения («Всего», у быстрых —
+   «Время») — по содержимому, имени — всё остальное. После mob-2 число стало видно, но имени оставалось
+   107–121px: у 40 строк из 40 обрезалась даже фамилия. «Место» держало 74px
+   (6.2rem и поля по 12px), «Всего локаций» одной строкой — 124px (проверка
+   26.09.2026).
+   width: 1px в таблице с автораскладкой значит «не шире содержимого»: колонка
+   сжимается до самого длинного неразрывного куска — «Место▾» и числа. Поля
+   ячеек уже на треть. Заголовок значения переносится по словам: «Всего /
+   локаций» в две строки вдвое уже одной. */
+@media (max-width: 480px) {
+  .lb-table.lb-table-short th,
+  .lb-table.lb-table-short td {
+    padding-left: 0.45rem;
+    padding-right: 0.45rem;
+  }
+
+  .lb-table.lb-table-short .lb-col-rank,
+  .lb-table.lb-table-short .lb-col-total,
+  .lb-table.lb-table-short .lb-col-time {
+    width: 1px;
+  }
+
+  .lb-table.lb-table-short thead th.lb-col-total {
+    white-space: normal;
+  }
+
+  /* У дальности число длинное («387 700 км»), и надстрочная дельта «+1 109»
+     рядом с ним одна съедала 40px ширины имени. Здесь она уходит строкой под
+     число: сетка из двух колонок держит «число + км» в первой строке, а
+     дельта во второй растягивается на обе. У остальных рейтингов числа
+     короткие, и дельта остаётся сбоку — строки не растут в высоту зря. */
+  .lb-table.lb-table-short.lb-table-wide-values .lb-col-total .lb-cell {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: center;
+    align-items: baseline;
+  }
+
+  .lb-table.lb-table-short.lb-table-wide-values .lb-col-total .lb-delta {
+    grid-column: 1 / -1;
+    margin-left: 0;
+    line-height: 1.1;
+  }
 }
 
 /* --- «Фильтры · N»: свёрнутая панель фильтров на телефоне --- */
 
-/* На компьютере кнопки нет: панель стоит как раньше, места хватает. */
-.lb-filters-toggle {
+/* На компьютере полосы с кнопкой нет: панель стоит как раньше, места хватает.
+   Всё, что на телефоне живёт вне панели («Кратко | Полно» рядом с кнопкой,
+   «Рейтинг | Журнал» строкой над ней), на компьютере стоит внутри панели —
+   копии помечены .lb-narrow-only / .lb-wide-only. */
+.lb-filters-bar,
+.lb-narrow-only {
   display: none;
 }
 
 @media (max-width: 900px) {
+  .lb-wide-only {
+    display: none;
+  }
+
   /* Идея Б ревью навигации (25.09.2026): на 360×740 открытая панель занимала
      весь первый экран, и строк таблицы на нём не было ни одной. Свёрнутая —
      одна строка высотой в палец; число после точки — сколько фильтров уже
-     изменено, чтобы отфильтрованная таблица не выглядела полной. */
-  .lb-filters-toggle {
+     изменено, чтобы отфильтрованная таблица не выглядела полной.
+     «Кратко | Полно» — не фильтр, а способ показа: он стоит справа от кнопки
+     и виден всегда, в свёрнутой панели его не находили (26.09.2026). */
+  .lb-filters-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .lb-filters-aside {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    width: 100%;
+  }
+
+  .lb-filters-toggle {
+    display: flex;
+    flex: 1 1 8rem;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
     min-height: 2.75rem;
     padding: 0.55rem 0.9rem;
     border: 1px solid var(--border);
@@ -2388,6 +2473,10 @@ a.lb-hub-card:hover {
   .lb-filters-toggle-icon {
     flex: none;
     color: var(--text-muted);
+  }
+
+  .lb-filters-toggle-label {
+    white-space: nowrap;
   }
 
   .lb-filters-toggle-count {
@@ -2417,10 +2506,171 @@ a.lb-hub-card:hover {
   .lb-filters-body > .lb-fastest-controls {
     margin-bottom: 0;
   }
+
+  /* «Рейтинг | Журнал» — строка над кнопкой «Фильтры». */
+  .lb-view-phone.lb-narrow-only {
+    display: flex;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .lb-filters-toggle-chevron {
+    transition: none;
+  }
+}
+
+/* --- Первый экран телефона: карточка «вы» и приглашение войти --- */
+
+/* Стрелка «Подробнее» у карточки «вы» — только на телефоне. */
+.lb-me-more {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  /* Карточка «вы» свёрнута в одну строку «место · имя · всего · ▾»: целиком
+     она занимала 240–350px, и на 360×740 первой строки таблицы не было ни на
+     одном рейтинге (проверка 26.09.2026). Разбивка по системам, неделя,
+     «Показать в таблице», «Поделиться» и перцентиль — по стрелке. Показать
+     свою строку можно и из липкой плашки «вы» внизу экрана. */
+  .lb-me-collapsible .lb-me-row {
+    gap: 0.5rem 0.75rem;
+  }
+
+  .lb-me-collapsible .lb-me-rank {
+    order: 1;
+  }
+
+  .lb-me-collapsible .lb-me-name {
+    order: 2;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .lb-me-collapsible .lb-me-values {
+    order: 3;
+  }
+
+  .lb-me-collapsible .lb-me-actions {
+    order: 5;
+  }
+
+  .lb-me-more {
+    order: 4;
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--text-muted);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .lb-me-more:focus-visible {
+    outline: 2px solid var(--link);
+    outline-offset: 2px;
+  }
+
+  .lb-me-more > span {
+    transition: transform 0.15s ease;
+  }
+
+  .lb-me-open .lb-me-more > span {
+    transform: rotate(180deg);
+  }
+
+  /* Свёрнута: одна строка, имя обрезается многоточием, из значений — только
+     главное («Всего»). */
+  .lb-me-collapsible:not(.lb-me-open) .lb-me-row {
+    flex-wrap: nowrap;
+  }
+
+  .lb-me-collapsible:not(.lb-me-open) .lb-me-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lb-me-collapsible:not(.lb-me-open) .lb-me-value:not(.lb-me-total),
+  .lb-me-collapsible:not(.lb-me-open) .lb-me-actions {
+    display: none;
+  }
+
+  /* Развёрнута: стрелка остаётся в первой строке рядом с именем, значения и
+     кнопки — строками ниже во всю ширину. */
+  .lb-me-open .lb-me-more {
+    order: 3;
+  }
+
+  .lb-me-open .lb-me-values {
+    order: 4;
+    flex-basis: 100%;
+  }
+
+  /* Спойлер «Карта туристов» у туристических рейтингов — одной строкой с
+     многоточием: полным текстом он занимал три строки (80px) прямо над
+     таблицей. Лишний верхний отступ тоже снят — между блоками и так gap. */
+  .lb-tourist {
+    margin: 0;
+  }
+
+  .lb-tourist-toggle-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Приглашение войти — одной строкой «🏆 А где здесь вы? · Войти»: во весь
+     рост карточка занимала 270px из 740. Пояснение остаётся скринридеру. */
+  .promo-login-card.lb-promo-login {
+    flex-wrap: nowrap;
+    gap: 0.75rem;
+    margin-bottom: 0;
+    padding: 0.7rem 0.9rem;
+    border-radius: 14px;
+  }
+
+  .lb-promo-login .promo-login-card-icon {
+    width: 2.25rem;
+    height: 2.25rem;
+    font-size: 1.15rem;
+    border-radius: 10px;
+  }
+
+  .lb-promo-login .promo-login-card-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .lb-promo-login .promo-login-card-title {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .lb-promo-login .promo-login-card-text p {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .lb-promo-login .promo-login-card-btn {
+    width: auto;
+    padding: 0.5rem 1rem;
+  }
+}
+
+@media (max-width: 640px) and (prefers-reduced-motion: reduce) {
+  .lb-me-more > span {
     transition: none;
   }
 }

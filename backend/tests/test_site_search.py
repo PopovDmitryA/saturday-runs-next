@@ -21,7 +21,18 @@ from app.config import Settings, get_settings
 from app.core.abuse_protection import RouteTier, classify_route
 from app.db.session import get_db
 from app.main import app
-from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, SearchQueryLog, User
+from app.models import (
+    Event,
+    Location,
+    LocationCatalog,
+    LocationCatalogLink,
+    Participant,
+    Platform,
+    PlatformLink,
+    RunResult,
+    SearchQueryLog,
+    User,
+)
 from app.services import site_search_service
 from app.services.search_log_service import get_search_log_report, record_search
 from app.services.site_search_service import (
@@ -226,6 +237,7 @@ def test_registered_user_merges_platforms(db_session: Session, no_locations: Non
         "last_run_date": date(2026, 1, 3) + timedelta(days=7 * 2),
         "top_location_name": "Главный парк",
         "platform_codes": ["five_verst", "s95"],
+        "partial": False,
     }
 
 
@@ -290,8 +302,38 @@ def test_unknown_names_are_skipped(db_session: Session, no_locations: None) -> N
     }
 
 
-def test_people_need_three_chars(db_session: Session, no_locations: None) -> None:
-    assert site_search(db_session, "ив")["people"] == []
+def test_two_letter_surname_is_found_as_whole_word(db_session: Session, no_locations: None) -> None:
+    """«Ли», «Ан», «Юн» — настоящие фамилии, но как подстрока они есть почти в каждом имени."""
+    five = _platform(db_session, "five_verst")
+    for name in ("Мария ЪЭ", "ЪЭ Анна", "Пётр ЪЭ-Тестов", "Алиса ТЪЭСТ"):
+        _participant(db_session, five, name)
+
+    whole = _participant(db_session, five, "Ольга ЪЭ")
+    _link(db_session, _user(db_session, display_name="Ольга Ъэ"), whole)
+    inside = _participant(db_session, five, "Олег ТЪЭСТОВ")
+    _link(db_session, _user(db_session, display_name="Олег Тъэстов"), inside)
+
+    people = site_search(db_session, "ъэ")["people"]
+    names = {person["display_name"] for person in people}
+
+    assert names == {"Ольга Ъэ", "Мария Ъэ", "Ъэ Анна", "Пётр Ъэ-Тестов"}
+    assert people[0]["kind"] == "registered"
+
+
+def test_short_words_next_to_long_are_not_substrings(db_session: Session, no_locations: None) -> None:
+    """«Ли Москва» находил Анатолия Москву: «ли» — подстрока «Анатолия»."""
+    five = _platform(db_session, "five_verst")
+    for name in ("Ъэ ЪЮЖАНИН", "Анатолъэй ЪЮЖАНИН", "Анна ЪЮЖАНИНА", "Ольга ЪЮЖАНИНА"):
+        _participant(db_session, five, name)
+
+    two_letters = {person["display_name"] for person in site_search(db_session, "ъэ ъюжанин")["people"]}
+    # Одна буква — начало слова имени («Попов Д»).
+    initial = {person["display_name"] for person in site_search(db_session, "ъюжанин а")["people"]}
+
+    assert two_letters == {"Ъэ Ъюжанин"}
+    assert initial == {"Анатолъэй Ъюжанин", "Анна Ъюжанина"}
+    # Две цифры или буква с цифрой — не имя.
+    assert site_search(db_session, "ъ1")["people"] == []
 
 
 def test_layout_fallback_for_people(db_session: Session, no_locations: None) -> None:
@@ -513,10 +555,49 @@ def test_word_start_matches_go_first(db_session: Session, no_locations: None) ->
     _participant(db_session, five, "Кимоглыз Юлия")
     _participant(db_session, five, "Юлия Кимоглызовская")
 
-    names = [person["display_name"] for person in site_search(db_session, "кимоглыз")["people"]]
+    people = site_search(db_session, "кимоглыз")["people"]
+    names = [person["display_name"] for person in people]
 
     assert names[:2] == ["Кимоглыз Юлия", "Юлия Кимоглызовская"]
     assert set(names[2:]) == {"Хакимоглызов Рустам", "Екимоглыз Анна"}
+    # Совпадения из середины помечены: окно показывает их отдельной группой.
+    assert [person["partial"] for person in people] == [False, False, True, True]
+
+
+def test_registered_middle_match_goes_below_protocol_word_start(db_session: Session, no_locations: None) -> None:
+    """«Лев»: Михалевский с открытым профилем — ниже Льва из протоколов (ревью, search-6)."""
+    five = _platform(db_session, "five_verst")
+    middle = _participant(db_session, five, "Кирилл МИЗУРБАЛЬСКИЙ")
+    _runs(db_session, five, middle, 30)
+    _link(db_session, _user(db_session, display_name="Кирилл Мизурбальский", public_slug=f"m{uuid4().hex[:8]}"), middle)
+    prefix = _participant(db_session, five, "Александр ЗУРБАЛИН")
+    _link(db_session, _user(db_session, display_name="Александр Зурбалин"), prefix)
+    _participant(db_session, five, "Зурбал Ионов")
+
+    people = site_search(db_session, "зурбал")["people"]
+
+    assert [(person["display_name"], person["kind"], person["partial"]) for person in people] == [
+        # С начала слова: участник сайта первым, даже если у человека из
+        # протоколов имя совпало целиком — иначе при двух десятках таких
+        # «Львов» участник сайта выпал бы за лимит.
+        ("Александр Зурбалин", "registered", False),
+        ("Зурбал Ионов", "participant", False),
+        # Из середины слова — после всех, хоть у него и 30 пробежек.
+        ("Кирилл Мизурбальский", "registered", True),
+    ]
+
+
+def test_registered_uses_best_matching_profile(db_session: Session, no_locations: None) -> None:
+    """У человека два профиля: по одному имя совпало из середины, по другому — с начала."""
+    five = _platform(db_session, "five_verst")
+    s95 = _platform(db_session, "s95")
+    user = _user(db_session, display_name="Олег Дрымбов")
+    _link(db_session, user, _participant(db_session, five, "Олег ПОДРЫМБОВ"))
+    _link(db_session, user, _participant(db_session, s95, "Олег ДРЫМБОВ"))
+
+    people = site_search(db_session, "дрымбов")["people"]
+
+    assert [(person["kind"], person["partial"]) for person in people] == [("registered", False)]
 
 
 def test_word_start_ordering_happens_before_candidate_limit(
@@ -678,6 +759,70 @@ def test_people_by_name_and_city(monkeypatch: pytest.MonkeyPatch, db_session: Se
     assert page["people_place"] == "Мытищи"
     assert len(page["people"]) == 1
     assert page["people"][0]["top_location_city"] == "Мытищи"
+
+
+def test_people_by_name_and_place_filters_before_candidate_limit(
+    monkeypatch: pytest.MonkeyPatch, db_session: Session
+) -> None:
+    """«Иванов Мытищи»: место — условием в SQL до LIMIT, а не отбором из первых кандидатов."""
+    _catalog(monkeypatch)
+    monkeypatch.setattr(site_search_service, "PEOPLE_CANDIDATE_LIMIT", 2)
+    five = _platform(db_session, "five_verst")
+    for index in range(4):
+        _runs(db_session, five, _participant(db_session, five, f"Частов{index} Лимитович"), 1, city="Томск")
+    local = _participant(db_session, five, "Частов Местный")
+    _runs(db_session, five, local, 1, location_name="Мытищинский парк", city="Мытищи")
+
+    page = site_search(db_session, "частов мытищи")
+
+    assert page["people_place"] == "Мытищи"
+    assert [person["display_name"] for person in page["people"]] == ["Частов Местный"]
+    # Флаг «есть ещё» — после фильтра по месту: здесь нашёлся ровно один.
+    assert page["people_truncated"] is False
+
+
+def test_top_location_uses_site_catalog_name(monkeypatch: pytest.MonkeyPatch, db_session: Session) -> None:
+    """«Чаще всего: Izmailovo» → «Измайлово»: имя локации — как на её странице на сайте."""
+    parkrun = _platform(db_session, "parkrun")
+    five = _platform(db_session, "five_verst")
+    old_runner = _participant(db_session, parkrun, "Каталогов Латиницын")
+    _runs(db_session, parkrun, old_runner, 3, location_name="Izmailovotest", city="Moscow")
+    location = (
+        db_session.query(Location).join(Event, Event.location_id == Location.id)
+        .join(RunResult, RunResult.event_id == Event.id)
+        .filter(RunResult.participant_id == old_runner.id)
+        .first()
+    )
+    assert location is not None
+    catalog = LocationCatalog(canonical_name="Izmailovotest")
+    db_session.add(catalog)
+    db_session.flush()
+    # Связка без location_id — только по слагу в системе: так сведена часть узлов каталога.
+    db_session.add(LocationCatalogLink(catalog_id=catalog.id, platform_id=parkrun.id, external_key=location.external_key))
+    # Несведённая в каталог локация — идентичность «location:<id>».
+    solo_runner = _participant(db_session, five, "Каталогов Одиночкин")
+    _runs(db_session, five, solo_runner, 2, location_name="Solo park", city="Solo")
+    solo = (
+        db_session.query(Location).join(Event, Event.location_id == Location.id)
+        .join(RunResult, RunResult.event_id == Event.id)
+        .filter(RunResult.participant_id == solo_runner.id)
+        .first()
+    )
+    assert solo is not None
+    db_session.flush()
+    entries = [
+        {"slug": "izmailovo-test", "identity_key": f"catalog:{catalog.id}", "name": "Измайловотест",
+         "city": "Москва", "platform_codes": ["five_verst"], "events_count": 1, "finishers_total": 1},
+        {"slug": "solo-test", "identity_key": f"location:{solo.id}", "name": "Одиночный парк",
+         "city": "Одиноград", "platform_codes": ["five_verst"], "events_count": 1, "finishers_total": 1},
+    ]
+    monkeypatch.setattr(site_search_service, "_location_entries", lambda _db: entries)
+
+    people = {person["display_name"]: person for person in site_search(db_session, "каталогов")["people"]}
+
+    assert people["Каталогов Латиницын"]["top_location_name"] == "Измайловотест"
+    assert people["Каталогов Латиницын"]["top_location_city"] == "Москва"
+    assert people["Каталогов Одиночкин"]["top_location_name"] == "Одиночный парк"
 
 
 # ---------------------------------------------------------------------------

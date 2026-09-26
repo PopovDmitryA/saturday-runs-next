@@ -1270,9 +1270,8 @@ function achievementsCacheKey(platform: string | null): string {
 
 // Тело страницы без каркаса: шапку, рельс и колонку рисует тот, кто
 // вставляет контент (кабинет — PortalCabinetShell, чужой профиль — свой
-// каркас). Проп bare остался от старой обёртки AppShell (удалена 26.09.2026)
-// и ни на что не влияет.
-function AchievementsContent(_props: { bare?: boolean } = {}) {
+// каркас).
+function AchievementsContent() {
   // Фильтр системы — в снимке записи истории, ответ — в кэше вкладки: «назад»
   // из деталей челленджа возвращает ту же витрину сразу (см. lib/dataCache).
   const [platformFilter, setPlatformFilter] = useRestorableState<string | null>(

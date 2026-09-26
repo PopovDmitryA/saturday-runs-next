@@ -43,7 +43,7 @@ from app.notification_markup import bold, link
 from app.services import notification_channels_service as channels
 from app.services import notification_service as notifications
 from app.services.achievements_service import TIER_LABELS, compute_challenges
-from app.services.leaderboard_service import get_my_leaderboard_row
+from app.services.leaderboard_service import get_my_leaderboard_row, metric_title
 from app.services.my_history_service import get_my_history
 from app.services.platform_titles import PLATFORM_TITLES
 from app.time_format import normalize_finish_time_display
@@ -54,10 +54,12 @@ KIND_RUNS = "runs"
 KIND_RATINGS = "ratings"
 
 # Рейтинги, за движением в которых следим: код → подпись в сообщении.
-RATING_METRICS: tuple[tuple[str, str], ...] = (
-    ("runs", "Пробежки"),
-    ("locations", "Локации"),
-    ("wins", "Победы"),
+# Подпись — то же название, что у рейтинга на сайте (METRIC_META = дерево
+# навигации, RATING_GROUPS): «Количество пробежек», «Уникальные локации»,
+# «Первые места». Раньше тут были свои слова («Пробежки», «Победы»), и один
+# рейтинг звался в уведомлении иначе, чем на странице, куда ведёт ссылка.
+RATING_METRICS: tuple[tuple[str, str], ...] = tuple(
+    (metric, metric_title(metric)) for metric in ("runs", "locations", "wins")
 )
 
 _LEVEL_RANK = {None: 0, "bronze": 1, "silver": 2, "gold": 3}

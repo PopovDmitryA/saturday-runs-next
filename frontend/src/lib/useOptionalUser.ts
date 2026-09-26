@@ -52,11 +52,21 @@ export function clearCachedUser(): void {
   dropCached("");
 }
 
-export function useOptionalUser(options?: { skipCache?: boolean }): User | null | undefined {
+export function useOptionalUser(options?: {
+  skipCache?: boolean;
+  unknownAsPending?: boolean;
+}): User | null | undefined {
   // skipCache — не доверять кэшу на старте. Нужно там, где по ответу
   // принимается решение о редиректе: сразу после входа кэш ещё помнит
   // «аноним», и страница успела бы отправить залогиненного обратно на /login.
   const skipCache = options?.skipCache ?? false;
+  // unknownAsPending — «спросить не удалось» (429/5xx/таймаут) без кэша не
+  // превращать в гостя, а оставить undefined. Нужно навигации (шапка, рельс,
+  // нижняя панель): при undefined роль организатора берётся из памяти
+  // браузера, и сбой /auth/me не перестраивает рельс в «Войти» без
+  // «Оргкабинета» и не стирает запомненную локацию (V3). Страницам это не
+  // подходит: там undefined — «Загрузка…», и сбой сети повесил бы её навсегда.
+  const unknownAsPending = options?.unknownAsPending ?? false;
   const [user, setUser] = useState<User | null | undefined>(skipCache ? undefined : readCachedUser);
 
   useEffect(() => {
@@ -76,15 +86,16 @@ export function useOptionalUser(options?: { skipCache?: boolean }): User | null 
         if (!cancelled) setUser(null);
         return;
       }
-      // unknown — остаёмся на кэше; без кэша считаем гостем, но не запоминаем.
-      if (!cancelled) {
+      // unknown — остаёмся на кэше; без кэша считаем гостем (или, по
+      // unknownAsPending, «ещё неизвестно»), но не запоминаем.
+      if (!cancelled && !unknownAsPending) {
         setUser((current) => (current === undefined ? null : current));
       }
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [unknownAsPending]);
 
   return user;
 }

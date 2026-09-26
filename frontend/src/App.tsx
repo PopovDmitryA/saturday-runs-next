@@ -42,7 +42,8 @@ import { applyPageMeta, isLocationEntityPath, resolvePageMeta } from "./lib/page
 import { deferMetrikaHit, reportMetrikaHit } from "./lib/metrika";
 import { isLegacyGrafanaPath, legacyGrafanaTarget } from "./lib/siteBrand";
 import { buildVisitorKey } from "./lib/siteVisitor";
-import { LazyErrorBoundary, RouteFallback, lazyPage } from "./lib/lazyPage";
+import { LazyErrorBoundary, lazyPage } from "./lib/lazyPage";
+import { PortalRouteFallback } from "./features/portal/PortalRouteFallback";
 
 // Разделы, не нужные на первом экране, грузятся по первому обращению (см.
 // lib/lazyPage): админка, кабинет организатора, локации и протоколы, рейтинги,
@@ -504,14 +505,15 @@ export function App() {
     <ShareSheetProvider>
       <Fragment key={entryKey}>
         <LazyErrorBoundary>
-          <Suspense fallback={<RouteFallback />}>{renderRoute(path)}</Suspense>
+          <Suspense fallback={<PortalRouteFallback />}>{renderRoute(path)}</Suspense>
         </LazyErrorBoundary>
       </Fragment>
       <TeaserClaimRunner userId={viewer?.id ?? null} />
       {/* Тап-подсказки на телефоне — один слой на весь сайт (см. TapTooltipLayer). */}
       <TapTooltipLayer />
       {/* Поиск по сайту — одно окно на всё приложение, открывается из шапки,
-          рельса, «Меню» и по ⌘K / «/» (см. nav/SiteSearchDialog). */}
+          «Меню» на телефоне, со страницы 404 и по ⌘K / «/» (см.
+          nav/SiteSearchDialog). */}
       <SiteSearchDialog />
     </ShareSheetProvider>
   );

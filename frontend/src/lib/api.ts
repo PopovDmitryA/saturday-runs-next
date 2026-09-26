@@ -5391,6 +5391,8 @@ export type SiteSearchPerson =
       last_run_date: string | null;
       top_location_name: string | null;
       platform_codes: string[];
+      /** Слово запроса нашлось только в середине слова имени — строка из нижнего яруса выдачи. */
+      partial?: boolean;
     }
   | {
       kind: "participant";
@@ -5401,6 +5403,7 @@ export type SiteSearchPerson =
       top_location_name: string | null;
       top_location_city: string | null;
       platform_codes: string[];
+      partial?: boolean;
     };
 
 export type SiteSearchResponse = {

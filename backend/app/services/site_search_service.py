@@ -29,27 +29,44 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, literal, or_, select, true, union_all
 from sqlalchemy.orm import Session
 
-from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User, VolunteerResult
+from app.models import (
+    Event,
+    Location,
+    LocationCatalog,
+    LocationCatalogLink,
+    Participant,
+    Platform,
+    PlatformLink,
+    RunResult,
+    User,
+    VolunteerResult,
+)
 from app.services.co_runners_service import _UNKNOWN_PARTICIPANT_NAMES, _is_unknown_participant_name
+from app.services.location_catalog_service import normalize_location_slug
 from app.services.participant_search_service import (
     MAX_QUERY_LENGTH,
     MIN_QUERY_LENGTH,
     TopLocation,
     apply_name_filters,
+    folded_display_name,
     load_run_stats,
-    load_top_locations,
     load_volunteering_counts,
     normalize_query_text,
+    whole_word_filter,
+    word_start_all,
     word_start_rank,
+    word_start_regex,
 )
 from app.services.platform_titles import PLATFORM_ORDER
 from app.services.user_display_name_service import STYLE_INITIAL, prettify_name
 
 LOCATION_MIN_QUERY_LENGTH = 2
 PEOPLE_MIN_QUERY_LENGTH = MIN_QUERY_LENGTH
+# Одно слово из двух букв («Ли», «Ан», «Юн») — тоже люди, но только целым словом.
+PEOPLE_SHORT_QUERY_LENGTH = 2
 LOCATION_LIMIT = 8
 SIMILAR_LOCATION_LIMIT = 5
 PEOPLE_LIMIT = 20
@@ -485,31 +502,201 @@ def _best_top_location(tops: list[TopLocation]) -> TopLocation | None:
     return best
 
 
+def _catalog_place_names(
+    db: Session, locations: dict[UUID, tuple[UUID, str | None]], docs: list[_LocationDoc]
+) -> dict[UUID, tuple[str, str | None]]:
+    """location_id → (название, город) так, как локацию зовёт каталог сайта.
+
+    В протоколах parkrun-эпохи локация записана латиницей («Izmailovo»,
+    «Filatov Lug»), а на сайте у неё давно русское имя — то, что стоит на её
+    странице и в каталоге (build_locations_index сводит системы одной точки в
+    одну идентичность). Идентичность находим так же, как
+    LocationCatalogIndex.canonical_identity_key: по связке каталога — через
+    id локации или её слаг в системе (с нормализацией «readovsky-park» =
+    «readovskypark» и старым слагом parkrun). Весь индекс каталога не строим:
+    он дорогой (все локации и сводки стартов), а связок — пара сотен строк.
+
+    locations — id → (platform_id, external_key).
+    """
+    by_identity = {
+        str(doc.entry.get("identity_key")): doc.entry for doc in docs if doc.entry.get("identity_key")
+    }
+    if not locations or not by_identity:
+        return {}
+    by_location_id: dict[UUID, UUID] = {}
+    by_platform_key: dict[tuple[UUID, str], UUID] = {}
+    for catalog_id, location_id, platform_id, external_key in db.query(
+        LocationCatalogLink.catalog_id,
+        LocationCatalogLink.location_id,
+        LocationCatalogLink.platform_id,
+        LocationCatalogLink.external_key,
+    ).all():
+        if location_id is not None:
+            by_location_id[location_id] = catalog_id
+        if external_key:
+            by_platform_key[(platform_id, normalize_location_slug(external_key))] = catalog_id
+    legacy_slugs = {
+        normalize_location_slug(slug): catalog_id
+        for catalog_id, slug in db.query(LocationCatalog.id, LocationCatalog.legacy_parkrun_slug)
+        .filter(LocationCatalog.legacy_parkrun_slug.isnot(None))
+        .all()
+        if slug
+    }
+    names: dict[UUID, tuple[str, str | None]] = {}
+    for location_id, (platform_id, external_key) in locations.items():
+        slug = normalize_location_slug(external_key or "")
+        catalog_id = (
+            by_location_id.get(location_id)
+            or (by_platform_key.get((platform_id, slug)) if slug else None)
+            or (legacy_slugs.get(slug) if slug else None)
+        )
+        entry = by_identity.get(f"catalog:{catalog_id}" if catalog_id else f"location:{location_id}")
+        name = str((entry or {}).get("name") or "").strip()
+        if name:
+            names[location_id] = (name, (entry or {}).get("city") or None)
+    return names
+
+
+def _top_locations_by_place(
+    db: Session, participant_ids: list[UUID], model: Any, docs: list[_LocationDoc]
+) -> dict[UUID, TopLocation]:
+    """Как load_top_locations в онбординге, но с названиями из каталога сайта.
+
+    Пробежки на одной точке в разных системах (parkrun-эпоха и 5 вёрст)
+    складываются: у точки одно имя — одна строка счёта.
+    """
+    if not participant_ids:
+        return {}
+    query = (
+        db.query(
+            model.participant_id,
+            Location.id,
+            Location.name,
+            Location.city,
+            Location.platform_id,
+            Location.external_key,
+            func.count(model.id),
+            func.max(Event.event_date),
+        )
+        .join(Event, model.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
+        .filter(model.participant_id.in_(participant_ids), Event.is_test_event.is_(False))
+    )
+    if model is VolunteerResult:
+        # Сводка ролей parkrun лежит на дате-заглушке — у неё нет настоящей локации.
+        query = query.filter(Event.event_date > date(1970, 1, 1))
+    rows = query.group_by(model.participant_id, Location.id).all()
+    catalog_names = _catalog_place_names(
+        db, {row[1]: (row[4], row[5]) for row in rows}, docs
+    )
+    merged: dict[UUID, dict[tuple[str, str | None], TopLocation]] = {}
+    for participant_id, location_id, name, city, _platform_id, _key, count, last_date in rows:
+        shown_name, shown_city = catalog_names.get(location_id, (name, city))
+        places = merged.setdefault(participant_id, {})
+        current = places.get((shown_name, shown_city))
+        places[(shown_name, shown_city)] = TopLocation(
+            name=shown_name,
+            city=shown_city,
+            count=count + (current.count if current else 0),
+            last_date=max(filter(None, (last_date, current.last_date if current else None)), default=None),
+        )
+    return {
+        participant_id: best
+        for participant_id, places in merged.items()
+        if (best := _best_top_location(list(places.values()))) is not None
+    }
+
+
 def _top_locations_for(
-    db: Session, participant_ids: list[UUID]
+    db: Session, participant_ids: list[UUID], docs: list[_LocationDoc]
 ) -> dict[UUID, TopLocation]:
     """Топ-локация по пробежкам, а у кого пробежек нет — по волонтёрствам."""
-    by_runs = load_top_locations(db, participant_ids, source="run")
+    by_runs = _top_locations_by_place(db, participant_ids, RunResult, docs)
     missing = [participant_id for participant_id in participant_ids if participant_id not in by_runs]
-    by_volunteering = load_top_locations(db, missing, source="volunteer") if missing else {}
+    by_volunteering = _top_locations_by_place(db, missing, VolunteerResult, docs) if missing else {}
     return {**by_volunteering, **by_runs}
 
 
-def _name_match_score(name: str | None, words: list[str]) -> int:
-    """То же, что word_start_rank в SQL, но в Python — для ранжирования строк.
+_NAME_SPLIT_RE = re.compile(r"[\s-]+")
 
-    За каждое слово: 2 — совпало слово имени целиком, 1 — с начала слова,
-    0 — из середины. «Ким»: Юлия Ким, потом Кимовы, потом Хакимжановы.
+
+def _name_tokens(name: str | None) -> list[str]:
+    return [token for token in _NAME_SPLIT_RE.split(_fold(name)) if token]
+
+
+def _word_levels(name: str | None, words: list[str]) -> list[int]:
+    """То же, что word_start_rank в SQL, но в Python и по каждому слову.
+
+    2 — слово имени целиком, 1 — с начала слова имени, 0 — только из середины.
+    «Ким»: Юлия Ким — 2, Кимова — 1, Хакимжанов — 0.
     """
-    name_tokens = [token for token in re.split(r"[\s-]+", _fold(name)) if token]
-    score = 0
+    name_tokens = _name_tokens(name)
+    levels: list[int] = []
     for word in words:
         folded = _fold(word)
         if folded in name_tokens:
-            score += 2
+            levels.append(2)
         elif any(token.startswith(folded) for token in name_tokens):
-            score += 1
-    return score
+            levels.append(1)
+        else:
+            levels.append(0)
+    return levels
+
+
+def _name_match_score(name: str | None, words: list[str]) -> int:
+    return sum(_word_levels(name, words))
+
+
+def _is_partial_match(name: str | None, words: list[str]) -> bool:
+    """Хоть одно слово запроса нашлось только в середине слова имени: «лев» в «Михалевском»."""
+    return 0 in _word_levels(name, words)
+
+
+def _name_has_words(name: str | None, folded_words: list[str]) -> bool:
+    """То же условие, что _apply_people_name_filters в SQL, — для строк в Python."""
+    folded_name = _fold(name)
+    tokens = _name_tokens(name)
+    for word in folded_words:
+        if len(word) >= PEOPLE_MIN_QUERY_LENGTH:
+            if word not in folded_name:
+                return False
+        elif len(word) == PEOPLE_SHORT_QUERY_LENGTH:
+            if word not in tokens:
+                return False
+        elif not any(token.startswith(word) for token in tokens):
+            return False
+    return True
+
+
+def _people_query_is_searchable(words: list[str]) -> bool:
+    """Есть ли в запросе, по чему искать людей: слово от трёх букв или фамилия из двух («Ли»)."""
+    return any(
+        len(word) >= PEOPLE_MIN_QUERY_LENGTH or (len(word) == PEOPLE_SHORT_QUERY_LENGTH and word.isalpha())
+        for word in words
+    )
+
+
+def _apply_people_name_filters(query: Any, words: list[str]) -> Any:
+    """Условия на имя для публичного поиска.
+
+    Слово от трёх букв — подстрока имени, как в онбординге (apply_name_filters,
+    по GIN-индексу). Короче — подстрокой быть не может: «ли» есть в «Анатолии»,
+    и «Ли Москва» находил Анатолия Москву. Поэтому две буквы — целое слово
+    имени («Ли», «Ан»), одна — начало слова («Попов Д»). Целое слово записано
+    LIKE-шаблонами, которые индекс разбирает на триграммы: запрос из одной
+    фамилии «Ли» идёт по индексу; начало слова — регуляркой, она только
+    проверяет строки, уже найденные по длинному слову.
+    """
+    long_words = [word for word in words if len(word) >= PEOPLE_MIN_QUERY_LENGTH]
+    if long_words:
+        query = apply_name_filters(query, long_words)
+    folded = folded_display_name()
+    for word in words:
+        if len(word) == PEOPLE_SHORT_QUERY_LENGTH:
+            query = query.filter(whole_word_filter(word))
+        elif len(word) < PEOPLE_SHORT_QUERY_LENGTH:
+            query = query.filter(folded.op("~")(word_start_regex(word)))
+    return query
 
 
 @dataclass
@@ -580,22 +767,25 @@ def _find_registered(db: Session, words: list[str]) -> dict[UUID, _RegisteredMat
         .filter(PlatformLink.participant_id.is_(None), Platform.is_active.is_(True))
         .all()
     )
-    # Та же семантика, что у apply_name_filters: каждое слово — подстрока
-    # имени, без различия регистра и «е»/«ё».
     folded_words = [_fold(word) for word in words]
     matches: dict[UUID, _RegisteredMatch] = {}
     participants_by_user: dict[UUID, list[tuple[UUID, str]]] = {}
+
+    def rank(name: str) -> tuple[bool, int]:
+        return (not _is_partial_match(name, words), _name_match_score(name, words))
+
     for user_id, user_name, user_style, participant_id, participant_name, platform_code in rows:
         participants_by_user.setdefault(user_id, []).append((participant_id, platform_code))
         name = participant_name or ""
-        if user_id in matches or _is_placeholder_name(name):
-            continue
-        folded_name = _fold(name)
-        if not all(word in folded_name for word in folded_words):
+        if _is_placeholder_name(name) or not _name_has_words(name, folded_words):
             continue
         if _initial_style_hides_match(user_style, user_name, words):
             continue
-        matches[user_id] = _RegisteredMatch(user_id=user_id, matched_name=name)
+        # Из нескольких привязанных профилей человека берём тот, чьё имя
+        # совпало лучше: по нему строка встаёт в свой ярус выдачи.
+        current = matches.get(user_id)
+        if current is None or rank(name) > rank(current.matched_name):
+            matches[user_id] = _RegisteredMatch(user_id=user_id, matched_name=name)
     # Суммы — по ВСЕМ привязанным профилям человека, а не только по тем, чьё
     # имя совпало: в С95 он может быть записан латиницей, а пробежки те же.
     for user_id, match in matches.items():
@@ -603,75 +793,53 @@ def _find_registered(db: Session, words: list[str]) -> dict[UUID, _RegisteredMat
     return matches
 
 
-def _registered_payloads(
+@dataclass
+class _RegisteredCandidate:
+    match: _RegisteredMatch
+    user: User
+    display_name: str
+    total_runs: int
+    last_run: date | None
+    # participant_id → пробежек: топ-локацию берём у профилей, где человек бегал.
+    runs_by_participant: dict[UUID, int]
+    partial: bool
+    score: int
+
+
+def _registered_candidates(
     db: Session, matches: dict[UUID, _RegisteredMatch], words: list[str]
-) -> list[dict[str, Any]]:
+) -> list[_RegisteredCandidate]:
+    """Зарегистрированные по порядку выдачи: сначала совпавшие с начала слова."""
     if not matches:
         return []
     run_stats = load_run_stats(db, [pid for match in matches.values() for pid, _code in match.participants])
-
-    def total_runs(match: _RegisteredMatch) -> int:
-        return sum(run_stats.get(pid, (0, None))[0] for pid, _code in match.participants)
-
-    def last_run(match: _RegisteredMatch) -> date | None:
-        dates = [run_stats[pid][1] for pid, _code in match.participants if pid in run_stats and run_stats[pid][1]]
-        return max(dates) if dates else None
-
     users = {user.id: user for user in db.query(User).filter(User.id.in_(list(matches))).all()}
-
-    def display_name(match: _RegisteredMatch) -> str:
+    out: list[_RegisteredCandidate] = []
+    for match in matches.values():
         user = users.get(match.user_id)
-        return ((user.display_name if user else None) or "").strip() or prettify_name(match.matched_name.strip())
-
-    ordered = sorted(
-        (match for match in matches.values() if match.user_id in users),
-        key=lambda match: (
-            -_name_match_score(match.matched_name, words),
-            -total_runs(match),
-            display_name(match).casefold(),
-        ),
-    )
-    shown = ordered[:PEOPLE_LIMIT]
-    # Волонтёрства и топ-локации — только для показываемых: у parkrun
-    # волонтёрства — отдельный запрос на каждого участника.
-    shown_ids = [pid for match in shown for pid, _code in match.participants]
-    shown_candidates = (
-        db.query(Participant, Platform)
-        .join(Platform, Participant.platform_id == Platform.id)
-        .filter(Participant.id.in_(shown_ids))
-        .all()
-        if shown_ids
-        else []
-    )
-    volunteering = load_volunteering_counts(db, shown_candidates)
-    tops = _top_locations_for(db, shown_ids)
-
-    payloads: list[dict[str, Any]] = []
-    for match in shown:
-        user = users[match.user_id]
+        if user is None:
+            continue
         ids = [pid for pid, _code in match.participants]
-        run_tops = [tops[pid] for pid in ids if pid in tops and run_stats.get(pid, (0, None))[0] > 0]
-        top = _best_top_location(run_tops) or _best_top_location([tops[pid] for pid in ids if pid in tops])
-        codes = sorted({code for _pid, code in match.participants}, key=_platform_sort_key)
-        payloads.append(
-            {
-                "kind": "registered",
-                "display_name": display_name(match),
-                "href": f"/users/{user_profile_handle(user)}",
-                "avatar_url": user.avatar_url,
-                "total_runs": total_runs(match),
-                "total_volunteering": sum(volunteering.get(pid, 0) for pid in ids),
-                "last_run_date": last_run(match),
-                "top_location_name": top.name if top else None,
-                "platform_codes": codes,
-            }
+        dates = [run_stats[pid][1] for pid in ids if pid in run_stats and run_stats[pid][1]]
+        out.append(
+            _RegisteredCandidate(
+                match=match,
+                user=user,
+                display_name=(user.display_name or "").strip() or prettify_name(match.matched_name.strip()),
+                total_runs=sum(run_stats.get(pid, (0, None))[0] for pid in ids),
+                last_run=max(dates) if dates else None,
+                runs_by_participant={pid: run_stats.get(pid, (0, None))[0] for pid in ids},
+                partial=_is_partial_match(match.matched_name, words),
+                score=_name_match_score(match.matched_name, words),
+            )
         )
-    return payloads
+    out.sort(key=lambda item: (item.partial, -item.score, -item.total_runs, item.display_name.casefold()))
+    return out
 
 
 def _participant_rank_key(match_score: int, last_run: date | None, runs: int, name: str) -> tuple[int, int, int, int, str]:
     # Сначала — насколько имя совпало с запросом с начала слова («Ким» выше
-    # «Хакимжанова»), дальше как в онбординге: свежепробежавшие выше, «пустые»
+    # «Кимовой»), дальше как в онбординге: свежепробежавшие выше, «пустые»
     # однофамильцы — внизу. Дата последнего старта видна в строке, поэтому
     # порядок однофамильцев читается.
     return (
@@ -700,17 +868,60 @@ def _participants_seen_at(db: Session, participant_ids: list[UUID], location_ids
     return seen
 
 
+def _seen_at_lateral(location_ids: set[UUID]) -> Any:
+    """«Участник бегал или волонтёрил на этих локациях» — LATERAL с LIMIT 1 для JOIN до LIMIT.
+
+    Не EXISTS … OR EXISTS: такое условие Postgres считает «хэшированным
+    подпланом» — собирает ВСЕ пробежки места в хэш (у Москвы это полмиллиона
+    строк, 0,8 с на «Ли Москва»). LATERAL с LIMIT 1 захэшировать нельзя:
+    он выполняется на каждого найденного по имени (их десятки–тысячи) по
+    индексу пробежек участника и останавливается на первой подходящей.
+    """
+    ids = list(location_ids)
+    runs = (
+        select(literal(1).label("hit"))
+        .select_from(RunResult)
+        .join(Event, RunResult.event_id == Event.id)
+        .where(RunResult.participant_id == Participant.id, Event.location_id.in_(ids))
+    )
+    volunteering = (
+        select(literal(1).label("hit"))
+        .select_from(VolunteerResult)
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .where(VolunteerResult.participant_id == Participant.id, Event.location_id.in_(ids))
+    )
+    return union_all(runs, volunteering).limit(1).lateral("seen_at_place")
+
+
 def search_people(
-    db: Session, query_text: str, *, within_locations: set[UUID] | None = None
+    db: Session,
+    query_text: str,
+    *,
+    within_locations: set[UUID] | None = None,
+    docs: list[_LocationDoc] | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """(строки выдачи, есть ли ещё совпадения за лимитом).
 
     within_locations — оставить только тех, кто бегал или волонтёрил на этих
     локациях: так работает «Попов Дмитрий Королёв».
+
+    Порядок выдачи — два яруса. Сначала все, у кого каждое слово запроса
+    совпало с НАЧАЛОМ слова имени (участники сайта, потом люди из
+    протоколов), затем те, у кого хоть одно слово нашлось только в середине
+    («лев» в «Михалевском»), — в том же порядке и с пометкой partial. Внутри
+    первого яруса участник сайта стоит выше человека из протоколов, даже если
+    у того имя совпало целиком: «Лев» — это два десятка Львов из протоколов,
+    и при строгой сортировке по баллу Александр Левин с открытым профилем
+    выпал бы за лимит выдачи вовсе.
+
+    Слово из двух букв («Ли», «Ан», «Юн») ищем только целым словом имени,
+    из одной — только началом слова: как подстрока они есть почти в каждом
+    имени (см. _apply_people_name_filters).
     """
     words = query_text.split()
-    if len(query_text) < PEOPLE_MIN_QUERY_LENGTH or not words:
+    if not _people_query_is_searchable(words):
         return [], False
+    docs = docs if docs is not None else []
 
     registered = _find_registered(db, words)
     if within_locations is not None:
@@ -722,7 +933,7 @@ def search_people(
             for user_id, match in registered.items()
             if any(pid in seen for pid, _code in match.participants)
         }
-    registered_rows = _registered_payloads(db, registered, words)
+    registered_ordered = _registered_candidates(db, registered, words)
     # Участники зарегистрированных уже показаны их строкой — вторым разом не выводим.
     covered_ids = {pid for match in registered.values() for pid, _code in match.participants}
 
@@ -737,9 +948,16 @@ def search_people(
             func.lower(func.trim(Participant.display_name)).notin_(sorted(_PLACEHOLDER_NAMES)),
         )
     )
+    candidates_query = _apply_people_name_filters(candidates_query, words)
+    if within_locations is not None:
+        # Место — в SQL, до LIMIT: у частой фамилии («Иванов Мытищи») тысячи
+        # однофамильцев, и фильтр по месту после лимита находил только тех,
+        # кто случайно попал в первые пятьсот.
+        candidates_query = candidates_query.join(_seen_at_lateral(within_locations), true())
+    # Порядок — в SQL, до LIMIT: сначала те, у кого все слова совпали с начала
+    # слова имени, затем по баллу (целиком выше, чем с начала).
     candidates = (
-        apply_name_filters(candidates_query, words)
-        .order_by(word_start_rank(words).desc())
+        candidates_query.order_by(word_start_all(words).desc(), word_start_rank(words).desc())
         .limit(PEOPLE_CANDIDATE_LIMIT + 1)
         .all()
     )
@@ -749,36 +967,78 @@ def search_people(
         for participant, platform in candidates[:PEOPLE_CANDIDATE_LIMIT]
         if participant.id not in covered_ids and not _is_placeholder_name(participant.display_name)
     ]
-    if within_locations is not None:
-        seen = _participants_seen_at(db, [participant.id for participant, _platform in candidates], within_locations)
-        candidates = [(participant, platform) for participant, platform in candidates if participant.id in seen]
     # Привязанный к открытому профилю, но не попавший в registered (например,
     # «Иван П.», найденный по фамилии), остаётся строкой участника — это
     # ровно то, что видно в любом протоколе, без связи с аккаунтом.
 
     run_stats = load_run_stats(db, [participant.id for participant, _platform in candidates])
+    partial_ids = {
+        participant.id for participant, _platform in candidates if _is_partial_match(participant.display_name, words)
+    }
     ranked = sorted(
         candidates,
-        key=lambda pair: _participant_rank_key(
-            _name_match_score(pair[0].display_name, words),
-            run_stats.get(pair[0].id, (0, None))[1],
-            run_stats.get(pair[0].id, (0, None))[0],
-            pair[0].display_name or "",
+        key=lambda pair: (
+            pair[0].id in partial_ids,
+            *_participant_rank_key(
+                _name_match_score(pair[0].display_name, words),
+                run_stats.get(pair[0].id, (0, None))[1],
+                run_stats.get(pair[0].id, (0, None))[0],
+                pair[0].display_name or "",
+            ),
         ),
     )
-    room = PEOPLE_LIMIT - len(registered_rows)
-    shown = ranked[: max(room, 0)]
-    truncated = truncated or len(ranked) > len(shown) or len(registered) > len(registered_rows)
+    ordered: list[tuple[str, Any]] = [
+        *(("registered", item) for item in registered_ordered if not item.partial),
+        *(("participant", pair) for pair in ranked if pair[0].id not in partial_ids),
+        *(("registered", item) for item in registered_ordered if item.partial),
+        *(("participant", pair) for pair in ranked if pair[0].id in partial_ids),
+    ]
+    shown = ordered[:PEOPLE_LIMIT]
+    truncated = truncated or len(ordered) > len(shown)
 
-    # Волонтёрства и топ-локацию считаем только для показываемых строк:
-    # у parkrun волонтёрства — отдельный запрос на человека.
-    volunteering = load_volunteering_counts(db, shown)
-    tops = _top_locations_for(db, [participant.id for participant, _platform in shown])
-    participant_rows: list[dict[str, Any]] = []
-    for participant, platform in shown:
+    shown_registered: list[_RegisteredCandidate] = [item for kind, item in shown if kind == "registered"]
+    shown_participants: list[tuple[Participant, Platform]] = [item for kind, item in shown if kind == "participant"]
+    registered_ids = [pid for item in shown_registered for pid, _code in item.match.participants]
+    registered_pairs = (
+        db.query(Participant, Platform)
+        .join(Platform, Participant.platform_id == Platform.id)
+        .filter(Participant.id.in_(registered_ids))
+        .all()
+        if registered_ids
+        else []
+    )
+    # Волонтёрства и топ-локации — только для показываемых строк: у parkrun
+    # волонтёрства — отдельный запрос на каждого участника.
+    volunteering = load_volunteering_counts(db, [*registered_pairs, *shown_participants])
+    tops = _top_locations_for(
+        db, [*registered_ids, *(participant.id for participant, _platform in shown_participants)], docs
+    )
+
+    rows: list[dict[str, Any]] = []
+    for kind, item in shown:
+        if kind == "registered":
+            ids = [pid for pid, _code in item.match.participants]
+            run_tops = [tops[pid] for pid in ids if pid in tops and item.runs_by_participant.get(pid, 0) > 0]
+            top = _best_top_location(run_tops) or _best_top_location([tops[pid] for pid in ids if pid in tops])
+            rows.append(
+                {
+                    "kind": "registered",
+                    "display_name": item.display_name,
+                    "href": f"/users/{user_profile_handle(item.user)}",
+                    "avatar_url": item.user.avatar_url,
+                    "total_runs": item.total_runs,
+                    "total_volunteering": sum(volunteering.get(pid, 0) for pid in ids),
+                    "last_run_date": item.last_run,
+                    "top_location_name": top.name if top else None,
+                    "platform_codes": sorted({code for _pid, code in item.match.participants}, key=_platform_sort_key),
+                    "partial": item.partial,
+                }
+            )
+            continue
+        participant, platform = item
         top = tops.get(participant.id)
         runs, last_run = run_stats.get(participant.id, (0, None))
-        participant_rows.append(
+        rows.append(
             {
                 "kind": "participant",
                 "display_name": prettify_name((participant.display_name or "").strip()),
@@ -788,9 +1048,10 @@ def search_people(
                 "top_location_name": top.name if top else None,
                 "top_location_city": top.city if top else None,
                 "platform_codes": [platform.code],
+                "partial": participant.id in partial_ids,
             }
         )
-    return [*registered_rows, *participant_rows], truncated
+    return rows, truncated
 
 
 def _fold_column(column: Any) -> Any:
@@ -845,7 +1106,7 @@ def _people_by_name_and_place(
     """«Попов Дмитрий Москва»: имя + место, когда по одному имени — пусто.
 
     Пробуем считать местом последнее слово, два последних («нижний
-    новгород») и первое. Имени должно остаться хотя бы одно слово от 3 букв.
+    новгород») и первое. Имени должно остаться хотя бы две буквы («Ли»).
     """
     words = query_text.split()
     if len(words) < 2:
@@ -856,13 +1117,14 @@ def _people_by_name_and_place(
     splits.append((words[1:], words[:1]))
     for name_words, place_words in splits:
         name_text = " ".join(name_words)
-        if len(name_text) < PEOPLE_MIN_QUERY_LENGTH:
+        # «Ли Москва»: имя из двух букв search_people ищет целым словом.
+        if len(name_text) < PEOPLE_SHORT_QUERY_LENGTH:
             continue
         place = _place_filter(db, place_words, docs)
         if place is None:
             continue
         location_ids, label = place
-        people, truncated = search_people(db, name_text, within_locations=location_ids)
+        people, truncated = search_people(db, name_text, within_locations=location_ids, docs=docs)
         if people:
             return people, truncated, label
     return None
@@ -879,7 +1141,7 @@ def _run_search(db: Session, query_text: str, docs: list[_LocationDoc]) -> dict[
     if words and all(word in _PLACE_ABBREVIATIONS for word in words):
         people, truncated = [], False
     else:
-        people, truncated = search_people(db, query_text)
+        people, truncated = search_people(db, query_text, docs=docs)
     people_place: str | None = None
     # Имя + место пробуем, только когда не нашлось ни людей, ни локаций:
     # «парк горького» — это локация, а не люди «Парк…», бегавшие у Горького.

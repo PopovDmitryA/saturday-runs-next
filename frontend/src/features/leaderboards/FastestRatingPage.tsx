@@ -382,7 +382,12 @@ export function FastestRatingPage() {
                 переключатели, снизу выпадающие списки и поиск. Одна строка на
                 всё не помещалась ни на каком мониторе, и поиск оставался
                 висеть в одиночестве справа. */}
-            <RatingFilters activeCount={activeFilters}>
+            <RatingFilters
+              activeCount={activeFilters}
+              aside={
+                tableColumns.hasToggle ? <TableViewToggle columns={tableColumns} inline /> : null
+              }
+            >
             <div className="lb-fastest-controls">
               <div className="lb-fastest-controls-row">
                 {/* У переключателя зачёта есть подпись, как у остальных
@@ -471,8 +476,10 @@ export function FastestRatingPage() {
                   />
                 </div>
 
+                {/* На телефоне «Колонки» стоят рядом с кнопкой «Фильтры»
+                    (aside выше), здесь — копия для компьютера. */}
                 {tableColumns.hasToggle && (
-                  <div className="lb-visits">
+                  <div className="lb-visits lb-wide-only">
                     <span className="lb-visits-label">Колонки</span>
                     <TableViewToggle columns={tableColumns} inline />
                   </div>
@@ -573,8 +580,12 @@ export function FastestRatingPage() {
             >
               <table
                 ref={tableRef}
+                // lb-table-full — как у остальных рейтингов: по нему «Место» и
+                // «Участник» прилипают к левому краю рамки, пока полная таблица
+                // листается вбок. Без класса строка теряла, чей это результат
+                // (проверка 26.09.2026: при 1024 обе колонки уезжали за край).
                 className={`data-table lb-table lb-fastest-table${
-                  tableColumns.showFull ? "" : " lb-table-short"
+                  tableColumns.showFull ? " lb-table-full" : " lb-table-short"
                 }`}
                 // Краткий вид — во всю рамку и не шире её: имя обрезается
                 // многоточием, время остаётся на экране (см. .lb-table-short).

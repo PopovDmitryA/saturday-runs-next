@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import case, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User, VolunteerResult
@@ -123,6 +123,11 @@ def apply_name_filters(query, words: list[str]):
     return query
 
 
+def word_start_regex(word: str, *, whole: bool = False) -> str:
+    """POSIX-регулярка «слово имени начинается с word» (whole — и им же кончается)."""
+    return _word_start_pattern(word, whole=whole)
+
+
 def _word_start_pattern(word: str, *, whole: bool) -> str:
     # POSIX-регулярка Postgres: слово имени начинается с начала строки, после
     # пробела или дефиса («Римского-Корсакова»). re.escape годится и для неё:
@@ -152,6 +157,45 @@ def word_start_rank(words: list[str]):
         )
         score = part if score is None else score + part
     return score
+
+
+def word_start_all(words: list[str]):
+    """SQL: 1, если КАЖДОЕ слово запроса совпало с началом какого-то слова имени, иначе 0.
+
+    Сумма word_start_rank этого не различает: у двух слов «2 + 0» (одно
+    совпало целиком, другое — из середины) и «1 + 1» (оба с начала) балл
+    одинаковый. А для выдачи важно именно второе: совпадения из середины
+    идут ниже всех совпадений с начала слова.
+    """
+    folded = folded_display_name()
+    return case(
+        (and_(*(folded.op("~")(_word_start_pattern(word, whole=False)) for word in words)), 1),
+        else_=0,
+    )
+
+
+def whole_word_filter(word: str):
+    """Условие «слово имени целиком равно word» — для фамилий из двух букв.
+
+    «Ли», «Ан», «Юн» как подстрока есть почти в каждом имени, поэтому такие
+    запросы ищут только целое слово. Записано через LIKE с пробелами, а не
+    регуляркой: такие шаблоны GIN-индекс pg_trgm разбирает на триграммы
+    (« ли», «ли »), и запрос идёт по индексу — единицы миллисекунд вместо
+    полного прохода по участникам (регулярка с границами слова индексом не
+    покрывается). Имя из одного слова («Ли» без имени) не ищем: таких нет.
+    """
+    folded = folded_display_name()
+    term = _escape_like(fold_name_text(word))
+    patterns = (
+        f"% {term} %",
+        f"{term} %",
+        f"% {term}",
+        f"{term}-%",
+        f"%-{term}",
+        f"% {term}-%",
+        f"%-{term} %",
+    )
+    return or_(*(folded.like(pattern, escape="\\") for pattern in patterns))
 
 
 def _apply_query_filters(query, words: list[str]):

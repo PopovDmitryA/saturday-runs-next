@@ -87,9 +87,9 @@ export function PortalCabinetShell({
   return (
     <div className="portal-cab">
       <NotificationsPromptModal />
-      {/* Та же шапка, что и на главной портала — с этого экрана вы уже
-          авторизованы, так что навигация (Локации/Рейтинги/О проекте) и
-          переход в кабинет по клику на ник работают идентично. */}
+      {/* Та же шапка, что на всём сайте. Ссылок разделов в ней рядом с
+          рельсом нет (их прячет метка has-site-rail), по нику открывается
+          меню аккаунта (nav/AccountMenu). */}
       <PortalHeader />
 
       <div className="portal-cab-layout">

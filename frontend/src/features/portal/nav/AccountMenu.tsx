@@ -64,7 +64,9 @@ export function AccountMenu({ user }: { user: User }) {
         type="button"
         className="portal-header-user account-menu-button"
         aria-expanded={open}
-        aria-controls={POPOVER_ID}
+        // Список рисуется только открытым: ссылка на id, которого нет в
+        // документе, для диктора — ошибка (V15).
+        aria-controls={open ? POPOVER_ID : undefined}
         title={`${label} — аккаунт`}
         aria-label={`Аккаунт: ${label}`}
         onClick={() => setOpen((value) => !value)}

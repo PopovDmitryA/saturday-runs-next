@@ -38,9 +38,8 @@ import { volunteeringSubject } from "../sharing/subjects";
 
 // Тело страницы без каркаса: шапку, рельс и колонку рисует тот, кто
 // вставляет контент (кабинет — PortalCabinetShell, чужой профиль — свой
-// каркас). Проп bare остался от старой обёртки AppShell (удалена 26.09.2026)
-// и ни на что не влияет.
-function VolunteeringContent(_props: { bare?: boolean } = {}) {
+// каркас).
+function VolunteeringContent() {
   const { listVolunteering, mode, cacheScope } = useAppDataSource();
   // Галочки — в снимке записи истории, список — в кэше вкладки: «назад» из
   // протокола возвращает ту же таблицу без секунды пустоты (см. lib/dataCache).

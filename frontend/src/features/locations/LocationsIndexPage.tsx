@@ -261,7 +261,7 @@ function LocationsTable({
             {show("avg_finish_time") && (
               <ColumnHeader
                 label="Среднее время"
-                hint="Среднее время финишёра за всю историю площадки"
+                hint="Среднее время финишёра за всю историю локации"
                 {...sortProps("avg_finish_time")}
               />
             )}
@@ -289,14 +289,14 @@ function LocationsTable({
             {show("first_event_date") && (
               <ColumnHeader
                 label="Первый старт"
-                hint="Самый первый старт площадки — в любой системе, включая parkrun-эпоху"
+                hint="Самый первый старт локации — в любой системе, включая parkrun-эпоху"
                 {...sortProps("first_event_date")}
               />
             )}
             {show("first_event_date_in_system") && (
               <ColumnHeader
                 label="Первый старт в системе"
-                hint="Когда площадка начала работать в нынешней системе. У переехавших из parkrun-эпохи эта дата на годы позже сквозной"
+                hint="Когда локация начала работать в нынешней системе. У переехавших из parkrun-эпохи эта дата на годы позже сквозной"
                 {...sortProps("first_event_date_in_system")}
               />
             )}
@@ -422,7 +422,7 @@ function SeriesBlock({ items }: { items: LocationIndexItem[] }) {
     <section className="loc-series">
       <h2 className="loc-series-title">Серии стартов</h2>
       <p className="muted loc-series-note">
-        Не площадки, а форматы: старты проходят нерегулярно и каждый раз в новом месте.
+        Не локации, а форматы: старты проходят нерегулярно и каждый раз в новом месте.
         Финиши с них идут в личный счёт, но в карту, туризм и рейтинги локаций не попадают.
       </p>
       <TableWrap>
@@ -558,7 +558,7 @@ function LocationsIndexContent() {
           <h1>Локации</h1>
         </div>
         <p className="muted loc-header-place">
-          Все площадки субботних стартов: цифры, рекорды и история каждой локации.{" "}
+          Все локации субботних стартов: цифры, рекорды и история каждой.{" "}
           <a href="/results">Результаты последней субботы →</a>
         </p>
       </header>

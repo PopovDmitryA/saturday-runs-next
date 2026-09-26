@@ -73,9 +73,8 @@ function RegionsPanel({
 
 // Тело страницы без каркаса: шапку, рельс и колонку рисует тот, кто
 // вставляет контент (кабинет — PortalCabinetShell, чужой профиль — свой
-// каркас). Проп bare остался от старой обёртки AppShell (удалена 26.09.2026)
-// и ни на что не влияет.
-function MapsContent(_props: { bare?: boolean } = {}) {
+// каркас).
+function MapsContent() {
   const { getVisitedLocationsMap, getCatalogLocationsMap, getCatalogLocationsTable } =
     useAppDataSource();
   // Вид и фильтры — в снимке записи истории: «назад» с площадки возвращает

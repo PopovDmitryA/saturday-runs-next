@@ -31,7 +31,7 @@ export type SiteSidebarActive =
   | "backlog"
   | null;
 
-export function isCabinetTab(active: SiteSidebarActive | undefined): active is CabinetTabKey {
+function isCabinetTab(active: SiteSidebarActive | undefined): active is CabinetTabKey {
   return active != null && (CABINET_TAB_KEYS as readonly string[]).includes(active);
 }
 

@@ -16,13 +16,28 @@ import "./nav/siteNav.css";
 /**
  * Перейти к содержимому: фокус — на <main> страницы. Своего id у main нет
  * (каркасов много), поэтому ищем первый main в документе.
+ *
+ * Прокрутку делаем сами: main.focus() без preventScroll ставил верх main
+ * вплотную к краю окна, то есть под липкую шапку, — заголовок страницы и
+ * крошки прятались (V2). Если начало содержимого и так видно под шапкой,
+ * страница не двигается вовсе.
  */
 function skipToContent(event: MouseEvent<HTMLAnchorElement>): void {
   const main = document.querySelector<HTMLElement>("main");
   if (!main) return;
   event.preventDefault();
   if (!main.hasAttribute("tabindex")) main.setAttribute("tabindex", "-1");
-  main.focus();
+  main.focus({ preventScroll: true });
+  // Низ всего липкого сверху: шапка, а при свёрнутой колонке и на телефоне —
+  // ещё полоса страниц раздела под ней.
+  const header = document.querySelector<HTMLElement>(".portal-header");
+  const subnav = document.querySelector<HTMLElement>(".site-subnav");
+  const subnavBottom =
+    subnav && getComputedStyle(subnav).position === "sticky" ? subnav.getBoundingClientRect().bottom : 0;
+  const coveredTop = Math.max(header?.getBoundingClientRect().bottom ?? 0, subnavBottom);
+  const mainTop = main.getBoundingClientRect().top;
+  if (mainTop >= coveredTop && mainTop < window.innerHeight - 80) return;
+  window.scrollTo({ top: Math.max(0, window.scrollY + mainTop - coveredTop - 12) });
 }
 
 /**
@@ -51,14 +66,20 @@ export function PortalHeader({
 }) {
   // Кэшированная сессия (sessionStorage): при первом заходе и после F5 ник не
   // мигает кнопкой «Войти» — стартуем с последнего известного статуса.
-  const optionalUser = useOptionalUser();
+  // unknownAsPending: null здесь — только подтверждённый сервером гость; сбой
+  // /auth/me (429/5xx) оставляет undefined, и навигация держит роль из памяти.
+  const optionalUser = useOptionalUser({ unknownAsPending: true });
   const user = optionalUser ?? null;
   const authResolved = optionalUser !== undefined;
 
   // Роль организатора — в память браузера: следующая вкладка сразу нарисует
-  // рельс и панель с «Оргкабинетом», не дожидаясь /auth/me.
+  // рельс и панель с «Оргкабинетом», не дожидаясь /auth/me. Стираем её только
+  // у подтверждённого гостя (и при выходе — в LogoutButton), не при сбое сети:
+  // благодаря unknownAsPending null и есть «сервер ответил: сессии нет».
   useEffect(() => {
-    if (optionalUser !== undefined) rememberOrganizerRole(optionalUser);
+    if (optionalUser !== undefined) {
+      rememberOrganizerRole(optionalUser);
+    }
   }, [optionalUser]);
 
   // Список своих локаций нужен, чтобы «Оргкабинет» вёл сразу в единственную

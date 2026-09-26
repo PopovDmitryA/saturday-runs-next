@@ -3,7 +3,7 @@ import { PORTAL_LOGIN_HREF } from "../lib/portalRoutes";
 import { isLegacyGrafanaPath, LEGACY_SITE_LABEL, SITE_PUBLIC_HOME_HREF } from "../lib/siteBrand";
 import { PortalSectionShell } from "./portal/PortalSectionShell";
 import { SEARCH_ICON } from "./portal/nav/navIcons";
-import { cabinetHref } from "./portal/nav/siteNav";
+import { cabinetHref, RATING_GROUPS } from "./portal/nav/siteNav";
 import { openSiteSearch } from "./portal/nav/siteSearchBus";
 import "./NotFoundPage.css";
 
@@ -27,18 +27,72 @@ const SEGMENT_WORDS: Record<string, string> = {
   share: "поделиться",
   results: "итоги",
   ratings: "рейтинги",
+  locations: "локации",
   organizer: "оргкабинет",
+  about: "о проекте",
+  blog: "блог",
+  updates: "обновления",
+  backlog: "бэклог",
 };
 
-// Разделы-префиксы: если после них в адресе что-то есть, само слово раздела
-// поиску не помогает (/locations/sokolnki — ищем «sokolnki», а не «локации»).
+// Адреса «раздел/сущность/страница»: сущность (slug локации, хендл) — главное
+// слово для поиска, её нельзя терять, даже если дальше в адресе опечатка.
+const ENTITY_PREFIXES = new Set(["locations", "users", "organizer"]);
+
+// Служебные начала адресов: сами по себе поиску не помогают.
 const PREFIX_SEGMENTS = new Set(["locations", "users", "ratings", "organizer", "new", "d", "admin"]);
 
+/** Расстояние Левенштейна — для опечаток в коротких частях адреса. */
+function editDistance(a: string, b: string): number {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+/** Похоже ли на известное слово: одна опечатка в коротком, две в длинном. */
+function isTypoOf(segment: string, known: string): boolean {
+  return editDistance(segment, known) <= (known.length >= 6 ? 2 : 1);
+}
+
+function humanize(segment: string): string {
+  return segment.replace(/[-_.]+/g, " ").trim();
+}
+
+/** Слово известной части адреса, в том числе с опечаткой (weathr → погода). */
+function knownWord(segment: string): string | null {
+  if (SEGMENT_WORDS[segment]) return SEGMENT_WORDS[segment];
+  const typo = Object.keys(SEGMENT_WORDS).find((key) => isTypoOf(segment, key));
+  return typo ? SEGMENT_WORDS[typo] : null;
+}
+
 /**
- * Слова для поиска из адреса страницы, которой нет. Берём последнюю часть
- * адреса (обычно это опечатка в названии локации или ник), а если она —
- * известная страница локации, то и часть перед ней: «sokolniki погода».
- * Пусто — подставлять нечего.
+ * /ratings/{что-то}: рейтинг с похожим адресом — его название (fastestt →
+ * «самые быстрые», поиск найдёт страницу по имени), иначе все рейтинги.
+ */
+function ratingWords(segment: string): string {
+  for (const group of RATING_GROUPS) {
+    for (const item of group.items) {
+      const slug = item.href.split("/").pop() ?? "";
+      if (slug && (slug === segment || isTypoOf(segment, slug))) return item.label.toLowerCase();
+    }
+  }
+  return "рейтинги";
+}
+
+/**
+ * Слова для поиска из адреса страницы, которой нет. Под /locations/, /users/
+ * и /organizer/ главное — сущность (опечатка в названии локации, ник) плюс
+ * страница, если её удалось узнать: «sokolnki погода» (раньше при опечатке
+ * в странице терялось и название локации, V6). Под /ratings/ — похожий
+ * рейтинг. В остальных адресах — последняя часть, а если она известная
+ * страница, то и часть перед ней. Пусто — подставлять нечего.
  */
 function searchWordsFromPath(path: string): string {
   const segments = path
@@ -51,13 +105,26 @@ function searchWordsFromPath(path: string): string {
         return segment.toLowerCase();
       }
     })
-    .filter((segment, index, all) => !(PREFIX_SEGMENTS.has(segment) && index < all.length - 1))
     .filter((segment) => !/^\d+$/.test(segment));
-  const words = (segment: string) => SEGMENT_WORDS[segment] ?? segment.replace(/[-_.]+/g, " ").trim();
-  const last = segments.at(-1);
-  if (!last) return "";
-  const beforeLast = segments.at(-2);
-  const query = SEGMENT_WORDS[last] && beforeLast ? `${words(beforeLast)} ${words(last)}` : words(last);
+  const [head, entity, page] = segments;
+  let query = "";
+  if (head && entity && ENTITY_PREFIXES.has(head)) {
+    const pageWord = page ? knownWord(page) : null;
+    query = pageWord ? `${humanize(entity)} ${pageWord}` : humanize(entity);
+  } else if (head === "ratings" && entity) {
+    query = ratingWords(entity);
+  } else {
+    // Служебное начало в конце адреса оставляем, только если у него есть
+    // слово: «/new/12345» искать нечего.
+    const rest = segments.filter(
+      (segment, index, all) => !(PREFIX_SEGMENTS.has(segment) && (index < all.length - 1 || !SEGMENT_WORDS[segment])),
+    );
+    const last = rest.at(-1);
+    if (!last) return "";
+    const lastWord = knownWord(last);
+    const beforeLast = rest.at(-2);
+    query = lastWord && beforeLast ? `${humanize(beforeLast)} ${lastWord}` : (lastWord ?? humanize(last));
+  }
   return query.slice(0, 60);
 }
 

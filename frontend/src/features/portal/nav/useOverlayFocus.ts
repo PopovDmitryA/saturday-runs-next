@@ -30,12 +30,20 @@ function focusables(containers: (HTMLElement | null)[]): HTMLElement[] {
 
 export function useOverlayFocus({
   open,
+  contentKey,
   containers,
   initial,
   trigger,
   onEscape,
 }: {
   open: boolean;
+  /**
+   * Что сейчас в окне, если одно окно сменяет другое без закрытия (список
+   * раздела → «Меню» на той же нижней панели). Сменился — фокус ставится
+   * заново, как при открытии: иначе он оставался на кнопке «Меню», хотя
+   * обычное открытие «Меню» ставит его в поиск (проверка 26.09.2026).
+   */
+  contentKey?: string | null;
   /** Где ходит Tab: само окно и, если надо, кнопки вне его (нижняя панель). */
   containers: RefObject<HTMLElement | null>[];
   /** Куда поставить фокус при открытии; по умолчанию — первый пункт окна. */
@@ -97,7 +105,9 @@ export function useOverlayFocus({
         back.focus({ preventScroll: true });
       }
     };
-    // trigger — ref, его содержимое читаем при закрытии.
+    // trigger — ref, его содержимое читаем при закрытии. Смена contentKey
+    // проходит как закрытие и открытие: фокус с кнопки-переключателя (она
+    // внутри контейнеров) уходит в новое окно.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, contentKey]);
 }

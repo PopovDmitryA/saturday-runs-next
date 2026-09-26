@@ -29,18 +29,18 @@ const PRESET_LABELS: { value: VolunteerRolePreset; title: string; note: string }
   },
   {
     value: "on_site",
-    title: "Только на площадке",
+    title: "Только на локации",
     note: "Роли, ради которых нужно приехать на старт",
   },
   {
     value: "on_site_no_run",
-    title: "На площадке, без совмещения с пробежкой",
+    title: "На локации, без совмещения с пробежкой",
     note: "Строгий зачёт: волонтёрство вместо забега",
   },
   {
     value: "remote",
     title: "Можно не приезжать",
-    note: "Роли, которые выполняют вне площадки",
+    note: "Роли, которые выполняют вне локации",
   },
   { value: "custom", title: "Свой набор", note: "Отметьте роли вручную" },
 ];
@@ -49,12 +49,12 @@ const PRESET_LABELS: { value: VolunteerRolePreset; title: string; note: string }
 function roleGroups(roles: VolunteerRoleItem[]) {
   return [
     {
-      title: "На площадке, бежать нельзя",
+      title: "На локации, бежать нельзя",
       note: "Ядро строгого зачёта",
       items: roles.filter((role) => role.on_site && !role.runnable),
     },
     {
-      title: "На площадке, но можно совмещать с пробежкой",
+      title: "На локации, но можно совмещать с пробежкой",
       note: "Роль до, после или во время дистанции",
       items: roles.filter((role) => role.on_site && role.runnable),
     },

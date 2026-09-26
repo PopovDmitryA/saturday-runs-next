@@ -50,37 +50,54 @@ function FunnelIcon() {
  * Переключение — чистым CSS (медиазапрос в leaderboards.css), без замера окна
  * в JS: страница не моргает раскрытой панелью до первого замера, а поле поиска
  * и прочие контролы не перемонтируются при повороте телефона.
+ *
+ * `aside` — то, что на телефоне стоит рядом с кнопкой, а не прячется за ней:
+ * «Кратко | Полно». Это не фильтр, а способ показа таблицы, в N он не входит,
+ * и искать его в свёрнутой панели никто не догадывался (проверка 26.09.2026).
+ * На компьютере полосы с кнопкой нет вовсе — там тот же переключатель стоит
+ * внутри панели, а его копия в самой панели на телефоне скрыта (.lb-wide-only).
  */
-export function RatingFilters({ activeCount, children }: { activeCount: number; children: ReactNode }) {
+export function RatingFilters({
+  activeCount,
+  aside,
+  children,
+}: {
+  activeCount: number;
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   return (
     <div className={`lb-filters-disclosure${open ? " lb-filters-open" : ""}`}>
-      <button
-        type="button"
-        className="lb-filters-toggle"
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <FunnelIcon />
-        <span className="lb-filters-toggle-label">
-          Фильтры
+      <div className="lb-filters-bar">
+        <button
+          type="button"
+          className="lb-filters-toggle"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <FunnelIcon />
+          <span className="lb-filters-toggle-label">
+            Фильтры
+            {activeCount > 0 && (
+              <span className="lb-filters-toggle-count" aria-hidden="true">
+                {" "}· {activeCount}
+              </span>
+            )}
+          </span>
           {activeCount > 0 && (
-            <span className="lb-filters-toggle-count" aria-hidden="true">
-              {" "}· {activeCount}
+            <span className="visually-hidden">
+              {activeCount === 1 ? "(изменён 1 фильтр)" : `(изменено фильтров: ${activeCount})`}
             </span>
           )}
-        </span>
-        {activeCount > 0 && (
-          <span className="visually-hidden">
-            {activeCount === 1 ? "(изменён 1 фильтр)" : `(изменено фильтров: ${activeCount})`}
+          <span className="lb-filters-toggle-chevron" aria-hidden="true">
+            ▾
           </span>
-        )}
-        <span className="lb-filters-toggle-chevron" aria-hidden="true">
-          ▾
-        </span>
-      </button>
+        </button>
+        {aside && <div className="lb-filters-aside">{aside}</div>}
+      </div>
       <div id={bodyId} className="lb-filters-body">
         {children}
       </div>

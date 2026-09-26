@@ -156,7 +156,7 @@ const PLATFORM_TAB_LABELS: Record<string, string> = {
 
 const ROLE_PRESET_SHORT: Record<string, string> = {
   all: "все роли",
-  on_site: "на площадке",
+  on_site: "на локации",
   on_site_no_run: "вместо бега",
   remote: "не приезжая",
   custom: "свой набор",
@@ -194,7 +194,7 @@ const REMAINING_WHAT: Record<CountBy, string> = {
 function remainingHint(countBy: CountBy): string {
   return (
     `Сколько ${REMAINING_WHAT[countBy]} участник ещё не закрыл. Считаются ` +
-    "действующие площадки 5 вёрст, С95 и RunPark; закрытые, «скоро» и весь " +
+    "действующие локации 5 вёрст, С95 и RunPark; закрытые, «скоро» и весь " +
     "parkrun в остаток не идут — приехать туда уже нельзя. Прочерк — у тех, " +
     "кто бегал только в parkrun: считать остаток им не от чего."
   );
@@ -203,7 +203,7 @@ function remainingHint(countBy: CountBy): string {
 const FORECAST_HINT =
   "Когда туризм закончится, если с ближайшего старта брать по новой локации " +
   "каждую субботу: в расписании учтены бонусные старты 1 января (их два) и " +
-  "12 июня. Пропуск сдвигает дату, новая площадка в каталоге — тоже. " +
+  "12 июня. Пропуск сдвигает дату, новая локация в каталоге — тоже. " +
   "У тех, кто бегал только в parkrun, прогноза нет: в действующих системах " +
   "они ещё не стартовали, и считать дату не из чего.";
 
@@ -1029,6 +1029,11 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   // подряд ради блока, который открывают не всегда, незачем.
   const hasTouristMap = TOURIST_MAP_METRICS.includes(metric);
   const [mapOpen, setMapOpen] = useRestorableState("lb.map", false);
+  // Карточка «вы» на телефоне свёрнута в строку «место · имя · всего»: целиком
+  // (по системам, неделя, «Поделиться») она занимала 240–350px, и первой строки
+  // таблицы на экране 360×740 не было (проверка 26.09.2026). Подробности — по
+  // стрелке; на компьютере карточка всегда развёрнута, стрелки там нет.
+  const [meOpen, setMeOpen] = useRestorableState("lb.meOpen", false);
   // Развёрнутые строки мультиволонтёра (детализация «роль × система»).
   // В снимке лежат списком: множество не переживает JSON.
   const [expandedKeys, setExpandedKeys] = useRestorableState<string[]>("lb.expanded", []);
@@ -1699,13 +1704,21 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
 
             <RatingsLoginBanner />
 
+            {/* «Рейтинг | Журнал» на телефоне — своей строкой над фильтрами, а
+                не внутри свёрнутой панели: это режим страницы, а не фильтр, и
+                за кнопкой «Фильтры» его не находили. Строка стоит ВНЕ обеих
+                веток ниже, поэтому смена режима не пересоздаёт её и не
+                захлопывает то, что человек только что открыл. На компьютере
+                переключатель живёт в панели, как раньше (.lb-wide-only). */}
+            {viewTabs && <div className="lb-view-phone lb-narrow-only">{viewTabs}</div>}
+
             {showJournal ? (
               <RatingJournalPanel
                 metric={metric as JournalMetric}
                 platform={platform}
                 platformOptions={data.platform_options ?? []}
                 onPlatformChange={(value) => setPlatform(value as PlatformFilter)}
-                viewTabs={viewTabs}
+                viewTabs={viewTabs && <div className="lb-wide-only">{viewTabs}</div>}
               />
             ) : (
               <>
@@ -1718,7 +1731,12 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
               />
             )}
 
-            <RatingFilters activeCount={activeFilters}>
+            <RatingFilters
+              activeCount={activeFilters}
+              aside={
+                tableColumns.hasToggle ? <TableViewToggle columns={tableColumns} inline /> : null
+              }
+            >
             <div className="lb-controls-shell">
               <div className="lb-controls-left">
                 {(hasMinVisits || hasPlatformFilter || hasCountByFilter) && (
@@ -1812,8 +1830,11 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         options={GENDER_TABS.map((tab) => ({ value: tab.value }))}
                       />
                     )}
+                    {/* На телефоне «Вид» стоит строкой над панелью, а «Колонки» —
+                        рядом с кнопкой «Фильтры»: здесь их копии только для
+                        компьютера. */}
                     {viewTabs && (
-                      <div className="lb-visits">
+                      <div className="lb-visits lb-wide-only">
                         <span className="lb-visits-label">Вид</span>
                         {viewTabs}
                       </div>
@@ -1856,7 +1877,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         широком экране он встаёт справа от «Системы», на узком
                         переезжает вместе с ней (просьба Дмитрия 27.08.2026). */}
                     {tableColumns.hasToggle && (
-                      <div className="lb-visits">
+                      <div className="lb-visits lb-wide-only">
                         <span className="lb-visits-label">Колонки</span>
                         <TableViewToggle columns={tableColumns} inline />
                       </div>
@@ -1880,7 +1901,11 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
 
             {me && !(!me.included && me.gender_mismatch) && (
               <section
-                className={me.included ? "lb-me" : "lb-me lb-me-out"}
+                className={
+                  me.included
+                    ? `lb-me lb-me-collapsible${meOpen ? " lb-me-open" : ""}`
+                    : "lb-me lb-me-out"
+                }
                 aria-label="Ваша строка в рейтинге"
               >
                 {me.included ? (
@@ -1990,6 +2015,18 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                         </span>
                       )}
                     </span>
+                    {/* Стрелка есть только на телефоне (.lb-me-more в CSS): там
+                        свёрнутая карточка — одна строка, а остальное по нажатию. */}
+                    <button
+                      type="button"
+                      className="lb-me-more"
+                      aria-expanded={meOpen}
+                      aria-label={meOpen ? "Свернуть подробности" : "Подробнее о вашей строке"}
+                      title={meOpen ? "Свернуть" : "Подробнее"}
+                      onClick={() => setMeOpen(!meOpen)}
+                    >
+                      <span aria-hidden="true">▾</span>
+                    </button>
                     {/* Кнопка и перцентиль — одна связка: приписка встаёт справа
                         от кнопки и переносится вместе с ней, а не занимает
                         отдельную строку высотой в целый ряд. */}

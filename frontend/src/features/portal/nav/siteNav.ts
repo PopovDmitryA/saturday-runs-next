@@ -26,7 +26,7 @@ import type { ReactNode } from "react";
 import type { User } from "../../../lib/api";
 import { getRecentLocations } from "../../../lib/recentLocations";
 import * as I from "./navIcons";
-import { organizerEntryPlace, rememberedOrganizerRole } from "./organizerMemory";
+import { organizerEntryPlace, organizerHasManyPlaces, rememberedOrganizerRole } from "./organizerMemory";
 import {
   cabinetTabHref,
   type CabinetTabSegmentKey,
@@ -362,36 +362,54 @@ function organizerSection(ctx: NavContext): NavSection {
   // единственная своя локация (см. organizerMemory). Её инструменты тоже в
   // дереве: поиск «юбилеи» находит их с любой страницы.
   const place = ctx.inOrganizer ? (ctx.organizerLocation ?? null) : organizerEntryPlace(ctx.user);
-  // Пункт «Мои локации» есть, только когда место неизвестно: на самой
-  // странице списка и у того, чья последняя локация ещё не запомнена. При
-  // одной своей локации его нет вовсе — список сразу вернул бы в неё (a11y-10).
-  // Выбрать другую локацию внутри кабинета — переключатель над инструментами.
-  const groups: NavGroup[] = place
-    ? ORGANIZER_TOOL_GROUPS.map((group) => ({
-        key: group.key,
-        title: group.title,
-        context: true,
-        items: group.tools.map((tool) => ({
-          key: tool.key,
-          label: tool.label,
-          chipLabel: tool.chipLabel,
-          colLabel: tool.colLabel,
-          icon: tool.icon,
-          href: `/organizer/${place.slug}${tool.path ? `/${tool.path}` : ""}`,
-          keywords: tool.keywords,
-        })),
-      }))
-    : [
-        {
-          key: "index",
-          items: [{ key: "index", label: "Мои локации", icon: I.CATALOG_ICON, href: ORGANIZER_INDEX_HREF, keywords: ["выбрать локацию"] }],
-        },
-      ];
+  const indexGroup: NavGroup = {
+    key: "index",
+    items: [
+      {
+        key: "index",
+        label: "Мои локации",
+        icon: I.CATALOG_ICON,
+        href: ORGANIZER_INDEX_HREF,
+        keywords: ["выбрать локацию", "другая локация", "список локаций организатора"],
+      },
+    ],
+  };
+  if (!place) {
+    // Место неизвестно: страница самого списка или последняя локация ещё не
+    // запомнена — в разделе один пункт, список.
+    return organizerSectionShell([indexGroup], ORGANIZER_INDEX_HREF);
+  }
+  const groups: NavGroup[] = ORGANIZER_TOOL_GROUPS.map((group) => ({
+    key: group.key,
+    title: group.title,
+    context: true,
+    items: group.tools.map((tool) => ({
+      key: tool.key,
+      label: tool.label,
+      chipLabel: tool.chipLabel,
+      colLabel: tool.colLabel,
+      icon: tool.icon,
+      href: `/organizer/${place.slug}${tool.path ? `/${tool.path}` : ""}`,
+      keywords: tool.keywords,
+    })),
+  }));
+  // «Мои локации» рядом с инструментами — только когда есть из чего выбирать:
+  // больше одной своей локации или админ. При одной список сразу вернул бы в
+  // неё же (a11y-10), а у организатора нескольких без этого пункта список
+  // не находил поиск и не показывало «Меню» (V9). В колонке он последний: там
+  // над инструментами есть ещё и переключатель локаций.
+  if (organizerHasManyPlaces(ctx.user)) {
+    groups.push(indexGroup);
+  }
+  return organizerSectionShell(groups, `/organizer/${place.slug}`);
+}
+
+function organizerSectionShell(groups: NavGroup[], href: string): NavSection {
   return {
     key: "organizer",
     label: ORGANIZER_LABEL,
     shortLabel: ORGANIZER_LABEL,
-    href: place ? `/organizer/${place.slug}` : ORGANIZER_INDEX_HREF,
+    href,
     keywords: ["организатор", "оргкоманда", "кабинет организатора", "директор забега"],
     pathPrefixes: SECTION_PATH_PREFIXES.organizer,
     groups,
@@ -530,6 +548,9 @@ function personalLocationLinks(ctx: NavContext): { home: NavLink | null; recent:
         icon: I.HOME_ICON,
         href: `/locations/${homePlace.slug}`,
         keywords: ["моя локация", "домашняя локация", "мой парк", homePlace.name.toLowerCase()],
+        // Ярлык, а не страница: на обзоре своей локации текущим отмечен
+        // «Обзор» в её группе, двух подсвеченных пунктов быть не должно (V10).
+        matches: () => false,
       }
     : null;
   const skip = new Set([homePlace?.slug, ctx.location?.slug].filter(Boolean));

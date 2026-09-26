@@ -719,7 +719,9 @@ def test_weekly_ratings_message_reports_moves_both_ways(
     assert activity.weekly_ratings_message(db_session, user.id) == {"rating_moves": 2, "queued": True}
     delivery = db_session.query(NotificationDelivery).filter_by(user_id=user.id, kind="ratings").one()
     assert delivery.payload["title"] == "📊 Рейтинги за неделю"
-    assert delivery.payload["text"] == "«Пробежки» — **45-е место** (▲3)\n«Локации» — **122-е место** (▼2)"
+    assert delivery.payload["text"] == (
+        "«Количество пробежек» — **45-е место** (▲3)\n«Уникальные локации» — **122-е место** (▼2)"
+    )
     assert delivery.payload["url"].endswith("/ratings")
 
     # Без движения — тишина; вид можно выключить.

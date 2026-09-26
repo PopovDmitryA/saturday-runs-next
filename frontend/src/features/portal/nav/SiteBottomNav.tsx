@@ -26,7 +26,9 @@
  * «Меню» и список раздела — окна поверх страницы: «Назад» их закрывает, не
  * уводя со страницы (nav/useOverlayHistory), фокус ходит внутри окна
  * (nav/useOverlayFocus). Сама панель остаётся над затемнением: «Меню» — это
- * переключатель, второе нажатие закрывает шторку.
+ * переключатель, второе нажатие закрывает шторку. Переход по ссылке из окна
+ * (и с самой панели, пока окно открыто) хук ловит на всём документе: сначала
+ * снимает запись окна из истории, потом переходит.
  */
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
@@ -80,6 +82,8 @@ export function SiteBottomNav({ user }: { user: User | null | undefined }) {
 
   useOverlayFocus({
     open: overlay !== null,
+    // Список раздела → «Меню» без закрытия: фокус переезжает в поиск шторки.
+    contentKey: overlay,
     // В порядке разметки: Tab с «Меню» на панели идёт в шторку, с последнего
     // пункта шторки — по кругу на панель.
     containers: [navRef, panelRef],
@@ -166,7 +170,6 @@ export function SiteBottomNav({ user }: { user: User | null | undefined }) {
         ref={navRef}
         className={`site-bottomnav${overlay !== null ? " over-scrim" : ""}`}
         aria-label="Разделы сайта"
-        onClick={overlayHistory.interceptLinks}
       >
         {barSections.map((section) => {
           const isCurrent = section.key === current?.key;
@@ -239,7 +242,6 @@ export function SiteBottomNav({ user }: { user: User | null | undefined }) {
           className="site-menu-sheet"
           role="dialog"
           aria-label="Меню сайта"
-          onClick={overlayHistory.interceptLinks}
         >
           {/* Вместо «ручки», которая обещала смахивание, но не смахивалась, —
               честная кнопка «Закрыть». Закрывают шторку ещё «Назад», тап мимо
@@ -313,7 +315,6 @@ export function SiteBottomNav({ user }: { user: User | null | undefined }) {
           className="site-pages-panel"
           role="dialog"
           aria-label={`Страницы раздела «${sectionLabel(panelSection)}»`}
-          onClick={overlayHistory.interceptLinks}
         >
           <div className="site-pages-head">
             <span className="site-pages-head-icon">{SECTION_ICONS[panelSection.key]}</span>
