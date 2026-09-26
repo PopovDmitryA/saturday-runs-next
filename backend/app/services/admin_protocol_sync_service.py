@@ -48,10 +48,7 @@ def _ensure_five_verst_summary(
     if summary_row is not None:
         return summary_row
 
-    event_number = None
-    title_match = re.search(r"#(\d+)", html[:5000])
-    if title_match:
-        event_number = int(title_match.group(1))
+    event_number = bulk_parser.parse_protocol_event_number(html, event_date)
 
     summary = CanonicalEventSummary(
         external_event_key=external_event_key,

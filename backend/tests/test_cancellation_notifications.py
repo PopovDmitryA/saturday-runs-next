@@ -49,6 +49,16 @@ def _settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
     return settings
 
 
+@pytest.fixture(autouse=True)
+def _mid_week(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
+    """Общие тесты рассылки не зависят от дня прогона: в субботу после 9:00 фильтр
+    «старт уже прошёл» иначе съедал бы их отмены. Сам фильтр проверяют тесты
+    с пометкой real_start_filter."""
+    if "real_start_filter" in request.keywords:
+        return
+    monkeypatch.setattr(cancellations, "still_ahead", lambda db, changes, now: changes)
+
+
 def _platform(db: Session, code: str, name: str) -> Platform:
     platform = db.query(Platform).filter(Platform.code == code).one_or_none()
     if platform is None:
@@ -279,6 +289,38 @@ def test_platform_filter_and_kind_toggle(db_session: Session) -> None:
         cancellations.notify_cancellation_subscribers(db_session, [_change("park-5v", name="Парк 5в", cancelled=False)])
         == 0
     )
+
+
+def test_start_already_passed_by_local_time() -> None:
+    from datetime import UTC, datetime
+    from zoneinfo import ZoneInfo
+
+    moscow = ZoneInfo("Europe/Moscow")
+    # Суббота 26.09.2026: до 9:00 старт впереди, после — прошёл.
+    assert not cancellations.start_already_passed(moscow, None, datetime(2026, 9, 26, 5, 30, tzinfo=UTC))
+    assert cancellations.start_already_passed(moscow, None, datetime(2026, 9, 26, 18, 0, tzinfo=UTC))
+    # Пятница вечером — старт завтра, впереди.
+    assert not cancellations.start_already_passed(moscow, None, datetime(2026, 9, 25, 18, 0, tzinfo=UTC))
+    # Омск (+3 к Москве): 06:30 по Москве — там уже 9:30, старт прошёл.
+    assert cancellations.start_already_passed(ZoneInfo("Asia/Omsk"), None, datetime(2026, 9, 26, 3, 30, tzinfo=UTC))
+    # Расписание с поздним стартом: в 9:30 старт в 10:00 ещё впереди.
+    late = [{"from_month": 1, "to_month": 12, "time": "10:00"}]
+    assert not cancellations.start_already_passed(moscow, late, datetime(2026, 9, 26, 6, 30, tzinfo=UTC))
+
+
+@pytest.mark.real_start_filter
+def test_cancellation_after_start_is_not_sent(db_session: Session) -> None:
+    """Лихославль 26.09.2026: отмена в 21:00 о прошедшей субботе людям не уходит."""
+    from datetime import UTC, datetime
+
+    _platform(db_session, "five_verst", "5 вёрст")
+    _user(db_session, name="Подписчик", chat_id=151)
+    db_session.commit()
+    late = datetime(2026, 9, 26, 18, 0, tzinfo=UTC)  # 21:00 МСК, суббота
+    friday = datetime(2026, 9, 25, 18, 0, tzinfo=UTC)
+    change = _change("likhoslavl-test", name="Лихославль", reason="все на Кроссе нации")
+    assert cancellations.notify_cancellation_subscribers(db_session, [change], today=date(2026, 9, 26), now=late) == 0
+    assert cancellations.notify_cancellation_subscribers(db_session, [change], today=date(2026, 9, 25), now=friday) == 1
 
 
 def test_update_prefs_rejects_unknown_platform(db_session: Session) -> None:

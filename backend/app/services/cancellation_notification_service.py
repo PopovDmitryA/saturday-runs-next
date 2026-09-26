@@ -105,6 +105,58 @@ def _dedupe_key(changes: list[CancellationChange], *, today: date) -> str:
     return f"cancel:{week[0]}-{week[1]:02d}:{digest}"
 
 
+def _zone_of(zone_name: str | None, offset: int | None) -> tzinfo:
+    if zone_name:
+        try:
+            return ZoneInfo(zone_name)
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
+    if offset is not None:
+        return timezone(timedelta(hours=3 + offset))
+    return FALLBACK_TIMEZONE
+
+
+def start_already_passed(zone: tzinfo, schedule: list[dict[str, object]] | None, now: datetime) -> bool:
+    """Сегодня день старта, и по местному времени он уже начался."""
+    from app.services.weather_service import resolve_start_time
+
+    local_now = now.astimezone(zone)
+    today = local_now.date()
+    if upcoming_saturday(today) != today:
+        return False
+    start, _source = resolve_start_time(schedule, today)
+    return local_now.time() >= start
+
+
+def still_ahead(db: Session, changes: list[CancellationChange], *, now: datetime) -> list[CancellationChange]:
+    """Изменения, о которых людям ещё есть смысл узнать.
+
+    Отмена, объявленная после старта, — запись задним числом: Лихославль
+    26.09.2026 отменил старт в девятом часу вечера («все на Кроссе нации»), и
+    17 человек получили «Отмена старта 26.09» о субботе, которая уже прошла.
+    Такие изменения видит админ, а подписчикам они не уходят.
+    """
+    from app.models import LocationDescription
+
+    kept: list[CancellationChange] = []
+    for change in changes:
+        row = db.execute(
+            select(Location.timezone, Location.tz_offset_moscow, LocationDescription.schedule_parsed)
+            .join(Platform, Platform.id == Location.platform_id)
+            .outerjoin(LocationDescription, LocationDescription.location_id == Location.id)
+            .where(Platform.code == change.platform_code, Location.external_key == change.slug)
+        ).first()
+        zone = _zone_of(row[0], row[1]) if row is not None else FALLBACK_TIMEZONE
+        schedule = row[2] if row is not None else None
+        if start_already_passed(zone, schedule or None, now):
+            logger.info(
+                "cancellation notify: %s/%s — старт уже прошёл, подписчикам не шлём", change.platform_code, change.slug
+            )
+            continue
+        kept.append(change)
+    return kept
+
+
 def subscriber_ids(db: Session) -> list[UUID]:
     """Все, у кого включён хотя бы один канал уведомлений."""
     return list(
@@ -115,7 +167,11 @@ def subscriber_ids(db: Session) -> list[UUID]:
 
 
 def notify_cancellation_subscribers(
-    db: Session, changes: list[CancellationChange], *, today: date | None = None
+    db: Session,
+    changes: list[CancellationChange],
+    *,
+    today: date | None = None,
+    now: datetime | None = None,
 ) -> int:
     """Разослать изменения отмен подписчикам. Возвращает число сообщений.
 
@@ -128,6 +184,9 @@ def notify_cancellation_subscribers(
     base_url = get_settings().app_base_url.rstrip("/")
     queued: list[UUID] = []
     try:
+        changes = still_ahead(db, changes, now=now or datetime.now(UTC))
+        if not changes:
+            return 0
         user_ids = subscriber_ids(db)
         if not user_ids:
             return 0

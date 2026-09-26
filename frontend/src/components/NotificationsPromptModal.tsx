@@ -75,13 +75,8 @@ export function NotificationsPromptModal() {
   const broken = state.broken;
   const action = broken.find((item) => item.action_url);
 
-  // Окно делится на прокручиваемую часть и подвал с кнопками: на телефоне
-  // (360×740) текст с четырьмя пунктами выше экрана, а прокрутка страницы под
-  // окном заблокирована — «Не сейчас» оказывалась за нижним краем, и закрыть
-  // окно было нечем (ревью 25.09.2026). Теперь кнопки всегда на виду, а длинный
-  // текст листается внутри окна.
   return createPortal(
-    <div className="modal-overlay notify-intro-overlay" onClick={close}>
+    <div className="modal-overlay" onClick={close}>
       <div
         className={`modal-panel notify-intro ${kind === "fix_delivery" ? "notify-intro-alert" : ""}`}
         role="dialog"
@@ -89,119 +84,114 @@ export function NotificationsPromptModal() {
         aria-labelledby="notify-prompt-title"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="notify-intro-scroll">
-          <div className="notify-intro-hero" aria-hidden="true">
-            <span className="notify-intro-bell">{kind === "fix_delivery" ? "⚠️" : "🔔"}</span>
-          </div>
-          <h2 id="notify-prompt-title" className="modal-title notify-intro-title">
-            {kind === "fix_delivery" ? "Мы не можем вам написать" : "На сайте появились уведомления"}
-          </h2>
-
-          {kind === "fix_delivery" ? (
-            <>
-              <p className="notify-intro-lead">
-                Уведомления включены, но {broken.length === 1 ? broken[0].title : "ни один канал"} не
-                пропускает наши сообщения — они до вас не доходят.
-              </p>
-              <ul className="notify-intro-list">
-                {broken.map((item) => (
-                  <li key={item.channel}>
-                    <span className="notify-intro-icon">{item.channel === "vk" ? "💬" : "🤖"}</span>
-                    <span>{item.problem ?? `${item.title}: доставка недоступна.`}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="notify-intro-note">
-                Разрешение занимает пару секунд: откроется {action?.channel === "vk" ? "диалог с сообществом" : "бот"},
-                нужно нажать кнопку подтверждения. После этого уведомления заработают сами.
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="notify-intro-lead">
-                Не нужно заходить и проверять — сайт сам напишет, когда есть повод.
-              </p>
-              <ul className="notify-intro-list">
-                <li>
-                  <span className="notify-intro-icon">🏃</span>
-                  <span>
-                    <b>Пробежка попала на сайт.</b> Время и место, новые уровни челленджей, вехи истории и
-                    готовый постер для сториз — в одном сообщении.
-                  </span>
-                </li>
-                <li>
-                  <span className="notify-intro-icon">🚫</span>
-                  <span>
-                    <b>Отмены стартов по стране.</b> Узнаете заранее — и про свою локацию, и про ту,
-                    куда только собираетесь ехать.
-                  </span>
-                </li>
-                <li>
-                  <span className="notify-intro-icon">📈</span>
-                  <span>
-                    <b>Движение в рейтингах.</b> Раз в неделю, в воскресенье, когда все протоколы субботы
-                    уже на месте.
-                  </span>
-                </li>
-                <li>
-                  <span className="notify-intro-icon">💬</span>
-                  <span>
-                    <b>Ваши карточки в бэклоге.</b> Ответ на идею, новые комментарии и смена статуса — от
-                    «на рассмотрении» до «реализовано».
-                  </span>
-                </li>
-              </ul>
-              <p className="notify-intro-note">
-                Приходят туда, где вы вошли на сайт: Telegram, VK или почта. Отписка — в один клик из любого
-                сообщения.
-              </p>
-            </>
-          )}
+        <div className="notify-intro-hero" aria-hidden="true">
+          <span className="notify-intro-bell">{kind === "fix_delivery" ? "⚠️" : "🔔"}</span>
         </div>
+        <h2 id="notify-prompt-title" className="modal-title notify-intro-title">
+          {kind === "fix_delivery" ? "Мы не можем вам написать" : "На сайте появились уведомления"}
+        </h2>
 
-        <div className="notify-intro-footer">
-          {kind === "fix_delivery" ? (
-            <>
-              <div className="modal-actions notify-intro-actions">
-                <button type="button" className="btn secondary modal-btn" onClick={close}>
-                  Не сейчас
-                </button>
-                {action?.action_url ? (
-                  <a
-                    className="btn primary modal-btn"
-                    href={action.action_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={close}
-                  >
-                    Разрешить
-                  </a>
-                ) : (
-                  <a className="btn primary modal-btn" href={PORTAL_NOTIFICATIONS_SETTINGS_HREF} onClick={close}>
-                    Открыть настройки
-                  </a>
-                )}
-              </div>
-              <a className="link-button notify-intro-never" href={PORTAL_NOTIFICATIONS_SETTINGS_HREF} onClick={close}>
-                Настройки уведомлений
-              </a>
-            </>
-          ) : (
-            <>
-              <div className="modal-actions notify-intro-actions">
-                <button type="button" className="btn secondary modal-btn" onClick={close}>
-                  Не сейчас
-                </button>
-                <a className="btn primary modal-btn" href={PORTAL_NOTIFICATIONS_SETTINGS_HREF} onClick={close}>
-                  Включить в настройках
-                </a>
-              </div>
-              <button type="button" className="link-button notify-intro-never" onClick={never}>
-                Больше не напоминать
+        {kind === "fix_delivery" ? (
+          <>
+            <p className="notify-intro-lead">
+              Уведомления включены, но {broken.length === 1 ? broken[0].title : "ни один канал"} не
+              пропускает наши сообщения — они до вас не доходят.
+            </p>
+            <ul className="notify-intro-list">
+              {broken.map((item) => (
+                <li key={item.channel}>
+                  <span className="notify-intro-icon">{item.channel === "vk" ? "💬" : "🤖"}</span>
+                  <span>{item.problem ?? `${item.title}: доставка недоступна.`}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="notify-intro-note">
+              Разрешение занимает пару секунд: откроется {action?.channel === "vk" ? "диалог с сообществом" : "бот"},
+              нужно нажать кнопку подтверждения. После этого уведомления заработают сами.
+            </p>
+            <div className="modal-actions notify-intro-actions">
+              <button type="button" className="btn secondary modal-btn" onClick={close}>
+                Не сейчас
               </button>
-            </>
-          )}
-        </div>
+              {action?.action_url ? (
+                <a
+                  className="btn primary modal-btn"
+                  href={action.action_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={close}
+                >
+                  Разрешить
+                </a>
+              ) : (
+                <a className="btn primary modal-btn" href={PORTAL_NOTIFICATIONS_SETTINGS_HREF} onClick={close}>
+                  Открыть настройки
+                </a>
+              )}
+            </div>
+            <a className="link-button notify-intro-never" href={PORTAL_NOTIFICATIONS_SETTINGS_HREF} onClick={close}>
+              Настройки уведомлений
+            </a>
+          </>
+        ) : (
+          <>
+            <p className="notify-intro-lead">
+              Не нужно заходить и проверять — сайт сам напишет, когда есть повод.
+            </p>
+            <ul className="notify-intro-list">
+              <li>
+                <span className="notify-intro-icon">🏃</span>
+                <span>
+                  <b>Пробежка попала на сайт.</b> Время и место, новые уровни челленджей, вехи истории и
+                  готовый постер для сториз — в одном сообщении.
+                </span>
+              </li>
+              <li>
+                <span className="notify-intro-icon">🦺</span>
+                <span>
+                  <b>Волонтёрство попало на сайт.</b> Локация, номер старта и все ваши роли — а если в тот
+                  же день и бежали, одним сообщением с пробежкой.
+                </span>
+              </li>
+              <li>
+                <span className="notify-intro-icon">🚫</span>
+                <span>
+                  <b>Отмены стартов по стране.</b> Узнаете заранее — и про свою локацию, и про ту,
+                  куда только собираетесь ехать.
+                </span>
+              </li>
+              <li>
+                <span className="notify-intro-icon">📈</span>
+                <span>
+                  <b>Движение в рейтингах.</b> Раз в неделю, в воскресенье, когда все протоколы субботы
+                  уже на месте.
+                </span>
+              </li>
+              <li>
+                <span className="notify-intro-icon">💬</span>
+                <span>
+                  <b>Ваши карточки в бэклоге.</b> Ответ на идею, новые комментарии и смена статуса — от
+                  «на рассмотрении» до «реализовано».
+                </span>
+              </li>
+            </ul>
+            <p className="notify-intro-note">
+              Приходят туда, где вы вошли на сайт: Telegram, VK или почта. Отписка — в один клик из любого
+              сообщения.
+            </p>
+            <div className="modal-actions notify-intro-actions">
+              <button type="button" className="btn secondary modal-btn" onClick={close}>
+                Не сейчас
+              </button>
+              <a className="btn primary modal-btn" href={PORTAL_NOTIFICATIONS_SETTINGS_HREF} onClick={close}>
+                Включить в настройках
+              </a>
+            </div>
+            <button type="button" className="link-button notify-intro-never" onClick={never}>
+              Больше не напоминать
+            </button>
+          </>
+        )}
       </div>
     </div>,
     document.body,

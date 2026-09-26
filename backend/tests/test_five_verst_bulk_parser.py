@@ -378,3 +378,17 @@ def test_age_category_regex_keeps_three_digit_bands() -> None:
     assert parse("М40-44 (2)") == "М40-44"
     assert parse("М10") == "М10"
     assert parse("Ж65-69  (12)") == "Ж65-69"
+
+
+def test_parse_protocol_event_number_from_title() -> None:
+    from app.platform_adapters.five_verst.bulk_parser import parse_protocol_event_number
+
+    html = (
+        "<style>.a{color:#0000}</style>"
+        '<h1 class="results-title">Протокол 5 вёрст Мещерский (Одинцово) #233 за 26.09.2026</h1>'
+        "<div>233 - общее количество проведенных мероприятий</div>"
+    )
+    assert parse_protocol_event_number(html, date(2026, 9, 26)) == 233
+    # Дата в заголовке чужая — номер не наш.
+    assert parse_protocol_event_number(html, date(2026, 9, 19)) is None
+    assert parse_protocol_event_number("<style>.a{color:#0000}</style>", date(2026, 9, 26)) is None

@@ -83,6 +83,7 @@ pythonpath = ["."]
 timeout = 120
 markers = [
     "network: ходит в живую сеть; по умолчанию не запускается (pytest -m network)",
+    "real_start_filter: рассылка отмен с настоящим фильтром «старт уже прошёл»",
 ]
 # Сетевые тесты выключены по умолчанию — иначе CI зависит от доступности 5vesrt.ru.
 addopts = "-m 'not network'"

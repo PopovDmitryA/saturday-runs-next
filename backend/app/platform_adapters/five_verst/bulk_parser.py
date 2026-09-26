@@ -671,6 +671,25 @@ def _row_status(row: Tag, *, has_finish_time: bool, is_unknown: bool) -> str | N
     return None
 
 
+# «Протокол 5 вёрст Мещерский (Одинцово) #233 за 26.09.2026» — заголовок h1
+# страницы протокола. Номер старта здесь единственный на странице: в начале
+# HTML стоят CSS-цвета вида #0000, и поиск «первого #N» их и находил.
+PROTOCOL_TITLE_NUMBER_RE = re.compile(r"#(\d+)\s+за\s+(\d{2}\.\d{2}\.\d{4})")
+
+
+def parse_protocol_event_number(html: str, event_date: date) -> int | None:
+    """Номер старта из заголовка протокола; None, если заголовка нет или дата чужая."""
+
+    soup = BeautifulSoup(html, "html.parser")
+    title = soup.find("h1", class_="results-title")
+    if title is None:
+        return None
+    match = PROTOCOL_TITLE_NUMBER_RE.search(title.get_text(" ", strip=True))
+    if match is None or match.group(2) != event_date.strftime("%d.%m.%Y"):
+        return None
+    return int(match.group(1))
+
+
 def parse_run_protocol_html(
     html: str,
     *,

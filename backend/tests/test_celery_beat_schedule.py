@@ -431,6 +431,8 @@ AGREED_LIMITS_MINUTES: dict[str, tuple[int, int]] = {
     "weather.collect_start_weather": (179, 180),
     "weather.collect_preliminary": (29, 30),
     "weather.collect_forecast": (59, 60),
+    # Погода одного свежего старта — один вызов Open-Meteo.
+    "weather.collect_event": (5, 6),
     "page_stats.rollup": (20, 25),
     "admin_digest.daily_sync_summary": (20, 25),
     "user_names.refresh": (20, 25),

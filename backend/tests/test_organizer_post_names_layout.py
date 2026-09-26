@@ -141,3 +141,28 @@ def test_default_layout_keeps_old_text() -> None:
     """Без параметра — прежний вид: сводный пост в строку, «Привет новичкам» построчно."""
     assert _build_post_text(_report(), "Мещерский") == _build_post_text(_report(), "Мещерский", names_layout="inline")
     assert _newcomers_post(_svod()) == _newcomers_post(_svod(), names_layout="lines")
+
+
+def test_newcomers_post_guests_show_home() -> None:
+    """«Откуда гости» — как в «Героях старта»: имя — домашняя локация (город)."""
+    svod = _svod()
+    svod["runners"][1]["participant_id"] = "p-petrov"
+    svod["runners"].append(
+        {
+            "name": "Анна БЕЗДОМНАЯ",
+            "participant_id": "p-anna",
+            "first_in_system": False,
+            "first_at_location": True,
+            "location_milestone": None,
+            "platform_milestone": None,
+        }
+    )
+    homes = [{"participant_id": "p-petrov", "name": "Пётр ПЕТРОВ", "home_name": "Вернадского", "home_city": "Москва"}]
+
+    lines = _newcomers_post(svod, homes, names_layout="lines").splitlines()
+    start = lines.index("🧳 Впервые на нашей локации:")
+    # С домом — первым, без определившегося дома — просто по имени в конце.
+    assert lines[start + 1 : start + 3] == ["• Пётр ПЕТРОВ — Вернадского (Москва)", "• Анна БЕЗДОМНАЯ"]
+
+    inline = _newcomers_post(svod, homes, names_layout="inline")
+    assert "🧳 Впервые на нашей локации: Пётр ПЕТРОВ — Вернадского (Москва); Анна БЕЗДОМНАЯ." in inline

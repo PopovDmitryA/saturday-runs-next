@@ -9,6 +9,9 @@
   prefs.runs_notified_through, с датой старта не старше окна
   notifications_runs_window_days (первичная загрузка истории приносит сотни
   строк, писать о каждой нельзя);
+* волонтёрство — volunteer_results после того же водяного знака, свой вид
+  уведомления; роли одного старта — одним блоком. Бежал и волонтёрил в один
+  день — одно сообщение;
 * челленджи — уровни против снимка prefs.challenge_levels;
 * вехи «Моей истории» — новые ключи против prefs.milestones_seen;
 * призыв собрать постер о пробежке.
@@ -31,26 +34,34 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID
 
+import httpx
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User
+from app.core.runtime_env import is_test_run
+from app.db.session import get_session_factory
+from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User, VolunteerResult
 from app.notification_kinds import kind_enabled
 from app.notification_markup import bold, link
 from app.services import notification_channels_service as channels
 from app.services import notification_service as notifications
 from app.services.achievements_service import TIER_LABELS, compute_challenges
 from app.services.leaderboard_service import get_my_leaderboard_row, metric_title
+from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.my_history_service import get_my_history
 from app.services.platform_titles import PLATFORM_TITLES
+from app.services.start_weather_service import weather_for_pairs, weather_line
+from app.services.weather_service import collect_event_weather, event_weather_needed
 from app.time_format import normalize_finish_time_display
 
 logger = logging.getLogger(__name__)
 
 KIND_RUNS = "runs"
+KIND_VOLUNTEERING = "volunteering"
 KIND_RATINGS = "ratings"
 
 # Рейтинги, за движением в которых следим: код → подпись в сообщении.
@@ -82,6 +93,26 @@ class NewRun:
     position: int | None
     is_pr: bool
     is_first_run_at_location: bool
+    location_id: UUID | None = None
+    #: Готовая строка «🌤️ 12°, малооблачно, ветер 3 м/с» или None.
+    weather: str | None = None
+    #: Путь протокола старта на сайте (/locations/…/protocol/…) — ссылка заголовка.
+    protocol_path: str | None = None
+
+
+@dataclass(frozen=True)
+class NewVolunteering:
+    """Волонтёрство на одном старте: все роли человека в этот день."""
+
+    result_ids: tuple[UUID, ...]
+    event_date: date
+    location_id: UUID
+    location_name: str
+    platform_code: str
+    event_number: int | None
+    roles: tuple[str, ...]
+    weather: str | None = None
+    protocol_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -136,6 +167,9 @@ def _new_runs(db: Session, user_id: UUID, *, since: datetime, until: datetime, t
         .order_by(Event.event_date.asc(), Location.name.asc())
         .all()
     )
+    pairs = [(event.location_id, event.event_date) for _result, event, _location, _platform in rows]
+    weather = _weather_for_runs(db, pairs)
+    first_here = _first_time_here(db, user_id, rows)
     return [
         NewRun(
             result_id=result.id,
@@ -146,10 +180,142 @@ def _new_runs(db: Session, user_id: UUID, *, since: datetime, until: datetime, t
             finish_time_sec=result.finish_time_sec,
             position=result.position,
             is_pr=bool(result.is_pr),
-            is_first_run_at_location=bool(result.is_first_run_at_location),
+            is_first_run_at_location=result.id in first_here,
+            location_id=event.location_id,
+            weather=weather_line(weather.get((event.location_id, event.event_date))),
+            protocol_path=protocol_path(location, platform.code, event.event_date),
         )
         for result, event, location, platform in rows
     ]
+
+
+def _first_time_here(db: Session, user_id: UUID, rows: list[Any]) -> set[UUID]:
+    """Пробежки, которые действительно первые на этой физической локации.
+
+    Флаг is_first_run_at_location ставит система, и считает она только свои
+    старты: Раменское перешло из 5 вёрст в S95, и человек со ста пробежками
+    там получил «🆕 первый раз здесь» от первого же протокола S95 (26.09.2026).
+    Сверяем по узлу каталога через все системы — как «Новая локация» в истории.
+    """
+    candidates = [row for row in rows if row[0].is_first_run_at_location]
+    if not candidates:
+        return set()
+    index = LocationCatalogIndex(db)
+    earliest: dict[str, date] = {}
+    history = (
+        db.query(Event.event_date, Location, Platform.code)
+        .select_from(RunResult)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(Participant, RunResult.participant_id == Participant.id)
+        .join(
+            PlatformLink,
+            and_(
+                PlatformLink.platform_id == Participant.platform_id,
+                PlatformLink.external_user_id == Participant.external_user_id,
+            ),
+        )
+        .filter(PlatformLink.user_id == user_id, Event.is_test_event.is_(False))
+        .distinct()
+        .all()
+    )
+    for event_date, location, platform_code in history:
+        identity = index.canonical_identity_key(location, platform_code)
+        known = earliest.get(identity)
+        if known is None or event_date < known:
+            earliest[identity] = event_date
+    first: set[UUID] = set()
+    for result, event, location, platform in candidates:
+        identity = index.canonical_identity_key(location, platform.code)
+        if earliest.get(identity, event.event_date) >= event.event_date:
+            first.add(result.id)
+    return first
+
+
+def protocol_path(location: Location, platform_code: str, event_date: date) -> str | None:
+    """Протокол старта на сайте. Страница локации открывается по слагу любой
+    своей системы, поэтому хватает external_key самой площадки."""
+    slug = (location.external_key or "").strip()
+    if not slug:
+        return None
+    return f"/locations/{quote(slug, safe='')}/protocol/{platform_code}/{event_date.isoformat()}"
+
+
+def _new_volunteerings(
+    db: Session, user_id: UUID, *, since: datetime, until: datetime, today: date
+) -> list[NewVolunteering]:
+    window_days = get_settings().notifications_runs_window_days
+    rows = (
+        db.query(VolunteerResult, Event, Location, Platform)
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .join(Location, Event.location_id == Location.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(Participant, VolunteerResult.participant_id == Participant.id)
+        .join(
+            PlatformLink,
+            and_(
+                PlatformLink.platform_id == Participant.platform_id,
+                PlatformLink.external_user_id == Participant.external_user_id,
+            ),
+        )
+        .filter(
+            PlatformLink.user_id == user_id,
+            VolunteerResult.created_at > since,
+            VolunteerResult.created_at <= until,
+            Event.is_test_event.is_(False),
+            Event.event_date >= today - timedelta(days=window_days),
+        )
+        .order_by(Event.event_date.asc(), Location.name.asc(), VolunteerResult.role.asc())
+        .all()
+    )
+    by_event: dict[UUID, list[tuple[VolunteerResult, Event, Location, Platform]]] = {}
+    for row in rows:
+        by_event.setdefault(row[1].id, []).append(row)
+    weather = _weather_for_runs(db, [(event.location_id, event.event_date) for _v, event, _l, _p in rows])
+    items: list[NewVolunteering] = []
+    for group in by_event.values():
+        _first, event, location, platform = group[0]
+        roles = tuple(dict.fromkeys(v.role.strip() for v, *_ in group if v.role and v.role.strip()))
+        items.append(
+            NewVolunteering(
+                result_ids=tuple(v.id for v, *_ in group),
+                event_date=event.event_date,
+                location_id=event.location_id,
+                location_name=location.name,
+                platform_code=platform.code,
+                event_number=event.event_number,
+                roles=roles,
+                weather=weather_line(weather.get((event.location_id, event.event_date))),
+                protocol_path=protocol_path(location, platform.code, event.event_date),
+            )
+        )
+    return items
+
+
+def _weather_for_runs(db: Session, pairs: list[tuple[UUID, date]]) -> dict[tuple[UUID, date], dict[str, Any]]:
+    """Погода стартов для сообщения. Свежий старт без погоды добираем сами:
+    задача, поставленная загрузкой протокола, могла ещё не отработать, а
+    сообщение уходит один раз. Сбой сети — сообщение уйдёт без погоды."""
+    if not pairs:
+        return {}
+    found = weather_for_pairs(db, pairs)
+    missing = {pair for pair in pairs if pair not in found and event_weather_needed(pair[1])}
+    if not missing or is_test_run():
+        return found
+    # Своя сессия: сбор коммитит и откатывает, а у сканера в транзакции уже
+    # лежат незаписанные настройки человека.
+    weather_db = get_session_factory()()
+    try:
+        with httpx.Client(headers={"User-Agent": "run5k.run weather collector"}, timeout=20) as client:
+            for location_id, event_date in sorted(missing, key=str):
+                collect_event_weather(weather_db, client, location_id, event_date)
+    except Exception:  # noqa: BLE001 — погода не должна задерживать уведомление
+        logger.warning("notify: weather for new runs not collected", exc_info=True)
+        weather_db.rollback()
+    finally:
+        weather_db.close()
+    return weather_for_pairs(db, pairs)
 
 
 def challenge_levels_snapshot(payload: dict[str, Any]) -> dict[str, dict[str, str | None]]:
@@ -230,11 +396,62 @@ def milestones_snapshot(db: Session, user_id: UUID) -> tuple[list[str], list[dic
     return [milestone_key(item) for item in items], items
 
 
-def new_milestones(previous: list[str] | None, keys: list[str], items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+_MILESTONE_LOCATION_FIELD = 3
+
+
+def _milestone_identity(key: str) -> str:
+    """Ключ вехи без названия локации — для сравнения со снимком.
+
+    Название — подпись, а не суть вехи: переименование «Раменское Городской
+    парк» → «Раменское» (26.09.2026) превратило все старые вехи на этой
+    локации в «новые», и люди получили «100-е волонтёрство» годичной
+    давности. Хранимый формат не меняем — старые снимки сравниваются так же.
+    """
+    parts = key.split("|")
+    if len(parts) > _MILESTONE_LOCATION_FIELD:
+        parts[_MILESTONE_LOCATION_FIELD] = ""
+    return "|".join(parts)
+
+
+def _milestone_date(item: dict[str, Any]) -> date | None:
+    value = item.get("event_date")
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def new_milestones(
+    previous: list[str] | None,
+    keys: list[str],
+    items: list[dict[str, Any]],
+    *,
+    since: date | None = None,
+) -> list[dict[str, Any]]:
+    """Вехи, которых не было в прошлом снимке.
+
+    since — вехи старше этой даты не объявляем, даже если ключ новый:
+    пересчёт истории (переименование, склейка локаций, перенос протоколов)
+    не должен присылать достижения прошлых лет как свежие.
+    """
     if previous is None:
         return []
-    seen = set(previous)
-    return [item for key, item in zip(keys, items, strict=True) if key not in seen]
+    seen = {_milestone_identity(key) for key in previous}
+    fresh: list[dict[str, Any]] = []
+    for key, item in zip(keys, items, strict=True):
+        if _milestone_identity(key) in seen:
+            continue
+        when = _milestone_date(item)
+        if since is not None and when is not None and when < since:
+            continue
+        fresh.append(item)
+    return fresh
 
 
 # ---------------------------------------------------------------------------
@@ -257,15 +474,31 @@ def _ordinal(n: int) -> str:
     return f"{n}-е"
 
 
-def run_block(run: NewRun) -> str:
-    """Две строки: где и когда — жирным, ниже время, место и отметки."""
-    head = f"📍 {run.location_name}"
-    system = PLATFORM_TITLES.get(run.platform_code)
+def _event_head(icon: str, location_name: str, platform_code: str, event_number: int | None, event_date: date) -> str:
+    head = f"{icon} {location_name}"
+    system = PLATFORM_TITLES.get(platform_code)
     if system:
         head += f" ({system})"
-    if run.event_number:
-        head += f" №{run.event_number}"
-    head += f" · {_date_label(run.event_date)}"
+    if event_number:
+        head += f" №{event_number}"
+    return head + f" · {_date_label(event_date)}"
+
+
+def bold_link(text: str, url: str | None) -> str:
+    """Жирная подпись, кликабельная, если есть адрес.
+
+    Порядок именно `[**…**](url)`: рендер сначала находит ссылку и уже внутри
+    подписи — жирное; `**[…](url)**` он бы съел как жирный текст целиком.
+    """
+    if not url or "]" in text:
+        return bold(text)
+    return link(bold(text), url)
+
+
+def run_block(run: NewRun, *, base_url: str | None = None) -> str:
+    """Где и когда — жирным (ссылка на протокол), ниже время, место и отметки, третьей строкой — погода."""
+    head = _event_head("📍", run.location_name, run.platform_code, run.event_number, run.event_date)
+    head_url = f"{base_url}{run.protocol_path}" if base_url and run.protocol_path else None
     facts = []
     time_label = _time_label(run.finish_time_sec)
     if time_label:
@@ -276,9 +509,21 @@ def run_block(run: NewRun) -> str:
         facts.append("🔥 личный рекорд")
     if run.is_first_run_at_location:
         facts.append("🆕 первый раз здесь")
-    lines = [bold(head)]
+    lines = [bold_link(head, head_url)]
     if facts:
         lines.append(" · ".join(facts))
+    if run.weather:
+        lines.append(run.weather)
+    return "\n".join(lines)
+
+
+def volunteer_block(item: NewVolunteering, *, with_weather: bool = True, base_url: str | None = None) -> str:
+    """Где и когда — жирным (ссылка на протокол), ниже роли; погода — если её не показал блок пробежки."""
+    head = _event_head("🦺", item.location_name, item.platform_code, item.event_number, item.event_date)
+    head_url = f"{base_url}{item.protocol_path}" if base_url and item.protocol_path else None
+    lines = [bold_link(head, head_url), "🙌 " + (", ".join(item.roles) if item.roles else "волонтёр")]
+    if with_weather and item.weather:
+        lines.append(item.weather)
     return "\n".join(lines)
 
 
@@ -360,26 +605,63 @@ def compose_message(
     ups: list[LevelUp],
     milestones: list[dict[str, Any]],
     poster_url: str | None,
+    volunteerings: list[NewVolunteering] | None = None,
+    base_url: str | None = None,
+    profile_url: str | None = None,
 ) -> tuple[str, str]:
-    """(заголовок, тело в разметке)."""
+    """(заголовок, тело в разметке).
+
+    base_url — адрес сайта для ссылок на протоколы стартов; profile_url —
+    кабинет человека (/users/{хендл}): заголовки разделов ведут на его же
+    вкладки «Челленджи» и «История».
+    """
+    volunteerings = volunteerings or []
     settings = get_settings()
     limit = settings.notifications_runs_max_listed
     sections: list[str] = []
     if runs:
-        blocks = [run_block(run) for run in runs[:limit]]
+        blocks = [run_block(run, base_url=base_url) for run in runs[:limit]]
         rest = len(runs) - limit
         if rest > 0:
             blocks.append(f"…и ещё {rest}")
         sections.append("\n\n".join(blocks))
+    if volunteerings:
+        # Погода старта, где человек и бежал, уже стоит в блоке пробежки.
+        shown = {(run.location_id, run.event_date) for run in runs[:limit]}
+        blocks = [
+            volunteer_block(item, with_weather=(item.location_id, item.event_date) not in shown, base_url=base_url)
+            for item in volunteerings[:limit]
+        ]
+        rest = len(volunteerings) - limit
+        if rest > 0:
+            blocks.append(f"…и ещё {rest}")
+        sections.append("\n\n".join(blocks))
+    achievements_url = f"{profile_url}/achievements" if profile_url else None
+    history_url = f"{profile_url}/history" if profile_url else None
     if ups:
-        sections.append("🏆 " + bold("Челленджи:") + "\n" + "\n".join(level_line(u) for u in ups))
+        sections.append(
+            "🏆 " + bold_link("Челленджи:", achievements_url) + "\n" + "\n".join(level_line(u) for u in ups)
+        )
     if milestones:
-        sections.append("🎖 " + bold("Вехи истории:") + "\n" + "\n".join(milestone_line(m) for m in milestones[:6]))
+        sections.append(
+            "🎖 "
+            + bold_link("Вехи истории:", history_url)
+            + "\n"
+            + "\n".join(milestone_line(m) for m in milestones[:6])
+        )
     if runs and poster_url:
         sections.append("🖼 " + link("Собрать постер о пробежке", poster_url) + " — поделитесь результатом в сториз.")
 
-    if runs:
+    if runs and volunteerings:
+        title = "🏃 Пробежка и волонтёрство на сайте"
+    elif runs:
         title = "🏃 Пробежка попала на сайт" if len(runs) == 1 else f"🏃 Новые пробежки на сайте: {len(runs)}"
+    elif volunteerings:
+        title = (
+            "🦺 Волонтёрство попало на сайт"
+            if len(volunteerings) == 1
+            else f"🦺 Новые волонтёрства на сайте: {len(volunteerings)}"
+        )
     elif ups and not milestones:
         title = "🏆 Новый уровень в челлендже" if len(ups) == 1 else "🏆 Новые уровни в челленджах"
     else:
@@ -408,7 +690,9 @@ def scan_user_activity(db: Session, user_id: UUID, *, now: datetime | None = Non
     if not channels.is_enabled(db, user_id):
         return {"skipped": "disabled"}
     prefs = notifications.ensure_prefs(db, user_id)
-    if not kind_enabled(prefs.kinds, KIND_RUNS):
+    runs_on = kind_enabled(prefs.kinds, KIND_RUNS)
+    volunteering_on = kind_enabled(prefs.kinds, KIND_VOLUNTEERING)
+    if not runs_on and not volunteering_on:
         return {"skipped": "kind off"}
     user = db.get(User, user_id)
     if user is None:
@@ -418,37 +702,63 @@ def scan_user_activity(db: Session, user_id: UUID, *, now: datetime | None = Non
     base = settings.app_base_url.rstrip("/")
     handle = _profile_handle(user)
 
+    # Водяной знак общий: выключенный вид не копит долг — включив его,
+    # человек не получит пачку старых новостей.
     since = prefs.runs_notified_through or (now - timedelta(days=1))
-    runs = _new_runs(db, user_id, since=since, until=now, today=now.date())
+    runs: list[NewRun] = []
+    ups: list[LevelUp] = []
+    fresh: list[dict[str, Any]] = []
+    volunteerings: list[NewVolunteering] = []
+    if runs_on:
+        runs = _new_runs(db, user_id, since=since, until=now, today=now.date())
+
+        payload = compute_challenges(db, user_id)
+        current_levels = challenge_levels_snapshot(payload)
+        ups = level_ups(prefs.challenge_levels, current_levels, payload)
+        prefs.challenge_levels = current_levels
+
+        keys, items = milestones_snapshot(db, user_id)
+        fresh = new_milestones(
+            prefs.milestones_seen,
+            keys,
+            items,
+            since=now.date() - timedelta(days=settings.notifications_runs_window_days),
+        )
+        prefs.milestones_seen = keys
+    if volunteering_on:
+        volunteerings = _new_volunteerings(db, user_id, since=since, until=now, today=now.date())
     prefs.runs_notified_through = now
-
-    payload = compute_challenges(db, user_id)
-    current_levels = challenge_levels_snapshot(payload)
-    ups = level_ups(prefs.challenge_levels, current_levels, payload)
-    prefs.challenge_levels = current_levels
-
-    keys, items = milestones_snapshot(db, user_id)
-    fresh = new_milestones(prefs.milestones_seen, keys, items)
-    prefs.milestones_seen = keys
 
     db.flush()
     delivery = None
-    if runs or ups or fresh:
-        title, text = compose_message(runs=runs, ups=ups, milestones=fresh, poster_url=f"{base}/share")
+    if runs or ups or fresh or volunteerings:
+        title, text = compose_message(
+            runs=runs,
+            ups=ups,
+            milestones=fresh,
+            poster_url=f"{base}/share",
+            volunteerings=volunteerings,
+            base_url=base,
+            profile_url=f"{base}/users/{handle}",
+        )
+        only_volunteering = bool(volunteerings) and not (runs or ups or fresh)
         delivery = notifications.notify_user(
             db,
             user,
-            KIND_RUNS,
+            KIND_VOLUNTEERING if only_volunteering else KIND_RUNS,
             title=title,
             text=text,
             dedupe_key="runs:"
             + _digest(
                 [str(r.result_id) for r in runs]
+                + [str(result_id) for item in volunteerings for result_id in item.result_ids]
                 + [f"{u.code}:{u.tier}:{u.level}" for u in ups]
                 + [milestone_key(m) for m in fresh]
             ),
-            url=f"{base}/users/{handle}/runs",
-            url_label="Мои пробежки на сайте",
+            # Ссылка — туда, о чём сообщение: без пробежки (пусть и с вехами)
+            # «Мои пробежки» ведут не туда.
+            url=f"{base}/users/{handle}/volunteering" if volunteerings and not runs else f"{base}/users/{handle}/runs",
+            url_label="Моё волонтёрство на сайте" if volunteerings and not runs else "Мои пробежки на сайте",
             commit=False,
         )
     db.commit()
@@ -456,6 +766,7 @@ def scan_user_activity(db: Session, user_id: UUID, *, now: datetime | None = Non
         notifications.enqueue_delivery(delivery.id)
     return {
         "runs": len(runs),
+        "volunteerings": len(volunteerings),
         "level_ups": len(ups),
         "milestones": len(fresh),
         "queued": delivery is not None,

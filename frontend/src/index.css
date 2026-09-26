@@ -17930,32 +17930,17 @@ input.participant-name-search-input:focus {
   align-items: center;
 }
 
-/* Модалка «На сайте появились уведомления» — один раз за вход.
-   Окно не выше экрана: текст листается внутри (.notify-intro-scroll), а подвал
-   с кнопками стоит на месте. Раньше на телефоне 360×740 окно было выше экрана
-   на 220px, центровка выталкивала «Не сейчас» за нижний край, а прокрутка
-   страницы под окном заблокирована — закрыть его было нечем. */
+/* Модалка «На сайте появились уведомления» — один раз за вход. */
 .notify-intro {
   width: min(100%, 30rem);
   text-align: left;
-  display: flex;
-  flex-direction: column;
-  /* 2.5rem — верхнее и нижнее поле оверлея. dvh учитывает адресную строку
-     мобильного браузера; vh — запас для тех, кто dvh не знает. */
-  max-height: calc(100vh - 2.5rem);
+  /* На телефоне окно выше экрана: центрированное, оно уходило верхом и низом
+     за край, а прокрутить было нечем — скролл страницы под модалкой
+     заблокирован (26.09.2026, «не масштабируется, края за границами окна»).
+     Панель не выше экрана и листается сама. */
   max-height: calc(100dvh - 2.5rem);
-}
-
-.notify-intro-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
   overflow-y: auto;
-  /* Дотянув текст до конца, палец не должен начинать листать страницу под окном. */
   overscroll-behavior: contain;
-}
-
-.notify-intro-footer {
-  flex-shrink: 0;
 }
 
 .notify-intro-hero {
@@ -18033,59 +18018,41 @@ input.participant-name-search-input:focus {
 
 .notify-intro-actions {
   margin-top: 1.1rem;
+  /* Кнопки видны всегда, даже пока список пролистан не до конца: закрыть
+     окно должно быть можно с первого экрана. */
+  position: sticky;
+  bottom: -1.15rem;
+  padding: 0.75rem 0 1.15rem;
+  margin-bottom: -1.15rem;
+  background: var(--surface);
+  box-shadow: 0 -10px 12px -10px rgba(15, 23, 42, 0.18);
 }
 
 .notify-intro-never {
   display: block;
-  margin: 0.75rem auto 0;
+  margin: 1.6rem auto 0;
   font-size: 0.85rem;
   color: var(--text-faint);
 }
 
-/* Невысокий экран: подвал отбит линией — видно, что текст над ним
-   продолжается и листается, а не кончился. */
-@media (max-width: 600px), (max-height: 820px) {
-  .notify-intro-footer {
-    border-top: 1px solid var(--border);
-    margin-top: 0.75rem;
-  }
-
-  .notify-intro-actions {
-    margin-top: 0.75rem;
-  }
-}
-
-/* Телефон: окно компактнее — меньше поля, колокольчик и пункты списка, чтобы
-   текст целиком помещался хотя бы на 740px высоты без прокрутки. */
 @media (max-width: 480px) {
-  .notify-intro-overlay {
-    padding: 0.75rem;
-  }
-
   .notify-intro {
-    padding: 1rem 1rem 0.85rem;
-    max-height: calc(100vh - 1.5rem);
-    max-height: calc(100dvh - 1.5rem);
+    padding: 1.1rem 1rem 1.15rem;
   }
 
   .notify-intro-hero {
-    width: 2.75rem;
-    height: 2.75rem;
+    width: 2.8rem;
+    height: 2.8rem;
     margin-bottom: 0.5rem;
   }
 
   .notify-intro-bell {
-    font-size: 1.3rem;
-  }
-
-  .notify-intro-title {
-    font-size: 1.05rem;
-    margin-bottom: 0.4rem;
+    font-size: 1.35rem;
   }
 
   .notify-intro-lead {
-    margin: 0 0 0.7rem;
-    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.92rem;
   }
 
   .notify-intro-list {
@@ -18101,15 +18068,6 @@ input.participant-name-search-input:focus {
 
   .notify-intro-icon {
     font-size: 1.15rem;
-  }
-
-  .notify-intro-note {
-    margin-top: 0.65rem;
-    font-size: 0.8rem;
-  }
-
-  .notify-intro-never {
-    margin-top: 0.55rem;
   }
 }
 

@@ -184,7 +184,8 @@ start-full → warm → verify → DNS → outside`, откат — `scripts/cut
 Шаги сами проверяют порядок. После `freeze` на VPS лежит `.site-moved-home`, и
 `deploy_prod.sh` туда не выкатывает (осознанно — `ALLOW_VPS_DEPLOY=1`); выкат дома —
 `scripts/deploy_home.sh`, он без маркера `~/.srs-site-at-home` не работает. В DNS
-переезжают все четыре имени сертификатов: run5k.run, www, app, grafana. Дома сайт
+переезжают все имена сертификатов: run5k.run, app, grafana (www в панели Timeweb
+нет — он сам повторяет все записи run5k.run, включая TTL). Дома сайт
 в parkrun сам не ходит (`PARKRUN_SERVER_FETCH_ENABLED=false`): адрес общий со всем
 домом, profile-заявки разбирает очередь через VPN-выходы.
 
