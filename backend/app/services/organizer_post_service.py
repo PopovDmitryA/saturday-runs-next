@@ -206,12 +206,7 @@ def _stats_post(
     # может не в первый раз. Пишем, откуда приехал. В строку — через «;»:
     # запятая внутри «Имя — Дом (Город)» читалась бы как разделитель.
     if guest_homes:
-        guest_items = []
-        for guest in guest_homes:
-            home = guest["home_name"]
-            if guest.get("home_city"):
-                home += f" ({guest['home_city']})"
-            guest_items.append(f"{guest['name']} — {home}")
+        guest_items = [f"{guest['name']} — {_guest_home_label(guest)}" for guest in guest_homes]
         lines.append("")
         lines.extend(_name_block(f"🧳 Гости локации ({len(guest_homes)})", guest_items, names_layout, sep="; "))
     if jubilees:
@@ -261,7 +256,20 @@ def _volunteers_post(svod: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _newcomers_post(svod: dict[str, Any], *, names_layout: NamesLayout = "lines") -> str:
+def _guest_home_label(guest: dict[str, Any]) -> str:
+    """«Вернадского (Москва)» — откуда приехал гость."""
+    home = str(guest["home_name"])
+    if guest.get("home_city"):
+        home += f" ({guest['home_city']})"
+    return home
+
+
+def _newcomers_post(
+    svod: dict[str, Any],
+    guest_homes: list[dict[str, Any]] | None = None,
+    *,
+    names_layout: NamesLayout = "lines",
+) -> str:
     event = svod["event"]
     runners = svod["runners"]
     volunteers = svod["volunteers"]
@@ -274,11 +282,29 @@ def _newcomers_post(svod: dict[str, Any], *, names_layout: NamesLayout = "lines"
     for title, rows in (
         ("🏃 Первый финиш", first_runs),
         ("🙋 Первое волонтёрство", first_vols),
-        ("🧳 Впервые на нашей локации", guests),
     ):
         if rows:
             lines.append("")
             lines.extend(_name_block(title, [_row_name(row) for row in rows], names_layout))
+    # «Откуда гости» — как в «Героях старта» (просьба Дмитрия 26.09.2026):
+    # рядом с именем домашняя локация. У кого дом ещё не определился, идёт
+    # просто по имени в конце списка. Порядок — по домашнему парку.
+    if guests:
+        home_by_participant = {
+            guest["participant_id"]: guest for guest in (guest_homes or []) if guest.get("participant_id")
+        }
+        with_home: list[dict[str, Any]] = []
+        without_home: list[str] = []
+        for row in guests:
+            home = home_by_participant.get(row.get("participant_id"))
+            if home is None:
+                without_home.append(_row_name(row))
+            else:
+                with_home.append({**home, "name": _row_name(row)})
+        guest_items = [f"{guest['name']} — {_guest_home_label(guest)}" for guest in sort_guest_homes(with_home)]
+        guest_items.extend(without_home)
+        lines.append("")
+        lines.extend(_name_block("🧳 Впервые на нашей локации", guest_items, names_layout, sep="; "))
     if not (first_runs or first_vols or guests):
         lines.append("")
         lines.append("На этом старте новых лиц не было — все свои!")
@@ -546,7 +572,7 @@ def build_event_post(
     if template == "stats":
         post_text = _stats_post(svod, _event_guest_homes(db, svod), names_layout=names_layout or "inline")
     elif template == "newcomers":
-        post_text = _newcomers_post(svod, names_layout=names_layout or "lines")
+        post_text = _newcomers_post(svod, _event_guest_homes(db, svod), names_layout=names_layout or "lines")
     elif template == "milestones":
         post_text = _milestones_post(svod, names_layout=names_layout or "inline")
     else:
@@ -591,6 +617,7 @@ def _event_guest_homes(db: Session, svod: dict[str, Any]) -> list[dict[str, Any]
             continue
         guests.append(
             {
+                "participant_id": runner["participant_id"],
                 "name": runner.get("name") or "Неизвестный участник",
                 "home_name": entry.get("name") or "другая локация",
                 "home_city": entry.get("city"),

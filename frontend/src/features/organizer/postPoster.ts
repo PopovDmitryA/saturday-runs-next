@@ -414,14 +414,17 @@ function volunteersRecipe(parsed: ParsedPost): Recipe {
 function newcomersRecipe(parsed: ParsedPost): Recipe {
   const metrics: ShareMetric[] = [];
   const lists: ShareNameList[] = [];
-  const blocks: { label: RegExp; title: string; tile: string }[] = [
+  // Гости идут «Имя — Дом (Город)» через «;», как в «Героях старта»: на
+  // постер — только имя.
+  const guestNames = (section: Section | undefined) => sectionEntries(section).map((item) => partBefore(item));
+  const blocks: { label: RegExp; title: string; tile: string; names?: (section: Section | undefined) => string[] }[] = [
     { label: /^Первый финиш$/i, title: "Первый финиш", tile: "первый финиш" },
     { label: /^Первое волонтёрство$/i, title: "Первое волонтёрство", tile: "первое волонтёрство" },
-    { label: /^Впервые на нашей локации$/i, title: "Впервые у нас", tile: "впервые здесь" },
+    { label: /^Впервые на нашей локации$/i, title: "Впервые у нас", tile: "впервые здесь", names: guestNames },
   ];
   let total = 0;
   blocks.forEach((block, index) => {
-    const names = sectionNames(sectionOf(parsed, block.label));
+    const names = (block.names ?? sectionNames)(sectionOf(parsed, block.label));
     if (names.length === 0) {
       return;
     }
