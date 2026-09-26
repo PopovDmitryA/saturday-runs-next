@@ -4,7 +4,6 @@
 // выбор сюжета, а не чекбоксы.
 
 import { useEffect, useMemo, useState } from "react";
-import { AppShell } from "../../components/AppShell";
 import {
   getDashboard,
   getGoals,
@@ -51,7 +50,10 @@ function MomentPreview({ subject }: { subject: ShareSubject }) {
   );
 }
 
-export function SharingContent({ bare = false }: { bare?: boolean } = {}) {
+// Тело страницы без каркаса: его рисует кабинет (PortalCabinetShell). Проп
+// bare остался от старой обёртки AppShell (удалена 26.09.2026) и ни на что не
+// влияет.
+export function SharingContent(_props: { bare?: boolean } = {}) {
   const sheet = useOptionalShareSheet();
   const user = useOptionalUser();
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
@@ -197,12 +199,5 @@ export function SharingContent({ bare = false }: { bare?: boolean } = {}) {
     </>
   );
 
-  if (bare) {
-    return <div className="portal-cab-stack">{pageBody}</div>;
-  }
-  return (
-    <AppShell title="Поделиться" activePath="/share">
-      {pageBody}
-    </AppShell>
-  );
+  return <div className="portal-cab-stack">{pageBody}</div>;
 }

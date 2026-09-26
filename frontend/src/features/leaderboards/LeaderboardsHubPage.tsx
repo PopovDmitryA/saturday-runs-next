@@ -33,6 +33,7 @@ import {
   type CourseRatingMetric,
 } from "./courseApi";
 import { surnameFirst } from "../../lib/personName";
+import { ratingGroupTitle, ratingName } from "./ratingNames";
 import "./leaderboards.css";
 
 const HUB_TOP_N = 3;
@@ -81,44 +82,58 @@ type HubSection = {
 // Только готовые рейтинги. Карточек-анонсов «скоро» здесь нет намеренно
 // (решение Дмитрия 09.08.2026): раздел показывает то, что уже работает, а
 // планы живут в бэклоге «Рейтинги» — новый рейтинг появляется на хабе в тот
-// же момент, когда становится доступен всем. Секция «Локации» (Р18/Р19) по
-// этой же причине пока отсутствует целиком — в ней нет ни одного живого
-// рейтинга.
+// же момент, когда становится доступен всем.
+// Названия групп и карточек — из дерева навигации (ratingNames.ts): на хабе
+// рейтинг называется так же, как в меню и в заголовке своей страницы. Раньше
+// здесь были свои слова — «Паркран-туристы», «Количество первых мест» и две
+// разные карточки «Уникальные локации» (ревью навигации 25.09.2026).
 const SECTIONS: HubSection[] = [
   {
     emoji: "🏃",
-    title: "Бегуны",
+    title: ratingGroupTitle("runners"),
     live: [
-      { metric: "runs", href: "/ratings/runs", title: "Количество пробежек" },
-      { metric: "wins", href: "/ratings/wins", title: "Количество первых мест" },
+      { metric: "runs", href: "/ratings/runs", title: ratingName("runs").label },
+      { metric: "wins", href: "/ratings/wins", title: ratingName("wins").label },
     ],
     fastest: true,
   },
   {
     emoji: "🤝",
-    title: "Волонтёры",
+    title: ratingGroupTitle("volunteers"),
     live: [
-      { metric: "volunteering", href: "/ratings/volunteering", title: "Количество волонтёрств" },
+      {
+        metric: "volunteering",
+        href: "/ratings/volunteering",
+        title: ratingName("volunteering").label,
+      },
       {
         metric: "volunteer_locations",
         href: "/ratings/volunteer-locations",
-        title: "Уникальные локации",
+        title: ratingName("volunteer-locations").label,
       },
       {
         metric: "volunteer_roles",
         href: "/ratings/volunteer-roles",
-        title: "Мультиволонтёр — разнообразие ролей",
+        title: ratingName("volunteer-roles").label,
       },
     ],
   },
   {
     emoji: "🧭",
-    title: "Паркран-туристы",
+    title: ratingGroupTitle("tourists"),
     live: [
-      { metric: "locations", href: "/ratings/locations", title: "Уникальные локации" },
-      { metric: "openings", href: "/ratings/openings", title: "Открытия локаций" },
-      { metric: "win_locations", href: "/ratings/win-locations", title: "Локации с первым местом" },
-      { metric: "home_distance", href: "/ratings/home-distance", title: "Дальность от дома" },
+      { metric: "locations", href: "/ratings/locations", title: ratingName("locations").label },
+      { metric: "openings", href: "/ratings/openings", title: ratingName("openings").label },
+      {
+        metric: "win_locations",
+        href: "/ratings/win-locations",
+        title: ratingName("win-locations").label,
+      },
+      {
+        metric: "home_distance",
+        href: "/ratings/home-distance",
+        title: ratingName("home-distance").label,
+      },
     ],
   },
 ];
@@ -263,7 +278,7 @@ function FastestRatingCard({ platform }: { platform: PlatformFilter }) {
   return (
     <a className="lb-hub-card lb-hub-card-live" href="/ratings/fastest">
       <div className="lb-hub-card-top">
-        <span className="lb-hub-card-title">Самые быстрые</span>
+        <span className="lb-hub-card-title">{ratingName("fastest").label}</span>
       </div>
 
       {state === "loading" && <p className="lb-hub-loading muted">Считаем…</p>}
@@ -335,7 +350,7 @@ function LocationRecordsHubCard({ platform }: { platform: PlatformFilter }) {
   return (
     <a className="lb-hub-card lb-hub-card-live" href="/ratings/location-records">
       <div className="lb-hub-card-top">
-        <span className="lb-hub-card-title">Рекорды локаций</span>
+        <span className="lb-hub-card-title">{ratingName("location-records").label}</span>
       </div>
       {rows === null && !error && <p className="lb-hub-loading muted">Считаем…</p>}
       {error && <p className="lb-hub-loading muted">Не удалось загрузить</p>}
@@ -359,7 +374,7 @@ function LocationRecordsHubCard({ platform }: { platform: PlatformFilter }) {
 }
 
 /**
- * Карточка «Локации по регионам»: строка — регион, а не участник, поэтому у
+ * Карточка «Регионы» (локации по регионам): строка — регион, а не участник, поэтому у
  * неё свой фетч. parkrun этот рейтинг не считает (закрыт с 2022, регион у его
  * строк почти везде пуст) — при выборе parkrun на хабе карточка честно
  * показывает общий зачёт и подписывает это, как остальные.
@@ -392,7 +407,7 @@ function RegionsHubCard({ platform }: { platform: PlatformFilter }) {
   return (
     <a className="lb-hub-card lb-hub-card-live" href="/ratings/regions">
       <div className="lb-hub-card-top">
-        <span className="lb-hub-card-title">Локации по регионам</span>
+        <span className="lb-hub-card-title">{ratingName("regions").label}</span>
       </div>
       {rows === null && !error && <p className="lb-hub-loading muted">Считаем…</p>}
       {error && <p className="lb-hub-loading muted">Не удалось загрузить</p>}
@@ -403,7 +418,7 @@ function RegionsHubCard({ platform }: { platform: PlatformFilter }) {
       )}
       {rows && (
         <div className="lb-hub-top3">
-          <p className="lb-hub-top3-label">Больше всего площадок</p>
+          <p className="lb-hub-top3-label">Больше всего локаций</p>
           {rows.map((row, index) => (
             <div className="lb-hub-rank-row" key={row.name}>
               <span className={`lb-hub-rank-chip lb-hub-rank-${RANK_TIER[index] ?? "silver"}`}>
@@ -555,7 +570,7 @@ export function LeaderboardsHubPage() {
             не люди (Р18/Р19 из бэклога ещё в плане). */}
         <section className="lb-hub-section">
           <h2>
-            <span aria-hidden>📍</span> Локации
+            <span aria-hidden>📍</span> {ratingGroupTitle("places")}
           </h2>
           <div className="lb-hub-cards">
             <LocationRecordsHubCard platform={platform} />

@@ -336,11 +336,17 @@ body {
    у .shell-content, но без JS и без риска разъехаться при ресайзе; «+1rem» —
    паддинг контейнера, «-2.75rem-0.75rem» (ширина кнопки + зазор) отодвигает
    её ЗА край, чтобы не перекрывала последнюю колонку. На узких экранах
-   формула уходит в минус — max() возвращает обычный отступ от края экрана. */
+   формула уходит в минус — max() возвращает обычный отступ от края экрана.
+   Запасная ширина у var() обязательна: переменную задаёт только старый
+   .shell-content, а в новой раскладке (рельс + колонка, .portal-cab-layout
+   шириной 1440px) его нет. Без запаса calc() недействителен целиком, right
+   сбрасывается в auto, и кнопка падала на своё место в потоке — к ЛЕВОМУ
+   краю контента, прямо на номер старта и место в таблицах (ревью 25.09.2026).
+   Кнопка одна на весь сайт: рейтинги раньше держали свою копию (.lb-scroll-top). */
 .scroll-top-btn {
   position: fixed;
-  right: max(1.25rem, calc((100vw - var(--page-content-width)) / 2 + 1rem - 2.75rem - 0.75rem));
-  /* Над нижней навигацией телефона: иначе кнопка садится на «Ещё». */
+  right: max(1.25rem, calc((100vw - var(--page-content-width, 1440px)) / 2 + 1rem - 2.75rem - 0.75rem));
+  /* Над нижней навигацией телефона: иначе кнопка садится на «Меню». */
   bottom: calc(1.25rem + var(--portal-bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px));
   z-index: 400;
   display: flex;
@@ -360,6 +366,23 @@ body {
 
 .scroll-top-btn:hover {
   color: var(--accent-indigo-text);
+}
+
+/* Телефон: просто правый нижний угол над нижней панелью — считать край
+   контента незачем, он совпадает с краем экрана. Правая рука достаёт сюда
+   большим пальцем, а первый столбец таблицы (место, номер старта) открыт. */
+@media (max-width: 900px) {
+  .scroll-top-btn {
+    right: 16px;
+    bottom: calc(16px + var(--portal-bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Пока видна липкая «моя строка» (PinnedMeBar, во всю ширину телефона и по
+   центру на компьютере), кнопка поднимается над ней — иначе садится прямо на
+   кнопку «Показать». */
+body.has-pinned-me .scroll-top-btn {
+  bottom: calc(4.5rem + var(--portal-bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px));
 }
 
 .visually-hidden {
@@ -7482,28 +7505,6 @@ a.admin-system-chip:hover {
   font-weight: 600;
 }
 
-.admin-preview-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.admin-preview-tab {
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  color: var(--text-2);
-  border-radius: 999px;
-  padding: 0.4rem 0.9rem;
-  cursor: pointer;
-}
-
-.admin-preview-tab.active {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
-}
-
 .admin-preview-links {
   list-style: none;
   padding: 0;
@@ -11426,6 +11427,10 @@ a.admin-system-chip:hover {
    площадок. */
 .loc-series {
   margin-top: 2rem;
+  /* Элемент сетки карточки: без нуля его min-width считается по таблице
+     внутри (≈600px), и таблица растягивала карточку вместо того, чтобы
+     листаться в своей рамке. */
+  min-width: 0;
 }
 
 .loc-series-title {
@@ -11679,6 +11684,23 @@ a.admin-system-chip:hover {
      hidden): по вертикали переполнение остаётся видимым, подсказки над
      столбцами не режутся. */
   overflow-x: clip;
+}
+
+/* То же в новой раскладке (рельс + колонка): .shell-content там нет, и правило
+   выше не срабатывает. Ширина уже 1440px у .portal-cab-layout, осталось
+   подрезать вылезающие вбок подсказки. */
+.portal-cab-main:has(.loc-wide-page) {
+  overflow-x: clip;
+}
+
+/* Карточка каталога (и «Результатов последней субботы») — сетка .card с одной
+   неявной колонкой шириной auto: колонку растягивал самый широкий ребёнок,
+   таблица «Серии стартов» (≈600px). На телефоне страница раскладывалась шире
+   экрана: браузер её уменьшал, нижняя панель уезжала за край, фильтры
+   обрезались (ревью 25.09.2026, mob-3). minmax(0, 1fr) держит колонку в
+   ширине карточки, а широкие таблицы листаются внутри своих рамок. */
+.card.loc-wide-page {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .loc-index-table td.td-location {
@@ -13090,7 +13112,7 @@ a.admin-system-chip:hover {
   left: 50%;
   transform: translate(-50%, 0);
   bottom: 12px;
-  /* Выше нижней навигации кабинета (.portal-cab-bottomnav, z-index 60),
+  /* Выше нижней панели сайта (.site-bottomnav в nav/siteNav.css, z-index 60),
      иначе бар физически есть, но прячется под ней. */
   z-index: 61;
   width: min(560px, calc(100vw - 24px));
@@ -17875,10 +17897,32 @@ input.participant-name-search-input:focus {
   align-items: center;
 }
 
-/* Модалка «На сайте появились уведомления» — один раз за вход. */
+/* Модалка «На сайте появились уведомления» — один раз за вход.
+   Окно не выше экрана: текст листается внутри (.notify-intro-scroll), а подвал
+   с кнопками стоит на месте. Раньше на телефоне 360×740 окно было выше экрана
+   на 220px, центровка выталкивала «Не сейчас» за нижний край, а прокрутка
+   страницы под окном заблокирована — закрыть его было нечем. */
 .notify-intro {
   width: min(100%, 30rem);
   text-align: left;
+  display: flex;
+  flex-direction: column;
+  /* 2.5rem — верхнее и нижнее поле оверлея. dvh учитывает адресную строку
+     мобильного браузера; vh — запас для тех, кто dvh не знает. */
+  max-height: calc(100vh - 2.5rem);
+  max-height: calc(100dvh - 2.5rem);
+}
+
+.notify-intro-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Дотянув текст до конца, палец не должен начинать листать страницу под окном. */
+  overscroll-behavior: contain;
+}
+
+.notify-intro-footer {
+  flex-shrink: 0;
 }
 
 .notify-intro-hero {
@@ -17963,6 +18007,77 @@ input.participant-name-search-input:focus {
   margin: 0.75rem auto 0;
   font-size: 0.85rem;
   color: var(--text-faint);
+}
+
+/* Невысокий экран: подвал отбит линией — видно, что текст над ним
+   продолжается и листается, а не кончился. */
+@media (max-width: 600px), (max-height: 820px) {
+  .notify-intro-footer {
+    border-top: 1px solid var(--border);
+    margin-top: 0.75rem;
+  }
+
+  .notify-intro-actions {
+    margin-top: 0.75rem;
+  }
+}
+
+/* Телефон: окно компактнее — меньше поля, колокольчик и пункты списка, чтобы
+   текст целиком помещался хотя бы на 740px высоты без прокрутки. */
+@media (max-width: 480px) {
+  .notify-intro-overlay {
+    padding: 0.75rem;
+  }
+
+  .notify-intro {
+    padding: 1rem 1rem 0.85rem;
+    max-height: calc(100vh - 1.5rem);
+    max-height: calc(100dvh - 1.5rem);
+  }
+
+  .notify-intro-hero {
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .notify-intro-bell {
+    font-size: 1.3rem;
+  }
+
+  .notify-intro-title {
+    font-size: 1.05rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .notify-intro-lead {
+    margin: 0 0 0.7rem;
+    font-size: 0.9rem;
+  }
+
+  .notify-intro-list {
+    gap: 0.45rem;
+  }
+
+  .notify-intro-list li {
+    gap: 0.6rem;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.86rem;
+    line-height: 1.35;
+  }
+
+  .notify-intro-icon {
+    font-size: 1.15rem;
+  }
+
+  .notify-intro-note {
+    margin-top: 0.65rem;
+    font-size: 0.8rem;
+  }
+
+  .notify-intro-never {
+    margin-top: 0.55rem;
+  }
 }
 
 .notify-row-waiting {

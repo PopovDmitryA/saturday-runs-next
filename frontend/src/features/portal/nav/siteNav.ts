@@ -8,16 +8,25 @@
  *
  * Теперь всё рисуется отсюда:
  * - рельс разделов и колонка подразделов на компьютере (SiteSidebar);
+ * - ссылки разделов в шапке на страницах без рельса и колонки подвала;
  * - нижняя панель, липкая полоса страниц раздела и шторка «Меню» на телефоне;
  * - поиск по страницам сайта — через keywords (синонимы).
  *
- * Добавляете страницу — добавьте её сюда, и она появится везде сразу.
- * Синонимы пишите так, как человек спросил бы в личке: «где погода»,
- * «кто быстрее всех», «как привязать профиль».
+ * Один раздел — одно имя везде (решение Дмитрия 26.09.2026): «Кабинет»,
+ * «Оргкабинет», «Итоги», «Локации», «Рейтинги». Раньше кабинет звался «Моё»,
+ * «Мой кабинет», «Личный кабинет» и «Участнику», и человек не узнавал в меню
+ * слово, которое только что видел на странице.
+ *
+ * Добавляете страницу — добавьте её сюда, и она появится везде сразу; новый
+ * верхний адрес раздела — ещё и в SECTION_PATH_PREFIXES. Синонимы пишите
+ * словами, которыми человек назвал бы страницу: «погода», «кто быстрее всех»,
+ * «привязать профиль» — без служебных «где», «как», «мой».
  */
 import type { ReactNode } from "react";
 import type { User } from "../../../lib/api";
+import { getRecentLocations } from "../../../lib/recentLocations";
 import * as I from "./navIcons";
+import { organizerEntryPlace, rememberedOrganizerRole } from "./organizerMemory";
 import {
   cabinetTabHref,
   type CabinetTabSegmentKey,
@@ -25,6 +34,7 @@ import {
   PORTAL_BLOG_HREF,
   PORTAL_CABINET_SETTINGS_HREF,
   PORTAL_CABINET_SHARE_HREF,
+  PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
   PORTAL_UPDATES_HREF,
 } from "../../../lib/portalRoutes";
@@ -37,6 +47,12 @@ export type NavLink = {
   href: string;
   /** Подпись вкладки на телефоне, если полная не влезает. */
   chipLabel?: string;
+  /**
+   * Подпись в колонке на компьютере, если полная переносится на две строки
+   * (колонка узкая, 224px). Смысл тот же, группа над пунктом его дополняет;
+   * полное имя — во всплывающей подсказке и в заголовке страницы.
+   */
+  colLabel?: string;
   /** Иконка страницы: колонка, «Меню», переключатель, поиск. */
   icon?: ReactNode;
   /** Синонимы для поиска по сайту (в нижнем регистре). */
@@ -59,11 +75,17 @@ export type NavGroup = {
 export type NavSection = {
   key: NavSectionKey;
   label: string;
-  /** Подпись под иконкой в рельсе и на нижней панели. */
+  /**
+   * Подпись под иконкой в рельсе и на нижней панели. С 26.09.2026 совпадает
+   * с label — разные слова для одного раздела путали; отличается только у
+   * гостя («Войти» вместо «Кабинета»).
+   */
   shortLabel: string;
   href: string;
   groups: NavGroup[];
   keywords?: readonly string[];
+  /** Адреса раздела: по ним раздел узнаётся, если страница его не назвала. */
+  pathPrefixes: readonly string[];
   /**
    * Есть ли у раздела иконка в рельсе на компьютере. «О проекте» и аккаунт —
    * не места, куда ходят за статистикой (правка Дмитрия 25.09.2026): первое
@@ -83,8 +105,12 @@ export type NavContext = {
   location?: NavPlace | null;
   /** Открытый кабинет организатора (/organizer/{slug}/…). */
   organizerLocation?: NavPlace | null;
-  /** Превью кабинета на демо-данных подменяет адреса вкладок. */
-  hrefForTab?: (key: CabinetTabKey, defaultHref: string) => string;
+  /**
+   * Человек сейчас в разделе организатора. Вне раздела «Оргкабинет» ведёт в
+   * последнюю открытую (или единственную) локацию, а внутри, на «Моих
+   * локациях», — показывает сам список.
+   */
+  inOrganizer?: boolean;
 };
 
 // Ключи вкладок кабинета; "share" и "settings" живут на своих адресах.
@@ -106,7 +132,40 @@ export function isLinkCurrent(link: NavLink, pathname: string): boolean {
   return normalizePath(link.href) === normalizePath(pathname);
 }
 
-// ---------- Моё ----------
+// ---------- адреса разделов ----------
+
+/**
+ * Верхние адреса разделов. Раздел страницы узнаётся по ним, если страница
+ * сама его не передала (главная, блог, нижняя панель в шапке). Кабинет живёт
+ * на /users/{свой хендл} — это решает navState, адрес тут не перечислить.
+ */
+export const SECTION_PATH_PREFIXES: Record<NavSectionKey, readonly string[]> = {
+  me: [PORTAL_CABINET_SHARE_HREF, "/new/"],
+  organizer: ["/organizer"],
+  results: ["/results", "/protocol"],
+  locations: ["/locations"],
+  ratings: ["/ratings"],
+  project: [PORTAL_ABOUT_HREF, PORTAL_BLOG_HREF, PORTAL_UPDATES_HREF, "/backlog"],
+  account: [PORTAL_CABINET_SETTINGS_HREF, "/admin"],
+};
+
+function pathHasPrefix(pathname: string, prefix: string): boolean {
+  if (prefix.endsWith("/")) return pathname.startsWith(prefix);
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+/**
+ * Раздел по адресу страницы — для страниц, которые не передали `active`
+ * (главная, блог, «О проекте») и для нижней панели, которая живёт в шапке.
+ */
+export function sectionKeyFromPath(pathname: string): NavSectionKey | null {
+  for (const [key, prefixes] of Object.entries(SECTION_PATH_PREFIXES) as [NavSectionKey, readonly string[]][]) {
+    if (prefixes.some((prefix) => pathHasPrefix(pathname, prefix))) return key;
+  }
+  return null;
+}
+
+// ---------- Кабинет ----------
 
 type CabinetDef = { key: CabinetTabKey; label: string; icon: ReactNode; keywords: readonly string[] };
 
@@ -118,7 +177,7 @@ export const CABINET_TABS: readonly CabinetDef[] = [
     key: "dashboard",
     label: "Обзор",
     icon: I.CABINET_ICONS.dashboard,
-    keywords: ["мой кабинет", "личный кабинет", "профиль", "моя статистика", "дашборд", "главная кабинета"],
+    keywords: ["кабинет", "личный кабинет", "профиль", "моя статистика", "дашборд", "главная кабинета"],
   },
   {
     key: "achievements",
@@ -169,6 +228,13 @@ const CABINET_SHARE: CabinetDef = {
   keywords: ["сторис", "картинка", "постер", "поделиться результатом"],
 };
 
+/** Все ключи страниц кабинета — из того же списка, что и сами вкладки. */
+export const CABINET_TAB_KEYS: readonly CabinetTabKey[] = [
+  ...CABINET_TABS.map((tab) => tab.key),
+  CABINET_SHARE.key,
+  "settings",
+];
+
 // Настройки — не страница кабинета, а настройки всего сайта и аккаунта
 // (правка Дмитрия 25.09.2026): живут в разделе «Аккаунт».
 const SETTINGS_DEF: CabinetDef = {
@@ -197,15 +263,13 @@ const SETTINGS_DEF: CabinetDef = {
   ],
 };
 
-export function cabinetHref(ctx: NavContext, key: CabinetTabKey): string {
-  const defaultHref =
-    key === "share"
-      ? PORTAL_CABINET_SHARE_HREF
-      : key === "settings"
-        ? PORTAL_CABINET_SETTINGS_HREF
-        : cabinetTabHref(ctx.user ?? null, key);
-  return ctx.hrefForTab ? ctx.hrefForTab(key, defaultHref) : defaultHref;
+export function cabinetHref(user: User | null | undefined, key: CabinetTabKey): string {
+  if (key === "share") return PORTAL_CABINET_SHARE_HREF;
+  if (key === "settings") return PORTAL_CABINET_SETTINGS_HREF;
+  return cabinetTabHref(user ?? null, key);
 }
+
+export const CABINET_LABEL = "Кабинет";
 
 function meSection(ctx: NavContext): NavSection {
   const anon = ctx.user === null;
@@ -213,15 +277,16 @@ function meSection(ctx: NavContext): NavSection {
     key: def.key,
     label: def.label,
     icon: def.icon,
-    href: cabinetHref(ctx, def.key),
+    href: cabinetHref(ctx.user, def.key),
     keywords: def.keywords,
   });
   return {
     key: "me",
-    label: "Мой кабинет",
-    shortLabel: anon ? "Войти" : "Моё",
-    href: anon ? PORTAL_LOGIN_HREF : cabinetHref(ctx, "dashboard"),
-    keywords: ["кабинет", "войти", "вход", "логин", "регистрация"],
+    label: CABINET_LABEL,
+    shortLabel: anon ? "Войти" : CABINET_LABEL,
+    href: anon ? PORTAL_LOGIN_HREF : cabinetHref(ctx.user, "dashboard"),
+    keywords: ["кабинет", "мой кабинет", "личный кабинет", "войти", "вход", "логин", "регистрация"],
+    pathPrefixes: SECTION_PATH_PREFIXES.me,
     // Анониму пунктов нет: колонка зовёт войти (см. SiteSidebar).
     groups: anon
       ? []
@@ -231,12 +296,13 @@ function meSection(ctx: NavContext): NavSection {
   };
 }
 
-// ---------- Организатор ----------
+// ---------- Оргкабинет ----------
 
 type ToolDef = {
   key: string;
   label: string;
   chipLabel?: string;
+  colLabel?: string;
   icon: ReactNode;
   path: string;
   keywords: readonly string[];
@@ -269,7 +335,7 @@ const ORGANIZER_TOOL_GROUPS: readonly { key: string; title: string; tools: reado
     key: "team",
     title: "Команда",
     tools: [
-      { key: "volunteers", label: "Волонтёрская скамейка", icon: I.BENCH_ICON, chipLabel: "Скамейка", path: "volunteers", keywords: ["скамейка", "кого позвать", "резерв волонтеров"] },
+      { key: "volunteers", label: "Волонтёрская скамейка", colLabel: "Скамейка волонтёров", icon: I.BENCH_ICON, chipLabel: "Скамейка", path: "volunteers", keywords: ["скамейка", "кого позвать", "резерв волонтеров"] },
       { key: "team", label: "Команда и нагрузка", icon: I.TEAM_ICON, chipLabel: "Команда", path: "team", keywords: ["нагрузка", "ротация", "организаторы дня"] },
       { key: "attendance", label: "Посещаемость", icon: I.ATTENDANCE_ICON, path: "attendance", keywords: ["явка", "посещаемость", "журнал посещаемости"] },
       { key: "benchmark", label: "Мы и соседи", icon: I.BENCHMARK_ICON, chipLabel: "Соседи", path: "benchmark", keywords: ["сравнение", "соседние локации", "бенчмарк"] },
@@ -278,13 +344,28 @@ const ORGANIZER_TOOL_GROUPS: readonly { key: string; title: string; tools: reado
 ];
 
 export const ORGANIZER_INDEX_HREF = "/organizer";
+export const ORGANIZER_LABEL = "Оргкабинет";
 
+/**
+ * Показывать ли «Оргкабинет». Пока сессия проверяется (user === undefined),
+ * верим тому, что помнит браузер с прошлого раза: иначе в новой вкладке рельс
+ * и нижняя панель через секунду перестраивались (a11y-6).
+ */
 export function canSeeOrganizer(user: User | null | undefined): boolean {
+  if (user === undefined) return rememberedOrganizerRole();
   return user != null && (user.is_organizer || user.is_admin);
 }
 
 function organizerSection(ctx: NavContext): NavSection {
-  const place = ctx.organizerLocation;
+  // Внутри раздела — открытая локация (или её нет: страница «Мои локации»).
+  // Вне раздела — куда ведёт «Оргкабинет»: последняя открытая или
+  // единственная своя локация (см. organizerMemory). Её инструменты тоже в
+  // дереве: поиск «юбилеи» находит их с любой страницы.
+  const place = ctx.inOrganizer ? (ctx.organizerLocation ?? null) : organizerEntryPlace(ctx.user);
+  // Пункт «Мои локации» есть, только когда место неизвестно: на самой
+  // странице списка и у того, чья последняя локация ещё не запомнена. При
+  // одной своей локации его нет вовсе — список сразу вернул бы в неё (a11y-10).
+  // Выбрать другую локацию внутри кабинета — переключатель над инструментами.
   const groups: NavGroup[] = place
     ? ORGANIZER_TOOL_GROUPS.map((group) => ({
         key: group.key,
@@ -294,6 +375,7 @@ function organizerSection(ctx: NavContext): NavSection {
           key: tool.key,
           label: tool.label,
           chipLabel: tool.chipLabel,
+          colLabel: tool.colLabel,
           icon: tool.icon,
           href: `/organizer/${place.slug}${tool.path ? `/${tool.path}` : ""}`,
           keywords: tool.keywords,
@@ -307,23 +389,27 @@ function organizerSection(ctx: NavContext): NavSection {
       ];
   return {
     key: "organizer",
-    label: "Кабинет организатора",
-    shortLabel: "Орг.",
+    label: ORGANIZER_LABEL,
+    shortLabel: ORGANIZER_LABEL,
     href: place ? `/organizer/${place.slug}` : ORGANIZER_INDEX_HREF,
     keywords: ["организатор", "оргкоманда", "кабинет организатора", "директор забега"],
+    pathPrefixes: SECTION_PATH_PREFIXES.organizer,
     groups,
   };
 }
 
-// ---------- Результаты ----------
+// ---------- Итоги ----------
+
+export const RESULTS_LABEL = "Итоги";
 
 function resultsSection(): NavSection {
   return {
     key: "results",
-    label: "Результаты",
-    shortLabel: "Итоги",
+    label: RESULTS_LABEL,
+    shortLabel: RESULTS_LABEL,
     href: "/results",
     keywords: ["итоги", "результаты"],
+    pathPrefixes: SECTION_PATH_PREFIXES.results,
     groups: [
       {
         key: "results",
@@ -421,21 +507,58 @@ export function locationPageLinks(place: NavPlace): NavLink[] {
   }));
 }
 
+// Сколько недавних локаций показывать в колонке и «Меню»: больше трёх —
+// это уже снова каталог.
+const RECENT_LIMIT = 3;
+
+/**
+ * Своя локация и недавние (идея Г, решение Дмитрия 26.09.2026). Колонка
+ * «Локации» состояла из одного пункта, а чаще всего на сайт приходят именно
+ * на страницу своего парка: теперь она и пара недавних — в один клик из
+ * колонки, «Меню» и поиска.
+ *
+ * Домашнюю локацию отдаёт сервер (User.home_location); пока поля нет, пункта
+ * просто нет. Недавние — из localStorage этого браузера (lib/recentLocations).
+ */
+function personalLocationLinks(ctx: NavContext): { home: NavLink | null; recent: NavLink[] } {
+  const homePlace = ctx.user?.home_location ?? null;
+  const home: NavLink | null = homePlace
+    ? {
+        key: `home:${homePlace.slug}`,
+        label: `Моя: ${homePlace.name}`,
+        chipLabel: homePlace.name,
+        icon: I.HOME_ICON,
+        href: `/locations/${homePlace.slug}`,
+        keywords: ["моя локация", "домашняя локация", "мой парк", homePlace.name.toLowerCase()],
+      }
+    : null;
+  const skip = new Set([homePlace?.slug, ctx.location?.slug].filter(Boolean));
+  const recent = getRecentLocations()
+    .filter((place) => !skip.has(place.slug))
+    .slice(0, RECENT_LIMIT)
+    .map((place) => ({
+      key: `recent:${place.slug}`,
+      label: place.name,
+      icon: I.RECENT_ICON,
+      href: `/locations/${place.slug}`,
+      keywords: ["недавние", "недавно открытые", place.name.toLowerCase()],
+    }));
+  return { home, recent };
+}
+
 function locationsSection(ctx: NavContext): NavSection {
-  const groups: NavGroup[] = [
-    {
-      key: "catalog",
-      items: [
-        {
-          key: "catalog",
-          label: "Все локации",
-          icon: I.CATALOG_ICON,
-          href: "/locations",
-          keywords: ["каталог", "список локаций", "парки", "где бегать", "карта локаций", "ближайшая локация"],
-        },
-      ],
-    },
-  ];
+  const { home, recent } = personalLocationLinks(ctx);
+  const catalog: NavLink = {
+    key: "catalog",
+    label: "Все локации",
+    icon: I.CATALOG_ICON,
+    href: "/locations",
+    keywords: ["каталог", "список локаций", "парки", "где бегать", "карта локаций", "ближайшая локация"],
+  };
+  const groups: NavGroup[] = [{ key: "catalog", items: home ? [catalog, home] : [catalog] }];
+  if (recent.length > 0) {
+    groups.push({ key: "recent", title: "Недавние", items: recent });
+  }
   if (ctx.location) {
     groups.push({ key: "place", title: ctx.location.name, context: true, items: locationPageLinks(ctx.location) });
   }
@@ -445,6 +568,7 @@ function locationsSection(ctx: NavContext): NavSection {
     shortLabel: "Локации",
     href: "/locations",
     keywords: ["локации", "парки", "места"],
+    pathPrefixes: SECTION_PATH_PREFIXES.locations,
     groups,
   };
 }
@@ -454,13 +578,15 @@ function locationsSection(ctx: NavContext): NavSection {
 // Те же группы и названия, что на хабе /ratings: человек видит один и тот же
 // рейтинг под одним именем и в меню, и на карточке.
 // Экспорт: хаб рейтингов и заголовки страниц берут названия отсюда, чтобы
-// один рейтинг не назывался в меню и на карточке по-разному.
+// один рейтинг не назывался в меню и на карточке по-разному. colLabel —
+// только для узкой колонки: группа («Бегуны», «Волонтёры») уже говорит, о ком
+// рейтинг, и «Пробежки» под «Бегунами» читаются как «Количество пробежек».
 export const RATING_GROUPS: readonly { key: string; title: string; items: readonly NavLink[] }[] = [
   {
     key: "runners",
     title: "Бегуны",
     items: [
-      { key: "runs", label: "Количество пробежек", icon: I.RUNS_RATING_ICON, chipLabel: "Пробежки", href: "/ratings/runs", keywords: ["больше всех пробежек", "самые активные"] },
+      { key: "runs", label: "Количество пробежек", colLabel: "Пробежки", icon: I.RUNS_RATING_ICON, chipLabel: "Пробежки", href: "/ratings/runs", keywords: ["больше всех пробежек", "самые активные"] },
       { key: "wins", label: "Первые места", icon: I.MEDAL_ICON, href: "/ratings/wins", keywords: ["победы", "победители", "первое место", "абсолют"] },
       { key: "fastest", label: "Самые быстрые", icon: I.BOLT_ICON, chipLabel: "Быстрые", href: "/ratings/fastest", keywords: ["быстрее всех", "скорость", "лучшее время", "рекорды времени"] },
     ],
@@ -469,8 +595,8 @@ export const RATING_GROUPS: readonly { key: string; title: string; items: readon
     key: "volunteers",
     title: "Волонтёры",
     items: [
-      { key: "volunteering", label: "Количество волонтёрств", icon: I.VOLUNTEER_ICON, chipLabel: "Волонтёрства", href: "/ratings/volunteering", keywords: ["больше всех волонтерств", "волонтеры"] },
-      { key: "volunteer-locations", label: "Волонтёрство на разных локациях", icon: I.VOLUNTEER_PLACES_ICON, chipLabel: "Локации", href: "/ratings/volunteer-locations", keywords: ["волонтерский туризм"] },
+      { key: "volunteering", label: "Количество волонтёрств", colLabel: "Волонтёрства", icon: I.VOLUNTEER_ICON, chipLabel: "Волонтёрства", href: "/ratings/volunteering", keywords: ["больше всех волонтерств", "волонтеры"] },
+      { key: "volunteer-locations", label: "Волонтёрство на разных локациях", colLabel: "На разных локациях", icon: I.VOLUNTEER_PLACES_ICON, chipLabel: "Локации", href: "/ratings/volunteer-locations", keywords: ["волонтерский туризм"] },
       { key: "volunteer-roles", label: "Разнообразие ролей", icon: I.ROLES_ICON, chipLabel: "Роли", href: "/ratings/volunteer-roles", keywords: ["мультиволонтер", "все роли"] },
     ],
   },
@@ -480,7 +606,7 @@ export const RATING_GROUPS: readonly { key: string; title: string; items: readon
     items: [
       { key: "locations", label: "Уникальные локации", icon: I.GLOBE_ICON, chipLabel: "Локации", href: "/ratings/locations", keywords: ["туризм", "паркран-туристы", "больше всех локаций", "туристы"] },
       { key: "openings", label: "Открытия локаций", icon: I.FLAG_ICON, chipLabel: "Открытия", href: "/ratings/openings", keywords: ["первопроходцы", "первый старт локации", "открытие"] },
-      { key: "win-locations", label: "Локации с первым местом", icon: I.CROWN_ICON, chipLabel: "С победой", href: "/ratings/win-locations", keywords: ["победы на разных локациях"] },
+      { key: "win-locations", label: "Локации с первым местом", colLabel: "С первым местом", icon: I.CROWN_ICON, chipLabel: "С победой", href: "/ratings/win-locations", keywords: ["победы на разных локациях"] },
       { key: "home-distance", label: "Дальность от дома", icon: I.DISTANCE_ICON, chipLabel: "Дальность", href: "/ratings/home-distance", keywords: ["далеко от дома", "километры", "путешествия"] },
     ],
   },
@@ -489,7 +615,10 @@ export const RATING_GROUPS: readonly { key: string; title: string; items: readon
     title: "Локации",
     items: [
       { key: "location-records", label: "Рекорды локаций", icon: I.RECORD_ICON, chipLabel: "Рекорды", href: "/ratings/location-records", keywords: ["рекорд трассы", "рекорды", "лучшее время на локации"] },
-      { key: "regions", label: "Регионы", icon: I.REGIONS_ICON, href: "/ratings/regions", keywords: ["области", "города", "страны", "регионы россии"] },
+      // «Регионы» как заголовок страницы и карточки хаба — слишком коротко:
+      // непонятно, что считают. Полное имя там, короткое — в колонке и полосе,
+      // где над ним и так стоит группа «Локации».
+      { key: "regions", label: "Локации по регионам", colLabel: "Регионы", chipLabel: "Регионы", icon: I.REGIONS_ICON, href: "/ratings/regions", keywords: ["регионы", "области", "города", "страны", "регионы россии"] },
     ],
   },
 ];
@@ -518,6 +647,7 @@ function ratingsSection(ctx: NavContext): NavSection {
     shortLabel: "Рейтинги",
     href: RATINGS_HUB_HREF,
     keywords: ["рейтинг", "лидерборд", "таблица лидеров", "топ", "кто первый"],
+    pathPrefixes: SECTION_PATH_PREFIXES.ratings,
     groups: [
       { key: "hub", items: [{ key: "hub", label: "Все рейтинги", chipLabel: "Все", icon: I.GRID_ICON, href: RATINGS_HUB_HREF }] },
       ...groups,
@@ -526,6 +656,8 @@ function ratingsSection(ctx: NavContext): NavSection {
 }
 
 // ---------- О проекте ----------
+
+export const PROJECT_LABEL = "О проекте";
 
 function projectSection(): NavSection {
   const items: NavLink[] = [
@@ -563,9 +695,10 @@ function projectSection(): NavSection {
   ];
   return {
     key: "project",
-    label: "О проекте",
-    shortLabel: "Проект",
+    label: PROJECT_LABEL,
+    shortLabel: PROJECT_LABEL,
     href: PORTAL_ABOUT_HREF,
+    pathPrefixes: SECTION_PATH_PREFIXES.project,
     groups: [{ key: "project", items }],
     inRail: false,
   };
@@ -579,14 +712,18 @@ function projectSection(): NavSection {
  * «Меню»; своей иконки в рельсе у раздела нет.
  */
 function accountSection(ctx: NavContext): NavSection {
-  const link = (def: CabinetDef): NavLink => ({
-    key: def.key,
-    label: def.label,
-    icon: def.icon,
-    href: cabinetHref(ctx, def.key),
-    keywords: def.keywords,
-  });
-  const items: NavLink[] = ctx.user === null ? [] : [link(SETTINGS_DEF)];
+  const items: NavLink[] =
+    ctx.user === null
+      ? []
+      : [
+          {
+            key: SETTINGS_DEF.key,
+            label: SETTINGS_DEF.label,
+            icon: SETTINGS_DEF.icon,
+            href: cabinetHref(ctx.user, SETTINGS_DEF.key),
+            keywords: SETTINGS_DEF.keywords,
+          },
+        ];
   if (ctx.user?.is_admin) {
     items.push({
       key: "admin",
@@ -603,6 +740,7 @@ function accountSection(ctx: NavContext): NavSection {
     label: "Аккаунт",
     shortLabel: "Аккаунт",
     href: PORTAL_CABINET_SETTINGS_HREF,
+    pathPrefixes: SECTION_PATH_PREFIXES.account,
     groups: items.length > 0 ? [{ key: "account", items }] : [],
     inRail: false,
   };
@@ -620,33 +758,20 @@ export function buildSiteNav(ctx: NavContext): NavSection[] {
 }
 
 /**
- * Раздел по адресу страницы — для страниц, которые не передали `active`
- * (главная, блог, «О проекте») и для нижней панели, которая живёт в шапке.
+ * Страницы, которых нет ни в одном меню, но которые должен находить поиск по
+ * сайту. Главная — не раздел (на неё ведёт логотип), но «главная» — частый
+ * запрос, и без этой строки он уводил в обзор кабинета.
  */
-export function sectionKeyFromPath(pathname: string): NavSectionKey | null {
-  if (pathname.startsWith("/organizer")) return "organizer";
-  if (pathname.startsWith("/results") || pathname.startsWith("/protocol")) return "results";
-  if (pathname.startsWith("/locations")) return "locations";
-  if (pathname.startsWith("/ratings")) return "ratings";
-  if (
-    pathname.startsWith(PORTAL_ABOUT_HREF) ||
-    pathname.startsWith(PORTAL_BLOG_HREF) ||
-    pathname.startsWith(PORTAL_UPDATES_HREF) ||
-    pathname.startsWith("/backlog")
-  ) {
-    return "project";
-  }
-  if (pathname.startsWith(PORTAL_CABINET_SETTINGS_HREF) || pathname.startsWith("/admin")) {
-    return "account";
-  }
-  if (
-    pathname.startsWith(PORTAL_CABINET_SHARE_HREF) ||
-    pathname.startsWith("/new/")
-  ) {
-    return "me";
-  }
-  return null;
-}
+export const EXTRA_SEARCH_LINKS: readonly NavLink[] = [
+  {
+    key: "home",
+    label: "Главная",
+    icon: I.HOME_ICON,
+    href: PORTAL_HOME_HREF,
+    matches: (pathname) => pathname === PORTAL_HOME_HREF,
+    keywords: ["главная", "главная страница", "начало", "стартовая", "на главную"],
+  },
+];
 
 /** Все ссылки дерева одним списком — для поиска по страницам. */
 export function flattenNav(sections: NavSection[]): { section: NavSection; group: NavGroup; link: NavLink }[] {

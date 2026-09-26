@@ -1,0 +1,284 @@
+/* Навигация на компьютере: то, что дополняет рельс и колонку (siteNav.css,
+   верхняя часть). Все цвета — через переменные темы из index.css. */
+
+/* ---------- затухание внизу колонки ---------- */
+
+/* Пока ниже есть пункты (класс ставит SiteSidebar), низ колонки тает — видно,
+   что её можно прокрутить (desk-8). Полоса прилипает к низу прокрутки и
+   клики пропускает насквозь. */
+.site-col::after {
+  content: "";
+  position: sticky;
+  bottom: 0;
+  flex: none;
+  height: 30px;
+  margin: -30px -6px 0;
+  border-radius: 0 0 13px 13px;
+  background: linear-gradient(to bottom, transparent, var(--surface) 85%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.site-col.site-col-more::after {
+  opacity: 1;
+}
+
+/* ---------- свёрнутая колонка: полоса страниц раздела ---------- */
+
+/* Колонку сворачивают ради широкой таблицы, а следующим шагом обычно
+   открывают соседний рейтинг или протокол. Раньше в свёрнутом виде страницы
+   раздела пропадали совсем (a11y-5, desk-5), а у чужого профиля не
+   оставалось ни одной вкладки; теперь над контентом та же полоса, что на
+   телефоне (SectionSubnav: вкладки или «Группа · Страница ▾»).
+   Разметку полосы рисует SectionSubnav — классы здесь те же, что в
+   телефонной части siteNav.css, но раскладка своя, под мышь. */
+@media (min-width: 901px) {
+  /* Липкие шапки таблиц отсчитывают верх от --portal-header-h — добавляем
+     полосу, как на телефоне, иначе она их закрывала бы. */
+  html.site-col-collapsed.has-site-subnav {
+    --portal-header-h: calc(var(--site-header-base-h) + var(--site-subnav-h));
+  }
+
+  html.site-col-collapsed .site-subnav {
+    position: sticky;
+    top: var(--site-header-base-h);
+    z-index: 35;
+    display: flex;
+    align-items: stretch;
+    height: var(--site-subnav-h);
+    /* Прилегает к шапке сайта, съедая верхний отступ колонки контента. */
+    margin: -20px 0 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: 0;
+    border-radius: 0 0 12px 12px;
+  }
+
+  html.site-col-collapsed .site-subnav-tabs {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    gap: 20px;
+    padding: 0 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  html.site-col-collapsed .site-subnav-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  html.site-col-collapsed .site-tab {
+    flex: none;
+    display: flex;
+    align-items: center;
+    padding-top: 2px;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  html.site-col-collapsed .site-tab:hover {
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  html.site-col-collapsed .site-tab.active {
+    color: var(--text);
+    border-bottom-color: var(--accent-indigo);
+  }
+
+  /* Кольцо фокуса внутрь: прокручиваемый ряд срезал бы его верх и низ. */
+  html.site-col-collapsed .site-tab:focus-visible {
+    outline-offset: -3px;
+  }
+
+  html.site-col-collapsed .site-subnav-switch {
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px 0 16px;
+  }
+
+  html.site-col-collapsed .site-subnav-picker {
+    flex: 0 1 auto;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 4px;
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  html.site-col-collapsed .site-subnav-picker:hover .site-subnav-picker-label {
+    color: var(--accent-indigo-text);
+  }
+
+  html.site-col-collapsed .site-subnav-picker-icon,
+  html.site-col-collapsed .site-subnav-picker-chevron {
+    flex: none;
+    display: inline-flex;
+    width: 17px;
+    height: 17px;
+    color: var(--accent-indigo-text);
+  }
+
+  html.site-col-collapsed .site-subnav-picker-icon svg,
+  html.site-col-collapsed .site-subnav-picker-chevron svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  html.site-col-collapsed .site-subnav-picker-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+  }
+
+  html.site-col-collapsed .site-subnav-picker-group {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  html.site-col-collapsed .site-subnav-picker-label {
+    font-weight: 700;
+  }
+
+  html.site-col-collapsed .site-subnav.open .site-subnav-picker-chevron {
+    transform: rotate(180deg);
+  }
+
+  html.site-col-collapsed .site-subnav-count {
+    flex: none;
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+  }
+
+  /* Кабинет организатора: слева локация (переключатель), справа инструмент. */
+  html.site-col-collapsed .site-subnav-place {
+    flex: 0 1 auto;
+    max-width: 40%;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    padding-right: 12px;
+    border-right: 1px solid var(--border);
+  }
+
+  html.site-col-collapsed .site-org-switch-chip {
+    min-width: 0;
+    max-width: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  html.site-col-collapsed .site-org-switch-chip .site-org-switch-button {
+    width: auto;
+    max-width: 100%;
+    padding: 4px 0;
+    border: 0;
+    background: transparent;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+
+  html.site-col-collapsed .site-org-switch-chip .site-org-switch-name,
+  html.site-col-collapsed .site-org-switch-chip > .site-org-switch-name {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  /* Прозрачная подложка под списком: клик мимо закрывает его. Затемнять всю
+     страницу на компьютере незачем. */
+  html.site-col-collapsed .site-subnav-scrim {
+    position: fixed;
+    inset: 0;
+    background: transparent;
+  }
+
+  html.site-col-collapsed .site-subnav-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 8px;
+    width: min(360px, calc(100% - 16px));
+    max-height: calc(100vh - var(--site-header-base-h) - var(--site-subnav-h) - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  }
+
+  html.site-col-collapsed .site-subnav-dropdown-group + .site-subnav-dropdown-group {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  html.site-col-collapsed .site-subnav-dropdown-title {
+    padding: 6px 8px 2px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  html.site-col-collapsed .site-subnav-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 8px;
+    border-radius: 9px;
+    color: var(--text-2);
+    font-size: 13.5px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  html.site-col-collapsed .site-subnav-dropdown-item:hover {
+    background: var(--bg-muted);
+    text-decoration: none;
+  }
+
+  html.site-col-collapsed .site-subnav-dropdown-item.active {
+    background: var(--tint-indigo-bg);
+    color: var(--accent-indigo-text);
+  }
+
+  html.site-col-collapsed .site-subnav-dropdown-icon {
+    flex: none;
+    display: inline-flex;
+    width: 17px;
+    height: 17px;
+    color: var(--text-muted);
+  }
+
+  html.site-col-collapsed .site-subnav-dropdown-icon svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  html.site-col-collapsed .site-subnav-dropdown-item.active .site-subnav-dropdown-icon {
+    color: var(--accent-indigo-text);
+  }
+}

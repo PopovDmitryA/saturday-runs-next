@@ -34,6 +34,8 @@ import {
 } from "./fastestApi";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import { surnameFirst } from "../../lib/personName";
+import { ratingName } from "./ratingNames";
+import { RatingBreadcrumb, RatingFilters } from "./RatingPageParts";
 import "./leaderboards.css";
 
 const PAGE_STEP = 100;
@@ -336,15 +338,20 @@ export function FastestRatingPage() {
   const yearOptions = yearsByPlatform[filters.platform] ?? [];
   const visibleRows = rows.slice(0, visibleCount);
   const nextChunkEnd = Math.min(visibleCount + PAGE_STEP, rows.length);
+  // «Фильтры · N» на телефоне: сколько фильтров отличаются от чистого адреса
+  // (readFilters). «Колонки» — способ показа, а не фильтр, в счёт не идут.
+  const activeFilters =
+    (filters.mode !== "results" ? 1 : 0) +
+    (filters.gender !== DEFAULT_FASTEST_GENDER ? 1 : 0) +
+    (filters.year !== YEAR_ALL ? 1 : 0) +
+    (filters.platform !== "all" ? 1 : 0) +
+    (filters.ageGroup !== AGE_GROUP_ALL ? 1 : 0) +
+    (searching ? 1 : 0);
 
   return (
     <PortalSectionShell sidebar={{ active: "ratings" }}>
       <div className="lb-page">
-        <nav className="lb-breadcrumb">
-          <a href="/ratings">← Все рейтинги</a>
-          <span aria-hidden> / </span>
-          <span>🏃 Бегуны · Самые быстрые</span>
-        </nav>
+        <RatingBreadcrumb ratingKey="fastest" />
 
         {loading && !data && (
           <p className="muted">Считаем рейтинг… Первый расчёт может занять до минуты.</p>
@@ -361,7 +368,11 @@ export function FastestRatingPage() {
         {data && (
           <div className={`lb-page-body${loading ? " lb-refreshing" : ""}`}>
             <header className="lb-header">
-              <h1>{data.title}</h1>
+              {/* Название — из дерева навигации, как в меню и на хабе; режим
+                  таблицы дописан словом: «Самые быстрые финиши / участники». */}
+              <h1>
+                {ratingName("fastest").label} {data.mode === "runners" ? "участники" : "финиши"}
+              </h1>
               <p className="lb-description">{data.description}</p>
             </header>
 
@@ -371,6 +382,7 @@ export function FastestRatingPage() {
                 переключатели, снизу выпадающие списки и поиск. Одна строка на
                 всё не помещалась ни на каком мониторе, и поиск оставался
                 висеть в одиночестве справа. */}
+            <RatingFilters activeCount={activeFilters}>
             <div className="lb-fastest-controls">
               <div className="lb-fastest-controls-row">
                 {/* У переключателя зачёта есть подпись, как у остальных
@@ -478,6 +490,7 @@ export function FastestRatingPage() {
                 </div>
               </div>
             </div>
+            </RatingFilters>
 
             {/* Счётчик найденного и есть ответ на вопросы «сколько раз он попал
                 в этот топ» и «сколько в нём наших с локации» — без него поиск
@@ -560,8 +573,12 @@ export function FastestRatingPage() {
             >
               <table
                 ref={tableRef}
-                className="data-table lb-table lb-fastest-table"
-                style={{ minWidth: tableColumns.minWidth }}
+                className={`data-table lb-table lb-fastest-table${
+                  tableColumns.showFull ? "" : " lb-table-short"
+                }`}
+                // Краткий вид — во всю рамку и не шире её: имя обрезается
+                // многоточием, время остаётся на экране (см. .lb-table-short).
+                style={{ minWidth: tableColumns.showFull ? tableColumns.minWidth : "100%" }}
               >
                 <thead>
                   <tr>

@@ -2,13 +2,12 @@ import { useEffect, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { PlatformBadge } from "../../components/PlatformBadge";
-import {
-  getOrganizerLocations,
-  type OrganizerLocationItem,
-  type User,
-} from "../../lib/api";
+import { type OrganizerLocationItem, type User } from "../../lib/api";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { loadOrganizerLocations } from "../portal/nav/OrganizerSwitcher";
+import { replaceAppPath } from "../portal/nav/replaceAppPath";
+import { ORGANIZER_LABEL } from "../portal/nav/siteNav";
 
 const ACCESS_SOURCE_LABELS: Record<OrganizerLocationItem["access_source"], string> = {
   volunteering: "вы были организатором",
@@ -26,21 +25,26 @@ function OrganizerIndexContent({ user }: { user: User }) {
 
   useEffect(() => {
     let cancelled = false;
-    getOrganizerLocations()
-      .then((payload) => {
+    // Тот же общий запрос, что у переключателя в колонке и у шапки: список
+    // приходит один раз на документ, а не на каждый компонент (code-7).
+    loadOrganizerLocations(user.id)
+      .then((list) => {
         if (cancelled) {
           return;
         }
         // Одна своя локация — выбирать не из чего, сразу открываем её кабинет
-        // (решение Дмитрия 23.09.2026). replace, а не href: иначе «назад» из
-        // кабинета возвращал бы на этот список и тут же снова уводил вперёд.
-        // Админу список нужен всегда — у него весь каталог.
-        if (payload.items.length === 1 && !user.is_admin) {
+        // (решение Дмитрия 23.09.2026). Заменой записи истории, а не новым
+        // переходом: иначе «назад» из кабинета возвращал бы на этот список и
+        // тут же снова уводил вперёд. И без перезагрузки страницы: раньше тут
+        // был location.replace — вторая полная загрузка сайта (code-8).
+        // Обычно сюда уже не попадают: «Оргкабинет» при одной локации ведёт
+        // прямо в неё. Админу список нужен всегда — у него весь каталог.
+        if (list.length === 1 && !user.is_admin) {
           setRedirecting(true);
-          window.location.replace(`/organizer/${encodeURIComponent(payload.items[0].slug)}`);
+          replaceAppPath(`/organizer/${encodeURIComponent(list[0].slug)}`);
           return;
         }
-        setItems(payload.items);
+        setItems(list);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -50,7 +54,7 @@ function OrganizerIndexContent({ user }: { user: User }) {
     return () => {
       cancelled = true;
     };
-  }, [user.is_admin]);
+  }, [user.id, user.is_admin]);
 
   if (redirecting) {
     return (
@@ -64,7 +68,7 @@ function OrganizerIndexContent({ user }: { user: User }) {
     <PortalSectionShell sidebar={{ active: "organizer" }}>
       <header className="loc-header">
         <div className="loc-header-title">
-          <h1>Кабинет организатора</h1>
+          <h1>{ORGANIZER_LABEL}: мои локации</h1>
         </div>
         <p className="muted">
           Расширенные данные по локациям для оргкоманд: свод по пробежке для отчётов и участники

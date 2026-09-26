@@ -12,6 +12,7 @@ import { formatInt } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
+import { RatingBreadcrumb, RatingFilters } from "./RatingPageParts";
 import {
   COURSE_METRIC_LABELS,
   getCourseRating,
@@ -315,15 +316,16 @@ export function CourseRatingPage() {
   const metricLabel =
     metric === "elevation" ? "Перепад" : metric === "straightness" ? "Поворот" : "Пятачок";
   const ownColumn = METRIC_OWN_COLUMN[metric];
+  // «Фильтры · N» на телефоне: метрика по умолчанию — перепад высот.
+  const activeFilters =
+    (metric !== "elevation" ? 1 : 0) + (showEmpty ? 1 : 0) + (query.trim() ? 1 : 0);
 
   return (
     <PortalSectionShell sidebar={{ active: "ratings" }}>
       <div className="lb-page">
-        <nav className="lb-breadcrumb">
-          <a href="/ratings">← Все рейтинги</a>
-          <span aria-hidden> / </span>
-          <span>Локации · Трассы локаций</span>
-        </nav>
+        {/* «Трассы» есть в дереве только у админа — запасное имя то же, что
+            у пункта меню. */}
+        <RatingBreadcrumb ratingKey="courses" fallback={{ group: "Локации", label: "Трассы локаций" }} />
 
         <header className="lb-header">
           <h1>Трассы локаций</h1>
@@ -335,6 +337,7 @@ export function CourseRatingPage() {
 
         <RatingsLoginBanner />
 
+        <RatingFilters activeCount={activeFilters}>
         <div className="lb-controls-row lb-controls-inline">
           <div className="lb-controls-left">
             <div className="lb-visits">
@@ -400,6 +403,7 @@ export function CourseRatingPage() {
             </div>
           </div>
         </div>
+        </RatingFilters>
 
         {data && (
           <p className="lb-description">

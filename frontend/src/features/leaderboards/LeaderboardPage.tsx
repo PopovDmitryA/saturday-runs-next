@@ -60,6 +60,9 @@ import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PinnedMeBar } from "../../components/tableUx/PinnedMeBar";
 import { surnameFirst } from "../../lib/personName";
+import { ScrollToTopButton } from "../../components/ScrollToTopButton";
+import { metricRatingKey, ratingName } from "./ratingNames";
+import { RatingBreadcrumb, RatingFilters } from "./RatingPageParts";
 import "./leaderboards.css";
 
 // Карта туристов (leaflet) открывается кнопкой — код едет отдельным чанком.
@@ -92,16 +95,13 @@ function sortedLightKey(key: SortKey): string | null {
   return key.startsWith("light:") ? key.slice("light:".length) : null;
 }
 
-const METRIC_CRUMBS: Record<LeaderboardMetric, { section: string; label: string }> = {
-  runs: { section: "Бегуны", label: "Количество пробежек" },
-  volunteering: { section: "Волонтёры", label: "Количество волонтёрств" },
-  volunteer_roles: { section: "Волонтёры", label: "Мультиволонтёр" },
-  locations: { section: "Паркран-туристы", label: "Уникальные локации" },
-  volunteer_locations: { section: "Волонтёры", label: "Уникальные локации" },
-  openings: { section: "Паркран-туристы", label: "Открытия локаций" },
-  wins: { section: "Бегуны", label: "Количество первых мест" },
-  win_locations: { section: "Паркран-туристы", label: "Локации с первым местом" },
-  home_distance: { section: "Паркран-туристы", label: "Дальность от дома" },
+// Заголовок страницы — название рейтинга из дерева навигации (ratingNames.ts),
+// а не с сервера: так он совпадает с пунктом меню и карточкой хаба. Единица
+// зачёта туризма (города, регионы) дописывается через тире — рейтинг тот же,
+// меняется только то, что в нём считается.
+const COUNT_BY_TITLE_SUFFIX: Partial<Record<CountBy, string>> = {
+  cities: "города",
+  regions: "регионы",
 };
 
 // Мультиволонтёр: колонка «Любимая роль» + детализация ролей по клику на
@@ -1033,19 +1033,9 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   // В снимке лежат списком: множество не переживает JSON.
   const [expandedKeys, setExpandedKeys] = useRestorableState<string[]>("lb.expanded", []);
   const expandedRows = useMemo(() => new Set(expandedKeys), [expandedKeys]);
-  const [showScrollTop, setShowScrollTop] = useState(false);
   const myRowRef = useRef<HTMLTableRowElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
-
-  useEffect(() => {
-    const handleScroll = () => {
-      setShowScrollTop(window.scrollY > SCROLL_TOP_THRESHOLD);
-    };
-    handleScroll();
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
 
   const hasGenderSplit = GENDERED_METRICS.includes(metric);
   const effectiveGender = hasGenderSplit ? gender : "all";
@@ -1539,7 +1529,24 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
     }, 60);
   }, [myIndex]);
 
-  const crumbs = METRIC_CRUMBS[metric];
+  const ratingKey = metricRatingKey(metric);
+  // Единица — из ответа, а не из фильтра: пока пересчёт под новую кнопку идёт,
+  // на экране прежняя таблица, и заголовок должен называть её.
+  const titleSuffix = hasCountByFilter
+    ? COUNT_BY_TITLE_SUFFIX[data?.count_by ?? effectiveCountBy]
+    : undefined;
+  const pageTitle = `${ratingName(ratingKey).label}${titleSuffix ? ` — ${titleSuffix}` : ""}`;
+  // «Фильтры · N» на телефоне: сколько фильтров отличаются от значений по
+  // умолчанию (тех же, что readBoardFilters берёт при чистом адресе). «Вид» и
+  // «Колонки» — не фильтры, а способ показа, и в счёт не идут.
+  const activeFilters =
+    (hasCountByFilter && effectiveCountBy !== "locations" ? 1 : 0) +
+    (isHomeDistance && hideAmbiguousHome ? 1 : 0) +
+    (hasMinVisits && effectiveMinVisits !== 1 ? 1 : 0) +
+    (hasGenderSplit && effectiveGender !== "all" ? 1 : 0) +
+    (hasPlatformFilter && platform !== "all" ? 1 : 0) +
+    (hasRoleFilter && rolePreset !== "all" ? 1 : 0) +
+    (query.trim() ? 1 : 0);
   // Ширина colspan «нет строк»/детализации ролей: сколько колонок реально
   // нарисовано. Группы шире одной ячейки: «геo» — города+регионы, «дом» —
   // локаций+дом, «системы» — по столбцу на систему.
@@ -1650,13 +1657,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
   return (
     <PortalSectionShell sidebar={{ active: "ratings" }}>
       <div className="lb-page">
-        <nav className="lb-breadcrumb">
-          <a href="/ratings">← Все рейтинги</a>
-          <span aria-hidden> / </span>
-          <span>
-            {crumbs.section} · {crumbs.label}
-          </span>
-        </nav>
+        <RatingBreadcrumb ratingKey={ratingKey} />
 
         {loading && !data && (
           <p className="muted">Считаем рейтинг… Первый расчёт может занять до минуты.</p>
@@ -1676,7 +1677,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
         {data && (
           <div className={`lb-page-body${loading ? " lb-refreshing" : ""}`}>
             <header className="lb-header">
-              <h1>{data.title}</h1>
+              <h1>{pageTitle}</h1>
               <p className="lb-description">{data.description}</p>
               <p className="lb-meta muted">
                 Данные на {formatDate(data.latest_event_date)} · число рядом со значением (например, +1)
@@ -1717,6 +1718,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
               />
             )}
 
+            <RatingFilters activeCount={activeFilters}>
             <div className="lb-controls-shell">
               <div className="lb-controls-left">
                 {(hasMinVisits || hasPlatformFilter || hasCountByFilter) && (
@@ -1874,6 +1876,7 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                 )}
               </div>
             </div>
+            </RatingFilters>
 
             {me && !(!me.included && me.gender_mismatch) && (
               <section
@@ -2101,9 +2104,14 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
                 className={`data-table lb-table${
                   fixedLayout ? ` lb-table-fixed ${wideTableKind}` : ""
                 }${fixedLayout && noPlatformColumns ? " lb-table-no-platforms" : ""}${
-                  showFull ? " lb-table-full" : ""
+                  showFull ? " lb-table-full" : " lb-table-short"
                 }${isHomeDistance ? " lb-table-wide-values" : ""}`}
-                style={{ minWidth: tableColumns.minWidth }}
+                // Краткий вид — во всю рамку и не шире её: имя участника
+                // забирает остаток и обрезается многоточием (.lb-table-short).
+                // Минимум по сумме оценок колонок (88 + 200 + 112 = 400px) на
+                // телефоне делал таблицу шире рамки в 320px, и «Всего» — число,
+                // ради которого рейтинг открывают, — уезжало за край (mob-2).
+                style={{ minWidth: showFull ? tableColumns.minWidth : "100%" }}
               >
                 <thead>
                   <tr>
@@ -2465,17 +2473,9 @@ function LeaderboardBoard({ metric }: LeaderboardPageProps) {
             onClose={() => setRolesModalOpen(false)}
           />
         )}
-        {showScrollTop && (
-          <button
-            type="button"
-            className="lb-scroll-top"
-            aria-label="Наверх страницы"
-            title="Наверх страницы"
-            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          >
-            ↑
-          </button>
-        )}
+        {/* Общая кнопка сайта: своя копия у рейтингов расходилась с ней по
+            месту и по поведению (ревью 25.09.2026). */}
+        <ScrollToTopButton threshold={SCROLL_TOP_THRESHOLD} />
       </div>
     </PortalSectionShell>
   );

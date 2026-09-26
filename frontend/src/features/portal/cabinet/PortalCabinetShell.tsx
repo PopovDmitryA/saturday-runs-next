@@ -3,8 +3,9 @@ import { NotificationsPromptModal } from "../../../components/NotificationsPromp
 import type { User } from "../../../lib/api";
 import { PortalFooter } from "../PortalFooter";
 import { PortalHeader } from "../PortalHeader";
-import { CabinetUserCard, SiteSidebar, type CabinetTabKey } from "../SiteSidebar";
+import { SiteSidebar, type CabinetTabKey } from "../SiteSidebar";
 import { SectionSubnav } from "../nav/SectionSubnav";
+import { usePageLeadToggle } from "../nav/usePageLeadToggle";
 import "../portal.css";
 import "./cabinet.css";
 
@@ -17,12 +18,6 @@ type PortalCabinetShellProps = {
   // Заголовок страницы; на дашборде шапку рисует сам контент (герой).
   title?: string;
   sub?: string;
-  // Подменить адреса разделов. Нужно превью на демо-данных: там навигация
-  // ведёт на ?tab=…, иначе клик уходит на страницу под RequireAuth и без
-  // сессии выбрасывает на вход.
-  hrefForTab?: (key: CabinetTabKey, defaultHref: string) => string;
-  // Превью: служебные пункты и «Выйти» скрыты — они уводят из демо-режима.
-  hideSecondaryNav?: boolean;
   children: ReactNode;
 };
 
@@ -45,11 +40,11 @@ export function PortalCabinetShell({
   user,
   title,
   sub,
-  hrefForTab,
-  hideSecondaryNav = false,
   children,
 }: PortalCabinetShellProps) {
   const mainRef = useRef<HTMLElement>(null);
+  // Описание под заголовком на телефоне свёрнуто в две строки — тап раскрывает.
+  usePageLeadToggle();
 
   const measureModalOffset = () => {
     if (mainRef.current) {
@@ -98,27 +93,18 @@ export function PortalCabinetShell({
       <PortalHeader />
 
       <div className="portal-cab-layout">
-        <SiteSidebar
-          active={active}
-          user={user}
-          hrefForTab={hrefForTab}
-          hideSecondaryNav={hideSecondaryNav}
-          onCollapsedChange={handleCollapsedChange}
-        />
+        <SiteSidebar active={active} user={user} onCollapsedChange={handleCollapsedChange} />
 
         <main className="portal-cab-main" ref={mainRef}>
           {/* Страницы кабинета на телефоне — липкой полосой из общего дерева
               навигации, первой в колонке: она прилегает к шапке сайта. Своя
               нижняя панель кабинета ушла 23.09.2026 — панель одна на весь
               сайт, её рисует шапка. */}
-          <SectionSubnav active={active} user={user} hrefForTab={hrefForTab} />
-          {/* Телефон: сайдбар скрыт, вместе с ним пропадала и карточка
-              участника — карандаш правки имени был доступен только с
-              компьютера. Здесь та же карточка, видна только на узких
-              экранах (см. .portal-cab-user-mobile). */}
-          <div className="portal-cab-user-mobile">
-            <CabinetUserCard initialUser={user} />
-          </div>
+          <SectionSubnav active={active} user={user} />
+          {/* Карточки с именем над заголовком на телефоне больше нет (идея Б,
+              26.09.2026): это свой кабинет, имя есть в меню аккаунта в шапке,
+              а сменить его можно в «Настройках». Карточка съедала ~65px
+              первого экрана на каждой вкладке. */}
           {title && (
             <div className="portal-cab-pagehead">
               <h1>{title}</h1>

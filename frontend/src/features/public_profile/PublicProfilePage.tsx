@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { readCached, writeCached } from "../../lib/dataCache";
 import { DashboardAnalytics } from "../../components/DashboardAnalytics";
 import { LastSaturdayCard } from "../../components/LastSaturdayCard";
@@ -8,7 +8,10 @@ import { ImageLightbox } from "../../components/ImageLightbox";
 import { PortalFooter } from "../portal/PortalFooter";
 import { PortalHeader } from "../portal/PortalHeader";
 import { CABINET_TAB_SEGMENTS, profileTabHref } from "../../lib/portalRoutes";
-import { NAV_ICONS, SiteSidebar, type SidebarExtraGroup } from "../portal/SiteSidebar";
+import { SiteSidebar, type SidebarExtraGroup } from "../portal/SiteSidebar";
+import { SectionSubnav, type SectionSubnavCustom } from "../portal/nav/SectionSubnav";
+import { CABINET_TABS, type NavLink } from "../portal/nav/siteNav";
+import { usePageLeadToggle } from "../portal/nav/usePageLeadToggle";
 import "../portal/portal.css";
 import "../portal/portalSection.css";
 import { AppDataSourceProvider, createPublicProfileDataSource } from "../../lib/appDataSource";
@@ -53,6 +56,23 @@ const PROFILE_SEGMENT_TO_TAB: Record<string, ProfileTab> = Object.fromEntries(
     .map(([tab, segment]) => [segment, tab as ProfileTab]),
 );
 
+/**
+ * Вкладки чужого профиля — те же, что у своего кабинета, в том же порядке и
+ * под теми же словами (CABINET_TABS из дерева навигации): раньше у чужого
+ * профиля был свой список — «Главная» вместо «Обзора», другой порядок, — и
+ * при переходе из своего кабинета в профиль знакомого рука промахивалась
+ * (ревью 25.09.2026: ia-5, desk-7, code-6). Отличие одно: «История» без
+ * «Моя» — история не моя. «Поделиться» — действие над своей статистикой,
+ * у чужого профиля его нет.
+ */
+const PROFILE_TABS: readonly { key: ProfileTab; label: string; icon: React.ReactNode }[] = CABINET_TABS.filter(
+  (tab): tab is (typeof CABINET_TABS)[number] & { key: ProfileTab } => tab.key in CABINET_TAB_SEGMENTS,
+).map((tab) => ({
+  key: tab.key,
+  label: tab.key === "history" ? "История" : tab.label,
+  icon: tab.icon,
+}));
+
 function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
   if (user.display_name) return user.display_name;
   return `Участник ${user.id.slice(0, 8)}`;
@@ -88,6 +108,8 @@ function ProfileShell({
   profileAvatarFullUrl,
   platformLinks,
   tabsGroup,
+  subnav,
+  currentUser,
 }: {
   children: React.ReactNode;
   currentUser: User | null;
@@ -99,15 +121,21 @@ function ProfileShell({
   platformLinks?: AdminPlatformLinkBrief[];
   /** Вкладки профиля для единого сайдбара (группа с именем участника). */
   tabsGroup?: SidebarExtraGroup;
+  /** Те же вкладки для липкой полосы на телефоне. */
+  subnav?: SectionSubnavCustom;
 }) {
-  // Публичный профиль в едином каркасе с сайдбаром: вкладки профиля живут в
-  // сайдбаре (на мобиле — чипы над контентом, сайдбар там скрыт).
+  // Описание под заголовком на телефоне свёрнуто в две строки — тап раскрывает.
+  usePageLeadToggle();
+  // Публичный профиль в едином каркасе с сайдбаром: на компьютере вкладки
+  // профиля живут в колонке, на телефоне — в той же липкой полосе страниц,
+  // что у своего кабинета (раньше тут были свои капсулы-кнопки).
   return (
     <div className="portal-section-page">
       <PortalHeader />
       <div className="portal-cab-layout">
         <SiteSidebar active={null} extraGroup={tabsGroup} />
         <main className="portal-cab-main portal-section">
+          {subnav && <SectionSubnav active={null} user={currentUser} custom={subnav} />}
           <div className="portal-cab-stack">
             {profileName && (
               <div className="public-profile-head">
@@ -328,8 +356,6 @@ function PublicProfileContent({
 
   const stats = dashboard?.stats;
   const profileName = dashboard ? profileDisplayName(dashboard.user) : (fallbackName ?? null);
-  const tabClass = (value: ProfileTab) =>
-    tab === value ? "admin-preview-tab active" : "admin-preview-tab";
 
   // Иконки те же, что у одноимённых разделов своего кабинета: в свёрнутом
   // рельсе сайдбара подписи скрыты, и без иконок пункты были не видны вовсе.
@@ -337,15 +363,6 @@ function PublicProfileContent({
   // посчитан (заявка из бэклога сайта «Добавление в друзья, сравнения»).
   // Гостю сравнивать не с чем, себя с собой — тем более.
   const canCompare = Boolean(currentUser) && currentUser?.serial_id !== serialId;
-  const TAB_LABELS: { key: ProfileTab; label: string }[] = [
-    { key: "dashboard", label: "Главная" },
-    { key: "runs", label: "Пробежки" },
-    { key: "volunteering", label: "Волонтёрство" },
-    { key: "map", label: "Карта" },
-    { key: "achievements", label: "Достижения" },
-    { key: "history", label: "История" },
-    { key: "meetings", label: "Встречи" },
-  ];
   // Группу вкладок отдаём всегда, а не только когда загружено имя: имя приезжает
   // вместе с дашбордом, а он грузится лишь на вкладке «Главная». Из-за этого
   // заход по прямой ссылке на карту или достижения оставлял сайдбар без вкладок
@@ -356,29 +373,49 @@ function PublicProfileContent({
     // профиля: раньше клик по нему не делал ничего.
     onTitleClick: () => setTab("dashboard"),
     avatarUrl: dashboard?.user.avatar_url ?? null,
-    items: TAB_LABELS.map((item) => ({
+    // Вкладки — ссылки на свои адреса, как в полосе на телефоне: переход по
+    // ним ведёт общий роутер (hooks/useAppPath), а Ctrl-клик открывает
+    // вкладку профиля в новой вкладке браузера.
+    items: PROFILE_TABS.map((item) => ({
       key: item.key,
       label: item.label,
-      icon: NAV_ICONS[item.key],
+      icon: item.icon,
       active: tab === item.key,
-      onClick: () => setTab(item.key),
+      href: profileTabHref(handle, item.key),
     })),
   };
 
-  // Полоса вкладок на телефоне прокручивается горизонтально: активная вкладка
-  // может оказаться за краем экрана (например, «Встречи» после захода по
-  // прямой ссылке) — подтягиваем её в видимую часть.
-  const tabsStripRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const active = tabsStripRef.current?.querySelector<HTMLElement>(`[data-tab="${tab}"]`);
-    active?.scrollIntoView({ block: "nearest", inline: "center" });
-    // currentUser в зависимостях не лишний: пока сессия проверяется, страница
-    // рисует «Загрузка…» — полосы вкладок в разметке ещё нет, и прокручивать
-    // нечего. Эффект должен повториться, когда она появится.
-  }, [tab, currentUser]);
+  // Телефон: те же вкладки липкой полосой, как в своём кабинете. Вкладки —
+  // ссылки на свои адреса (/users/{хендл}/{вкладка}): их можно открыть в новой
+  // вкладке, а диктор читает их как навигацию, а не как кнопки. Текущую
+  // отмечаем по открытой вкладке, а не по адресу: числовой адрес сразу
+  // меняется на ник (replaceState), и сравнение адресов бы промахнулось.
+  const subnav: SectionSubnavCustom = {
+    label: profileName ?? "Профиль участника",
+    groups: [
+      {
+        key: "profile",
+        items: PROFILE_TABS.map(
+          (item): NavLink => ({
+            key: item.key,
+            label: item.label,
+            icon: item.icon,
+            href: profileTabHref(handle, item.key),
+            matches: () => tab === item.key,
+          }),
+        ),
+      },
+    ],
+  };
 
   if (currentUser === undefined) {
-    return <main className="app"><p className="muted">Загрузка…</p></main>;
+    // С шапкой: без неё на время проверки сессии пропадала нижняя панель.
+    return (
+      <>
+        <PortalHeader />
+        <main className="app"><p className="muted">Загрузка…</p></main>
+      </>
+    );
   }
 
   if (forbidden) {
@@ -411,32 +448,8 @@ function PublicProfileContent({
       profileAvatarFullUrl={dashboard?.user.avatar_full_url}
       platformLinks={dashboard?.platform_links}
       tabsGroup={tabsGroup}
+      subnav={subnav}
     >
-
-      {/* Мобильные чипы-вкладки: на десктопе навигация в сайдбаре. Список тот
-          же, что и в сайдбаре (TAB_LABELS), — раньше он был продублирован
-          руками и разъезжался при правках. */}
-      <div
-        className="admin-preview-tabs public-profile-tabs"
-        role="tablist"
-        aria-label="Разделы профиля"
-        ref={tabsStripRef}
-      >
-        {TAB_LABELS.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.key}
-            data-tab={item.key}
-            className={tabClass(item.key)}
-            onClick={() => setTab(item.key)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-
       {currentUser === null && (
         <PromoLoginCard
           icon="⚡"
@@ -643,20 +656,26 @@ export function PublicProfilePage({
 
   if (state === "resolving") {
     return (
-      <main className="app">
-        <p className="muted">Загрузка…</p>
-      </main>
+      <>
+        <PortalHeader />
+        <main className="app">
+          <p className="muted">Загрузка…</p>
+        </main>
+      </>
     );
   }
   if (state === "not-found" || serialId == null) {
     return (
-      <div className="shell">
-        <div className="shell-content">
-          <div className="card">
-            <p className="muted">Участник не найден.</p>
+      <>
+        <PortalHeader />
+        <div className="shell">
+          <div className="shell-content">
+            <div className="card">
+              <p className="muted">Участник не найден.</p>
+            </div>
           </div>
         </div>
-      </div>
+      </>
     );
   }
   return (

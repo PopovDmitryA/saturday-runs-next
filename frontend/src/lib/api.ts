@@ -5387,6 +5387,8 @@ export type SiteSearchPerson =
       avatar_url: string | null;
       total_runs: number;
       total_volunteering: number;
+      /** Последний старт (ISO-дата): по нему упорядочены однофамильцы. */
+      last_run_date: string | null;
       top_location_name: string | null;
       platform_codes: string[];
     }
@@ -5395,6 +5397,7 @@ export type SiteSearchPerson =
       display_name: string;
       total_runs: number;
       total_volunteering: number;
+      last_run_date: string | null;
       top_location_name: string | null;
       top_location_city: string | null;
       platform_codes: string[];
@@ -5404,8 +5407,16 @@ export type SiteSearchResponse = {
   query: string;
   corrected_query: string | null;
   locations: SiteSearchLocation[];
+  /** Сколько локаций подошло всего (в выдаче — не больше восьми). */
+  locations_total: number;
+  /** «Все локации: Москва (41) →» — ссылка в каталог с фильтром. */
+  locations_all: { label: string; query: string; count: number } | null;
+  /** Точных совпадений нет — показаны похожие по написанию. */
+  locations_similar: boolean;
   people: SiteSearchPerson[];
   people_truncated: boolean;
+  /** Людей нашли по имени и месту («Попов Дмитрий Королёв»): подпись места. */
+  people_place: string | null;
 };
 
 export function searchSite(query: string, signal?: AbortSignal) {
@@ -5448,6 +5459,9 @@ export function logSiteSearch(entry: SiteSearchLogEntry): void {
 export type AdminSearchLogResponse = {
   total: number;
   zero_result_total: number;
+  /** Искали и никуда не перешли — главный список недостающих синонимов. */
+  no_click_total: number;
+  no_click_queries: { query: string; count: number; zero_results_count: number; last_at: string }[];
   top_queries: { query: string; count: number; zero_results_count: number; clicks: number }[];
   zero_result_queries: { query: string; count: number; last_at: string }[];
   clicks_by_kind: { page: number; location: number; person: number; none: number };

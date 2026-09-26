@@ -2,7 +2,9 @@
 
 Ищем по participants.display_name (регистронезависимо, каждое слово запроса —
 подстрока имени, порядок слов не важен: «Попов Дмитрий» == «Дмитрий Попов»).
-Под LIKE по lower(display_name) есть GIN-индекс pg_trgm (миграция 052).
+«Е» и «ё» не различаем с обеих сторон: имя сворачивается выражением
+translate(lower(display_name), 'ё', 'е'), и под ним GIN-индекс pg_trgm
+(миграция 103; до неё индекс был на lower(display_name), миграция 068).
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User, VolunteerResult
@@ -93,18 +95,63 @@ def normalize_query_text(raw_query: str) -> str:
     return " ".join(_query_words(raw_query or ""))
 
 
+def fold_name_text(text: str | None) -> str:
+    """Текст для сравнения имён: нижний регистр и «ё» → «е».
+
+    Ровно то же, что делает с именем SQL-выражение folded_display_name(): в
+    протоколах «Фёдоров» и «Федоров» пишут как попало, и без свёртки с обеих
+    сторон человек с «ё» в фамилии не находился ни через «е», ни через «ё».
+    """
+    return (text or "").lower().replace("ё", "е")
+
+
+def folded_display_name():
+    """translate(lower(display_name), 'ё', 'е') — под этим выражением индекс (миграция 103)."""
+    return func.translate(func.lower(Participant.display_name), "ё", "е")
+
+
 def apply_name_filters(query, words: list[str]):
     """Каждое слово запроса — подстрока имени (регистронезависимо, порядок не важен).
 
-    Условие написано ровно над lower(display_name), чтобы его подхватил
-    GIN-индекс pg_trgm ix_participants_display_name_trgm. Общее для онбординга
-    и публичного поиска на сайте.
+    Условие написано ровно над folded_display_name(), чтобы его подхватил
+    GIN-индекс pg_trgm ix_participants_display_name_fold_trgm. Общее для
+    онбординга и публичного поиска на сайте.
     """
+    folded = folded_display_name()
     for word in words:
-        query = query.filter(
-            func.lower(Participant.display_name).like(f"%{_escape_like(word.lower())}%", escape="\\")
-        )
+        query = query.filter(folded.like(f"%{_escape_like(fold_name_text(word))}%", escape="\\"))
     return query
+
+
+def _word_start_pattern(word: str, *, whole: bool) -> str:
+    # POSIX-регулярка Postgres: слово имени начинается с начала строки, после
+    # пробела или дефиса («Римского-Корсакова»). re.escape годится и для неё:
+    # экранирует только не-буквы, а обратная косая перед не-буквой в ARE —
+    # просто сам этот символ.
+    escaped = re.escape(fold_name_text(word))
+    tail = "($|[[:space:]-])" if whole else ""
+    return f"(^|[[:space:]-]){escaped}{tail}"
+
+
+def word_start_rank(words: list[str]):
+    """SQL-балл «насколько слова запроса совпали с началом слов имени».
+
+    За каждое слово: 2 — совпало слово целиком («Ким» у Юлии Ким), 1 — с начала
+    слова («Кимов»), 0 — только из середины («Хакимжанов», «Екимова»). Сортируем
+    по нему В SQL, до LIMIT: кандидатов по частому сочетанию букв («лев» — это
+    все Яковлевы и Королевы) тысячи, и без порядка база отдавала первые
+    попавшиеся — нужный человек мог не попасть в выдачу вовсе.
+    """
+    folded = folded_display_name()
+    score = None
+    for word in words:
+        part = case(
+            (folded.op("~")(_word_start_pattern(word, whole=True)), 2),
+            (folded.op("~")(_word_start_pattern(word, whole=False)), 1),
+            else_=0,
+        )
+        score = part if score is None else score + part
+    return score
 
 
 def _apply_query_filters(query, words: list[str]):
@@ -152,7 +199,12 @@ def search_participants(db: Session, user: User, raw_query: str) -> ParticipantS
     ]
     if linked_platform_ids:
         candidates_query = candidates_query.filter(Participant.platform_id.notin_(linked_platform_ids))
+    is_identifier = len(words) == 1 and _IDENTIFIER_RE.match(words[0]) is not None
     candidates_query = _apply_query_filters(candidates_query, words)
+    if not is_identifier:
+        # Совпадения с начала слова — первыми ещё в SQL: кандидатов берём
+        # ограниченно, и «Ким» не должен тонуть в Хакимжановых.
+        candidates_query = candidates_query.order_by(word_start_rank(words).desc())
     candidates = candidates_query.limit(CANDIDATE_LIMIT + 1).all()
 
     # Совпадения в привязанных системах не показываем, но честно говорим, что

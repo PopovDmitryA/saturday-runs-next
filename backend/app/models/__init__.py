@@ -897,12 +897,14 @@ class Participant(Base):
         Index("ix_participants_barcode_id", "barcode_id"),
         # Частичный: пол заполнен не у всех, а ищем всегда «где пол известен».
         Index("ix_participants_gender", "gender", postgresql_where=text("gender IS NOT NULL")),
-        # Поиск по ФИО в онбординге (миграция 068): trgm по lower(display_name).
+        # Поиск по ФИО (онбординг и поиск по сайту), миграция 103: trgm по
+        # имени, свёрнутому без различия «е»/«ё» — тем же выражением сравнивает
+        # apply_name_filters. Заменил индекс по lower(display_name) из 068.
         Index(
-            "ix_participants_display_name_trgm",
-            text("lower(display_name)"),
+            "ix_participants_display_name_fold_trgm",
+            text("translate(lower(display_name), 'ё', 'е')"),
             postgresql_using="gin",
-            postgresql_ops={"lower(display_name)": "gin_trgm_ops"},
+            postgresql_ops={"translate(lower(display_name), 'ё', 'е')": "gin_trgm_ops"},
         ),
     )
 

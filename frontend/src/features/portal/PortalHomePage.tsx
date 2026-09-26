@@ -9,6 +9,7 @@ import { PortalHomeAnchors } from "./PortalHomeAnchors";
 import { PortalFooter } from "./PortalFooter";
 import { lazyPage } from "../../lib/lazyPage";
 import { PortalHeader } from "./PortalHeader";
+import { openFindSelfSearch } from "./nav/findSelfSearch";
 import { PLATFORM_CHART_META, PortalTrendChart, type TrendPoint } from "./PortalTrendChart";
 import { PortalTeaserCard } from "./PortalTeaser";
 import {
@@ -283,6 +284,18 @@ export function PortalHomePage() {
   const optionalUser = useOptionalUser();
   const ctaHref =
     optionalUser != null ? cabinetTabHref(optionalUser, "dashboard") : PORTAL_LOGIN_HREF;
+  // Гостю «Найти себя» открывает поиск с подсказкой «фамилия и имя», а не
+  // вход: ценность входа видна, когда человек увидел себя в протоколах, и
+  // вход там — в одно касание («Нашли себя? Войдите…»). Ссылка на /login
+  // остаётся в href: Ctrl-клик и новая вкладка ведут на вход, как раньше.
+  const onFindSelf = (event: React.MouseEvent<HTMLAnchorElement>, place: string) => {
+    trackCtaClick(place);
+    if (optionalUser != null || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    event.preventDefault();
+    openFindSelfSearch();
+  };
 
   // Знаменатель воронки регистрации — до загрузки данных, см. useFunnelHomeView.
   useFunnelHomeView();
@@ -916,7 +929,7 @@ export function PortalHomePage() {
                 </p>
                 {/* CTA в верхней трети: главный источник регистраций по итогам АБ-теста. */}
                 <div className="portal-hero-cta">
-                  <a className="btn primary" href={ctaHref} onClick={() => trackCtaClick("hero")}>
+                  <a className="btn primary" href={ctaHref} onClick={(event) => onFindSelf(event, "hero")}>
                     Найти себя в статистике
                   </a>
                   {data.registered_parks > 0 && (
@@ -1125,7 +1138,7 @@ export function PortalHomePage() {
                   <a
                     className="btn primary"
                     href={ctaHref}
-                    onClick={() => trackCtaClick("bottom")}
+                    onClick={(event) => onFindSelf(event, "bottom")}
                   >
                     {optionalUser != null ? "Открыть кабинет" : "Найти себя в статистике"}
                   </a>

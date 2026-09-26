@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
 import { surnameFirst } from "../../lib/personName";
 import { FilterSelect } from "../../components/filters/FilterPanel";
+import { RatingFilters } from "../leaderboards/RatingPageParts";
 import {
   getAttendanceJournal,
   type AttendanceJournal,
@@ -243,7 +244,9 @@ export function RatingJournalPanel({
     <div className="aj-panel">
       {/* Та же панель фильтров, что у таблицы рейтинга (.lb-controls-left):
           рамка, ширина и ряды общие — журнал не должен выглядеть приставленным
-          сбоку блоком (правка Дмитрия 28.08.2026). */}
+          сбоку блоком (правка Дмитрия 28.08.2026). На телефоне она так же
+          свёрнута в «Фильтры · N»: в счёт идут система и год, не текущие. */}
+      <RatingFilters activeCount={(platform !== "all" ? 1 : 0) + (year !== null ? 1 : 0)}>
       <div className="lb-controls-shell">
         <div className="lb-controls-left">
           {viewTabs}
@@ -280,6 +283,7 @@ export function RatingJournalPanel({
           </div>
         </div>
       </div>
+      </RatingFilters>
 
       <div className="aj-legend">
         {metric === "runs" && (

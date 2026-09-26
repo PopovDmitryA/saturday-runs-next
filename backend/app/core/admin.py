@@ -57,7 +57,7 @@ def is_admin_telegram_id(telegram_id: int, settings: Settings) -> bool:
 
 
 # Поля ответа, которых нет в модели User: их передают отдельно.
-_COMPUTED_USER_FIELDS = {"is_admin", "is_organizer", "auth_identities", "display_name_suggestion"}
+_COMPUTED_USER_FIELDS = {"is_admin", "is_organizer", "auth_identities", "display_name_suggestion", "home_location"}
 
 
 
@@ -79,14 +79,20 @@ def user_response(
         if name not in _COMPUTED_USER_FIELDS
     }
     is_organizer = False
+    home_location = None
     if db is not None:
+        from app.services.home_location_brief_service import home_location_brief
         from app.services.organizer_access_service import user_is_organizer
 
         is_organizer = user_is_organizer(db, user)
+        # Дешёвая версия домашней локации (см. home_location_brief_service):
+        # /me зовут на каждой загрузке страницы.
+        home_location = home_location_brief(db, user)
     return UserResponse(
         **scalar_fields,
         is_admin=is_admin_user(user, settings),
         is_organizer=is_organizer,
         auth_identities=identity_responses,
         display_name_suggestion=display_name_suggestion,
+        home_location=home_location,
     )

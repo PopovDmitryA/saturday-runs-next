@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { readCached, writeCached } from "../../lib/dataCache";
 import { useRestorableState } from "../../hooks/useRestorableState";
-import { AppShell } from "../../components/AppShell";
 import { ChartColumnTooltip } from "../../components/ChartColumnTooltip";
 import { TitleTooltipZone } from "../../components/TitleTooltipZone";
 import { PlatformBadge } from "../../components/PlatformBadge";
@@ -1269,9 +1268,11 @@ function achievementsCacheKey(platform: string | null): string {
   return `me:achievements:${platform ?? "all"}`;
 }
 
-// bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
-// оборачивает контент в собственный каркас с сайдбаром.
-function AchievementsContent({ bare = false }: { bare?: boolean } = {}) {
+// Тело страницы без каркаса: шапку, рельс и колонку рисует тот, кто
+// вставляет контент (кабинет — PortalCabinetShell, чужой профиль — свой
+// каркас). Проп bare остался от старой обёртки AppShell (удалена 26.09.2026)
+// и ни на что не влияет.
+function AchievementsContent(_props: { bare?: boolean } = {}) {
   // Фильтр системы — в снимке записи истории, ответ — в кэше вкладки: «назад»
   // из деталей челленджа возвращает ту же витрину сразу (см. lib/dataCache).
   const [platformFilter, setPlatformFilter] = useRestorableState<string | null>(
@@ -1354,11 +1355,7 @@ function AchievementsContent({ bare = false }: { bare?: boolean } = {}) {
     </>
   );
 
-  if (bare) {
-    return pageBody;
-  }
-
-  return <AppShell title="Цели и достижения">{pageBody}</AppShell>;
+  return pageBody;
 }
 
 export { AchievementsContent };

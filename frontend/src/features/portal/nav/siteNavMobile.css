@@ -1,0 +1,244 @@
+/* Телефон: окна нижней панели и первый экран страниц.
+
+   Основные правила нижней панели, «Меню» и полосы страниц — в siteNav.css
+   (разделы «телефон»); здесь то, что добавилось после ревью 25.09.2026:
+   кнопка «Закрыть» в окнах, список страниц раздела над панелью (идея В),
+   экономия первого экрана (идея Б). Все цвета — переменные темы. */
+
+@media (max-width: 900px) {
+  /* Фокус с клавиатуры не прячется под нижней панелью (a11y-11). */
+  html.has-site-bottomnav {
+    scroll-padding-bottom: calc(var(--portal-bottomnav-h) + 8px);
+  }
+
+  /* ---------- «Закрыть» в окнах ---------- */
+
+  .site-overlay-close {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+
+  .site-overlay-close:hover {
+    background: var(--bg-muted);
+  }
+
+  .site-overlay-close-icon {
+    display: inline-flex;
+    width: 15px;
+    height: 15px;
+  }
+
+  .site-overlay-close-icon svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ---------- список страниц раздела над панелью (идея В) ---------- */
+
+  /* Повторное нажатие на кнопку текущего раздела поднимает над ней список
+     его страниц — под большим пальцем, а не у верхнего края экрана. */
+  .site-pages-panel {
+    position: fixed;
+    z-index: 72;
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--portal-bottomnav-h) + env(safe-area-inset-bottom, 0px) + 8px);
+    max-height: calc(100vh - var(--portal-bottomnav-h) - env(safe-area-inset-bottom, 0px) - 72px);
+    max-height: calc(100dvh - var(--portal-bottomnav-h) - env(safe-area-inset-bottom, 0px) - 72px);
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.28);
+    animation: site-pages-rise 0.16s ease-out;
+    overflow: hidden;
+  }
+
+  @keyframes site-pages-rise {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .site-pages-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 10px 8px 16px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .site-pages-head-icon {
+    flex: none;
+    display: inline-flex;
+    width: 20px;
+    height: 20px;
+    color: var(--accent-indigo-text);
+  }
+
+  .site-pages-head-icon svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .site-pages-head-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .site-pages-head-label,
+  .site-pages-head-place {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .site-pages-head-label {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--text);
+  }
+
+  .site-pages-head-place {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .site-pages-list {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 8px 8px;
+  }
+
+  .site-pages-group + .site-pages-group {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  .site-pages-group-title {
+    padding: 8px 8px 2px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .site-pages-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 10px 8px;
+    border-radius: 10px;
+    color: var(--text-2);
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .site-pages-item:hover {
+    background: var(--bg-muted);
+    text-decoration: none;
+  }
+
+  .site-pages-item:focus-visible {
+    outline-offset: -2px;
+  }
+
+  /* Текущая страница — подложкой и жирным, не только цветом (a11y-8). */
+  .site-pages-item.active {
+    background: var(--tint-indigo-bg);
+    color: var(--accent-indigo-text);
+    font-weight: 700;
+  }
+
+  .site-pages-item-icon {
+    flex: none;
+    display: inline-flex;
+    width: 19px;
+    height: 19px;
+    color: var(--text-muted);
+  }
+
+  .site-pages-item-icon svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .site-pages-item.active .site-pages-item-icon {
+    color: var(--accent-indigo-text);
+  }
+
+  .site-pages-item-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ---------- первый экран (идея Б) ---------- */
+
+  /* Где есть полоса страниц раздела, хлебные крошки над заголовком её
+     повторяют («← Все рейтинги / Бегуны · Самые быстрые» под полосой «Бегуны ·
+     Самые быстрые») и отодвигают таблицу. Полоса уже говорит, где человек. */
+  html.has-site-subnav .loc-header-breadcrumb,
+  html.has-site-subnav .lb-breadcrumb {
+    display: none;
+  }
+
+  /* Описание под заголовком — не больше двух строк, тап раскрывает
+     (nav/usePageLeadToggle, там же список селекторов). */
+  .portal-cab-pagehead-sub,
+  .lb-header > .lb-description,
+  .loc-header > p.muted:not(.loc-header-breadcrumb),
+  .loc-header > .loc-header-lead,
+  .loc-header > .protocol-subtitle {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+  .portal-cab-pagehead-sub[data-lead-open],
+  .lb-header > .lb-description[data-lead-open],
+  .loc-header > p.muted[data-lead-open],
+  .loc-header > .loc-header-lead[data-lead-open],
+  .loc-header > .protocol-subtitle[data-lead-open] {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: none;
+    overflow: visible;
+    cursor: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-pages-panel {
+    animation: none;
+  }
+}

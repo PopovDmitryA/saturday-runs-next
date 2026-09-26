@@ -5,9 +5,14 @@
  */
 export const SITE_SEARCH_OPEN_EVENT = "site-search:open";
 
+/** «find-self» — гость ищет себя в протоколах (см. findSelfSearch.ts). */
+export type SiteSearchOpenMode = "find-self";
+
 export type SiteSearchOpenDetail = {
   /** Подставить в поле готовый запрос (например, слова из адреса на 404). */
   query?: string;
+  /** Режим окна: своя подсказка и плейсхолдер. */
+  mode?: SiteSearchOpenMode;
 };
 
 export function openSiteSearch(query?: string): void {

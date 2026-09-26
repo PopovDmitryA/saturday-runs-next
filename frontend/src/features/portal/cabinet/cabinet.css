@@ -32,79 +32,6 @@
   margin-top: 20px;
 }
 
-/* ---------- карточка пользователя ---------- */
-
-.portal-cab-user {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-}
-
-.portal-cab-user-avatar {
-  flex: none;
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  color: #fff;
-  background: linear-gradient(135deg, var(--accent-indigo), #7c3aed);
-}
-
-.portal-cab-user-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1;
-}
-
-.portal-cab-user-name {
-  font-size: 14.5px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Ссылка в «Настройки → Имя на сайте». Была кнопкой с формой прямо в сайдбаре —
-   форма туда не помещалась (решение Дмитрия 25.08.2026). */
-.portal-cab-user-edit {
-  flex: none;
-  border: 0;
-  background: transparent;
-  color: var(--text-faint);
-  font: inherit;
-  font-size: 13px;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 6px;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.portal-cab-user-edit:hover {
-  color: var(--text);
-  background: var(--bg-muted);
-}
-
-/* Дубль карточки участника над контентом кабинета: на телефоне колонки нет,
-   и «✎» (ссылка в настройки имени) была недостижима. На десктопе не показываем —
-   там карточка живёт в сайдбаре (включается в медиазапросе на 900px). */
-.portal-cab-user-mobile {
-  display: none;
-}
-
 /* ---------- заголовок страницы ---------- */
 
 .portal-cab-pagehead {
@@ -145,21 +72,6 @@
   .portal-cab-layout {
     display: block;
     padding-bottom: 24px;
-  }
-
-  .portal-cab-user-mobile {
-    display: block;
-    margin-bottom: 14px;
-  }
-
-  /* Имя на телефоне крупнее: карточка здесь работает заголовком страницы. */
-  .portal-cab-user-mobile .portal-cab-user-name {
-    font-size: 16px;
-  }
-
-  .portal-cab-user-mobile .portal-cab-user-edit {
-    font-size: 16px;
-    padding: 6px 8px;
   }
 }
 
@@ -425,19 +337,6 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
   color: var(--text-muted);
 }
 
-/* Аватарка-картинка вместо инициалов (когда пользователь её загрузил). */
-.portal-cab-user-avatar-img {
-  object-fit: cover;
-  background: none;
-  padding: 0;
-}
-
-/* Плейсхолдер юзер-зоны, пока сессия проверяется (первый заход без кэша) —
-   чтобы не мигать кнопкой «Войти» перед залогиненным. */
-.portal-cab-user-pending {
-  min-height: 62px;
-}
-
 /* ---------- аналитические плитки в портальном стиле ----------
    Легаси .stat-card-runs/.stat-card-volunteering заливали карточку светло-
    зелёным/светло-синим захардкоженным hex — в тёмной теме это выглядело
@@ -525,31 +424,4 @@ a.portal-cab-hero-stat:hover .portal-cab-hero-stat-value {
 .portal-section .stat-card-nav:hover {
   border-color: var(--accent-indigo);
   transform: none;
-}
-
-/* Имя пользователя — кликабельная ссылка в обзор кабинета. */
-a.portal-cab-user-name {
-  color: inherit;
-  text-decoration: none;
-}
-
-a.portal-cab-user-name:hover {
-  color: var(--accent-indigo-text);
-  text-decoration: none;
-}
-
-/* Аватарка в карточке участника кликабельна — раскрывает оригинал. */
-.portal-cab-user-avatar-button {
-  padding: 0;
-  border: none;
-  background: none;
-  cursor: zoom-in;
-  overflow: hidden;
-}
-
-.portal-cab-user-avatar-button img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
 }

@@ -480,7 +480,12 @@ function LocationsIndexContent() {
   const items = index.data?.items ?? null;
   const series = index.data?.series ?? [];
   const error = index.error;
-  const [query, setQuery] = useRestorableState("locations.query", "");
+  // ?q= в адресе — фильтр, с которым сюда привели: «Все локации: Москва (41)»
+  // из поиска по сайту. Снимок записи истории (возврат «назад») важнее.
+  const [query, setQuery] = useRestorableState(
+    "locations.query",
+    () => new URLSearchParams(window.location.search).get("q")?.trim() ?? "",
+  );
   // Мультивыбор: систем можно отметить сколько угодно, пустое множество —
   // «Все» (правка Дмитрия 01.09.2026; раньше выбиралась ровно одна).
   // Одна система за раз: каталог смотрят «покажи мне 5 вёрст», а не «5 вёрст

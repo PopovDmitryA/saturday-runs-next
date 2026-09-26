@@ -1,12 +1,18 @@
+import { useOptionalUser } from "../../lib/useOptionalUser";
+import { useOrganizerLocations } from "../portal/nav/OrganizerSwitcher";
+import { ORGANIZER_INDEX_HREF, ORGANIZER_LABEL } from "../portal/nav/siteNav";
+
 /**
- * Крошки кабинета: всегда дают вернуться и в каталог, и на главную страницу
- * самой локации, и в хаб её инструментов. Без ссылки на /locations/{slug}
- * из кабинета не было выхода на публичную страницу локации.
+ * Крошки кабинета: всегда дают вернуться на главную страницу самой локации и
+ * в хаб её инструментов. Без ссылки на /locations/{slug} из кабинета не было
+ * выхода на публичную страницу локации.
  *
- * «Мои локации» ведёт на /organizer — список локаций, где человек организатор
- * (сценарий Дмитрия 24.08.2026: организатор нескольких локаций должен уметь
- * перейти из кабинета одной к списку остальных; при одной локации /organizer
- * сам вернёт в её кабинет).
+ * «← Мои локации» ведёт на /organizer — список локаций, где человек
+ * организатор (сценарий Дмитрия 24.08.2026: организатор нескольких локаций
+ * переходит из кабинета одной к списку остальных). При одной своей локации
+ * ссылки нет: список сразу вернул бы в этот же кабинет, и ссылка обещала бы
+ * то, чего не показывает (a11y-10). Список локаций — общий на документ, лишнего
+ * запроса крошки не делают.
  */
 export function OrganizerBreadcrumbs({
   slug,
@@ -18,16 +24,24 @@ export function OrganizerBreadcrumbs({
   /** Название открытого инструмента; не задано — мы в хабе кабинета. */
   tool?: string;
 }) {
+  const user = useOptionalUser();
+  const items = useOrganizerLocations(user);
+  const showIndex = Boolean(user?.is_admin) || (items !== null && items.length > 1);
   const name = locationName ?? "Локация";
   return (
     <p className="muted loc-header-breadcrumb">
-      <a href="/organizer">← Мои локации</a> / <a href={`/locations/${slug}`}>{name}</a> /{" "}
+      {showIndex && (
+        <>
+          <a href={ORGANIZER_INDEX_HREF}>← Мои локации</a> /{" "}
+        </>
+      )}
+      <a href={`/locations/${slug}`}>{name}</a> /{" "}
       {tool ? (
         <>
-          <a href={`/organizer/${slug}`}>Кабинет организатора</a> / {tool}
+          <a href={`/organizer/${slug}`}>{ORGANIZER_LABEL}</a> / {tool}
         </>
       ) : (
-        "Кабинет организатора"
+        ORGANIZER_LABEL
       )}
     </p>
   );

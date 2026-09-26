@@ -5,7 +5,6 @@ import { CheckboxListFilter } from "../../components/activityTable/CheckboxListF
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
 import { ActivityDateCell } from "../../components/ActivityDateCell";
-import { AppShell } from "../../components/AppShell";
 import { EmptyActivityState } from "../../components/EmptyActivityState";
 import { GlobalPrFinishTime } from "../../components/GlobalPrFinishTime";
 import { LocationNameLink } from "../../components/LocationNameLink";
@@ -55,8 +54,10 @@ import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 
-// bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
-// оборачивает контент в собственный каркас с сайдбаром.
+// Тело страницы без каркаса: шапку, рельс и колонку рисует тот, кто
+// вставляет контент (кабинет — PortalCabinetShell, чужой профиль — свой
+// каркас). Проп bare остался от старой обёртки AppShell (удалена 26.09.2026)
+// и ни на что не влияет.
 // Колонки «Пробежек» в порядке важности: дата, локация и время — всегда,
 // дальше добавляем по мере ширины. Ширины совпадают с CSS (.runs-table).
 const RUNS_COLUMNS: AdaptiveColumn[] = [
@@ -92,7 +93,7 @@ function ageGroupTitle(run: RunItem): string | undefined {
     : `${group} — ${run.age_group_position}-е место`;
 }
 
-function RunsContent({ bare = false }: { bare?: boolean } = {}) {
+function RunsContent(_props: { bare?: boolean } = {}) {
   const { listRuns, mode, cacheScope } = useAppDataSource();
   // Галочки — в снимке записи истории, список — в кэше вкладки: «назад» из
   // протокола возвращает ту же таблицу без секунды пустоты (см. lib/dataCache).
@@ -680,11 +681,7 @@ function RunsContent({ bare = false }: { bare?: boolean } = {}) {
     </>
   );
 
-  if (bare || mode === "public-profile") {
-    return <>{pageBody}</>;
-  }
-
-  return <AppShell title="Пробежки">{pageBody}</AppShell>;
+  return <>{pageBody}</>;
 }
 
 export { RunsContent };

@@ -16,6 +16,7 @@
  * уходит в LazyErrorBoundary с кнопкой «Обновить».
  */
 import { Component, lazy, type ComponentType, type ErrorInfo, type LazyExoticComponent, type ReactNode } from "react";
+import { PortalHeader } from "../features/portal/PortalHeader";
 
 const RELOAD_FLAG = "lazy-chunk-reloaded-for";
 
@@ -74,12 +75,20 @@ export function lazyPage<M, P>(
   return lazy(() => loadWithReload(load).then((mod) => ({ default: pick(mod) })));
 }
 
-/** Единый фолбэк Suspense — тот же «Загрузка…», что рисуют сами страницы. */
+/**
+ * Единый фолбэк Suspense — тот же «Загрузка…», что рисуют сами страницы, но
+ * с шапкой сайта. Без неё, пока подгружался раздел, пропадали шапка и нижняя
+ * панель телефона (её рисует шапка) — меню мигало на каждом первом заходе в
+ * раздел (ревью, code-5). Шапка и так в основном бандле: её рисуют главная и 404.
+ */
 export function RouteFallback() {
   return (
-    <main className="app">
-      <p className="muted">Загрузка…</p>
-    </main>
+    <>
+      <PortalHeader />
+      <main className="app">
+        <p className="muted">Загрузка…</p>
+      </main>
+    </>
   );
 }
 

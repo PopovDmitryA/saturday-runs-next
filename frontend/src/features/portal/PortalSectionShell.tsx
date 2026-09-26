@@ -3,6 +3,7 @@ import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
 import { SiteSidebar, type SiteSidebarProps } from "./SiteSidebar";
 import { SectionSubnav } from "./nav/SectionSubnav";
+import { usePageLeadToggle } from "./nav/usePageLeadToggle";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import "./portal.css";
 import "./portalSection.css";
@@ -30,6 +31,8 @@ export function PortalSectionShell({
   sidebar?: Pick<SiteSidebarProps, "active" | "location">;
 }) {
   const user = useOptionalUser();
+  // Описание под заголовком на телефоне свёрнуто в две строки — тап раскрывает.
+  usePageLeadToggle();
   if (!sidebar) {
     return (
       <div className="portal-section-page">

@@ -1,15 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import {
-  cabinetTabHref,
-  PORTAL_ABOUT_HREF,
-  PORTAL_ABOUT_PRIVACY_HREF,
-  PORTAL_BLOG_HREF,
-  PORTAL_CABINET_SETTINGS_HREF,
-  PORTAL_HOME_HREF,
-  PORTAL_LOGIN_HREF,
-  PORTAL_UPDATES_HREF,
-} from "../../lib/portalRoutes";
+import { PORTAL_ABOUT_PRIVACY_HREF, PORTAL_HOME_HREF, PORTAL_LOGIN_HREF, PORTAL_UPDATES_HREF } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
+import { resolveNavState } from "./nav/navState";
+import { CABINET_LABEL, CABINET_TABS, type NavSection } from "./nav/siteNav";
 import { fetchLatestReleaseVersion } from "./releaseTypes";
 import "./portal.css";
 
@@ -21,48 +14,70 @@ const FOUNDED_YEAR = 2024;
 
 const TELEGRAM_CHANNEL_HREF = "https://t.me/popov_way";
 
-type FooterLink = {
-  href: string;
-  label: string;
-  /** Ссылка ведёт в личный кабинет: гостю подменяется на вход. */
-  cabinetTab?: "dashboard" | "runs" | "achievements" | "map";
-  /** Страница под авторизацией без вкладки кабинета (Настройки) — гостю тоже вход. */
-  authOnly?: boolean;
-  external?: boolean;
-};
+type FooterLink = { key: string; href: string; label: string };
 
 type FooterColumn = { title: string; links: FooterLink[] };
 
-const FOOTER_COLUMNS: FooterColumn[] = [
-  {
+/**
+ * Колонки подвала — из того же дерева, что рельс, шапка и «Меню»: те же
+ * названия разделов и те же адреса (решение Дмитрия 26.09.2026). Раньше
+ * подвал был ещё одним меню, написанным руками: «Последние пробежки» вместо
+ * «Итогов», «Личный кабинет» в колонке «Участнику», и не было ни единого
+ * протокола, ни оргкабинета.
+ *
+ * По смыслу колонки прежние: статистика сайта, кабинет, проект.
+ */
+function footerColumns(sections: NavSection[]): FooterColumn[] {
+  const byKey = (key: NavSection["key"]) => sections.find((section) => section.key === key);
+  const itemsOf = (section: NavSection | undefined) => section?.groups.flatMap((group) => group.items) ?? [];
+  const sectionLink = (section: NavSection | undefined): FooterLink[] =>
+    section ? [{ key: section.key, href: section.href, label: section.shortLabel }] : [];
+
+  const results = byKey("results");
+  const stats: FooterColumn = {
     title: "Статистика",
     links: [
-      { href: PORTAL_HOME_HREF, label: "Главная" },
-      { href: "/locations", label: "Локации" },
-      { href: "/results", label: "Последние пробежки" },
-      { href: "/ratings", label: "Рейтинги" },
+      ...sectionLink(results),
+      // «Единый протокол» — вторая страница «Итогов»; первая и есть /results.
+      ...itemsOf(results)
+        .filter((link) => link.href !== results?.href)
+        .map((link) => ({ key: link.key, href: link.href, label: link.label })),
+      ...sectionLink(byKey("locations")),
+      ...sectionLink(byKey("ratings")),
+      ...sectionLink(byKey("organizer")),
     ],
-  },
-  {
-    title: "Участнику",
+  };
+
+  // Гостю вкладки кабинета ведут на вход — это и есть его путь туда; сам
+  // раздел у гостя подписан «Войти», как на рельсе и нижней панели.
+  const me = byKey("me");
+  const meItems = itemsOf(me);
+  const settings = itemsOf(byKey("account")).find((link) => link.key === "settings");
+  const cabinet: FooterColumn = {
+    title: CABINET_LABEL,
     links: [
-      { href: PORTAL_LOGIN_HREF, label: "Личный кабинет", cabinetTab: "dashboard" },
-      { href: PORTAL_LOGIN_HREF, label: "Мои пробежки", cabinetTab: "runs" },
-      { href: PORTAL_LOGIN_HREF, label: "Достижения", cabinetTab: "achievements" },
-      { href: PORTAL_CABINET_SETTINGS_HREF, label: "Настройки", authOnly: true },
+      ...sectionLink(me),
+      ...(["runs", "achievements"] as const).map((key) => ({
+        key,
+        href: meItems.find((link) => link.key === key)?.href ?? PORTAL_LOGIN_HREF,
+        label: CABINET_TABS.find((tab) => tab.key === key)?.label ?? key,
+      })),
+      ...(settings ? [{ key: settings.key, href: settings.href, label: settings.label }] : []),
     ],
-  },
-  {
-    title: "Проект",
+  };
+
+  const project = byKey("project");
+  const projectColumn: FooterColumn = {
+    title: project?.label ?? "О проекте",
     links: [
-      { href: PORTAL_ABOUT_HREF, label: "О проекте" },
-      { href: PORTAL_UPDATES_HREF, label: "Обновления" },
-      { href: PORTAL_BLOG_HREF, label: "Блог" },
-      { href: "/backlog", label: "Бэклог идей" },
-      { href: PORTAL_ABOUT_PRIVACY_HREF, label: "Данные и приватность" },
+      ...itemsOf(project).map((link) => ({ key: link.key, href: link.href, label: link.label })),
+      // Якорь внутри «О проекте» — отдельной страницы в дереве у него нет.
+      { key: "privacy", href: PORTAL_ABOUT_PRIVACY_HREF, label: "Данные и приватность" },
     ],
-  },
-];
+  };
+
+  return [stats, cabinet, projectColumn];
+}
 
 function TelegramIcon(): ReactNode {
   return (
@@ -85,7 +100,6 @@ function TelegramIcon(): ReactNode {
 export function PortalFooter() {
   const [version, setVersion] = useState<string | null>(null);
   const optionalUser = useOptionalUser();
-  const user = optionalUser ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -104,12 +118,7 @@ export function PortalFooter() {
   }, []);
 
   const year = Math.max(FOUNDED_YEAR, new Date().getFullYear());
-  const linkHref = (link: FooterLink) => {
-    if (link.cabinetTab) {
-      return user ? cabinetTabHref(user, link.cabinetTab) : PORTAL_LOGIN_HREF;
-    }
-    return link.authOnly && !user ? PORTAL_LOGIN_HREF : link.href;
-  };
+  const columns = footerColumns(resolveNavState({ user: optionalUser }).sections);
 
   return (
     <footer className="portal-footer">
@@ -136,17 +145,13 @@ export function PortalFooter() {
           </div>
 
           <nav className="portal-footer-columns" aria-label="Разделы сайта">
-            {FOOTER_COLUMNS.map((column) => (
+            {columns.map((column) => (
               <div className="portal-footer-column" key={column.title}>
                 <h2 className="portal-footer-column-title">{column.title}</h2>
                 <ul className="portal-footer-list">
                   {column.links.map((link) => (
-                    <li key={link.label}>
-                      <a
-                        className="portal-footer-link"
-                        href={linkHref(link)}
-                        {...(link.external ? { target: "_blank", rel: "noreferrer" } : {})}
-                      >
+                    <li key={link.key}>
+                      <a className="portal-footer-link" href={link.href}>
                         {link.label}
                       </a>
                     </li>

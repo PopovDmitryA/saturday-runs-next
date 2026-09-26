@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { AppShell } from "../../components/AppShell";
 import { AuthProvidersSection } from "./AuthProvidersSection";
 import { AvatarSection } from "./AvatarSection";
 import { DisplayNameSection } from "./DisplayNameSection";
@@ -8,9 +7,11 @@ import { NewsletterSection } from "./NewsletterSection";
 import { PrivacySettingsSection } from "./PrivacySettingsSection";
 import { ProfileLinkSection } from "./ProfileLinkSection";
 
-// bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
-// оборачивает контент в собственный каркас с сайдбаром.
-export function SettingsContent({ bare = false }: { bare?: boolean } = {}) {
+// Тело страницы без каркаса: шапку, рельс и колонку рисует тот, кто
+// вставляет контент (кабинет — PortalCabinetShell, чужой профиль — свой
+// каркас). Проп bare остался от старой обёртки AppShell (удалена 26.09.2026)
+// и ни на что не влияет.
+export function SettingsContent(_props: { bare?: boolean } = {}) {
   const mergeToken = useMemo(
     () => new URLSearchParams(window.location.search).get("merge_token"),
     [],
@@ -28,14 +29,6 @@ export function SettingsContent({ bare = false }: { bare?: boolean } = {}) {
     </>
   );
 
-  if (bare) {
-    return <div className="portal-cab-stack">{pageBody}</div>;
-  }
-
-  return (
-    <AppShell title="Настройки" activePath="/settings">
-      {pageBody}
-    </AppShell>
-  );
+  return <div className="portal-cab-stack">{pageBody}</div>;
 }
 

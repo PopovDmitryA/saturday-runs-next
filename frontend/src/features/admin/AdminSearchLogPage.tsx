@@ -2,9 +2,12 @@
  * Журнал поиска по сайту (решение Дмитрия 23.09.2026: «полезно для статистики
  * и аналитики, чтобы понять, что ищут»).
  *
- * Главное здесь — запросы без результатов: это готовый список синонимов,
- * которых не хватает в nav/siteNav.ts, и разделов, которых на сайте нет.
- * Журнал анонимный: ни пользователя, ни посетителя в записи нет.
+ * Главное здесь — «искали и никуда не перешли» (ревью 25.09.2026): человек
+ * что-то увидел, но нужного там не было. Пустая выдача — лишь частный случай:
+ * «погода» с Погодаевыми пустой не считалась, хотя страницу погоды человек так
+ * и не нашёл. Это готовый список синонимов, которых не хватает в
+ * nav/siteNav.ts (и в словаре городов на сервере), и разделов, которых на
+ * сайте нет. Журнал анонимный: ни пользователя, ни посетителя в записи нет.
  */
 import { useEffect, useState } from "react";
 import { RequireAdmin } from "../../components/RequireAdmin";
@@ -24,7 +27,7 @@ const CLICK_LABELS: Record<string, string> = {
   page: "страница сайта",
   location: "локация",
   person: "участник",
-  none: "без перехода",
+  none: "никуда не перешли",
 };
 
 function percent(part: number, total: number): string {
@@ -107,6 +110,41 @@ function AdminSearchLogContent() {
               </div>
             ))}
           </div>
+
+          <section className="card">
+            <h2 className="section-title">Искали и никуда не перешли</h2>
+            <p className="muted">
+              Главный список: человек посмотрел выдачу и закрыл окно, ушёл «Назад» или закрыл вкладку. Обычно
+              это недостающий синоним (nav/siteNav.ts) или страница, которой нет. Фамилии здесь нормальны —
+              людей из протоколов открыть нельзя, по ним переходов и не бывает.
+            </p>
+            {data.no_click_queries.length === 0 ? (
+              <p className="muted">За период таких запросов нет.</p>
+            ) : (
+              <TableWrap>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Запрос</th>
+                      <th>Раз</th>
+                      <th>Из них пусто</th>
+                      <th>Последний</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.no_click_queries.map((row) => (
+                      <tr key={row.query}>
+                        <td>{row.query}</td>
+                        <td>{row.count}</td>
+                        <td>{row.zero_results_count || "—"}</td>
+                        <td>{formatDateTime(row.last_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableWrap>
+            )}
+          </section>
 
           <section className="card">
             <h2 className="section-title">Не нашлось ничего</h2>

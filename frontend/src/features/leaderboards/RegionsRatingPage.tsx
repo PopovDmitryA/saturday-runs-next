@@ -8,6 +8,8 @@ import { formatInt, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
+import { ratingName } from "./ratingNames";
+import { RatingBreadcrumb, RatingFilters } from "./RatingPageParts";
 import {
   REGIONS_PLATFORM_LABELS,
   getRegionsRating,
@@ -320,27 +322,26 @@ export function RegionsRatingPage() {
   // Колонки систем нужны только в общем зачёте: при выбранной системе это одна
   // колонка, повторяющая «Локаций».
   const showPlatforms = data?.platform === "all";
+  // «Фильтры · N» на телефоне: система и поиск — всё, что здесь фильтрует.
+  const activeFilters = (platform !== "all" ? 1 : 0) + (query.trim() ? 1 : 0);
 
   return (
     <PortalSectionShell sidebar={{ active: "ratings" }}>
       <div className="lb-page">
-        <nav className="lb-breadcrumb">
-          <a href="/ratings">← Все рейтинги</a>
-          <span aria-hidden> / </span>
-          <span>Локации · Локации по регионам</span>
-        </nav>
+        <RatingBreadcrumb ratingKey="regions" />
 
         <header className="lb-header">
-          <h1>Локации по регионам</h1>
+          <h1>{ratingName("regions").label}</h1>
           <p className="lb-description">
             Где субботних пятёрок больше всего: 5 вёрст, С95 и RunPark в одной таблице.
-            Одна площадка — одна строка счёта, даже если она живёт сразу в двух системах.
+            Одна локация — одна строка счёта, даже если она живёт сразу в двух системах.
             Зарубежные старты идут отдельно, по странам.
           </p>
         </header>
 
         <RatingsLoginBanner />
 
+        <RatingFilters activeCount={activeFilters}>
         <div className="lb-controls-row lb-locrec-controls">
           <div className="lb-controls-left">
             <div className="lb-visits">
@@ -378,6 +379,7 @@ export function RegionsRatingPage() {
           </div>
           </div>
         </div>
+        </RatingFilters>
 
         {loading && !data && <p className="muted">Считаем рейтинг…</p>}
         {error && (
@@ -426,7 +428,7 @@ export function RegionsRatingPage() {
             {countries.length > 0 && (
               <section className="lb-regions-foreign">
                 <h2>
-                  Зарубежные площадки{" "}
+                  Зарубежные локации{" "}
                   <StatHintTooltip text={FOREIGN_HINT}>
                     <span aria-label="Как считается">ⓘ</span>
                   </StatHintTooltip>

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCachedResource } from "../../hooks/useCachedResource";
 import { useRestorableState } from "../../hooks/useRestorableState";
-import { AppShell } from "../../components/AppShell";
 import { RegionChoropleth } from "../../components/RegionChoropleth";
 import { useAppDataSource } from "../../lib/appDataSource";
 import type { MapViewport, MapViewportRef } from "../../lib/mapViewport";
@@ -72,9 +71,11 @@ function RegionsPanel({
   );
 }
 
-// bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
-// оборачивает контент в собственный каркас с сайдбаром.
-function MapsContent({ bare = false }: { bare?: boolean } = {}) {
+// Тело страницы без каркаса: шапку, рельс и колонку рисует тот, кто
+// вставляет контент (кабинет — PortalCabinetShell, чужой профиль — свой
+// каркас). Проп bare остался от старой обёртки AppShell (удалена 26.09.2026)
+// и ни на что не влияет.
+function MapsContent(_props: { bare?: boolean } = {}) {
   const { getVisitedLocationsMap, getCatalogLocationsMap, getCatalogLocationsTable } =
     useAppDataSource();
   // Вид и фильтры — в снимке записи истории: «назад» с площадки возвращает
@@ -160,11 +161,7 @@ function MapsContent({ bare = false }: { bare?: boolean } = {}) {
     </div>
   );
 
-  if (bare) {
-    return body;
-  }
-
-  return <AppShell title="Карта">{body}</AppShell>;
+  return body;
 }
 
 export { MapsContent };

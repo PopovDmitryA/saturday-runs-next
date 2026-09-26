@@ -25,6 +25,9 @@ class SearchRegisteredPersonResponse(BaseModel):
     avatar_url: str | None = None
     total_runs: int = 0
     total_volunteering: int = 0
+    # Последний старт — в строке выдачи: по нему упорядочены однофамильцы, и
+    # без даты на экране порядок выглядел случайным.
+    last_run_date: dt.date | None = None
     top_location_name: str | None = None
     platform_codes: list[str] = Field(default_factory=list)
 
@@ -40,6 +43,7 @@ class SearchParticipantResponse(BaseModel):
     display_name: str
     total_runs: int = 0
     total_volunteering: int = 0
+    last_run_date: dt.date | None = None
     top_location_name: str | None = None
     top_location_city: str | None = None
     platform_codes: list[str] = Field(default_factory=list)
@@ -51,13 +55,31 @@ SearchPersonResponse = Annotated[
 ]
 
 
+class SearchLocationsAllLink(BaseModel):
+    """«Все локации: Москва (41) →» — когда локаций места больше, чем в выдаче."""
+
+    # Подпись места: «Москва», «Московская область».
+    label: str
+    # Что подставить в поиск каталога (/locations?q=…): как место записано в каталоге.
+    query: str
+    # Сколько строк покажет каталог с этим фильтром.
+    count: int
+
+
 class SiteSearchResponse(BaseModel):
     query: str
     # Запрос в другой раскладке, по которому и нашлось показанное; None — не переводили.
     corrected_query: str | None = None
     locations: list[SearchLocationResponse] = Field(default_factory=list)
+    # Сколько локаций подошло всего (в выдаче — не больше восьми).
+    locations_total: int = 0
+    locations_all: SearchLocationsAllLink | None = None
+    # Точных совпадений нет, показаны похожие по написанию («сокольнеки»).
+    locations_similar: bool = False
     people: list[SearchPersonResponse] = Field(default_factory=list)
     people_truncated: bool = False
+    # Людей нашли по имени и месту («Попов Дмитрий Королёв»): подпись места.
+    people_place: str | None = None
 
 
 class SearchLogTopQuery(BaseModel):
@@ -70,6 +92,16 @@ class SearchLogTopQuery(BaseModel):
 class SearchLogZeroQuery(BaseModel):
     query: str
     count: int
+    last_at: dt.datetime
+
+
+class SearchLogNoClickQuery(BaseModel):
+    """Искали и никуда не перешли — главный список недостающих синонимов."""
+
+    query: str
+    count: int
+    # Из них выдача была совсем пустой.
+    zero_results_count: int
     last_at: dt.datetime
 
 
@@ -103,6 +135,8 @@ class AdminSearchLogResponse(BaseModel):
     period_days: int
     total: int
     zero_result_total: int
+    no_click_total: int = 0
+    no_click_queries: list[SearchLogNoClickQuery] = Field(default_factory=list)
     top_queries: list[SearchLogTopQuery] = Field(default_factory=list)
     zero_result_queries: list[SearchLogZeroQuery] = Field(default_factory=list)
     clicks_by_kind: SearchLogClicksByKind

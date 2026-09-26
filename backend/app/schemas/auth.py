@@ -101,6 +101,13 @@ class NoAccountPlatformsResponse(BaseModel):
     no_account_platforms: list[str] = Field(default_factory=list)
 
 
+class HomeLocationBrief(BaseModel):
+    """Домашняя локация одной строкой — для навигации и поиска («Погода · Мещерский»)."""
+
+    slug: str
+    name: str
+
+
 class UserResponse(BaseModel):
     id: UUID
     telegram_id: int | None = None
@@ -130,6 +137,9 @@ class UserResponse(BaseModel):
     serial_id: int | None = None
     public_slug: str | None = None
     auth_identities: list[AuthIdentityResponse] = Field(default_factory=list)
+    # Домашняя локация: выбранная вручную, иначе — где больше всего пробежек.
+    # None — пробежек нет или каталог локаций ещё не прогрет.
+    home_location: HomeLocationBrief | None = None
     # Онбординг: системы, где человек отметил «у меня там нет аккаунта».
     onboarding_no_account_platforms: list[str] = Field(default_factory=list)
 

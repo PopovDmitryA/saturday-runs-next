@@ -10,7 +10,6 @@ import { ActivityTableCols } from "../../components/activityTable/ActivityTableC
 import { CheckboxListFilter } from "../../components/activityTable/CheckboxListFilter";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
 import { ActivityDateLink } from "../../components/ActivityDateLink";
-import { AppShell } from "../../components/AppShell";
 import { EmptyActivityState } from "../../components/EmptyActivityState";
 import { LocationNameLink } from "../../components/LocationNameLink";
 import { PlatformBadge } from "../../components/PlatformBadge";
@@ -37,9 +36,11 @@ import { formatInt, platformCodeLabel } from "../../lib/format";
 import { ShareRowButton } from "../sharing/ShareRowButton";
 import { volunteeringSubject } from "../sharing/subjects";
 
-// bare — отдать только тело страницы, без AppShell: портальный ЛК (/new/*)
-// оборачивает контент в собственный каркас с сайдбаром.
-function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
+// Тело страницы без каркаса: шапку, рельс и колонку рисует тот, кто
+// вставляет контент (кабинет — PortalCabinetShell, чужой профиль — свой
+// каркас). Проп bare остался от старой обёртки AppShell (удалена 26.09.2026)
+// и ни на что не влияет.
+function VolunteeringContent(_props: { bare?: boolean } = {}) {
   const { listVolunteering, mode, cacheScope } = useAppDataSource();
   // Галочки — в снимке записи истории, список — в кэше вкладки: «назад» из
   // протокола возвращает ту же таблицу без секунды пустоты (см. lib/dataCache).
@@ -772,11 +773,7 @@ function VolunteeringContent({ bare = false }: { bare?: boolean } = {}) {
     </>
   );
 
-  if (bare || mode === "public-profile") {
-    return <>{pageBody}</>;
-  }
-
-  return <AppShell title="Волонтёрство">{pageBody}</AppShell>;
+  return <>{pageBody}</>;
 }
 
 export { VolunteeringContent };

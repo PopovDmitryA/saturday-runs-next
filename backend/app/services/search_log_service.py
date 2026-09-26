@@ -1,9 +1,10 @@
 """Журнал поисковых запросов сайта и отчёт по нему для админки.
 
-Зачем: понять, что люди ищут и чего не находят. Пустые выдачи — прямой
-список того, каких страниц, синонимов или локаций на сайте не хватает;
-переходы по видам (страница / локация / человек) показывают, чем поиск
-вообще полезен.
+Зачем: понять, что люди ищут и чего не находят. Главный список — «искали и
+никуда не перешли»: человек что-то увидел, но нужного там не было. Пустая
+выдача — лишь частный случай: «погода» с одиннадцатью Погодаевыми пустой не
+считалась, хотя страницу погоды человек так и не нашёл. Переходы по видам
+(страница / локация / человек) показывают, чем поиск вообще полезен.
 
 Журнал — диагностика, а не бизнес-логика: его сбой не должен превращаться в
 ошибку у человека, поэтому запись обёрнута в try/except.
@@ -86,12 +87,37 @@ def get_search_log_report(db: Session, *, period_days: int = 30) -> dict[str, An
     since = datetime.now(timezone.utc) - timedelta(days=period_days)
     in_period = SearchQueryLog.created_at >= since
     zero = _zero_results()
+    no_click = SearchQueryLog.clicked_kind.is_(None)
 
-    total, zero_total = (
-        db.query(func.count(SearchQueryLog.id), func.count(SearchQueryLog.id).filter(zero))
+    total, zero_total, no_click_total = (
+        db.query(
+            func.count(SearchQueryLog.id),
+            func.count(SearchQueryLog.id).filter(zero),
+            func.count(SearchQueryLog.id).filter(no_click),
+        )
         .filter(in_period)
         .one()
     )
+
+    no_click_queries = [
+        {
+            "query": row.query,
+            "count": int(row.count),
+            "zero_results_count": int(row.zero_results_count),
+            "last_at": row.last_at,
+        }
+        for row in db.query(
+            SearchQueryLog.query.label("query"),
+            func.count(SearchQueryLog.id).label("count"),
+            func.count(SearchQueryLog.id).filter(zero).label("zero_results_count"),
+            func.max(SearchQueryLog.created_at).label("last_at"),
+        )
+        .filter(in_period, no_click)
+        .group_by(SearchQueryLog.query)
+        .order_by(func.count(SearchQueryLog.id).desc(), func.max(SearchQueryLog.created_at).desc())
+        .limit(TOP_LIMIT)
+        .all()
+    ]
 
     top_queries = [
         {
@@ -172,6 +198,8 @@ def get_search_log_report(db: Session, *, period_days: int = 30) -> dict[str, An
         "period_days": period_days,
         "total": int(total or 0),
         "zero_result_total": int(zero_total or 0),
+        "no_click_total": int(no_click_total or 0),
+        "no_click_queries": no_click_queries,
         "top_queries": top_queries,
         "zero_result_queries": zero_result_queries,
         "clicks_by_kind": clicks_by_kind,

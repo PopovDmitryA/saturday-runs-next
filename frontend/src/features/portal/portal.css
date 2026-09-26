@@ -60,17 +60,31 @@
   color: var(--accent-indigo);
 }
 
+/* Ссылки разделов — из дерева навигации (PortalHeader). Одна строка, без
+   переносов: раньше «Личный кабинет» и «О проекте» ломались на две строки.
+   Если места всё же не хватит (крупный шрифт, масштаб), ряд прокручивается
+   сам, а не распирает страницу вбок. */
 .portal-header-nav {
+  flex: 0 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.portal-header-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .portal-header-link {
+  flex: none;
   font-size: 13.5px;
   font-weight: 600;
   color: var(--text-3);
   text-decoration: none;
+  white-space: nowrap;
   padding: 7px 12px;
   border-radius: 8px;
 }
@@ -81,22 +95,27 @@
   text-decoration: none;
 }
 
-/* текущий раздел (на главной — «Главная») */
+.portal-header-link:focus-visible {
+  outline: 2px solid var(--accent-indigo);
+  outline-offset: -2px;
+}
+
+/* текущий раздел — тот же, что подсвечен в рельсе и нижней панели */
 .portal-header-link-current {
   background: var(--bg-muted);
   color: var(--text);
 }
 
 .portal-header-actions {
+  flex: none;
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-/* ник залогиненного — вместо кнопки «Войти», ведёт в личный кабинет.
-   Единственный ужимаемый элемент шапки: длинный ник обрезается многоточием,
-   не выталкивая бургер за край экрана. */
+/* Кнопка аккаунта (nav/AccountMenu) — единственный ужимаемый элемент шапки:
+   длинный ник обрезается многоточием. */
 .portal-header-user {
   flex: 0 1 auto;
   min-width: 44px;
@@ -120,71 +139,126 @@
   text-decoration: none;
 }
 
-/* бургер-кнопка мобильного меню — на десктопе скрыта */
-.portal-header-burger {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
+.portal-header-login {
   flex: none;
+  white-space: nowrap;
 }
 
-.portal-header-burger svg {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
+/* «Перейти к содержимому» — первая остановка клавиатуры на странице: без неё
+   до контента было 30 с лишним нажатий Tab (шапка, рельс, колонка). Видна
+   только в фокусе. */
+.skip-link {
+  position: absolute;
+  z-index: 100;
+  left: 12px;
+  top: -60px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 2px solid var(--accent-indigo);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
 }
 
-.portal-header-nav-mobile {
-  display: none;
+.skip-link:focus {
+  top: 10px;
 }
 
-@media (max-width: 560px) {
+/* Ссылки разделов — только на компьютере и только там, где нет рельса: рядом
+   с рельсом это было второе меню разделов (решение Дмитрия 26.09.2026). На
+   телефоне и планшете разделы — в нижней панели, которая появляется с той же
+   ширины 900px; раньше ссылки прятались только до 560px, и на 561–900 шапка
+   вылезала за экран вместе с поиском и входом. */
+@media (min-width: 901px) {
+  html.has-site-rail .portal-header-nav {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
   .portal-header-nav {
     display: none;
   }
+}
 
-  .portal-header-burger {
-    display: inline-flex;
+/* Ноутбук без рельса (главная, «О проекте», блог): рядом со ссылками места
+   мало — прячем подпись логотипа, слово «Поиск» и имя в кнопке аккаунта
+   (остаются лупа и аватар). Так шапка влезает от 901px даже с «Оргкабинетом». */
+@media (min-width: 901px) and (max-width: 1320px) {
+  html:not(.has-site-rail) .portal-header-inner {
+    gap: 14px;
   }
 
+  html:not(.has-site-rail) .portal-brand-tagline,
+  html:not(.has-site-rail) .portal-header-search-label,
+  html:not(.has-site-rail) .portal-header-search-kbd,
+  html:not(.has-site-rail) .portal-header .account-menu-name {
+    display: none;
+  }
+
+  html:not(.has-site-rail) .portal-header-search {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  html:not(.has-site-rail) .portal-header-link {
+    padding: 7px 8px;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1060px) {
+  html:not(.has-site-rail) .portal-header-nav {
+    gap: 0;
+  }
+
+  html:not(.has-site-rail) .portal-header-link {
+    padding: 7px 7px;
+  }
+}
+
+/* Узкий экран: подпись логотипа в три строки занимала полшапки (mob-11) —
+   прячем её, логотип остаётся. */
+@media (max-width: 600px) {
+  .portal-brand-tagline {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
   .portal-header-inner {
     gap: 12px;
   }
 
-  /* на телефоне декоративный пульс логотипа прячем — освобождает место
-     под ник залогиненного, иначе бургер выталкивается за край */
+  /* на телефоне декоративный пульс логотипа прячем — освобождает место */
   .portal-brand-pulse {
     display: none;
   }
 
-  .portal-header-user {
-    /* Ник приоритетнее подписи бренда: держим читаемую ширину, а таглайн
-       слева пусть переносится на новые строки. */
-    min-width: 90px;
-    max-width: 120px;
-    font-size: 12.5px;
-    padding: 4px 9px;
+  /* Кнопка аккаунта — кружок с аватаркой или инициалами: обрезанное
+     «Дмитрий П» выглядело ошибкой вёрстки, а путь в кабинет и так есть в
+     нижней панели. Меню открывается по нажатию, как и на компьютере. */
+  .portal-header .account-menu-button.portal-header-user {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    padding: 3px;
+    justify-content: center;
+    border-radius: 999px;
   }
 
-  .portal-header-nav-mobile {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 8px 20px 14px;
-    border-top: 1px solid var(--border);
-    background: var(--surface);
+  .portal-header .account-menu-chevron {
+    display: none;
   }
 
-  .portal-header-nav-mobile .portal-header-link {
-    padding: 10px 8px;
+  .portal-header .account-menu-button .portal-header-user-avatar,
+  .portal-header .account-menu-button .account-menu-initials {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    font-size: 11px;
   }
 }
 
@@ -1249,18 +1323,12 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
   line-height: 1;
+  white-space: nowrap;
 }
 
 /* ---------- итерация 8 ---------- */
-
-/* дизейбл nav-ссылок */
-.portal-header-link.disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  pointer-events: none;
-}
 
 /* группировочный бокс «последняя неделя»: синяя заливка вместо нейтральной —
    чтобы сразу читалось, что это ДРУГОЙ срез (одна неделя), а не общий период */

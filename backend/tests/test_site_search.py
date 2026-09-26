@@ -222,6 +222,8 @@ def test_registered_user_merges_platforms(db_session: Session, no_locations: Non
         "avatar_url": user.avatar_url,
         "total_runs": 5,
         "total_volunteering": 0,
+        # Пять пробежек по субботам с 03.01.2026: последняя — пятая неделя.
+        "last_run_date": date(2026, 1, 3) + timedelta(days=7 * 2),
         "top_location_name": "Главный парк",
         "platform_codes": ["five_verst", "s95"],
     }
@@ -374,7 +376,17 @@ def test_api_response_has_no_external_profile_urls(
     assert [person["kind"] for person in body["people"]] == ["registered", "participant"]
     assert "profile_url" not in response.text
     assert "example.org" not in response.text
-    assert set(body) == {"query", "corrected_query", "locations", "people", "people_truncated"}
+    assert set(body) == {
+        "query",
+        "corrected_query",
+        "locations",
+        "locations_total",
+        "locations_all",
+        "locations_similar",
+        "people",
+        "people_truncated",
+        "people_place",
+    }
 
 
 def _log_rows(db_session: Session) -> list[SearchQueryLog]:
@@ -461,3 +473,232 @@ def test_admin_search_log_report(client: TestClient, db_session: Session) -> Non
     body = response.json()
     assert body["total"] == 6
     assert body["clicks_by_kind"]["none"] == 4
+
+
+# ---------------------------------------------------------------------------
+# «Е» и «ё», совпадения с начала слова (ревью 25.09.2026)
+# ---------------------------------------------------------------------------
+
+
+def test_yo_and_ye_find_each_other(db_session: Session, no_locations: None) -> None:
+    five = _platform(db_session, "five_verst")
+    _participant(db_session, five, "Василий ЁЖИКОВЁНКОВ")
+    _participant(db_session, five, "Пётр ЕЖИКОВЕНКОВ")
+
+    for query in ("Ёжиковёнков", "ежиковенков", "ЕЖИКОВЁНКОВ"):
+        names = {person["display_name"] for person in site_search(db_session, query)["people"]}
+        assert names == {"Василий Ёжиковёнков", "Пётр Ежиковенков"}, query
+    # И в имени тоже: «Петр» находит «Пётра».
+    assert [person["display_name"] for person in site_search(db_session, "петр ежиковенков")["people"]] == [
+        "Пётр Ежиковенков"
+    ]
+
+
+def test_yo_in_registered_user_name(db_session: Session, no_locations: None) -> None:
+    five = _platform(db_session, "five_verst")
+    participant = _participant(db_session, five, "Артём СЕМЁНОВИЧЕВ")
+    user = _user(db_session, display_name="Артём Семёновичев")
+    _link(db_session, user, participant)
+
+    people = site_search(db_session, "семеновичев артем")["people"]
+
+    assert [person["kind"] for person in people] == ["registered"]
+
+
+def test_word_start_matches_go_first(db_session: Session, no_locations: None) -> None:
+    five = _platform(db_session, "five_verst")
+    # Из середины слова — и с самыми свежими пробежками: раньше они и стояли первыми.
+    for name in ("Хакимоглызов Рустам", "Екимоглыз Анна"):
+        _runs(db_session, five, _participant(db_session, five, name), 5)
+    _participant(db_session, five, "Кимоглыз Юлия")
+    _participant(db_session, five, "Юлия Кимоглызовская")
+
+    names = [person["display_name"] for person in site_search(db_session, "кимоглыз")["people"]]
+
+    assert names[:2] == ["Кимоглыз Юлия", "Юлия Кимоглызовская"]
+    assert set(names[2:]) == {"Хакимоглызов Рустам", "Екимоглыз Анна"}
+
+
+def test_word_start_ordering_happens_before_candidate_limit(
+    db_session: Session, no_locations: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Кандидатов по имени берём ограниченно — нужный человек не должен выпасть за лимит."""
+    monkeypatch.setattr(site_search_service, "PEOPLE_CANDIDATE_LIMIT", 2)
+    five = _platform(db_session, "five_verst")
+    for index in range(4):
+        _participant(db_session, five, f"Залевоглаз{index} Мидлтест")
+    _participant(db_session, five, "Левоглаз Нужныйтест")
+
+    names = [person["display_name"] for person in site_search(db_session, "левоглаз")["people"]]
+
+    assert names[0] == "Левоглаз Нужныйтест"
+
+
+def test_participant_row_has_last_run_date(db_session: Session, no_locations: None) -> None:
+    five = _platform(db_session, "five_verst")
+    participant = _participant(db_session, five, "Датов Последнийстарт")
+    _runs(db_session, five, participant, 3)
+
+    person = site_search(db_session, "последнийстарт")["people"][0]
+
+    assert person["last_run_date"] == date(2026, 1, 17)
+
+
+# ---------------------------------------------------------------------------
+# Локации: города, сокращения, регионы, «парк», похожие названия
+# ---------------------------------------------------------------------------
+
+
+def _catalog(monkeypatch: pytest.MonkeyPatch, extra: list[dict] | None = None) -> None:
+    def entry(slug: str, name: str, city: str, region: str, country: str = "Россия", events: int = 10, **flags) -> dict:
+        return {
+            "slug": slug,
+            "name": name,
+            "city": city,
+            "region": region,
+            "country": country,
+            "platform_codes": ["five_verst"],
+            "events_count": events,
+            "finishers_total": events * 10,
+            **flags,
+        }
+
+    entries = [
+        entry("sokolniki", "Сокольники", "Москва", "Москва", events=200),
+        entry("kuzminki", "Кузьминки", "Москва", "Москва", events=150),
+        entry("kotelniki", "Котельники Кузьминский", "Котельники", "Московская", events=50),
+        entry("gorky", "Парк Горького", "Москва", "Москва", events=100),
+        entry("butovo", "Бутово", "Москва", "Москва", events=40),
+        entry("tomsk", "Томск Лагерный сад", "Томск", "Томская", events=60),
+        entry("piter", "Пулковский парк", "Санкт-Петербург", "Санкт-Петербург", events=80),
+        entry("minsk", "Минск Лошица", "Минск", "Минская", country="Беларусь", events=20),
+        entry("mytishchi", "Мытищи Центральный парк", "Мытищи", "Московская", events=30),
+        entry("paused", "Старый сквер", "Москва", "Москва", events=5, is_paused=True),
+        *(extra or []),
+    ]
+    monkeypatch.setattr(site_search_service, "_location_entries", lambda _db: entries)
+
+
+def _slugs(query: str) -> list[str]:
+    return [item["slug"] for item in search_locations(None, query)]  # type: ignore[arg-type]
+
+
+def test_locations_by_city_aliases(monkeypatch: pytest.MonkeyPatch) -> None:
+    _catalog(monkeypatch)
+    assert _slugs("спб") == ["piter"]
+    assert _slugs("питер") == ["piter"]
+    assert _slugs("санкт петербург") == ["piter"]
+    # «мск» — это Москва, а не Томск.
+    assert "tomsk" not in _slugs("мск")
+    assert _slugs("мск")[0] == "sokolniki"
+
+
+def test_locations_by_region_and_country(monkeypatch: pytest.MonkeyPatch) -> None:
+    _catalog(monkeypatch)
+    assert set(_slugs("подмосковье")) == {"kotelniki", "mytishchi"}
+    assert set(_slugs("московская область")) == {"kotelniki", "mytishchi"}
+    assert _slugs("беларусь") == ["minsk"]
+    assert _slugs("белоруссия") == ["minsk"]
+
+
+def test_locations_ignore_park_word_and_stem(monkeypatch: pytest.MonkeyPatch) -> None:
+    _catalog(monkeypatch)
+    assert _slugs("бутово парк") == ["butovo"]
+    assert _slugs("горький") == ["gorky"]
+    assert _slugs("сокольниках") == ["sokolniki"]
+
+
+def test_locations_word_start_beats_middle_of_word(monkeypatch: pytest.MonkeyPatch) -> None:
+    _catalog(monkeypatch)
+    # «Минск» — не «Кузьминский»: из середины слова локации не ищем вовсе.
+    assert _slugs("минск") == ["minsk"]
+    assert _slugs("зьминск") == []
+
+
+def test_abbreviation_does_not_search_people(monkeypatch: pytest.MonkeyPatch, db_session: Session) -> None:
+    _catalog(monkeypatch)
+    five = _platform(db_session, "five_verst")
+    _participant(db_session, five, "Сергей МСКИНСКИЙ")
+    page = site_search(db_session, "мск")
+    assert page["people"] == []
+    assert page["locations"][0]["slug"] == "sokolniki"
+
+
+def test_locations_all_link_to_catalog(monkeypatch: pytest.MonkeyPatch, db_session: Session) -> None:
+    extra = [
+        {"slug": f"msk-{index}", "name": f"Москворецкий {index}", "city": "Москва", "region": "Москва",
+         "country": "Россия", "platform_codes": ["s95"], "events_count": 1, "finishers_total": 1}
+        for index in range(8)
+    ]
+    _catalog(monkeypatch, extra)
+
+    page = site_search(db_session, "москва")
+
+    assert len(page["locations"]) == 8
+    assert page["locations_total"] == 13
+    # Каталог по умолчанию не показывает локации на паузе — и счётчик тоже.
+    assert page["locations_all"] == {"label": "Москва", "query": "Москва", "count": 12}
+    assert page["locations"][0]["slug"] == "sokolniki"
+
+
+def test_locations_all_link_names_region(monkeypatch: pytest.MonkeyPatch, db_session: Session) -> None:
+    extra = [
+        {"slug": f"mo-{index}", "name": f"Подмосковный {index}", "city": "Химки", "region": "Московская",
+         "country": "Россия", "platform_codes": ["s95"], "events_count": 1, "finishers_total": 1}
+        for index in range(8)
+    ]
+    _catalog(monkeypatch, extra)
+
+    page = site_search(db_session, "подмосковье")
+
+    assert page["locations_all"] == {"label": "Московская область", "query": "Московская", "count": 10}
+
+
+def test_similar_location_names_when_nothing_found(monkeypatch: pytest.MonkeyPatch, db_session: Session) -> None:
+    _catalog(monkeypatch)
+
+    page = site_search(db_session, "сокольнеки")
+
+    assert page["locations_similar"] is True
+    assert page["locations"][0]["slug"] == "sokolniki"
+    # Точное совпадение — не «похожее».
+    assert site_search(db_session, "сокольники")["locations_similar"] is False
+
+
+def test_people_by_name_and_city(monkeypatch: pytest.MonkeyPatch, db_session: Session) -> None:
+    _catalog(monkeypatch)
+    five = _platform(db_session, "five_verst")
+    here = _participant(db_session, five, "Городов Искомыйместный")
+    there = _participant(db_session, five, "Городов Искомыйместный")
+    _runs(db_session, five, here, 2, location_name="Какой-то парк", city="Мытищи")
+    _runs(db_session, five, there, 2, location_name="Другой парк", city="Томск")
+
+    page = site_search(db_session, "городов искомыйместный мытищи")
+
+    assert page["people_place"] == "Мытищи"
+    assert len(page["people"]) == 1
+    assert page["people"][0]["top_location_city"] == "Мытищи"
+
+
+# ---------------------------------------------------------------------------
+# Журнал: «искали и никуда не перешли»
+# ---------------------------------------------------------------------------
+
+
+def test_search_log_report_no_click_queries(db_session: Session) -> None:
+    db_session.query(SearchQueryLog).delete()
+    for payload in (
+        {"query": "погода", "people_found": 11},
+        {"query": "Погода", "pages_found": 1},
+        {"query": "чего нет"},
+        {"query": "сокольники", "locations_found": 1, "clicked_kind": "location", "clicked_target": "/locations/sokolniki"},
+    ):
+        assert record_search(db_session, payload, is_authed=False)
+
+    report = get_search_log_report(db_session, period_days=30)
+
+    assert report["no_click_total"] == 3
+    assert [(item["query"], item["count"], item["zero_results_count"]) for item in report["no_click_queries"]] == [
+        ("погода", 2, 0),
+        ("чего нет", 1, 1),
+    ]

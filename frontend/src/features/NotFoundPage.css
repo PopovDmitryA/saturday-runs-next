@@ -1,0 +1,43 @@
+/* Страница 404 в каркасе раздела (PortalSectionShell без рельса). */
+
+.not-found {
+  max-width: 640px;
+  margin: 24px auto 0;
+}
+
+.not-found .section-title {
+  margin-top: 0;
+}
+
+.not-found code {
+  overflow-wrap: anywhere;
+}
+
+.not-found-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0 4px;
+}
+
+.not-found-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.not-found-search-icon {
+  flex: none;
+  display: inline-flex;
+  width: 17px;
+  height: 17px;
+}
+
+.not-found-search-icon svg {
+  width: 100%;
+  height: 100%;
+}

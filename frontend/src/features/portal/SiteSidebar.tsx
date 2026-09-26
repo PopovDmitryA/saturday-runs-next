@@ -6,15 +6,23 @@
  * жил подпунктом «Локаций».
  *
  * Состав пунктов — не здесь, а в nav/siteNav.ts: оттуда же рисуются нижняя
- * панель телефона, полоса страниц раздела, шторка «Меню» и поиск по страницам.
+ * панель телефона, полоса страниц раздела, шторка «Меню», ссылки шапки,
+ * подвал и поиск по страницам.
+ *
+ * Пока рельс на странице, на <html> висит has-site-rail: шапка по нему прячет
+ * свои ссылки разделов — два меню одного уровня на одном экране путали, а
+ * шапка с ними не влезала в ноутбук (решение Дмитрия 26.09.2026). Свёрнутая
+ * колонка ставит site-col-collapsed: тогда над контентом появляется та же
+ * полоса страниц раздела, что на телефоне (см. nav/siteNavDesktop.css), —
+ * раньше в свёрнутом виде страницы раздела пропадали совсем.
  *
  * Интерфейс компонента прежний (active, location, user, extraGroup…), поэтому
  * три десятка страниц менять не пришлось.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { logout, type User } from "../../lib/api";
-import { PORTAL_DISPLAY_NAME_SETTINGS_HREF, PORTAL_LOGIN_HREF, cabinetTabHref } from "../../lib/portalRoutes";
-import { ImageLightbox } from "../../components/ImageLightbox";
+import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import { userLabel } from "../../lib/userLabel";
 import { clearCachedUser, useOptionalUser } from "../../lib/useOptionalUser";
 import {
   CABINET_ICONS,
@@ -27,19 +35,22 @@ import {
   PROJECT_ICON,
   RATINGS_ICON,
   RESULTS_ICON,
-  SEARCH_ICON,
   SETTINGS_ICON,
 } from "./nav/navIcons";
 import { resolveNavState, type SiteSidebarActive } from "./nav/navState";
-import { OrganizerSwitcher } from "./nav/OrganizerSwitcher";
-import { openSiteSearch } from "./nav/siteSearchBus";
-import { isLinkCurrent, type CabinetTabKey, type NavSection, type NavSectionKey, type NavPlace } from "./nav/siteNav";
+import { forgetOrganizer, rememberOrganizerPlace } from "./nav/organizerMemory";
+import { OrganizerSwitcher, useOrganizerLocations } from "./nav/OrganizerSwitcher";
+import { canSeeOrganizer, isLinkCurrent, type NavSection, type NavSectionKey, type NavPlace } from "./nav/siteNav";
 import "./cabinet/cabinet.css";
 import "./nav/siteNav.css";
+import "./nav/siteNavDesktop.css";
 
 export { icon } from "./nav/navIcons";
 export { isCabinetTab, type SiteSidebarActive } from "./nav/navState";
 export type { CabinetTabKey } from "./nav/siteNav";
+// Имя пользователя нужно и герою дашборда; живёт в lib/userLabel, отсюда —
+// ради старых импортов.
+export { userLabel };
 
 /** Иконки вкладок кабинета — ими же рисует вкладки чужой профиль. */
 export const NAV_ICONS = CABINET_ICONS;
@@ -54,93 +65,30 @@ export const SECTION_ICONS: Record<NavSectionKey, ReactNode> = {
   account: SETTINGS_ICON,
 };
 
-// Экспорт: имя пользователя нужно и герою дашборда.
-// display_name с 25.08.2026 считается на сервере из профилей беговых систем,
-// поэтому фронту выбирать больше не из чего — только запасные варианты на
-// случай, если сервер имени так и не нашёл.
-export function userLabel(user: User): string {
-  const name = user.display_name?.trim();
-  if (name) {
-    return name;
-  }
-  if (user.telegram_username) {
-    return `@${user.telegram_username.replace(/^@/, "")}`;
-  }
-  return `Участник ${user.telegram_id ?? user.id.slice(0, 8)}`;
-}
-
-function userInitials(label: string): string {
-  const clean = label.replace(/^@/, "").trim();
-  const parts = clean.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  return clean.slice(0, 2).toUpperCase();
-}
-
-/**
- * Карточка участника: аватар, имя и «✎» — правка отображаемого имени.
- * Экспортируется, потому что на телефоне колонки нет, и кабинет рисует эту же
- * карточку над контентом (иначе имя правилось только с компьютера — баг,
- * 29.07.2026).
- */
-export function CabinetUserCard({ initialUser }: { initialUser: User }) {
-  const [avatarZoomed, setAvatarZoomed] = useState(false);
-  const user = initialUser;
-  const label = userLabel(user);
-
-  // Аватарка кликабельна: открывает оригинал без пережатия (просьба Дмитрия
-  // 29.07.2026 — «по клику на аватарку должно в сайдбаре открываться»).
-  const avatar = user.avatar_url ? (
-    <>
-      <button
-        type="button"
-        className="portal-cab-user-avatar portal-cab-user-avatar-button"
-        onClick={() => setAvatarZoomed(true)}
-        aria-label="Открыть аватарку"
-        title="Открыть аватарку"
-      >
-        <img src={user.avatar_url} alt="" />
-      </button>
-      {avatarZoomed && (
-        <ImageLightbox
-          src={user.avatar_full_url || user.avatar_url}
-          alt={label}
-          onClose={() => setAvatarZoomed(false)}
-        />
-      )}
-    </>
-  ) : (
-    <span className="portal-cab-user-avatar" aria-hidden="true">
-      {userInitials(label)}
-    </span>
-  );
-
-  return (
-    <div className="portal-cab-user">
-      {avatar}
-      <div className="portal-cab-user-info">
-        {/* Имя — ссылка в обзор кабинета (просьба Дмитрия 26.07.2026). */}
-        <a className="portal-cab-user-name" href={cabinetTabHref(user, "dashboard")} title={label}>
-          {label}
-        </a>
-        {/* Настройка имени живёт в «Настройках» (решение Дмитрия 25.08.2026). */}
-        <a
-          className="portal-cab-user-edit"
-          href={PORTAL_DISPLAY_NAME_SETTINGS_HREF}
-          aria-label="Изменить имя"
-          title="Изменить имя"
-        >
-          ✎
-        </a>
-      </div>
-    </div>
-  );
-}
-
 // Свёрнута ли колонка (остаётся только рельс) — помнится между страницами:
-// широким таблицам протоколов и рейтингов место нужнее, чем меню.
+// широким таблицам протоколов и рейтингов место нужнее, чем меню. Страницы
+// раздела при этом не пропадают: их показывает полоса над контентом.
 const COLUMN_COLLAPSED_KEY = "portalCabSidebarCollapsed";
+
+// Метки на <html> ставят несколько компонентов (и старый экземпляр при
+// переходе снимает свою уже после того, как новый поставил) — считаем, сколько
+// раз метка нужна, и снимаем её только за последним.
+const htmlClassCounts = new Map<string, number>();
+
+function useHtmlClass(name: string, on: boolean): void {
+  // До отрисовки: иначе шапка на кадр показала бы ссылки разделов рядом с рельсом.
+  useLayoutEffect(() => {
+    if (!on) return;
+    const root = document.documentElement;
+    htmlClassCounts.set(name, (htmlClassCounts.get(name) ?? 0) + 1);
+    root.classList.add(name);
+    return () => {
+      const left = (htmlClassCounts.get(name) ?? 1) - 1;
+      htmlClassCounts.set(name, left);
+      if (left <= 0) root.classList.remove(name);
+    };
+  }, [name, on]);
+}
 
 export type SidebarExtraGroup = {
   /** Заголовок группы (например, имя участника на публичном профиле). */
@@ -149,7 +97,12 @@ export type SidebarExtraGroup = {
   avatarUrl?: string | null;
   /** Клик по заголовку: на публичном профиле имя ведёт на его главную. */
   onTitleClick?: () => void;
-  items: { key: string; label: string; icon?: ReactNode; active: boolean; onClick: () => void }[];
+  /**
+   * Пункты группы. С адресом (`href`) пункт — ссылка: открывается в новой
+   * вкладке, а диктор читает его как навигацию, а не как кнопку. Без адреса —
+   * кнопка с `onClick`.
+   */
+  items: { key: string; label: string; icon?: ReactNode; active: boolean; href?: string; onClick?: () => void }[];
 };
 
 export type SiteSidebarProps = {
@@ -158,29 +111,13 @@ export type SiteSidebarProps = {
   user?: User | null;
   /** Открытая локация (или локация кабинета организатора). */
   location?: NavPlace;
-  /** Превью ЛК: подменить адреса вкладок (?tab=…). */
-  hrefForTab?: (key: CabinetTabKey, defaultHref: string) => string;
-  /** Превью ЛК: скрыть служебные пункты и «Выйти». */
-  hideSecondaryNav?: boolean;
   /** Сообщить контейнеру о сворачивании (пересчёт офсета модалок в ЛК). */
   onCollapsedChange?: (collapsed: boolean) => void;
   /** Доп. группа вкладок текущей страницы (публичный профиль участника). */
   extraGroup?: SidebarExtraGroup;
 };
 
-function isMac(): boolean {
-  return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-}
-
-export function SiteSidebar({
-  active,
-  user: userProp,
-  location,
-  hrefForTab,
-  hideSecondaryNav = false,
-  onCollapsedChange,
-  extraGroup,
-}: SiteSidebarProps) {
+export function SiteSidebar({ active, user: userProp, location, onCollapsedChange, extraGroup }: SiteSidebarProps) {
   // Хук вызывается всегда (правила хуков); если user передан пропом — он главнее.
   const detectedUser = useOptionalUser();
   const user = userProp !== undefined ? userProp : detectedUser;
@@ -192,6 +129,9 @@ export function SiteSidebar({
       return false;
     }
   });
+
+  useHtmlClass("has-site-rail", true);
+  useHtmlClass("site-col-collapsed", collapsed);
 
   useEffect(() => {
     onCollapsedChange?.(collapsed);
@@ -209,30 +149,44 @@ export function SiteSidebar({
     });
   };
 
-  const { pathname, sections, current, organizerPlace } = resolveNavState({ active, user, location, hrefForTab });
-  // В рельсе — только места, куда ходят за статистикой: «О проекте» и
-  // аккаунт живут в шапке (см. inRail в siteNav.ts).
-  const visibleSections = sections.filter((section) =>
-    hideSecondaryNav ? section.key === "me" : section.inRail !== false,
+  const { pathname, sections, current, organizerPlace } = resolveNavState({ active, user, location });
+
+  // Список локаций организатора: ради имени открытой локации и ради того,
+  // чтобы «Оргкабинет» в рельсе перерисовался, когда список приедет (при
+  // одной локации он ведёт сразу в неё). Админу он нужен только в самом
+  // кабинете: у него это весь каталог.
+  const inOrganizer = current?.key === "organizer";
+  const organizerItems = useOrganizerLocations(
+    user && canSeeOrganizer(user) && (inOrganizer || !user.is_admin) ? user : null,
   );
+
+  // Открыл кабинет локации — «Оргкабинет» дальше ведёт прямо сюда.
+  const userId = user?.id ?? null;
+  const placeSlug = organizerPlace?.slug ?? null;
+  const placeName =
+    (placeSlug && organizerItems?.find((item) => item.slug === placeSlug)?.name) || organizerPlace?.name || null;
+  useEffect(() => {
+    if (userId && placeSlug) {
+      rememberOrganizerPlace(userId, { slug: placeSlug, name: placeName ?? placeSlug });
+    }
+  }, [userId, placeSlug, placeName]);
+
+  // В рельсе — только места, куда ходят за статистикой: «О проекте» и
+  // аккаунт живут в шапке (см. inRail в siteNav.ts). Поиска в рельсе нет с
+  // 26.09.2026: он один на сайт — в шапке.
+  const visibleSections = sections.filter((section) => section.inRail !== false);
   // Колонка чужого профиля показывает его вкладки; иначе — текущий раздел, а
-  // если раздела нет (например, 404) — свой кабинет.
+  // если раздела нет — свой кабинет.
   const columnSection = current ?? (extraGroup ? null : sections[0]);
+
+  const colRef = useRef<HTMLElement>(null);
+  useColumnScroll(colRef, `${pathname}|${collapsed}|${columnSection?.key ?? ""}`);
+
+  const collapseLabel = collapsed ? "Показать меню" : "Свернуть меню";
 
   return (
     <aside className={`site-nav${collapsed ? " site-nav-collapsed" : ""}`} aria-label="Навигация по сайту">
       <nav className="site-rail" aria-label="Разделы сайта">
-        {!hideSecondaryNav && (
-          <button
-            type="button"
-            className="site-rail-item site-rail-search"
-            onClick={() => openSiteSearch()}
-            title={`Поиск по сайту (${isMac() ? "⌘" : "Ctrl"}+K)`}
-          >
-            <span className="site-rail-icon">{SEARCH_ICON}</span>
-            <span className="site-rail-label">Поиск</span>
-          </button>
-        )}
         {visibleSections.map((section) => {
           const isCurrent = section.key === current?.key;
           return (
@@ -252,15 +206,22 @@ export function SiteSidebar({
           type="button"
           className="site-rail-item site-rail-collapse"
           onClick={toggleCollapsed}
-          aria-label={collapsed ? "Показать подразделы" : "Скрыть подразделы"}
-          title={collapsed ? "Показать подразделы" : "Скрыть подразделы — больше места таблицам"}
+          aria-expanded={!collapsed}
+          title={collapsed ? "Показать меню раздела" : "Свернуть меню — больше места таблицам"}
         >
           <span className="site-rail-icon">{collapsed ? CHEVRON_RIGHT_ICON : CHEVRON_LEFT_ICON}</span>
+          <span className="site-rail-label site-rail-collapse-label">{collapseLabel}</span>
         </button>
       </nav>
 
+      {/* Свёрнутая колонка не рисуется: страницы раздела (и вкладки чужого
+          профиля) показывает полоса SectionSubnav над контентом. */}
       {!collapsed && (
-        <div className="site-col">
+        <nav
+          className="site-col"
+          ref={colRef}
+          aria-label={columnSection ? `Страницы раздела «${columnSection.label}»` : `Страницы: ${extraGroup?.title ?? ""}`}
+        >
           {/* Карточки участника в колонке больше нет (25.09.2026): имя с
               аватаркой уже есть в шапке и открывает меню аккаунта, а без
               карточки заголовок раздела встаёт вровень с первым пунктом
@@ -278,13 +239,49 @@ export function SiteSidebar({
 
           {/* «Выйти» живёт в меню аккаунта в шапке; в колонке — только на
               страницах самого аккаунта (настройки, админка). */}
-          {user != null && !hideSecondaryNav && columnSection?.key === "account" && (
-            <LogoutButton className="site-col-logout" />
-          )}
-        </div>
+          {user != null && columnSection?.key === "account" && <LogoutButton className="site-col-logout" />}
+        </nav>
       )}
     </aside>
   );
+}
+
+/**
+ * Колонка на невысоком экране: при открытии страницы прокручиваем её к
+ * текущему пункту — сама по себе она стояла в начале, и «Регионы» или «Мы и
+ * соседи» на ноутбуке 1366×768 оказывались ниже края (desk-8). Прокручиваем
+ * только колонку, не страницу: scrollIntoView сдвинул бы и окно. Пока ниже
+ * есть пункты, внизу колонки — затухание (класс site-col-more).
+ */
+function useColumnScroll(colRef: RefObject<HTMLElement | null>, trigger: string): void {
+  useLayoutEffect(() => {
+    const col = colRef.current;
+    if (!col) return;
+    const active = col.querySelector<HTMLElement>('[aria-current="page"]');
+    if (active) {
+      const box = col.getBoundingClientRect();
+      const item = active.getBoundingClientRect();
+      // Снизу оставляем место под затухание, чтобы пункт не тонул в нём.
+      if (item.bottom > box.bottom - 28) {
+        col.scrollTop += item.bottom - box.bottom + 40;
+      } else if (item.top < box.top) {
+        col.scrollTop -= box.top - item.top + 8;
+      }
+    }
+    const update = () => {
+      col.classList.toggle("site-col-more", col.scrollHeight - col.scrollTop - col.clientHeight > 2);
+    };
+    update();
+    col.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    observer?.observe(col);
+    return () => {
+      col.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      observer?.disconnect();
+    };
+  }, [colRef, trigger]);
 }
 
 function SectionColumn({
@@ -301,7 +298,7 @@ function SectionColumn({
   if (section.key === "me" && user === null) {
     return (
       <div className="site-col-section">
-        <div className="site-col-title">{section.label}</div>
+        <h2 className="site-col-title">{section.label}</h2>
         <p className="site-col-hint">
           Войдите, чтобы видеть свои пробежки, волонтёрства, достижения и карту локаций.
         </p>
@@ -311,29 +308,38 @@ function SectionColumn({
       </div>
     );
   }
+  // Заголовок раздела — ссылка, только если на его адрес не ведёт ни один
+  // пункт ниже: иначе клавиатура проходила бы одну и ту же страницу дважды
+  // («Кабинет» и «Обзор», «Рейтинги» и «Все рейтинги»).
+  const titleIsItem = section.groups.some((group) => group.items.some((link) => link.href === section.href));
   return (
     <div className="site-col-section">
       {organizerPlace ? (
         <OrganizerSwitcher user={user} place={organizerPlace} variant="column" />
+      ) : titleIsItem ? (
+        <h2 className="site-col-title">{section.label}</h2>
       ) : (
-        <a className="site-col-title" href={section.href}>
-          {section.label}
-        </a>
+        <h2 className="site-col-title">
+          <a href={section.href}>{section.label}</a>
+        </h2>
       )}
       {section.groups.map((group) => (
         <div key={group.key} className={`site-col-group${group.context && section.key === "locations" ? " site-col-group-context" : ""}`}>
           {group.title && <div className="site-col-group-title">{group.title}</div>}
           {group.items.map((link) => {
             const isCurrent = isLinkCurrent(link, pathname);
+            const text = link.colLabel ?? link.label;
             return (
               <a
                 key={link.key}
                 href={link.href}
                 className={`site-col-item${isCurrent ? " active" : ""}${link.tone === "admin" ? " site-col-item-admin" : ""}`}
                 aria-current={isCurrent ? "page" : undefined}
+                // Короткая подпись — полное имя во всплывающей подсказке.
+                title={text !== link.label ? link.label : undefined}
               >
                 {link.icon && <span className="site-col-item-icon">{link.icon}</span>}
-                <span className="site-col-item-label">{link.label}</span>
+                <span className="site-col-item-label">{text}</span>
               </a>
             );
           })}
@@ -361,18 +367,36 @@ function ExtraGroupBlock({ group }: { group: SidebarExtraGroup }) {
       ) : (
         <div className="site-col-extra-head">{head}</div>
       )}
-      {group.items.map((item) => (
-        <button
-          key={item.key}
-          type="button"
-          onClick={item.onClick}
-          className={`site-col-item${item.active ? " active" : ""}`}
-          aria-current={item.active ? "page" : undefined}
-        >
-          {item.icon && <span className="site-col-item-icon">{item.icon}</span>}
-          <span className="site-col-item-label">{item.label}</span>
-        </button>
-      ))}
+      {group.items.map((item) => {
+        const className = `site-col-item${item.active ? " active" : ""}`;
+        const body = (
+          <>
+            {item.icon && <span className="site-col-item-icon">{item.icon}</span>}
+            <span className="site-col-item-label">{item.label}</span>
+          </>
+        );
+        return item.href ? (
+          <a
+            key={item.key}
+            href={item.href}
+            onClick={item.onClick}
+            className={className}
+            aria-current={item.active ? "page" : undefined}
+          >
+            {body}
+          </a>
+        ) : (
+          <button
+            key={item.key}
+            type="button"
+            onClick={item.onClick}
+            className={className}
+            aria-current={item.active ? "page" : undefined}
+          >
+            {body}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -383,6 +407,9 @@ export function LogoutButton({ className }: { className?: string }) {
       await logout();
     } finally {
       clearCachedUser();
+      // Роль и локации организатора — тоже личное: следующему, кто войдёт в
+      // этом браузере, «Оргкабинет» чужого не покажет.
+      forgetOrganizer();
       window.location.href = PORTAL_LOGIN_HREF;
     }
   };

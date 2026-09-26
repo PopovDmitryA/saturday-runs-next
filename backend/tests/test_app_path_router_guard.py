@@ -53,6 +53,10 @@ def test_direct_push_state_callers_are_known() -> None:
         "features/portal/PortalUpdatesPage.tsx",  # страницы «Обновлений»
         "lib/historyEntry.ts",  # сама обёртка
         "hooks/useAppPath.ts",  # перехват кликов по ссылкам
+        # Окна поверх страницы («Меню», поиск): переход по ссылке из окна идёт
+        # через обёртку (роутер слышит onEntryChange), а запись-заглушка окна —
+        # сырым History.prototype.pushState на тот же адрес, без смены ключа.
+        "features/portal/nav/useOverlayHistory.ts",
     }
     root = _frontend_dir()
     found = {

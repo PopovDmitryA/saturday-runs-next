@@ -2,47 +2,69 @@
  * Поиск по сайту (решение Дмитрия 23.09.2026: «делаем сразу»).
  *
  * Ищет три вещи: страницы сайта (по дереву навигации и синонимам — на
- * клиенте), локации и людей (на сервере, /api/search). Людей два вида:
+ * клиенте, см. pageSearch), локации и людей (на сервере, /api/search). Людей
+ * два вида:
  * - зарегистрированные на сайте с открытым профилем — строка со ссылкой;
- * - все остальные из протоколов (и с закрытым профилем) — карточка без
- *   перехода: пробежки, волонтёрства, самая частая локация и пометка
- *   «не зарегистрирован на сайте». Ссылок на профили в беговых системах нет
- *   намеренно: согласия этих людей на это у нас нет.
+ * - все остальные из протоколов (и с закрытым профилем) — только цифры, без
+ *   перехода. Ссылок на профили в беговых системах нет намеренно: согласия
+ *   этих людей на это у нас нет. Гостю над ними — одна строка «Нашли себя?
+ *   Войдите…»: это приглашение, а не ссылка на чужой профиль.
  *
- * Открывается кнопками в шапке и рельсе, ⌘K / Ctrl+K и «/». На телефоне —
- * на весь экран. Каждый поиск пишется в журнал (анонимно) — Дмитрию важно
- * видеть, что ищут и что не находится.
+ * Открывается кнопками в шапке и «Меню», ⌘K / Ctrl+K и «/» (по физической
+ * клавише — работает и в русской раскладке). На телефоне — на весь экран.
+ *
+ * Окно ведёт себя как отдельный экран: «Назад» закрывает его, не уводя со
+ * страницы (nav/useOverlayHistory), Tab ходит внутри окна, после закрытия
+ * фокус возвращается туда, где был (nav/useOverlayFocus). Переход по
+ * результату — как по обычной ссылке сайта: без перезагрузки, а Ctrl/⌘-клик
+ * и средняя кнопка открывают новую вкладку.
+ *
+ * Каждый поиск пишется в журнал (анонимно) — и когда человек закрыл окно,
+ * ушёл «Назад» или закрыл вкладку, ничего не выбрав: именно такие поиски —
+ * список недостающих синонимов (/admin/search).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   logSiteSearch,
   searchSite,
   type SiteSearchLocation,
   type SiteSearchPerson,
   type SiteSearchResponse,
+  type User,
 } from "../../../lib/api";
+import { formatDate } from "../../../lib/format";
+import { PORTAL_LOGIN_HREF } from "../../../lib/portalRoutes";
+import { getRecentLocations } from "../../../lib/recentLocations";
 import { useOptionalUser } from "../../../lib/useOptionalUser";
 import { PlatformBadge } from "../../../components/PlatformBadge";
-import { CLOSE_ICON, LOCATIONS_ICON, SEARCH_ICON } from "./navIcons";
+import type { SiteSearchOpenDetailWithMode, SiteSearchOpenMode } from "./findSelfSearch";
+import { CATALOG_ICON, CLOSE_ICON, LOCATIONS_ICON, SEARCH_ICON } from "./navIcons";
 import { resolveNavState } from "./navState";
-import { combineLocationPages, planSearch, type PageHit } from "./pageSearch";
+import { useOrganizerLocations } from "./OrganizerSwitcher";
+import {
+  combineLocationPages,
+  mergePageHits,
+  placelessLocationPages,
+  planSearch,
+  type KnownPlace,
+  type PageHit,
+  type SearchContext,
+} from "./pageSearch";
+import { buildSiteNav, type NavPlace, type NavSection } from "./siteNav";
 import { SITE_SEARCH_OPEN_EVENT } from "./siteSearchBus";
+import { useOverlayFocus } from "./useOverlayFocus";
+import { useOverlayHistory } from "./useOverlayHistory";
+import "./siteSearch.css";
 
 const DEBOUNCE_MS = 220;
 const MIN_SERVER_QUERY = 2;
+// Сколько локаций организатора разворачивать в инструменты для поиска: у
+// обычного организатора их одна-две, больше десятка — уже не организатор.
+const ORGANIZER_PLACES_LIMIT = 12;
 
 type ClickKind = "page" | "location" | "person";
 
-type Selectable =
-  | { kind: "page"; hit: PageHit }
-  | { kind: "location"; location: SiteSearchLocation }
-  | { kind: "person"; person: Extract<SiteSearchPerson, { kind: "registered" }> };
-
-function selectableHref(item: Selectable): string {
-  if (item.kind === "page") return item.hit.href;
-  if (item.kind === "location") return item.location.href;
-  return item.person.href;
-}
+type Selectable = { kind: ClickKind; href: string };
 
 function isMobileViewport(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches;
@@ -64,7 +86,10 @@ function plural(n: number, one: string, few: string, many: string): string {
 function personStats(person: SiteSearchPerson): string {
   const runs = `${person.total_runs} ${plural(person.total_runs, "пробежка", "пробежки", "пробежек")}`;
   const vol = `${person.total_volunteering} ${plural(person.total_volunteering, "волонтёрство", "волонтёрства", "волонтёрств")}`;
-  return `${runs} · ${vol}`;
+  // Однофамильцы упорядочены по последнему старту — без даты на экране
+  // порядок выглядел случайным.
+  const last = person.last_run_date ? ` · последний старт ${formatDate(person.last_run_date)}` : "";
+  return `${runs} · ${vol}${last}`;
 }
 
 // «Барнаул (Барнаул)» и «Королёв (Королёв)» читаются как опечатка: город
@@ -79,6 +104,53 @@ function initials(name: string): string {
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
+// Пока страница локации не загрузилась, дерево знает только адрес — и
+// подписывало бы «Погода · sokolniki». Служебную латиницу не показываем.
+const SLUG_LIKE = /^[a-z0-9-]+$/;
+
+function withReadablePlaces(sections: NavSection[]): NavSection[] {
+  return sections.map((section) => ({
+    ...section,
+    groups: section.groups.map((group) =>
+      group.context && group.title && SLUG_LIKE.test(group.title) ? { ...group, title: "Эта локация" } : group,
+    ),
+  }));
+}
+
+/** Открытая сейчас локация — из дерева навигации (группа страниц локации). */
+function currentPlace(sections: NavSection[]): NavPlace | null {
+  const group = sections.find((section) => section.key === "locations")?.groups.find((item) => item.key === "place");
+  const href = group?.items[0]?.href;
+  const match = href?.match(/^\/locations\/([^/]+)/);
+  if (!group || !match) return null;
+  let slug = match[1];
+  try {
+    slug = decodeURIComponent(slug);
+  } catch {
+    // битый адрес — оставляем как есть
+  }
+  return { slug, name: group.title && !SLUG_LIKE.test(group.title) ? group.title : "" };
+}
+
+/**
+ * Где искать «погоду» без названия локации: открытая сейчас, своя (из
+ * профиля, User.home_location), последняя открытая в этом браузере.
+ */
+function knownPlaces(sections: NavSection[], user: User | null | undefined): KnownPlace[] {
+  const out: KnownPlace[] = [];
+  const push = (place: NavPlace | null | undefined, why: KnownPlace["why"]) => {
+    if (!place?.slug || out.some((item) => item.slug === place.slug)) return;
+    out.push({ slug: place.slug, name: place.name, why });
+  };
+  push(currentPlace(sections), "current");
+  push(user?.home_location ?? null, "home");
+  push(
+    getRecentLocations().find((place) => !out.some((item) => item.slug === place.slug)),
+    "recent",
+  );
+  return out;
+}
+
 type Pending = {
   query: string;
   corrected: string | null;
@@ -90,21 +162,26 @@ type Pending = {
 export function SiteSearchDialog() {
   const user = useOptionalUser();
   const [open, setOpen] = useState(false);
+  const [openSeq, setOpenSeq] = useState(0);
+  const [mode, setMode] = useState<SiteSearchOpenMode | null>(null);
   const [query, setQuery] = useState("");
   const [response, setResponse] = useState<SiteSearchResponse | null>(null);
   const [responseFor, setResponseFor] = useState("");
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const [selected, setSelected] = useState(0);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
   // Последний «устоявшийся» поиск, ещё не записанный в журнал. Пишем, когда
-  // человек начал другой поиск, выбрал результат или закрыл окно — а не на
-  // каждую букву, иначе журнал забьётся обрывками «Ива», «Иван», «Иванов».
+  // человек начал другой поиск, выбрал результат, закрыл окно или ушёл со
+  // страницы — а не на каждую букву, иначе журнал забьётся обрывками «Ива»,
+  // «Иван», «Иванов».
   const pendingRef = useRef<Pending | null>(null);
-
-  const sections = useMemo(() => resolveNavState({ user }).sections, [user]);
-  const plan = useMemo(() => planSearch(query, sections), [query, sections]);
 
   const flushLog = useCallback((click: { kind: ClickKind; target: string } | null) => {
     const pending = pendingRef.current;
@@ -122,23 +199,67 @@ export function SiteSearchDialog() {
     });
   }, []);
 
-  const close = useCallback(() => {
+  // Окно закрылось (любым путём: «Назад», Esc, крестик, переход) — пишем
+  // несостоявшийся поиск в журнал.
+  const handleClosed = useCallback(() => {
     flushLog(null);
     setOpen(false);
+    setMode(null);
   }, [flushLog]);
 
-  // Открытие: событие от кнопок и горячие клавиши.
+  const overlay = useOverlayHistory(open, handleClosed);
+  const overlayRef = useRef(overlay);
   useEffect(() => {
-    const onOpen = () => setOpen(true);
+    overlayRef.current = overlay;
+  });
+
+  useOverlayFocus({
+    open,
+    containers: [dialogRef],
+    initial: () => {
+      inputRef.current?.select();
+      return inputRef.current;
+    },
+    onEscape: overlay.dismiss,
+  });
+
+  const openWith = useCallback((detail?: SiteSearchOpenDetailWithMode) => {
+    setMode(detail?.mode ?? null);
+    if (typeof detail?.query === "string") {
+      setQuery(detail.query);
+    } else if (detail?.mode === "find-self") {
+      setQuery("");
+    }
+    setOpenSeq((value) => value + 1);
+    setOpen(true);
+  }, []);
+
+  // Открытие: событие от кнопок и горячие клавиши. Клавиши сравниваем по
+  // физической кнопке (event.code): в русской раскладке event.key у Ctrl+K —
+  // «л», а у «/» — «.», и по ним окно не открывалось.
+  useEffect(() => {
+    const onOpen = (event: Event) => openWith((event as CustomEvent<SiteSearchOpenDetailWithMode>).detail);
     const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.code === "KeyK" || event.key.toLowerCase() === "k")) {
         event.preventDefault();
-        setOpen((value) => !value);
+        if (openRef.current) {
+          overlayRef.current.dismiss();
+        } else {
+          openWith();
+        }
         return;
       }
-      if (event.key === "/" && !event.metaKey && !event.ctrlKey && !isTypingTarget(event.target)) {
+      if (
+        (event.code === "Slash" || event.key === "/") &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        !openRef.current &&
+        !isTypingTarget(event.target)
+      ) {
         event.preventDefault();
-        setOpen(true);
+        openWith();
       }
     };
     window.addEventListener(SITE_SEARCH_OPEN_EVENT, onOpen);
@@ -147,19 +268,80 @@ export function SiteSearchDialog() {
       window.removeEventListener(SITE_SEARCH_OPEN_EVENT, onOpen);
       window.removeEventListener("keydown", onKey);
     };
-  }, []);
+  }, [openWith]);
 
-  // Пока окно открыто — фокус в поле, страница под ним не скроллится.
+  // Пока окно открыто, страница под ним не прокручивается. Закрылось (в том
+  // числе переходом по результату) — прокрутка возвращается.
   useEffect(() => {
     if (!open) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    inputRef.current?.focus();
-    inputRef.current?.select();
     return () => {
       document.body.style.overflow = previous;
     };
   }, [open]);
+
+  // Ушли со страницы или закрыли вкладку с открытым поиском — журнал всё
+  // равно должен узнать, что искали (sendBeacon в logSiteSearch долетит).
+  useEffect(() => {
+    if (!open) return;
+    const onHide = () => flushLog(null);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flushLog(null);
+    };
+    window.addEventListener("pagehide", onHide);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [open, flushLog]);
+
+  // Дерево — заново при каждом открытии: окно живёт поверх всех страниц, и
+  // запомненное с первой страницы дерево вело «погоду» с Кузьминок в
+  // Сокольники (code-3).
+  const sections = useMemo(
+    () => (open ? withReadablePlaces(resolveNavState({ user }).sections) : []),
+    // openSeq — сигнал «окно открыли заново»: пересчитать по текущему адресу.
+    [user, open, openSeq],
+  );
+  const places = useMemo(
+    () => (open ? knownPlaces(sections, user) : []),
+    [sections, user, open, openSeq],
+  );
+
+  // Инструменты организатора — всех его локаций, из любого места сайта
+  // («юбилеи», «пост»). Админу не нужно: у него в списке весь каталог.
+  const organizerUser = open && user && user.is_organizer && !user.is_admin ? user : null;
+  const organizerPlaces = useOrganizerLocations(organizerUser);
+  const extraLinks = useMemo<SearchContext["extraLinks"]>(() => {
+    if (!organizerUser || !organizerPlaces || organizerPlaces.length === 0) return [];
+    const many = organizerPlaces.length > 1;
+    const out: NonNullable<SearchContext["extraLinks"]>[number][] = [];
+    for (const place of organizerPlaces.slice(0, ORGANIZER_PLACES_LIMIT)) {
+      const section = buildSiteNav({
+        user: organizerUser,
+        organizerLocation: { slug: place.slug, name: place.name },
+        inOrganizer: true,
+      }).find((item) => item.key === "organizer");
+      for (const group of section?.groups ?? []) {
+        for (const link of group.items) {
+          out.push({
+            link: many ? { ...link, label: `${link.label} · ${place.name}` } : link,
+            context: [section?.label, group.title].filter(Boolean).join(" · "),
+            weightKey: `organizer:${link.key}`,
+            placeName: place.name,
+          });
+        }
+      }
+    }
+    return out;
+  }, [organizerUser, organizerPlaces]);
+
+  const plan = useMemo(
+    () => planSearch(query, sections, { guest: user === null, extraLinks }),
+    [query, sections, user, extraLinks],
+  );
 
   // Запрос к серверу — с задержкой и отменой предыдущего.
   const serverQuery = plan.serverQuery;
@@ -196,19 +378,27 @@ export function SiteSearchDialog() {
   }, [open, serverQuery]);
 
   const fresh = response && responseFor === serverQuery ? response : null;
-  const locations = fresh?.locations ?? [];
+  const locations: SiteSearchLocation[] = fresh?.locations ?? [];
+  const allLocations = fresh?.locations_all ?? null;
   const people = fresh?.people ?? [];
-  const combos = combineLocationPages(plan, locations);
-  const pages = [...combos, ...plan.pages].slice(0, 7);
+  const combos = plan.placeless ? placelessLocationPages(plan, places) : combineLocationPages(plan, locations);
+  // «Моя: Мещерский» и та же локация в выдаче — одна и та же страница.
+  const locationHrefs = new Set(locations.map((location) => location.href));
+  const pages: PageHit[] = mergePageHits(
+    combos.filter((hit) => !locationHrefs.has(hit.href)),
+    plan.pages.filter((hit) => !locationHrefs.has(hit.href)),
+  );
   const registered = people.filter(
     (person): person is Extract<SiteSearchPerson, { kind: "registered" }> => person.kind === "registered",
   );
   const others = people.filter((person) => person.kind === "participant");
 
+  const allHref = allLocations ? `/locations?q=${encodeURIComponent(allLocations.query)}` : null;
   const selectables: Selectable[] = [
-    ...pages.map((hit) => ({ kind: "page" as const, hit })),
-    ...locations.map((location) => ({ kind: "location" as const, location })),
-    ...registered.map((person) => ({ kind: "person" as const, person })),
+    ...pages.map((hit) => ({ kind: "page" as const, href: hit.href })),
+    ...locations.map((location) => ({ kind: "location" as const, href: location.href })),
+    ...(allHref ? [{ kind: "location" as const, href: allHref }] : []),
+    ...registered.map((person) => ({ kind: "person" as const, href: person.href })),
   ];
 
   // Запоминаем устоявшийся результат для журнала. Новый поиск, который не
@@ -247,29 +437,27 @@ export function SiteSearchDialog() {
       ?.scrollIntoView({ block: "nearest" });
   }, [selected]);
 
-  const choose = (item: Selectable) => {
-    const target =
-      item.kind === "page" ? item.hit.href : item.kind === "location" ? item.location.href : item.person.href;
-    flushLog({ kind: item.kind, target });
-    setOpen(false);
-    window.location.href = selectableHref(item);
+  // Клик по результату: запись в журнал, дальше — как у обычной ссылки сайта.
+  // Простой клик закрывает окно (снимая его запись из истории) и переходит
+  // без перезагрузки; Ctrl/⌘/Shift-клик браузер открывает в новой вкладке сам.
+  const onResultClick = (event: ReactMouseEvent<HTMLAnchorElement>, kind: ClickKind, target: string) => {
+    flushLog({ kind, target });
+    overlay.interceptLinks(event);
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      close();
-    } else if (event.key === "ArrowDown") {
+    if (event.key === "ArrowDown") {
       event.preventDefault();
       setSelected((index) => Math.min(index + 1, Math.max(selectables.length - 1, 0)));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setSelected((index) => Math.max(index - 1, 0));
     } else if (event.key === "Enter") {
-      const item = selectables[selected];
-      if (item) {
+      const row = listRef.current?.querySelector<HTMLAnchorElement>(`#site-search-item-${selected}`);
+      if (row) {
         event.preventDefault();
-        choose(item);
+        // Тот же путь, что и у клика мышью: журнал, закрытие, переход.
+        row.click();
       }
     }
   };
@@ -282,13 +470,85 @@ export function SiteSearchDialog() {
     return index;
   };
   const hasQuery = normalized.length >= 2;
+  const waiting = serverQuery.length >= MIN_SERVER_QUERY && fresh === null && !failed;
+  // «Погода» без локации, которую мы не знаем, — не «ничего не нашлось», а
+  // подсказка дописать название (placelessHint).
   const nothing =
-    hasQuery && !loading && !failed && pages.length === 0 && locations.length === 0 && people.length === 0 &&
-    (serverQuery.length < MIN_SERVER_QUERY || fresh !== null);
+    hasQuery &&
+    !loading &&
+    !failed &&
+    !plan.placeless &&
+    pages.length === 0 &&
+    locations.length === 0 &&
+    people.length === 0 &&
+    !waiting;
+  const guest = user === null;
+  const findSelf = mode === "find-self";
+
+  const found = [
+    pages.length > 0 && `${pages.length} ${plural(pages.length, "страница", "страницы", "страниц")}`,
+    locations.length > 0 && `${locations.length} ${plural(locations.length, "локация", "локации", "локаций")}`,
+    people.length > 0 && `${people.length} ${plural(people.length, "участник", "участника", "участников")}`,
+  ].filter(Boolean);
+  const statusText = !hasQuery
+    ? ""
+    : waiting
+      ? "Ищем…"
+      : nothing
+        ? "Ничего не нашлось"
+        : found.length > 0
+          ? `Найдено: ${found.join(", ")}`
+          : "";
+
+  const option = (i: number, href: string, kind: ClickKind, content: React.ReactNode, key: string) => (
+    <a
+      key={key}
+      id={`site-search-item-${i}`}
+      data-index={i}
+      role="option"
+      aria-selected={selected === i}
+      href={href}
+      className={`site-search-row${selected === i ? " selected" : ""}`}
+      onMouseEnter={() => setSelected(i)}
+      onClick={(event) => onResultClick(event, kind, href)}
+    >
+      {content}
+    </a>
+  );
+
+  const example = (text: string) => (
+    <button type="button" onClick={() => setQuery(text)}>
+      {text}
+    </button>
+  );
+
+  const placelessHint = (() => {
+    if (!plan.placeless || !plan.placelessWord) return null;
+    const known = places.map((place) => place.slug);
+    const sample = known.includes("sokolniki") ? "кузьминки" : "сокольники";
+    const page = plan.locationPages[0];
+    return places.length > 0 ? (
+      <p className="site-search-note">
+        Другая локация? Допишите название: «{plan.placelessWord} {sample}».
+      </p>
+    ) : (
+      <p className="site-search-note">
+        {page ? `«${page.label}» есть у каждой локации` : "Это страница локации"} — допишите название:{" "}
+        «{plan.placelessWord} {sample}».
+      </p>
+    );
+  })();
+
+  const peopleHint = fresh?.people_truncated
+    ? plan.serverWords <= 1
+      ? "Показаны первые совпадения — добавьте имя или фамилию."
+      : `Показаны первые совпадения — добавьте город: «${plan.serverQuery} Москва».`
+    : null;
 
   return (
-    <div className="site-search-backdrop" onClick={close} role="presentation">
+    <div className="site-search-backdrop" onClick={overlay.dismiss} role="presentation">
       <div
+        ref={dialogRef}
         className="site-search"
         role="dialog"
         aria-modal="true"
@@ -296,7 +556,9 @@ export function SiteSearchDialog() {
         onClick={(event) => event.stopPropagation()}
       >
         <div className="site-search-bar">
-          <span className="site-search-bar-icon">{SEARCH_ICON}</span>
+          <span className="site-search-bar-icon" aria-hidden="true">
+            {SEARCH_ICON}
+          </span>
           <input
             ref={inputRef}
             id="site-search-input"
@@ -305,27 +567,54 @@ export function SiteSearchDialog() {
             inputMode="search"
             autoComplete="off"
             spellCheck={false}
-            placeholder="Страница, локация или участник"
+            placeholder={findSelf ? "Фамилия и имя" : "Страница, локация или участник"}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={onKeyDown}
-            aria-controls="site-search-results"
+            role="combobox"
+            aria-expanded={selectables.length > 0}
+            aria-controls="site-search-listbox"
+            aria-autocomplete="list"
             aria-activedescendant={selectables.length > 0 ? `site-search-item-${selected}` : undefined}
           />
-          {loading && <span className="site-search-spinner" aria-label="Ищем" />}
-          <button type="button" className="site-search-close" onClick={close} aria-label="Закрыть поиск">
-            <span className="site-search-close-icon">{CLOSE_ICON}</span>
-            <span className="site-search-close-text">Отмена</span>
+          {loading && <span className="site-search-spinner" aria-hidden="true" />}
+          <button type="button" className="site-search-close" onClick={overlay.dismiss} aria-label="Закрыть поиск">
+            <span className="site-search-close-icon" aria-hidden="true">
+              {CLOSE_ICON}
+            </span>
+            <span className="site-search-close-text" aria-hidden="true">
+              Отмена
+            </span>
           </button>
         </div>
 
-        <div className="site-search-results" id="site-search-results" ref={listRef} role="listbox">
+        {/* Итог поиска для экранного диктора: список он не перечитывает сам. */}
+        <p className="visually-hidden" role="status" aria-live="polite">
+          {statusText}
+        </p>
+
+        <div className="site-search-results" ref={listRef}>
           {!hasQuery && (
             <div className="site-search-empty">
-              <p>Например: <button type="button" onClick={() => setQuery("погода сокольники")}>погода сокольники</button>,{" "}
-                <button type="button" onClick={() => setQuery("рекорды локаций")}>рекорды локаций</button>,{" "}
-                <button type="button" onClick={() => setQuery("привязать профиль")}>привязать профиль</button> или фамилия участника.
-              </p>
+              {findSelf || guest ? (
+                <>
+                  <p className="site-search-lead">
+                    Найдите себя: введите фамилию и имя — покажем пробежки из протоколов 5 вёрст, S95, parkrun и
+                    RunPark.
+                  </p>
+                  {!findSelf && (
+                    <p>
+                      Или: {example("сокольники")}, {example("самые быстрые")}, {example("как войти")}.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p>
+                  Например: {places.length > 0 && <>{example("погода")}, </>}
+                  {example("мои пробежки")}, {example("рекорды локаций")}
+                  {organizerUser && <>, {example("юбилеи")}</>} или фамилия участника.
+                </p>
+              )}
             </div>
           )}
 
@@ -335,136 +624,165 @@ export function SiteSearchDialog() {
             </p>
           )}
 
-          {pages.length > 0 && (
-            <section className="site-search-group">
-              <h3>Разделы сайта</h3>
-              {pages.map((hit) => {
-                const i = nextIndex();
-                return (
-                  <a
-                    key={hit.key}
-                    id={`site-search-item-${i}`}
-                    data-index={i}
-                    role="option"
-                    aria-selected={selected === i}
-                    href={hit.href}
-                    className={`site-search-row${selected === i ? " selected" : ""}`}
-                    onMouseEnter={() => setSelected(i)}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      choose({ kind: "page", hit });
-                    }}
-                  >
-                    <span className="site-search-row-mark site-search-row-mark-icon">{hit.icon ?? SEARCH_ICON}</span>
-                    <span className="site-search-row-main">
-                      <b>{hit.label}</b>
-                      <small>{hit.context}</small>
-                    </span>
-                  </a>
-                );
-              })}
-            </section>
+          {selectables.length > 0 && (
+            <div role="listbox" id="site-search-listbox" aria-label="Результаты поиска">
+              {pages.length > 0 && (
+                <div className="site-search-group" role="group" aria-label="Разделы сайта">
+                  <h3 aria-hidden="true">Разделы сайта</h3>
+                  {pages.map((hit) => {
+                    const i = nextIndex();
+                    return option(
+                      i,
+                      hit.href,
+                      "page",
+                      <>
+                        <span className="site-search-row-mark site-search-row-mark-icon" aria-hidden="true">
+                          {hit.icon ?? SEARCH_ICON}
+                        </span>
+                        <span className="site-search-row-main">
+                          <b>{hit.label}</b>
+                          <small>{hit.context}</small>
+                        </span>
+                      </>,
+                      hit.key,
+                    );
+                  })}
+                </div>
+              )}
+
+              {(locations.length > 0 || allHref) && (
+                <div
+                  className="site-search-group"
+                  role="group"
+                  aria-label={fresh?.locations_similar ? "Похожие локации" : "Локации"}
+                >
+                  <h3 aria-hidden="true">{fresh?.locations_similar ? "Похожие локации" : "Локации"}</h3>
+                  {locations.map((location) => {
+                    const i = nextIndex();
+                    return option(
+                      i,
+                      location.href,
+                      "location",
+                      <>
+                        <span className="site-search-row-mark site-search-row-mark-icon" aria-hidden="true">
+                          {LOCATIONS_ICON}
+                        </span>
+                        <span className="site-search-row-main">
+                          <b>{location.name}</b>
+                          <small>
+                            {location.city && <span>{location.city}</span>}
+                            {location.platform_codes.map((code) => (
+                              <PlatformBadge key={code} code={code} />
+                            ))}
+                          </small>
+                        </span>
+                      </>,
+                      location.slug,
+                    );
+                  })}
+                  {allLocations && allHref &&
+                    option(
+                      nextIndex(),
+                      allHref,
+                      "location",
+                      <>
+                        <span className="site-search-row-mark site-search-row-mark-icon" aria-hidden="true">
+                          {CATALOG_ICON}
+                        </span>
+                        <span className="site-search-row-main">
+                          <b className="site-search-all">
+                            Все локации: {allLocations.label} ({allLocations.count}) →
+                          </b>
+                          <small>Каталог с фильтром</small>
+                        </span>
+                      </>,
+                      "all-locations",
+                    )}
+                </div>
+              )}
+
+              {registered.length > 0 && (
+                <div className="site-search-group" role="group" aria-label="Участники сайта">
+                  <h3 aria-hidden="true">Участники сайта</h3>
+                  {registered.map((person) => {
+                    const i = nextIndex();
+                    return option(
+                      i,
+                      person.href,
+                      "person",
+                      <>
+                        <span className="site-search-avatar" aria-hidden="true">
+                          {person.avatar_url ? <img src={person.avatar_url} alt="" /> : initials(person.display_name)}
+                        </span>
+                        <span className="site-search-row-main">
+                          <b>{person.display_name}</b>
+                          <small>
+                            {personStats(person)}
+                            {person.top_location_name && ` · чаще всего: ${person.top_location_name}`}
+                          </small>
+                        </span>
+                      </>,
+                      person.href,
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
 
-          {locations.length > 0 && (
-            <section className="site-search-group">
-              <h3>Локации</h3>
-              {locations.map((location) => {
-                const i = nextIndex();
-                return (
-                  <a
-                    key={location.slug}
-                    id={`site-search-item-${i}`}
-                    data-index={i}
-                    role="option"
-                    aria-selected={selected === i}
-                    href={location.href}
-                    className={`site-search-row${selected === i ? " selected" : ""}`}
-                    onMouseEnter={() => setSelected(i)}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      choose({ kind: "location", location });
-                    }}
-                  >
-                    <span className="site-search-row-mark site-search-row-mark-icon">{LOCATIONS_ICON}</span>
-                    <span className="site-search-row-main">
-                      <b>{location.name}</b>
-                      <small>
-                        {location.city && <span>{location.city}</span>}
-                        {location.platform_codes.map((code) => (
-                          <PlatformBadge key={code} code={code} />
-                        ))}
-                      </small>
-                    </span>
-                  </a>
-                );
-              })}
-            </section>
+          {placelessHint}
+
+          {fresh?.locations_similar && (
+            <p className="site-search-note">Точно такой локации не нашлось — может быть, одна из похожих выше.</p>
           )}
 
-          {registered.length > 0 && (
-            <section className="site-search-group">
-              <h3>Участники сайта</h3>
-              {registered.map((person) => {
-                const i = nextIndex();
-                return (
-                  <a
-                    key={person.href}
-                    id={`site-search-item-${i}`}
-                    data-index={i}
-                    role="option"
-                    aria-selected={selected === i}
-                    href={person.href}
-                    className={`site-search-row${selected === i ? " selected" : ""}`}
-                    onMouseEnter={() => setSelected(i)}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      choose({ kind: "person", person });
-                    }}
-                  >
-                    <span className="site-search-avatar">
-                      {person.avatar_url ? <img src={person.avatar_url} alt="" /> : initials(person.display_name)}
+          {fresh?.people_place && people.length > 0 && (
+            <p className="site-search-note">Люди с этим именем, которые бегали или помогали: {fresh.people_place}.</p>
+          )}
+
+          {others.length > 0 && (
+            <section className="site-search-group site-search-protocols" aria-label="Из протоколов">
+              <h3>Из протоколов</h3>
+              {guest ? (
+                // Приглашение, а не ссылка на чужой профиль: нашёл себя —
+                // войди, и всё посчитанное откроется. Правило о согласии соблюдено.
+                <a
+                  className="site-search-invite"
+                  href={PORTAL_LOGIN_HREF}
+                  onClick={(event) => onResultClick(event, "page", PORTAL_LOGIN_HREF)}
+                >
+                  Нашли себя? <u>Войдите</u> — пробежки, рекорды и карта уже посчитаны
+                </a>
+              ) : (
+                <p className="site-search-caption">Профиля на нашем сайте нет — только цифры из протоколов.</p>
+              )}
+              <ul className="site-search-protocol-list">
+                {others.map((person, n) => (
+                  <li key={`${person.display_name}-${n}`} className="site-search-row site-search-row-static">
+                    <span className="site-search-avatar site-search-avatar-ghost" aria-hidden="true">
+                      {initials(person.display_name)}
                     </span>
                     <span className="site-search-row-main">
                       <b>{person.display_name}</b>
                       <small>
                         {personStats(person)}
-                        {person.top_location_name && ` · чаще всего: ${person.top_location_name}`}
+                        {person.kind === "participant" && person.top_location_name &&
+                          ` · чаще всего: ${placeWithCity(person.top_location_name, person.top_location_city)}`}
                       </small>
                     </span>
-                  </a>
-                );
-              })}
+                    <span className="site-search-badges">
+                      <span className="visually-hidden">Системы: </span>
+                      {person.platform_codes.map((code) => (
+                        <PlatformBadge key={code} code={code} />
+                      ))}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
 
-          {others.length > 0 && (
-            <section className="site-search-group">
-              <h3>В протоколах</h3>
-              {others.map((person, n) => (
-                <div key={`${person.display_name}-${n}`} className="site-search-row site-search-row-static">
-                  <span className="site-search-avatar site-search-avatar-ghost">{initials(person.display_name)}</span>
-                  <span className="site-search-row-main">
-                    <b>{person.display_name}</b>
-                    <small>
-                      {personStats(person)}
-                      {person.kind === "participant" && person.top_location_name &&
-                        ` · чаще всего: ${placeWithCity(person.top_location_name, person.top_location_city)}`}
-                    </small>
-                    <em className="site-search-unregistered">не зарегистрирован на сайте</em>
-                  </span>
-                  <span className="site-search-badges">
-                    {person.platform_codes.map((code) => (
-                      <PlatformBadge key={code} code={code} />
-                    ))}
-                  </span>
-                </div>
-              ))}
-              {fresh?.people_truncated && (
-                <p className="site-search-note">Показаны первые совпадения — уточните запрос: добавьте имя или фамилию.</p>
-              )}
-            </section>
-          )}
+          {peopleHint && <p className="site-search-note">{peopleHint}</p>}
 
           {nothing && (
             <div className="site-search-empty">
@@ -472,14 +790,23 @@ export function SiteSearchDialog() {
                 По запросу «{normalized}» ничего не нашлось. Людей ищите по фамилии и имени, локации — по названию
                 или городу.
               </p>
-              <p className="site-search-empty-sub">Запрос сохранён — по таким запросам мы дописываем синонимы.</p>
+              {guest && (
+                <p>
+                  Ищете себя? <a href={PORTAL_LOGIN_HREF} onClick={(event) => onResultClick(event, "page", PORTAL_LOGIN_HREF)}>Войдите</a>{" "}
+                  — после входа сайт сам найдёт ваши профили во всех системах.
+                </p>
+              )}
+              {/* Поиски админа сервер не пишет — не обещаем ему того, чего нет. */}
+              {!user?.is_admin && (
+                <p className="site-search-empty-sub">Запрос сохранён — по таким запросам мы дописываем синонимы.</p>
+              )}
             </div>
           )}
 
           {failed && <p className="site-search-note">Поиск по локациям и людям сейчас недоступен. Попробуйте через минуту.</p>}
         </div>
 
-        <div className="site-search-foot">
+        <div className="site-search-foot" aria-hidden="true">
           <span>
             <kbd>↑</kbd> <kbd>↓</kbd> выбрать · <kbd>Enter</kbd> открыть · <kbd>Esc</kbd> закрыть
           </span>

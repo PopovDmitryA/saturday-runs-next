@@ -3,14 +3,15 @@
  *
  * Страницы по-прежнему передают `active` и `location` (так было у сайдбара),
  * а всё, что страница не передала, достраивается по адресу — поэтому нижняя
- * панель и «Меню» работают и на главной, в блоге и в «О проекте», где своего
- * `active` нет.
+ * панель, «Меню» и ссылки шапки работают и на главной, в блоге и в «О
+ * проекте», где своего `active` нет.
  */
 import type { User } from "../../../lib/api";
 import { locationHintFor } from "../../../lib/locationHint";
 import { isOwnHandle } from "../../../lib/portalRoutes";
 import {
   buildSiteNav,
+  CABINET_TAB_KEYS,
   sectionKeyFromPath,
   type CabinetTabKey,
   type NavPlace,
@@ -30,20 +31,8 @@ export type SiteSidebarActive =
   | "backlog"
   | null;
 
-const CABINET_KEYS: readonly string[] = [
-  "dashboard",
-  "runs",
-  "volunteering",
-  "meetings",
-  "achievements",
-  "history",
-  "map",
-  "share",
-  "settings",
-];
-
 export function isCabinetTab(active: SiteSidebarActive | undefined): active is CabinetTabKey {
-  return active != null && CABINET_KEYS.includes(active);
+  return active != null && (CABINET_TAB_KEYS as readonly string[]).includes(active);
 }
 
 function sectionFromActive(active: SiteSidebarActive | undefined): NavSectionKey | null {
@@ -79,7 +68,6 @@ export type NavStateInput = {
   active?: SiteSidebarActive;
   user: User | null | undefined;
   location?: NavPlace | null;
-  hrefForTab?: (key: CabinetTabKey, defaultHref: string) => string;
 };
 
 export type NavState = {
@@ -90,7 +78,7 @@ export type NavState = {
   organizerPlace: NavPlace | null;
 };
 
-export function resolveNavState({ active, user, location, hrefForTab }: NavStateInput): NavState {
+export function resolveNavState({ active, user, location }: NavStateInput): NavState {
   const pathname = currentPathname();
   let key = sectionFromActive(active) ?? sectionKeyFromPath(pathname);
   // Свой публичный адрес /users/{хендл} — это кабинет, чужой — ничей раздел.
@@ -105,9 +93,9 @@ export function resolveNavState({ active, user, location, hrefForTab }: NavState
   const organizerPlace = inOrganizer ? (place ?? placeFromPath(pathname, "/organizer/")) : null;
   const sections = buildSiteNav({
     user,
-    hrefForTab,
     location: key === "locations" ? (place ?? placeFromPath(pathname, "/locations/")) : null,
     organizerLocation: organizerPlace,
+    inOrganizer,
   });
   return {
     pathname,

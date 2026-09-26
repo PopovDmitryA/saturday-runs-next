@@ -433,3 +433,20 @@ export const IDEA_ICON = icon(
 
 // Админка: щит.
 export const SHIELD_ICON = icon(<path d="M12 3.5 5 6v5.5c0 4.3 3 7.6 7 9 4-1.4 7-4.7 7-9V6Z" />);
+
+// Своя (домашняя) локация: домик.
+export const HOME_ICON = icon(
+  <>
+    <path d="M4 11.2 12 4.5l8 6.7" />
+    <path d="M6.2 9.6V19.5h11.6V9.6" />
+    <path d="M10 19.5v-5h4v5" />
+  </>,
+);
+
+// Недавно открытая локация: часы.
+export const RECENT_ICON = icon(
+  <>
+    <circle cx="12" cy="12" r="8" />
+    <path d="M12 7.8V12l2.8 1.8" />
+  </>,
+);

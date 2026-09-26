@@ -1,0 +1,84 @@
+/*
+ * Окно поиска: то, что добавлено после ревью 25.09.2026. Основная раскладка
+ * окна — в siteNav.css; здесь приглашение гостю, ссылка «Все локации», строки
+ * людей из протоколов и контраст подписей. Селекторы с .site-search впереди —
+ * чтобы перекрыть старые правила без !important.
+ */
+
+/* Заголовки групп и подсказки были --text-faint (2,5:1 к фону) — читаются
+   плохо на солнце и при слабом зрении (a11y-7). */
+.site-search .site-search-group h3,
+.site-search .site-search-empty-sub {
+  color: var(--text-muted);
+}
+
+.site-search .site-search-lead {
+  color: var(--text);
+}
+
+/* Люди из протоколов — не ссылки и не карточки: без пунктира и фона, чтобы
+   строка не выглядела кнопкой, которая «не нажимается». */
+.site-search .site-search-protocol-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-search .site-search-row-static {
+  margin: 0;
+  background: transparent;
+  border: 0;
+  cursor: default;
+}
+
+.site-search .site-search-row-static b {
+  font-weight: 600;
+}
+
+/* Одна серая строка над людьми из протоколов: приглашение войти, а не
+   предупреждение. Вся строка — ссылка: попасть пальцем легко. */
+.site-search .site-search-invite {
+  display: block;
+  margin: 2px 8px 6px;
+  padding: 6px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.site-search .site-search-invite u {
+  color: var(--accent-indigo-text);
+  font-weight: 600;
+  text-underline-offset: 2px;
+}
+
+.site-search .site-search-invite:hover u,
+.site-search .site-search-invite:focus-visible u {
+  text-decoration-thickness: 2px;
+}
+
+.site-search .site-search-caption {
+  margin: 2px 8px 6px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* «Все локации: Москва (41) →» — ссылка в каталог, не ещё одна локация. */
+.site-search .site-search-all {
+  color: var(--accent-indigo-text);
+}
+
+.site-search .site-search-empty a {
+  color: var(--accent-indigo-text);
+}
+
+/* Бейджи систем у людей из протоколов не должны сжимать имя в ноль на
+   узком экране. */
+@media (max-width: 420px) {
+  .site-search .site-search-row-static .site-search-badges {
+    align-self: flex-start;
+    margin-top: 2px;
+  }
+}

@@ -21,6 +21,8 @@ import {
   type LocationRecordsScope,
 } from "./locationRecordsApi";
 import { surnameFirst } from "../../lib/personName";
+import { ratingName } from "./ratingNames";
+import { RatingBreadcrumb, RatingFilters } from "./RatingPageParts";
 
 const PAGE_STEP = 100;
 
@@ -317,18 +319,22 @@ export function LocationRecordsRatingPage() {
     );
   }, []);
   const visibleRows = rows.slice(0, visibleCount);
+  // «Фильтры · N» на телефоне. Пол по умолчанию — не «мужчины», а пол самого
+  // зрителя: его подставляет сервер, и считать это выбором человека нельзя.
+  const defaultGender = data?.viewer_gender ?? "male";
+  const activeFilters =
+    (scope !== "absolute" ? 1 : 0) +
+    (gender != null && gender !== defaultGender ? 1 : 0) +
+    (scope === "absolute" && platform !== "all" ? 1 : 0) +
+    (query.trim() ? 1 : 0);
 
   return (
     <PortalSectionShell sidebar={{ active: "ratings" }}>
       <div className="lb-page">
-        <nav className="lb-breadcrumb">
-          <a href="/ratings">← Все рейтинги</a>
-          <span aria-hidden> / </span>
-          <span>Локации · Рекорды локаций</span>
-        </nav>
+        <RatingBreadcrumb ratingKey="location-records" />
 
         <header className="lb-header">
-          <h1>Рекорды локаций</h1>
+          <h1>{ratingName("location-records").label}</h1>
           <p className="lb-description">
             Лучшее время каждой локации: в абсолютном зачёте — среди мужчин или женщин, в
             возрастном — внутри выбранной категории.
@@ -337,6 +343,7 @@ export function LocationRecordsRatingPage() {
 
         <RatingsLoginBanner />
 
+        <RatingFilters activeCount={activeFilters}>
         <div className="lb-controls-row lb-locrec-controls">
           <div className="lb-controls-left">
             <div className="lb-visits">
@@ -424,6 +431,7 @@ export function LocationRecordsRatingPage() {
           </div>
           </div>
         </div>
+        </RatingFilters>
 
         {loading && !data && <p className="muted">Считаем рейтинг… Первый расчёт может занять до минуты.</p>}
         {error && (

@@ -2,29 +2,38 @@
  * Меню аккаунта под именем в шапке: кабинет, настройки, админка, выход.
  *
  * Настройки — не страница кабинета, а настройки аккаунта и всего сайта
- * (правка Дмитрия 25.09.2026), поэтому из колонки «Мой кабинет» они уехали
+ * (правка Дмитрия 25.09.2026), поэтому из колонки кабинета они уехали
  * сюда — туда же, где их ищут на большинстве сайтов: под своим именем.
  * Раньше имя в шапке просто вело в кабинет, а «Выйти» висело внизу колонки.
+ *
+ * Устроено как раскрывашка, а не role="menu": кнопка с aria-expanded и
+ * обычный список ссылок. role="menu" обещает диктору управление стрелками,
+ * которого не было (a11y-2). При открытии фокус встаёт на первый пункт,
+ * Esc закрывает и возвращает фокус на кнопку, уход фокуса наружу — закрывает.
  */
 import { useEffect, useRef, useState } from "react";
 import type { User } from "../../../lib/api";
-import { cabinetTabHref, PORTAL_CABINET_SETTINGS_HREF } from "../../../lib/portalRoutes";
 import { userLabel } from "../../../lib/userLabel";
 import { LogoutButton } from "../SiteSidebar";
-import { CABINET_ICONS, CHEVRON_DOWN_ICON, SETTINGS_ICON, SHIELD_ICON } from "./navIcons";
+import { CHEVRON_DOWN_ICON, ME_ICON, SETTINGS_ICON, SHIELD_ICON } from "./navIcons";
+import { CABINET_LABEL, cabinetHref } from "./siteNav";
 
 function initials(label: string): string {
   const parts = label.replace(/^@/, "").trim().split(/\s+/).filter(Boolean);
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
+const POPOVER_ID = "account-menu-popover";
+
 export function AccountMenu({ user }: { user: User }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    popoverRef.current?.querySelector<HTMLElement>("a, button")?.focus({ preventScroll: true });
     const onPointer = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -34,11 +43,16 @@ export function AccountMenu({ user }: { user: User }) {
         buttonRef.current?.focus();
       }
     };
+    const onFocus = (event: FocusEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
     document.addEventListener("pointerdown", onPointer);
     document.addEventListener("keydown", onKey);
+    document.addEventListener("focusin", onFocus);
     return () => {
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("focusin", onFocus);
     };
   }, [open]);
 
@@ -49,8 +63,8 @@ export function AccountMenu({ user }: { user: User }) {
         ref={buttonRef}
         type="button"
         className="portal-header-user account-menu-button"
-        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={POPOVER_ID}
         title={`${label} — аккаунт`}
         aria-label={`Аккаунт: ${label}`}
         onClick={() => setOpen((value) => !value)}
@@ -68,17 +82,17 @@ export function AccountMenu({ user }: { user: User }) {
         <span className="account-menu-chevron">{CHEVRON_DOWN_ICON}</span>
       </button>
       {open && (
-        <div className="account-menu-popover" role="menu" aria-label="Аккаунт">
-          <a role="menuitem" className="account-menu-item" href={cabinetTabHref(user, "dashboard")}>
-            <span className="account-menu-icon">{CABINET_ICONS.dashboard}</span>
-            Мой кабинет
+        <div className="account-menu-popover" id={POPOVER_ID} ref={popoverRef}>
+          <a className="account-menu-item" href={cabinetHref(user, "dashboard")}>
+            <span className="account-menu-icon">{ME_ICON}</span>
+            {CABINET_LABEL}
           </a>
-          <a role="menuitem" className="account-menu-item" href={PORTAL_CABINET_SETTINGS_HREF}>
+          <a className="account-menu-item" href={cabinetHref(user, "settings")}>
             <span className="account-menu-icon">{SETTINGS_ICON}</span>
             Настройки
           </a>
           {user.is_admin && (
-            <a role="menuitem" className="account-menu-item account-menu-item-admin" href="/admin/users">
+            <a className="account-menu-item account-menu-item-admin" href="/admin/users">
               <span className="account-menu-icon">{SHIELD_ICON}</span>
               Админка
             </a>
