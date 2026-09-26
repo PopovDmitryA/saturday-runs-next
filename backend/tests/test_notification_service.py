@@ -694,11 +694,17 @@ def test_scan_composes_single_digest(
     assert delivery.kind == "runs"
     assert delivery.payload["title"] == "🏃 Пробежка попала на сайт"
     text = delivery.payload["text"]
-    assert "**📍 Мещерский парк (5 вёрст) №123 · " in text
+    profile = f"https://run5k.test/users/{user.serial_id}"
+    # Заголовок старта ведёт на его протокол, разделы — на вкладки кабинета.
+    run_date = (today - timedelta(days=1)).isoformat()
+    assert "[**📍 Мещерский парк (5 вёрст) №123 · " in text
+    assert f"/protocol/five_verst/{run_date})" in text
     assert "⏱ 24:31 · 🏅 3-е место · 🔥 личный рекорд" in text
     assert "Рейтинги" not in text  # рейтинги — отдельным воскресным сообщением
-    assert "🏆 **Челленджи:**\n⏱ Секундомер — 🥈 серебро (лёгкий уровень)" in text
-    assert "🎖 **Вехи истории:**\n🏅 100-я пробежка — клуб 100!" in text
+    assert f"🏆 [**Челленджи:**]({profile}/achievements)\n⏱ Секундомер — 🥈 серебро (лёгкий уровень)" in text
+    assert f"🎖 [**Вехи истории:**]({profile}/history)\n🏅 100-я пробежка — клуб 100!" in text
+    # Telegram: жирная подпись внутри ссылки.
+    assert f'<a href="{profile}/achievements"><b>Челленджи:</b></a>' in to_telegram_html(text)
     assert "[Собрать постер о пробежке](https://run5k.test/share)" in text
     assert delivery.payload["url"].endswith(f"/users/{user.serial_id}/runs")
     assert _no_broker == [delivery.id]
@@ -790,7 +796,7 @@ def test_scan_reports_volunteering_without_a_run(
     delivery = db_session.query(NotificationDelivery).filter_by(user_id=user.id).one()
     assert delivery.kind == "volunteering"
     assert delivery.payload["title"] == "🦺 Волонтёрство попало на сайт"
-    assert "**🦺 Мещерский парк (5 вёрст) №123 · " in delivery.payload["text"]
+    assert "[**🦺 Мещерский парк (5 вёрст) №123 · " in delivery.payload["text"]
     assert "🙌 Обработка результатов, Организатор" in delivery.payload["text"]
     assert delivery.payload["url"].endswith(f"/users/{user.serial_id}/volunteering")
 

@@ -34,6 +34,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID
 
 import httpx
@@ -92,6 +93,8 @@ class NewRun:
     location_id: UUID | None = None
     #: Готовая строка «🌤️ 12°, малооблачно, ветер 3 м/с» или None.
     weather: str | None = None
+    #: Путь протокола старта на сайте (/locations/…/protocol/…) — ссылка заголовка.
+    protocol_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -106,6 +109,7 @@ class NewVolunteering:
     event_number: int | None
     roles: tuple[str, ...]
     weather: str | None = None
+    protocol_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -175,9 +179,19 @@ def _new_runs(db: Session, user_id: UUID, *, since: datetime, until: datetime, t
             is_first_run_at_location=bool(result.is_first_run_at_location),
             location_id=event.location_id,
             weather=weather_line(weather.get((event.location_id, event.event_date))),
+            protocol_path=protocol_path(location, platform.code, event.event_date),
         )
         for result, event, location, platform in rows
     ]
+
+
+def protocol_path(location: Location, platform_code: str, event_date: date) -> str | None:
+    """Протокол старта на сайте. Страница локации открывается по слагу любой
+    своей системы, поэтому хватает external_key самой площадки."""
+    slug = (location.external_key or "").strip()
+    if not slug:
+        return None
+    return f"/locations/{quote(slug, safe='')}/protocol/{platform_code}/{event_date.isoformat()}"
 
 
 def _new_volunteerings(
@@ -225,6 +239,7 @@ def _new_volunteerings(
                 event_number=event.event_number,
                 roles=roles,
                 weather=weather_line(weather.get((event.location_id, event.event_date))),
+                protocol_path=protocol_path(location, platform.code, event.event_date),
             )
         )
     return items
@@ -370,9 +385,21 @@ def _event_head(icon: str, location_name: str, platform_code: str, event_number:
     return head + f" · {_date_label(event_date)}"
 
 
-def run_block(run: NewRun) -> str:
-    """Где и когда — жирным, ниже время, место и отметки, третьей строкой — погода на старте."""
+def bold_link(text: str, url: str | None) -> str:
+    """Жирная подпись, кликабельная, если есть адрес.
+
+    Порядок именно `[**…**](url)`: рендер сначала находит ссылку и уже внутри
+    подписи — жирное; `**[…](url)**` он бы съел как жирный текст целиком.
+    """
+    if not url or "]" in text:
+        return bold(text)
+    return link(bold(text), url)
+
+
+def run_block(run: NewRun, *, base_url: str | None = None) -> str:
+    """Где и когда — жирным (ссылка на протокол), ниже время, место и отметки, третьей строкой — погода."""
     head = _event_head("📍", run.location_name, run.platform_code, run.event_number, run.event_date)
+    head_url = f"{base_url}{run.protocol_path}" if base_url and run.protocol_path else None
     facts = []
     time_label = _time_label(run.finish_time_sec)
     if time_label:
@@ -383,7 +410,7 @@ def run_block(run: NewRun) -> str:
         facts.append("🔥 личный рекорд")
     if run.is_first_run_at_location:
         facts.append("🆕 первый раз здесь")
-    lines = [bold(head)]
+    lines = [bold_link(head, head_url)]
     if facts:
         lines.append(" · ".join(facts))
     if run.weather:
@@ -391,10 +418,11 @@ def run_block(run: NewRun) -> str:
     return "\n".join(lines)
 
 
-def volunteer_block(item: NewVolunteering, *, with_weather: bool = True) -> str:
-    """Где и когда — жирным, ниже роли; погода — если её не показал блок пробежки того же старта."""
+def volunteer_block(item: NewVolunteering, *, with_weather: bool = True, base_url: str | None = None) -> str:
+    """Где и когда — жирным (ссылка на протокол), ниже роли; погода — если её не показал блок пробежки."""
     head = _event_head("🦺", item.location_name, item.platform_code, item.event_number, item.event_date)
-    lines = [bold(head), "🙌 " + (", ".join(item.roles) if item.roles else "волонтёр")]
+    head_url = f"{base_url}{item.protocol_path}" if base_url and item.protocol_path else None
+    lines = [bold_link(head, head_url), "🙌 " + (", ".join(item.roles) if item.roles else "волонтёр")]
     if with_weather and item.weather:
         lines.append(item.weather)
     return "\n".join(lines)
@@ -479,14 +507,21 @@ def compose_message(
     milestones: list[dict[str, Any]],
     poster_url: str | None,
     volunteerings: list[NewVolunteering] | None = None,
+    base_url: str | None = None,
+    profile_url: str | None = None,
 ) -> tuple[str, str]:
-    """(заголовок, тело в разметке)."""
+    """(заголовок, тело в разметке).
+
+    base_url — адрес сайта для ссылок на протоколы стартов; profile_url —
+    кабинет человека (/users/{хендл}): заголовки разделов ведут на его же
+    вкладки «Челленджи» и «История».
+    """
     volunteerings = volunteerings or []
     settings = get_settings()
     limit = settings.notifications_runs_max_listed
     sections: list[str] = []
     if runs:
-        blocks = [run_block(run) for run in runs[:limit]]
+        blocks = [run_block(run, base_url=base_url) for run in runs[:limit]]
         rest = len(runs) - limit
         if rest > 0:
             blocks.append(f"…и ещё {rest}")
@@ -495,17 +530,26 @@ def compose_message(
         # Погода старта, где человек и бежал, уже стоит в блоке пробежки.
         shown = {(run.location_id, run.event_date) for run in runs[:limit]}
         blocks = [
-            volunteer_block(item, with_weather=(item.location_id, item.event_date) not in shown)
+            volunteer_block(item, with_weather=(item.location_id, item.event_date) not in shown, base_url=base_url)
             for item in volunteerings[:limit]
         ]
         rest = len(volunteerings) - limit
         if rest > 0:
             blocks.append(f"…и ещё {rest}")
         sections.append("\n\n".join(blocks))
+    achievements_url = f"{profile_url}/achievements" if profile_url else None
+    history_url = f"{profile_url}/history" if profile_url else None
     if ups:
-        sections.append("🏆 " + bold("Челленджи:") + "\n" + "\n".join(level_line(u) for u in ups))
+        sections.append(
+            "🏆 " + bold_link("Челленджи:", achievements_url) + "\n" + "\n".join(level_line(u) for u in ups)
+        )
     if milestones:
-        sections.append("🎖 " + bold("Вехи истории:") + "\n" + "\n".join(milestone_line(m) for m in milestones[:6]))
+        sections.append(
+            "🎖 "
+            + bold_link("Вехи истории:", history_url)
+            + "\n"
+            + "\n".join(milestone_line(m) for m in milestones[:6])
+        )
     if runs and poster_url:
         sections.append("🖼 " + link("Собрать постер о пробежке", poster_url) + " — поделитесь результатом в сториз.")
 
@@ -585,7 +629,13 @@ def scan_user_activity(db: Session, user_id: UUID, *, now: datetime | None = Non
     delivery = None
     if runs or ups or fresh or volunteerings:
         title, text = compose_message(
-            runs=runs, ups=ups, milestones=fresh, poster_url=f"{base}/share", volunteerings=volunteerings
+            runs=runs,
+            ups=ups,
+            milestones=fresh,
+            poster_url=f"{base}/share",
+            volunteerings=volunteerings,
+            base_url=base,
+            profile_url=f"{base}/users/{handle}",
         )
         only_volunteering = bool(volunteerings) and not (runs or ups or fresh)
         delivery = notifications.notify_user(

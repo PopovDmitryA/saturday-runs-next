@@ -32,3 +32,16 @@ def test_run_block_puts_weather_under_the_result() -> None:
 
 def test_run_block_without_weather_keeps_two_lines() -> None:
     assert len(run_block(_run(None)).split("\n")) == 2
+
+
+def test_bold_link_and_plain_render() -> None:
+    from app.notification_markup import to_plain, to_telegram_html
+    from app.services.activity_notification_service import bold_link
+
+    assert bold_link("Челленджи:", None) == "**Челленджи:**"
+    # «]» в подписи сломал бы разбор ссылки — остаётся просто жирным.
+    assert bold_link("a]b", "https://x.test") == "**a]b**"
+    text = "🏆 " + bold_link("Челленджи:", "https://x.test/users/7/achievements")
+    assert to_telegram_html(text) == '🏆 <a href="https://x.test/users/7/achievements"><b>Челленджи:</b></a>'
+    # VK: подпись в строке, адрес — строкой ниже.
+    assert to_plain(text) == "🏆 Челленджи:\nhttps://x.test/users/7/achievements"
