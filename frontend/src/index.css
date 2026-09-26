@@ -17878,6 +17878,13 @@ input.participant-name-search-input:focus {
 .notify-intro {
   width: min(100%, 30rem);
   text-align: left;
+  /* На телефоне окно выше экрана: центрированное, оно уходило верхом и низом
+     за край, а прокрутить было нечем — скролл страницы под модалкой
+     заблокирован (26.09.2026, «не масштабируется, края за границами окна»).
+     Панель не выше экрана и листается сама. */
+  max-height: calc(100dvh - 2.5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .notify-intro-hero {
@@ -17955,13 +17962,57 @@ input.participant-name-search-input:focus {
 
 .notify-intro-actions {
   margin-top: 1.1rem;
+  /* Кнопки видны всегда, даже пока список пролистан не до конца: закрыть
+     окно должно быть можно с первого экрана. */
+  position: sticky;
+  bottom: -1.15rem;
+  padding: 0.75rem 0 1.15rem;
+  margin-bottom: -1.15rem;
+  background: var(--surface);
+  box-shadow: 0 -10px 12px -10px rgba(15, 23, 42, 0.18);
 }
 
 .notify-intro-never {
   display: block;
-  margin: 0.75rem auto 0;
+  margin: 1.6rem auto 0;
   font-size: 0.85rem;
   color: var(--text-faint);
+}
+
+@media (max-width: 480px) {
+  .notify-intro {
+    padding: 1.1rem 1rem 1.15rem;
+  }
+
+  .notify-intro-hero {
+    width: 2.8rem;
+    height: 2.8rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .notify-intro-bell {
+    font-size: 1.35rem;
+  }
+
+  .notify-intro-lead {
+    margin-bottom: 0.75rem;
+    font-size: 0.92rem;
+  }
+
+  .notify-intro-list {
+    gap: 0.45rem;
+  }
+
+  .notify-intro-list li {
+    gap: 0.6rem;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.86rem;
+    line-height: 1.35;
+  }
+
+  .notify-intro-icon {
+    font-size: 1.15rem;
+  }
 }
 
 .notify-row-waiting {

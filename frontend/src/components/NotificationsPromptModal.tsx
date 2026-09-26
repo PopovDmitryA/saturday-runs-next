@@ -147,6 +147,13 @@ export function NotificationsPromptModal() {
                 </span>
               </li>
               <li>
+                <span className="notify-intro-icon">🦺</span>
+                <span>
+                  <b>Волонтёрство попало на сайт.</b> Локация, номер старта и все ваши роли — а если в тот
+                  же день и бежали, одним сообщением с пробежкой.
+                </span>
+              </li>
+              <li>
                 <span className="notify-intro-icon">🚫</span>
                 <span>
                   <b>Отмены стартов по стране.</b> Узнаете заранее — и про свою локацию, и про ту,
