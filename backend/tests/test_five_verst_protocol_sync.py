@@ -262,3 +262,48 @@ def test_lost_row_alongside_identified_unknown_is_recorded() -> None:
     record_protocol_revision(db, uuid4(), before, after)
 
     assert len(db.added) == 1
+
+
+def test_protocol_without_summary_number_takes_it_from_title(db_session: Session) -> None:
+    """Протокол по ссылке из админки раньше сводки: номер берётся из заголовка."""
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        pytest.skip("five_verst platform not seeded")
+
+    from app.models import Event, Location
+    from app.platform_adapters.canonical import CanonicalEventSummary
+    from app.sync import upsert
+    from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
+
+    slug = f"protocol-number-{uuid4().hex[:8]}"
+    location = Location(
+        platform_id=platform.id,
+        external_key=slug,
+        name="Protocol Number Park",
+        source_url=f"https://5verst.ru/{slug}/",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    summary = CanonicalEventSummary(
+        external_event_key=f"{slug}:0:2026-09-26",
+        event_date=date(2026, 9, 26),
+        event_number=None,
+        location_external_key=slug,
+        location_name=location.name,
+        source_url=f"https://5verst.ru/{slug}/results/26.09.2026/",
+        summary_hash="admin_resync_stub",
+    )
+    summary_row, _ = upsert.upsert_event_summary(db_session, platform, location, summary)
+    html = '<h1 class="results-title">Протокол 5 вёрст Protocol Number Park #233 за 26.09.2026</h1>'
+
+    with patch(
+        "app.sync.five_verst_protocol.bulk_parser.fetch_event_protocol",
+        return_value=([], [], html),
+    ):
+        fetch_and_upsert_event_protocol(db_session, platform, location, summary, summary_row)
+
+    event = db_session.query(Event).filter(Event.location_id == location.id).one()
+    assert event.event_number == 233
+    assert event.title == "Protocol Number Park #233"
+    assert summary_row.event_number == 233

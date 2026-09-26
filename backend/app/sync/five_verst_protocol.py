@@ -222,11 +222,19 @@ def fetch_and_upsert_event_protocol(
     # transaction». На проде стоит idle_in_transaction_session_timeout=15min,
     # и он регулярно рвал прогоны latest и reconcile на середине очереди.
     db.commit()
-    run_results, volunteer_results, _protocol_html = bulk_parser.fetch_event_protocol(
+    run_results, volunteer_results, protocol_html = bulk_parser.fetch_event_protocol(
         slug,
         summary.event_date,
         summary.event_number,
     )
+    # Номер старта обычно приходит со сводкой из /results/latest/. Протокол,
+    # загруженный по ссылке из админки раньше сводки, номера не знает — берём
+    # его из заголовка самого протокола (Мещерский 26.09.2026 остался без №233).
+    if summary.event_number is None:
+        parsed_number = bulk_parser.parse_protocol_event_number(protocol_html, summary.event_date)
+        if parsed_number is not None:
+            summary.event_number = parsed_number
+            summary_row.event_number = parsed_number
     # Хеш — по разобранным строкам, а не по HTML: страница 5verst.ru от
     # запроса к запросу разная (nonce, метки времени), и хеш HTML «менялся»
     # в 37 014 перечитках из 37 030, превращая каждую в полную перезапись
