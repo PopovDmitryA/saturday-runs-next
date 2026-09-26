@@ -23,6 +23,7 @@ import { VolunteeringContent } from "../volunteering/VolunteeringPage";
 import { HistoryContent } from "../history/HistoryPage";
 import { CoRunnersContent } from "../co_runners/CoRunnersPage";
 import { ProfileComparePanel } from "./ProfileComparePanel";
+import { platformProfileUrl } from "../../lib/platformProfileUrl";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
   ApiError,
@@ -41,7 +42,7 @@ import {
   type AdminUserPreviewDashboard,
   type User,
 } from "../../lib/api";
-import { runsCapLabel, volunteeringCapLabel } from "../../lib/format";
+import { platformCodeLabel, runsCapLabel, volunteeringCapLabel } from "../../lib/format";
 
 // Карта (leaflet) нужна только на вкладке «карта» — грузится по обращению.
 const UserMapPanel = lazyPage(() => import("../maps/UserMapPanel"), (m) => m.UserMapPanel);
@@ -82,14 +83,12 @@ function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
 const PLATFORM_ORDER: Record<string, number> = { five_verst: 0, s95: 1, parkrun: 2, runpark: 3 };
 
 /**
- * Привязанные системы участника — просто метки, без ссылок.
+ * Привязанные системы участника: бейдж — ссылка в его профиль на самой системе.
  *
- * Раньше бейдж вёл в профиль человека на самой системе (5 вёрст, S95, parkrun,
- * RunPark). Правило Дмитрия от 04.09.2026: на сайте нет кликабельных ссылок на
- * профили людей в чужих системах — ни в кабинете организатора, ни в рейтингах,
- * ни где-либо ещё; ссылка допустима только на профиль внутри сайта. Чужой
- * профиль — это «где-либо ещё» (проверка 26.09.2026). Свои профили на системах
- * человек открывает из своего кабинета.
+ * Исключение из правила «никаких ссылок на профили в чужих системах»
+ * (решение Дмитрия 26.09.2026): публичный профиль на сайте — это человек,
+ * который сам зарегистрировался и сам привязал эти профили, так что ссылка на
+ * них — его собственные данные, а не чужие.
  */
 function ProfilePlatformLinks({ links }: { links: AdminPlatformLinkBrief[] }) {
   const sorted = [...links].sort(
@@ -99,7 +98,12 @@ function ProfilePlatformLinks({ links }: { links: AdminPlatformLinkBrief[] }) {
   return (
     <div className="public-profile-platforms">
       {sorted.map((link) => (
-        <PlatformBadge key={link.platform_code} code={link.platform_code} />
+        <PlatformBadge
+          key={link.platform_code}
+          code={link.platform_code}
+          href={platformProfileUrl(link)}
+          title={`Открыть профиль на ${platformCodeLabel(link.platform_code)}`}
+        />
       ))}
     </div>
   );

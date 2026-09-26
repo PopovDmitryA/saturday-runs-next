@@ -88,82 +88,86 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
       "волонтёрство, победы, туризм по локациям.",
     indexable: true,
   },
+  // Заголовки вкладок рейтингов — те же слова, что в меню и H1 (RATING_GROUPS
+  // в frontend/src/features/portal/nav/siteNav.ts), плюс «рейтинги» для
+  // поисковиков (решение Дмитрия 26.09.2026). Переименовали рейтинг в дереве —
+  // поправьте и здесь, и в зеркале (seo_service.py ↔ pageMeta.ts).
   "/ratings/runs": {
-    title: "Рейтинг по числу пробежек — run5k.run",
+    title: "Количество пробежек — рейтинги run5k.run",
     description:
       "Кто пробежал больше всех субботних стартов: сводный рейтинг по 5 вёрстам, " +
       "S95, parkrun и RunPark.",
     indexable: true,
   },
   "/ratings/volunteering": {
-    title: "Рейтинг волонтёров — run5k.run",
+    title: "Количество волонтёрств — рейтинги run5k.run",
     description:
       "Кто чаще всех выходил волонтёром на субботние старты — сводный рейтинг по " +
       "всем системам.",
     indexable: true,
   },
   "/ratings/volunteer-roles": {
-    title: "Рейтинг по волонтёрским ролям — run5k.run",
+    title: "Разнообразие ролей — рейтинги run5k.run",
     description: "В скольких разных волонтёрских ролях побывали участники субботних пробежек.",
     indexable: true,
   },
   "/ratings/locations": {
-    title: "Рейтинг по числу локаций — run5k.run",
+    title: "Уникальные локации — рейтинги run5k.run",
     description: "Беговой туризм в цифрах: кто пробежал на наибольшем числе разных локаций.",
     indexable: true,
   },
   "/ratings/volunteer-locations": {
-    title: "Рейтинг волонтёрского туризма — run5k.run",
+    title: "Волонтёрство на разных локациях — рейтинги run5k.run",
     description: "Кто волонтёрил на наибольшем числе разных локаций субботних пробежек.",
     indexable: true,
   },
   "/ratings/openings": {
-    title: "Рейтинг открытий локаций — run5k.run",
+    title: "Открытия локаций — рейтинги run5k.run",
     description:
       "Первопроходцы субботних пробежек: кто чаще всех бывал на торжественном открытии " +
       "новых локаций 5 вёрст, С95, parkrun и RunPark.",
     indexable: true,
   },
   "/ratings/wins": {
-    title: "Рейтинг побед — run5k.run",
+    title: "Первые места — рейтинги run5k.run",
     description: "Кто чаще всех финишировал первым на субботних стартах, с разбивкой по полу.",
     indexable: true,
   },
   "/ratings/fastest": {
-    title: "Самые быстрые результаты и участники — run5k.run",
+    title: "Самые быстрые — рейтинги run5k.run",
     description:
       "5 000 самых быстрых финишей и 3 000 самых быстрых участников субботних стартов: " +
       "срезы по системе, полу, возрастной группе и году.",
     indexable: true,
   },
   "/ratings/home-distance": {
-    title: "Рейтинг дальности от дома — run5k.run",
+    title: "Дальность от дома — рейтинги run5k.run",
     description:
       "Кто уезжает бегать дальше всех от своей домашней локации: сумма километров " +
       "по уникальным локациям.",
     indexable: true,
   },
   "/ratings/win-locations": {
-    title: "Рейтинг побед по локациям — run5k.run",
+    title: "Локации с первым местом — рейтинги run5k.run",
     description: "На скольких разных локациях участники успевали финишировать первыми.",
     indexable: true,
   },
   "/ratings/location-records": {
-    title: "Рекорды локаций — run5k.run",
+    title: "Рекорды локаций — рейтинги run5k.run",
     description:
       "Рекорды трасс субботних пятёрок: лучшее время каждой локации среди мужчин и " +
       "женщин и рекорды возрастных групп.",
     indexable: true,
   },
   "/ratings/regions": {
-    title: "Локации по регионам — run5k.run",
+    title: "Локации по регионам — рейтинги run5k.run",
     description:
-      "Сколько площадок субботних пятёрок в каждом регионе России: 5 вёрст, S95 и " +
+      "Сколько локаций субботних пятёрок в каждом регионе России: 5 вёрст, S95 и " +
       "RunPark в одной таблице, зарубежье — по странам.",
     indexable: true,
   },
   "/ratings/courses": {
-    title: "Трассы локаций — run5k.run",
+    title: "Трассы локаций — рейтинги run5k.run",
     description:
       "Перепад высот и извилистость трасс субботних пятёрок по трекам участников.",
     indexable: false,
