@@ -61,6 +61,9 @@ from app.time_format import normalize_finish_time_display
 logger = logging.getLogger(__name__)
 
 KIND_RUNS = "runs"
+# Сколько строк прогресса показывать: после пробежки подрастают десятки
+# счётчиков, и полный список утопил бы всё остальное в сообщении.
+PROGRESS_LIMIT = 8
 KIND_VOLUNTEERING = "volunteering"
 KIND_RATINGS = "ratings"
 
@@ -69,13 +72,29 @@ KIND_RATINGS = "ratings"
 # навигации, RATING_GROUPS): «Количество пробежек», «Уникальные локации»,
 # «Первые места». Раньше тут были свои слова («Пробежки», «Победы»), и один
 # рейтинг звался в уведомлении иначе, чем на странице, куда ведёт ссылка.
+# Рейтинги, за движением в которых следим. Все, кроме «Дальности от дома»:
+# там место считается по километрам до площадок, и «поднялся на 20 строк»
+# означает «съездил дальше», а не достижение — в недельной сводке это только
+# путало бы (решение 27.09.2026, до этого следили лишь за тремя).
 RATING_METRICS: tuple[tuple[str, str], ...] = tuple(
-    (metric, metric_title(metric)) for metric in ("runs", "locations", "wins")
+    (metric, metric_title(metric))
+    for metric in (
+        "runs",
+        "volunteering",
+        "volunteer_roles",
+        "locations",
+        "volunteer_locations",
+        "openings",
+        "wins",
+        "win_locations",
+    )
 )
 
 _LEVEL_RANK = {None: 0, "bronze": 1, "silver": 2, "gold": 3}
 _LEVEL_LABELS = {"bronze": "бронза", "silver": "серебро", "gold": "золото"}
 _LEVEL_ICONS = {"bronze": "🥉", "silver": "🥈", "gold": "🥇"}
+# Родительный падеж — для строки прогресса: «до серебра 7».
+_LEVEL_LABELS_GENITIVE = {"bronze": "бронзы", "silver": "серебра", "gold": "золота"}
 _MONTHS_GENITIVE = (
     "января", "февраля", "марта", "апреля", "мая", "июня",
     "июля", "августа", "сентября", "октября", "ноября", "декабря",
@@ -122,6 +141,20 @@ class LevelUp:
     icon: str
     tier: str
     level: str
+
+
+@dataclass(frozen=True)
+class ChallengeProgress:
+    """Счётчик челлендж вырос, но уровень ещё не взят: «Алфавит +1»."""
+
+    code: str
+    title: str
+    icon: str
+    current: int
+    delta: int
+    unit: str | None
+    to_next: int | None
+    next_level: str | None
 
 
 @dataclass(frozen=True)
@@ -354,6 +387,60 @@ def level_ups(
     return ups
 
 
+def challenge_counts_snapshot(payload: dict[str, Any]) -> dict[str, int]:
+    """{код: текущее значение счётчика} из ответа compute_challenges."""
+    counts: dict[str, int] = {}
+    for challenge in payload.get("challenges") or []:
+        try:
+            counts[str(challenge.get("code"))] = int(challenge.get("current") or 0)
+        except (TypeError, ValueError):
+            continue
+    return counts
+
+
+def challenge_progress(
+    previous: dict[str, Any] | None,
+    current: dict[str, int],
+    payload: dict[str, Any],
+    *,
+    exclude: set[str],
+) -> list[ChallengeProgress]:
+    """Челленджи, где счётчик вырос. Первый снимок молчит.
+
+    Те, где взят новый уровень, из списка исключаются: про них уже сказано
+    строкой с медалью, и повторять их ещё и прогрессом незачем.
+    """
+    if previous is None:
+        return []
+    meta = {str(c.get("code")): c for c in payload.get("challenges") or []}
+    result: list[ChallengeProgress] = []
+    for code, value in current.items():
+        if code in exclude:
+            continue
+        before = previous.get(code)
+        if not isinstance(before, int) or value <= before:
+            continue
+        challenge = meta.get(code) or {}
+        tiers = [t for t in (challenge.get("tiers") or []) if isinstance(t, dict)]
+        # Ближайший незакрытый тир: по нему считается «сколько осталось».
+        default_tier = str(challenge.get("default_tier") or "")
+        tier = next((t for t in tiers if str(t.get("tier")) == default_tier), None)
+        result.append(
+            ChallengeProgress(
+                code=code,
+                title=str(challenge.get("title") or code),
+                icon=str(challenge.get("icon") or "🏅"),
+                current=value,
+                delta=value - before,
+                unit=str(challenge["unit"]) if challenge.get("unit") else None,
+                to_next=int(tier["to_next_level"]) if tier and tier.get("to_next_level") else None,
+                next_level=str(tier["next_level"]) if tier and tier.get("next_level") else None,
+            )
+        )
+    result.sort(key=lambda item: (-item.delta, item.title))
+    return result
+
+
 def ratings_snapshot(db: Session, user: User) -> dict[str, int]:
     """Текущее место в каждом из рейтингов; нет в рейтинге — метрики нет в снимке."""
     snapshot: dict[str, int] = {}
@@ -534,6 +621,15 @@ def level_line(up: LevelUp) -> str:
     return f"{up.icon} {up.title} — {level}{suffix}"
 
 
+def progress_line(item: ChallengeProgress) -> str:
+    """«⏱ Секундомер: +1 → 18 сек, до золота 7»."""
+    value = f"{item.current} {item.unit}" if item.unit else str(item.current)
+    line = f"{item.icon} {item.title}: +{item.delta} → {value}"
+    if item.to_next and item.next_level:
+        line += f", до {_LEVEL_LABELS_GENITIVE.get(item.next_level, item.next_level)} {item.to_next}"
+    return line
+
+
 def rating_line(move: RatingMove) -> str:
     arrow = f"▲{move.gained}" if move.gained > 0 else f"▼{-move.gained}"
     return f"«{move.label}» — {bold(_ordinal(move.rank) + ' место')} ({arrow})"
@@ -603,6 +699,7 @@ def compose_message(
     *,
     runs: list[NewRun],
     ups: list[LevelUp],
+    progress: list[ChallengeProgress] | None,
     milestones: list[dict[str, Any]],
     poster_url: str | None,
     volunteerings: list[NewVolunteering] | None = None,
@@ -638,16 +735,18 @@ def compose_message(
         sections.append("\n\n".join(blocks))
     achievements_url = f"{profile_url}/achievements" if profile_url else None
     history_url = f"{profile_url}/history" if profile_url else None
-    if ups:
-        sections.append(
-            "🏆 " + bold_link("Челленджи:", achievements_url) + "\n" + "\n".join(level_line(u) for u in ups)
-        )
+    progress = progress or []
+    if ups or progress:
+        # Взятые уровни идут первыми: медаль важнее, чем «+1» в счётчике.
+        lines = [level_line(u) for u in ups]
+        lines += [progress_line(item) for item in progress[:PROGRESS_LIMIT]]
+        rest = len(progress) - PROGRESS_LIMIT
+        if rest > 0:
+            lines.append(f"…и ещё {rest}")
+        sections.append("🏆 " + bold_link("Челленджи:", achievements_url) + "\n" + "\n".join(lines))
     if milestones:
         sections.append(
-            "🎖 "
-            + bold_link("Вехи истории:", history_url)
-            + "\n"
-            + "\n".join(milestone_line(m) for m in milestones[:6])
+            "🎖 " + bold_link("Вехи истории:", history_url) + "\n" + "\n".join(milestone_line(m) for m in milestones[:6])
         )
     if runs and poster_url:
         sections.append("🖼 " + link("Собрать постер о пробежке", poster_url) + " — поделитесь результатом в сториз.")
@@ -664,6 +763,8 @@ def compose_message(
         )
     elif ups and not milestones:
         title = "🏆 Новый уровень в челлендже" if len(ups) == 1 else "🏆 Новые уровни в челленджах"
+    elif progress and not milestones:
+        title = "🏆 Прогресс в челленджах"
     else:
         title = "🎖 Что нового в вашей истории"
     return title, "\n\n".join(sections)
@@ -707,6 +808,7 @@ def scan_user_activity(db: Session, user_id: UUID, *, now: datetime | None = Non
     since = prefs.runs_notified_through or (now - timedelta(days=1))
     runs: list[NewRun] = []
     ups: list[LevelUp] = []
+    progress: list[ChallengeProgress] = []
     fresh: list[dict[str, Any]] = []
     volunteerings: list[NewVolunteering] = []
     if runs_on:
@@ -716,6 +818,13 @@ def scan_user_activity(db: Session, user_id: UUID, *, now: datetime | None = Non
         current_levels = challenge_levels_snapshot(payload)
         ups = level_ups(prefs.challenge_levels, current_levels, payload)
         prefs.challenge_levels = current_levels
+
+        # Обычный прогресс, а не только медали: человеку важен каждый «+1»
+        # (просьба Дмитрия 27.09.2026). Челленджи с новым уровнем в список
+        # прогресса не попадают — про них уже сказано строкой выше.
+        current_counts = challenge_counts_snapshot(payload)
+        progress = challenge_progress(prefs.challenge_counts, current_counts, payload, exclude={u.code for u in ups})
+        prefs.challenge_counts = current_counts
 
         keys, items = milestones_snapshot(db, user_id)
         fresh = new_milestones(
@@ -731,17 +840,18 @@ def scan_user_activity(db: Session, user_id: UUID, *, now: datetime | None = Non
 
     db.flush()
     delivery = None
-    if runs or ups or fresh or volunteerings:
+    if runs or ups or progress or fresh or volunteerings:
         title, text = compose_message(
             runs=runs,
             ups=ups,
+            progress=progress,
             milestones=fresh,
             poster_url=f"{base}/share",
             volunteerings=volunteerings,
             base_url=base,
             profile_url=f"{base}/users/{handle}",
         )
-        only_volunteering = bool(volunteerings) and not (runs or ups or fresh)
+        only_volunteering = bool(volunteerings) and not (runs or ups or progress or fresh)
         delivery = notifications.notify_user(
             db,
             user,
@@ -753,6 +863,7 @@ def scan_user_activity(db: Session, user_id: UUID, *, now: datetime | None = Non
                 [str(r.result_id) for r in runs]
                 + [str(result_id) for item in volunteerings for result_id in item.result_ids]
                 + [f"{u.code}:{u.tier}:{u.level}" for u in ups]
+                + [f"{p.code}:{p.current}" for p in progress]
                 + [milestone_key(m) for m in fresh]
             ),
             # Ссылка — туда, о чём сообщение: без пробежки (пусть и с вехами)
@@ -768,6 +879,7 @@ def scan_user_activity(db: Session, user_id: UUID, *, now: datetime | None = Non
         "runs": len(runs),
         "volunteerings": len(volunteerings),
         "level_ups": len(ups),
+        "progress": len(progress),
         "milestones": len(fresh),
         "queued": delivery is not None,
     }

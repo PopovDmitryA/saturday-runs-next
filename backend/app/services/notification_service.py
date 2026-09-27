@@ -89,6 +89,7 @@ def _arm_watermarks(prefs: UserNotificationPrefs, now: datetime) -> None:
     и вехах, которые случились, пока уведомления были выключены."""
     prefs.runs_notified_through = now
     prefs.challenge_levels = None
+    prefs.challenge_counts = None
     prefs.ratings_snapshot = None
     prefs.milestones_seen = None
 

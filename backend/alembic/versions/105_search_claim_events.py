@@ -6,8 +6,8 @@
 Анонимно, как search_query_log: ни пользователя, ни IP, ни участника — только
 ref (случайная часть токена), связывающий этапы одного захода.
 
-Revision ID: 104_search_claim_events
-Revises: 103_participant_name_fold_trgm
+Revision ID: 105_search_claim_events
+Revises: 104_notify_challenge_counts
 Create Date: 2026-09-27
 """
 
@@ -16,8 +16,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "104_search_claim_events"
-down_revision = "103_participant_name_fold_trgm"
+revision = "105_search_claim_events"
+down_revision = "104_notify_challenge_counts"
 branch_labels = None
 depends_on = None
 
