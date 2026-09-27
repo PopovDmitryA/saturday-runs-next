@@ -2103,6 +2103,9 @@ class UserNotificationPrefs(Base):
     # Снимки сканера активности; NULL — снимка ещё не было, первый скан
     # только запоминает и молчит.
     challenge_levels: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # Снимок значений счётчиков челленджей {код: current} — по нему видно
+    # обычный прогресс «+1», а не только взятый уровень (миграция 102).
+    challenge_counts: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     ratings_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     milestones_seen: Mapped[list[str] | None] = mapped_column(JSONB)
     # Докуда разобраны run_results.created_at для уведомлений о пробежках.

@@ -625,14 +625,22 @@ def _fake_sources(
     levels: dict[str, dict[str, str | None]],
     ranks: dict[str, int],
     milestones: list[dict[str, object]],
+    counts: dict[str, int] | None = None,
 ) -> None:
+    counts = counts or {}
     payload = {
         "challenges": [
             {
                 "code": code,
                 "title": {"seconds": "Секундомер", "positions": "Позиции"}.get(code, code),
                 "icon": "⏱",
-                "tiers": [{"tier": tier, "level": level} for tier, level in tiers.items()],
+                "current": counts.get(code, 0),
+                "unit": "сек" if code == "seconds" else None,
+                "default_tier": "easy",
+                "tiers": [
+                    {"tier": tier, "level": level, "next_level": "silver", "to_next_level": 7}
+                    for tier, level in tiers.items()
+                ],
             }
             for code, tiers in levels.items()
         ]
@@ -648,13 +656,14 @@ def _fake_sources(
     )
 
 
-def _enable_with_seeds(db: Session, user: User, *, levels, ranks, keys) -> None:  # noqa: ANN001
+def _enable_with_seeds(db: Session, user: User, *, levels, ranks, keys, counts=None) -> None:  # noqa: ANN001
     db_session = db
     _on(db_session, user)
     prefs = notify.get_prefs(db_session, user.id)
     assert prefs is not None
     prefs.runs_notified_through = datetime.now(UTC) - timedelta(minutes=5)
     prefs.challenge_levels = levels
+    prefs.challenge_counts = counts
     prefs.ratings_snapshot = ranks
     prefs.milestones_seen = keys
     db_session.commit()
@@ -688,7 +697,14 @@ def test_scan_composes_single_digest(
     )
 
     summary = activity.scan_user_activity(db_session, user.id)
-    assert summary == {"runs": 1, "volunteerings": 0, "level_ups": 1, "milestones": 1, "queued": True}
+    assert summary == {
+        "runs": 1,
+        "volunteerings": 0,
+        "level_ups": 1,
+        "progress": 0,
+        "milestones": 1,
+        "queued": True,
+    }
 
     delivery = db_session.query(NotificationDelivery).filter_by(user_id=user.id).one()
     assert delivery.kind == "runs"
@@ -910,3 +926,66 @@ def test_new_kind_is_on_for_existing_users(db_session: Session) -> None:
         assert notify.notify_user(db_session, user, fresh.code, title="t", text="x", dedupe_key="new-kind") is not None
         # Собственный выбор человека при этом не трогается.
         assert kind_enabled(prefs.kinds if prefs else None, "runs") is False
+
+
+def test_scan_reports_plain_progress_not_only_levels(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Просьба Дмитрия 27.09.2026: писать про любой «+1», а не только про медали."""
+    user = _make_user(db_session, chat_id=100)
+    today = datetime.now(UTC).date()
+    _enable_with_seeds(
+        db_session,
+        user,
+        levels={"seconds": {"easy": "bronze"}, "positions": {"easy": None}},
+        ranks={},
+        keys=[],
+        counts={"seconds": 17, "positions": 4},
+    )
+    _run_for(db_session, user, event_date=today - timedelta(days=1))
+    # У «Секундомера» уровень не изменился, счётчик вырос; «Позиции» не трогали.
+    _fake_sources(
+        monkeypatch,
+        levels={"seconds": {"easy": "bronze"}, "positions": {"easy": None}},
+        ranks={},
+        milestones=[],
+        counts={"seconds": 18, "positions": 4},
+    )
+
+    summary = activity.scan_user_activity(db_session, user.id)
+    assert summary["progress"] == 1 and summary["queued"] is True
+    text = db_session.query(NotificationDelivery).filter_by(user_id=user.id).one().payload["text"]
+    assert "⏱ Секундомер: +1 → 18 сек, до серебра 7" in text
+    assert "Позиции" not in text  # счётчик не двигался — молчим
+
+    prefs = notify.get_prefs(db_session, user.id)
+    assert prefs is not None and prefs.challenge_counts == {"seconds": 18, "positions": 4}
+
+
+def test_progress_skips_challenges_with_a_new_level(db_session: Session) -> None:
+    """Про взятый уровень уже сказано медалью — второй строкой не повторяем."""
+    payload = {
+        "challenges": [
+            {
+                "code": "seconds",
+                "title": "Секундомер",
+                "icon": "⏱",
+                "current": 18,
+                "default_tier": "easy",
+                "tiers": [{"tier": "easy", "level": "silver", "next_level": "gold", "to_next_level": 12}],
+            },
+        ]
+    }
+    counts = activity.challenge_counts_snapshot(payload)
+    assert counts == {"seconds": 18}
+    assert activity.challenge_progress({"seconds": 17}, counts, payload, exclude={"seconds"}) == []
+    grown = activity.challenge_progress({"seconds": 17}, counts, payload, exclude=set())
+    assert [item.delta for item in grown] == [1]
+    # Первый снимок молчит.
+    assert activity.challenge_progress(None, counts, payload, exclude=set()) == []
+
+
+def test_watched_ratings_cover_volunteering(db_session: Session) -> None:
+    """Волонтёрские рейтинги тоже считаются (вопрос Дмитрия 27.09.2026)."""
+    codes = {metric for metric, _title in activity.RATING_METRICS}
+    assert {"runs", "volunteering", "volunteer_locations", "volunteer_roles"} <= codes
+    # «Дальность от дома» намеренно вне списка: там место — про километры.
+    assert "home_distance" not in codes
