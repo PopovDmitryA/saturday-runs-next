@@ -32,6 +32,10 @@ LINK_METHOD_SEARCH = "search"
 LINK_METHOD_URL = "url"
 LINK_METHOD_CLAIM = "claim"
 LINK_METHOD_S95_PAIR = "s95_pair"
+# «Это вы?» из поиска по сайту (шапка): человек нажал свою строку в выдаче,
+# часто ещё гостем, и привязал её после входа. LINK_METHOD_SEARCH — поиск по
+# ФИО в онбординге и в кабинете.
+LINK_METHOD_SITE_SEARCH = "site_search"
 
 
 class ProfileLinkingError(Exception):
@@ -410,7 +414,13 @@ def confirm_profile_link(
     return link
 
 
-def confirm_profile_link_by_participant(db: Session, user: User, participant_id: object) -> PlatformLink:
+def confirm_profile_link_by_participant(
+    db: Session,
+    user: User,
+    participant_id: object,
+    *,
+    method: str = LINK_METHOD_SEARCH,
+) -> PlatformLink:
     """Привязка из поиска по ФИО: участник уже в нашей БД, предпросмотр-кэш не нужен."""
     from app.services.participant_profile_service import ResolvedProfileIdentity, build_profile_preview_from_db
 
@@ -460,7 +470,7 @@ def confirm_profile_link_by_participant(db: Session, user: User, participant_id:
         participant_id=participant.id,
         external_user_id=participant.external_user_id,
         external_url=external_url,
-        link_method=LINK_METHOD_SEARCH,
+        link_method=method,
     )
     db.add(link)
     db.commit()
@@ -491,6 +501,37 @@ def confirm_profile_link_by_participant(db: Session, user: User, participant_id:
     db.commit()
 
     return link
+
+
+def participant_link_state(db: Session, user: User, participant: Participant) -> tuple[str, PlatformLink | None]:
+    """Чем кончится привязка участника к user — без записи (окно «Это вы?» в поиске).
+
+    Те же проверки, что в confirm_profile_link_by_participant, но различены
+    случаи, которые там дают один 409: «уже мой» — успех, а не ошибка.
+    (состояние, своя привязка этой системы):
+    "already_yours" — своя привязка системы и есть этот участник;
+    "platform_linked" — привязан другой профиль этой системы (одна на систему);
+    "taken" — участник привязан к другому аккаунту; "can_link" — можно.
+    """
+    own = (
+        db.query(PlatformLink)
+        .filter(PlatformLink.user_id == user.id, PlatformLink.platform_id == participant.platform_id)
+        .one_or_none()
+    )
+    if own is not None:
+        if own.participant_id == participant.id or own.external_user_id == participant.external_user_id:
+            return "already_yours", own
+        return "platform_linked", own
+    taken = (
+        db.query(PlatformLink.id)
+        .filter(
+            PlatformLink.platform_id == participant.platform_id,
+            PlatformLink.external_user_id == participant.external_user_id,
+            PlatformLink.user_id != user.id,
+        )
+        .first()
+    )
+    return ("taken" if taken is not None else "can_link"), None
 
 
 def list_user_profile_links(db: Session, user: User) -> list[dict[str, object]]:

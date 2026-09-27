@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -121,6 +122,20 @@ class ParticipantSearchResponse(BaseModel):
 
 class LinkByParticipantRequest(BaseModel):
     participant_id: UUID
+
+
+class LinkBySearchTokenRequest(BaseModel):
+    """«Это я — привязать» из поиска по сайту: токен строки выдачи (claim_token)."""
+
+    token: str = Field(max_length=256)
+
+
+class LinkBySearchTokenResponse(BaseModel):
+    # "linked" — привязали сейчас; "already_linked" — этот же профиль уже был
+    # привязан к человеку (повторное нажатие, вторая вкладка) — это успех.
+    status: Literal["linked", "already_linked"]
+    link: PlatformLinkResponse
+
 
 class ProfileCompareLocationRow(BaseModel):
     """Строка сравнения по общей локации: как её проходит каждый из двоих."""

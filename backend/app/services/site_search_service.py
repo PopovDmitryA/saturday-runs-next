@@ -53,6 +53,7 @@ from app.models import (
     User,
     VolunteerResult,
 )
+from app.participant_identity import is_anonymous_participant
 from app.services.co_runners_service import _UNKNOWN_PARTICIPANT_NAMES, _is_unknown_participant_name
 from app.services.location_catalog_service import catalog_ids_for_locations
 from app.services.participant_search_service import (
@@ -1313,6 +1314,13 @@ def search_people(
     # волонтёрства — отдельный запрос на каждого участника.
     volunteering = load_volunteering_counts(db, shown_pairs)
     tops = _top_locations_for(db, shown_ids, docs)
+    # Токен «Это вы?» — только тем, кого примет claimable_participant: у старых
+    # протоколов 5 вёрст тысячи строк с настоящим именем, но ключом
+    # unknown:<локация>:<дата>:<место> — такую строку показываем, а нажать нельзя
+    # (иначе окно «Это вы?» ответит «найдите себя ещё раз» по кругу).
+    claimable_ids = {
+        participant.id for participant, platform in shown_pairs if is_claimable_participant(participant, platform)
+    }
 
     rows: list[dict[str, Any]] = []
     for kind, item in shown:
@@ -1335,22 +1343,88 @@ def search_people(
                 }
             )
             continue
-        top = tops.get(item.id)
-        runs, last_run = run_stats.get(item.id, (0, None))
         rows.append(
             {
                 "kind": "participant",
-                "display_name": prettify_name(item.display_name.strip()),
-                "total_runs": runs,
-                "total_volunteering": volunteering.get(item.id, 0),
-                "last_run_date": last_run,
-                "top_location_name": top.name if top else None,
-                "top_location_city": top.city if top else None,
+                **_participant_card(item.id, item.display_name, run_stats, volunteering, tops),
                 "platform_codes": [item.platform_code],
                 "partial": item.id in partial_ids,
+                # Внутренний ключ: наружу не уходит — роут /api/search меняет его
+                # на непрозрачный claim_token (search_claim_service). None —
+                # строку привязать нельзя, токена у неё не будет.
+                "participant_id": item.id if item.id in claimable_ids else None,
             }
         )
     return rows, truncated
+
+
+def _participant_card(
+    participant_id: UUID,
+    display_name: str,
+    run_stats: dict[UUID, tuple[int, date | None]],
+    volunteering: dict[UUID, int],
+    tops: dict[UUID, TopLocation],
+) -> dict[str, Any]:
+    """Что показывается о человеке из протоколов — в строке выдачи и в окне «Это вы?»."""
+    top = tops.get(participant_id)
+    runs, last_run = run_stats.get(participant_id, (0, None))
+    return {
+        "display_name": prettify_name(display_name.strip()),
+        "total_runs": runs,
+        "total_volunteering": volunteering.get(participant_id, 0),
+        "last_run_date": last_run,
+        "top_location_name": top.name if top else None,
+        "top_location_city": top.city if top else None,
+    }
+
+
+def is_claimable_participant(participant: Participant, platform: Platform | None) -> bool:
+    """Можно ли привязать этого участника из поиска («Это вы?»).
+
+    Одно правило и для выдачи (давать ли строке claim_token), и для разбора
+    токена (claimable_participant): иначе сервер выпустит токен, который сам
+    же отклонит. Заглушка безымянной строки протокола (ключ unknown:/anon:,
+    имя «НЕИЗВЕСТНЫЙ») — не человек, даже если имя у неё настоящее.
+    """
+    if not (participant.display_name or "").strip():
+        return False
+    if is_anonymous_participant(participant.external_user_id, participant.display_name):
+        return False
+    if _is_placeholder_name(participant.display_name):
+        return False
+    return platform is not None and bool(platform.is_active)
+
+
+def claimable_participant(db: Session, participant_id: UUID) -> tuple[Participant, Platform] | None:
+    """Участник по токену «Это вы?» — если его и сейчас можно привязать.
+
+    None — участника нет, это заглушка или система выключена
+    (is_claimable_participant).
+    """
+    participant = db.get(Participant, participant_id)
+    if participant is None:
+        return None
+    platform = db.get(Platform, participant.platform_id)
+    if platform is None or not is_claimable_participant(participant, platform):
+        return None
+    return participant, platform
+
+
+def participant_claim_card(db: Session, participant: Participant, platform: Platform) -> dict[str, Any]:
+    """Карточка «Это вы?» по одному участнику — теми же запросами, что строка выдачи.
+
+    Человек только что видел свою строку в поиске: цифры в окне обязаны
+    совпасть с ней до единицы, поэтому и считаются они теми же функциями.
+    """
+    ids = [participant.id]
+    card = _participant_card(
+        participant.id,
+        participant.display_name or "",
+        load_run_stats(db, ids),
+        load_volunteering_counts(db, [(participant, platform)]),
+        _top_locations_for(db, ids, _location_docs(db)),
+    )
+    return {**card, "platform_code": platform.code}
 
 
 def _fold_column(column: Any) -> Any:

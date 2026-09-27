@@ -5397,7 +5397,8 @@ export type SiteSearchLocation = {
 /**
  * Человек в выдаче поиска. «registered» — участник сайта с открытым профилем,
  * в него можно провалиться. «participant» — любой из протоколов (в том числе
- * с закрытым профилем): только статистика, без перехода и без внешних ссылок.
+ * с закрытым профилем): статистика и «Это вы?» по claim_token, без внешних
+ * ссылок.
  */
 export type SiteSearchPerson =
   | {
@@ -5424,6 +5425,12 @@ export type SiteSearchPerson =
       top_location_city: string | null;
       platform_codes: string[];
       partial?: boolean;
+      /**
+       * Непрозрачный токен «это я» (живёт 2 часа): по нему окно «Это вы?»
+       * спрашивает сервер и привязывает именно этого человека. Внутреннего id
+       * в выдаче нет. Нет токена (старый сервер) — строка не нажимается.
+       */
+      claim_token?: string | null;
     };
 
 export type SiteSearchResponse = {
@@ -5452,13 +5459,73 @@ export function searchSite(query: string, signal?: AbortSignal) {
   return apiFetch<SiteSearchResponse>(`/search?q=${encodeURIComponent(query)}`, signal ? { signal } : undefined);
 }
 
+/** Человек из протоколов на карточке «Это вы?» — те же цифры, что в строке поиска. */
+export type SearchClaimPerson = {
+  display_name: string;
+  platform_code: string;
+  total_runs: number;
+  total_volunteering: number;
+  last_run_date: string | null;
+  top_location_name: string | null;
+  top_location_city: string | null;
+};
+
+/**
+ * Что смотрящий может сделать с этим человеком. Гостю сервер всегда отвечает
+ * «guest» — привязан ли человек к кому-то, гостю не раскрываем.
+ */
+export type SearchClaimViewerState = "guest" | "can_link" | "already_yours" | "platform_linked" | "taken";
+
+export type SearchClaim = SearchClaimPerson & { viewer_state: SearchClaimViewerState };
+
+/**
+ * «Это вы?» по токену из выдачи. Ошибки: 400 — токен повреждён, 410 — устарел,
+ * 404 — человека нет; текст для экрана — в ApiError.message.
+ */
+export function openSearchClaim(token: string, signal?: AbortSignal) {
+  return apiFetch<SearchClaim>(`/search/claim?token=${encodeURIComponent(token)}`, signal ? { signal } : undefined);
+}
+
+/**
+ * «Это не я» — этап воронки на сервере. Ответ не нужен, ошибки глушим:
+ * человек уже вернулся к однофамильцам.
+ */
+export function declineSearchClaim(token: string): void {
+  void fetch(`${API_BASE}/search/claim/decline`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
+export type SearchClaimLinkResult = {
+  /** already_linked — этот же человек уже был привязан к смотрящему. */
+  status: "linked" | "already_linked";
+  link: PlatformLink;
+  message?: string;
+};
+
+/** «Это я — привязать» из поиска (link_method = site_search). */
+export function linkBySearchToken(token: string) {
+  return apiFetch<SearchClaimLinkResult>("/profiles/link-by-search-token", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
 export type SiteSearchLogEntry = {
   query: string;
   corrected_query: string | null;
   pages_found: number;
   locations_found: number;
   people_found: number;
-  clicked_kind: "page" | "location" | "person" | null;
+  /**
+   * participant — нажали на человека из протоколов («Это вы?»); цель тогда
+   * «код системы#позиция среди протокольных строк», без имени и токена.
+   */
+  clicked_kind: "page" | "location" | "person" | "participant" | null;
   clicked_target: string | null;
   is_mobile: boolean;
   /** Людей в этом поиске не искали (нагрузка) — сервер такую запись не хранит. */
@@ -5495,7 +5562,13 @@ export type AdminSearchLogResponse = {
   no_click_queries: { query: string; count: number; zero_results_count: number; last_at: string }[];
   top_queries: { query: string; count: number; zero_results_count: number; clicks: number }[];
   zero_result_queries: { query: string; count: number; last_at: string }[];
-  clicks_by_kind: { page: number; location: number; person: number; none: number };
+  clicks_by_kind: { page: number; location: number; person: number; participant: number; none: number };
+  /**
+   * Воронка «Это вы?» за тот же период, по анонимным ключам токенов: гость
+   * нажал → вошёл → привязал; вошедший нажал → привязал. Может отсутствовать
+   * в ответе старого сервера.
+   */
+  claim_funnel?: SearchClaimFunnel;
   daily: { date: string; count: number }[];
   recent: {
     created_at: string;
@@ -5509,6 +5582,17 @@ export type AdminSearchLogResponse = {
     is_authed: boolean;
     is_mobile: boolean;
   }[];
+};
+
+export type SearchClaimFunnel = {
+  guest_opened: number;
+  guest_logged_in: number;
+  guest_linked: number;
+  authed_opened: number;
+  authed_linked: number;
+  declined: number;
+  /** Ошибки привязки по HTTP-коду: {"409": 3, …}. */
+  failed_by_status: Record<string, number>;
 };
 
 export function getAdminSearchLog(periodDays: number) {

@@ -47,6 +47,7 @@ import {
 } from "./nav/navIcons";
 import { resolveNavState, type SiteSidebarActive } from "./nav/navState";
 import { forgetOrganizer, rememberOrganizerPlace } from "./nav/organizerMemory";
+import { forgetSearchClaim } from "./nav/searchClaim";
 import { OrganizerSwitcher, useOrganizerLocations } from "./nav/OrganizerSwitcher";
 import { canSeeOrganizer, isLinkCurrent, type NavSection, type NavSectionKey, type NavPlace } from "./nav/siteNav";
 import "./cabinet/cabinet.css";
@@ -511,8 +512,10 @@ export function LogoutButton({ className }: { className?: string }) {
     } finally {
       clearCachedUser();
       // Роль и локации организатора — тоже личное: следующему, кто войдёт в
-      // этом браузере, «Оргкабинет» чужого не покажет.
+      // этом браузере, «Оргкабинет» чужого не покажет. И отложенное «Это вы?»
+      // из поиска: следующему вошедшему чужого человека не предложим.
       forgetOrganizer();
+      forgetSearchClaim();
       window.location.href = PORTAL_LOGIN_HREF;
     }
   };

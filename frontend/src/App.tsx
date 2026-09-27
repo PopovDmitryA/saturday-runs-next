@@ -30,6 +30,7 @@ import {
 import { NotFoundPage } from "./features/NotFoundPage";
 import { TapTooltipLayer } from "./components/TapTooltipLayer";
 import { SiteSearchDialog } from "./features/portal/nav/SiteSearchDialog";
+import { SearchClaimRunner } from "./features/portal/nav/SearchClaimRunner";
 import { useEntryKey } from "./hooks/useEntryKey";
 import { useAppPath } from "./hooks/useAppPath";
 import { ShareSheetProvider } from "./features/sharing/ShareSheetContext";
@@ -509,6 +510,9 @@ export function App() {
         </LazyErrorBoundary>
       </Fragment>
       <TeaserClaimRunner userId={viewer?.id ?? null} />
+      {/* «Это вы?» из поиска → вход → «Это я — привязать» с тем же человеком
+          (nav/searchClaim.ts): окно после входа, на любой странице. */}
+      <SearchClaimRunner path={path} />
       {/* Тап-подсказки на телефоне — один слой на весь сайт (см. TapTooltipLayer). */}
       <TapTooltipLayer />
       {/* Поиск по сайту — одно окно на всё приложение, открывается из шапки,

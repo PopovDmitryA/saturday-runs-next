@@ -5,15 +5,21 @@ from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.config import Settings, get_settings
+from app.core.admin import is_admin_user
+from app.core.bot_detection import is_bot_user_agent
 from app.core.request_cancel import RequestCancelled, run_sync_with_disconnect_watch
 from app.db.session import get_db
-from app.models import User
+from app.models import PlatformLink, User
 from app.platform_adapters.canonical import ProfilePreview
 from app.schemas.profiles import (
     LinkByParticipantRequest,
+    LinkBySearchTokenRequest,
+    LinkBySearchTokenResponse,
     ParticipantSearchResponse,
     ParticipantSearchResultResponse,
     PlatformLinkResponse,
@@ -29,17 +35,22 @@ from app.schemas.profiles import (
 )
 from app.services.participant_search_service import ParticipantSearchError, search_participants
 from app.services.profile_linking_service import (
+    LINK_METHOD_SITE_SEARCH,
     ProfileLinkingError,
     claim_profile_by_athlete_id,
     confirm_profile_link,
     confirm_profile_link_by_participant,
     confirm_s95_profile_link,
     list_user_profile_links,
+    participant_link_state,
     preview_profile_link,
     preview_runpark_profile_link,
     preview_s95_profile_link,
 )
 from app.services.profile_unlink_service import unlink_user_profile
+from app.services.search_claim_service import CLAIM_NOT_FOUND_MESSAGE, SearchClaimTokenError, parse_claim_token
+from app.services.search_log_service import CLAIM_FAILED, CLAIM_LINKED, record_claim_event
+from app.services.site_search_service import claimable_participant
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 logger = logging.getLogger(__name__)
@@ -289,6 +300,79 @@ def link_by_participant(
     links = list_user_profile_links(db, user)
     link_data = next(item for item in links if item["id"] == link.id)
     return ProfileLinkConfirmResponse(link=PlatformLinkResponse.model_validate(link_data))
+
+
+# Гонка двух привязок (двойной клик, окно в двух вкладках) доходит до
+# уникальных ключей platform_links — отвечаем тем же текстом, что дали бы
+# проверки, а не 500.
+_SEARCH_TOKEN_CONFLICT_MESSAGES = {
+    "platform_linked": "Профиль на этой платформе уже привязан к вашему аккаунту",
+    "taken": "Этот профиль уже привязан к другому аккаунту",
+}
+_SEARCH_TOKEN_CONFLICT_FALLBACK = "Профиль уже привязан — обновите страницу"
+
+
+def _search_token_link_response(db: Session, user: User, status: str, link: PlatformLink) -> LinkBySearchTokenResponse:
+    links = list_user_profile_links(db, user)
+    link_data = next(item for item in links if item["id"] == link.id)
+    return LinkBySearchTokenResponse(status=status, link=PlatformLinkResponse.model_validate(link_data))
+
+
+@router.post("/link-by-search-token", response_model=LinkBySearchTokenResponse)
+def link_by_search_token(
+    request: Request,
+    body: LinkBySearchTokenRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> LinkBySearchTokenResponse:
+    """«Это я — привязать» из поиска по сайту: ровно тот человек, чью строку нажали.
+
+    Токен строки выдачи (claim_token) переживает вход: гость нажал свою
+    строку, вошёл — и привязывается она же, без повторного выбора среди
+    однофамильцев. Проверки — те же, что у link-by-participant; «этот
+    профиль уже мой» (повторное нажатие, вторая вкладка) — успех
+    already_linked, а не 409. Путь — в /profiles, а не в /search: пишущей
+    ручке место в обычном тарифе защиты, а не в щедром поисковом.
+    """
+    journal = not is_bot_user_agent(request.headers.get("user-agent")) and not is_admin_user(user, settings)
+
+    def fail(ref: str | None, platform_code: str | None, status_code: int, message: str) -> HTTPException:
+        if journal and ref:
+            record_claim_event(
+                db, ref, CLAIM_FAILED, is_authed=True, platform_code=platform_code, status=status_code
+            )
+        return HTTPException(status_code=status_code, detail=message)
+
+    try:
+        claim = parse_claim_token(body.token, settings.app_secret_key)
+    except SearchClaimTokenError as exc:
+        # У истёкшего токена подпись верна и ref известен — это тоже сход с воронки.
+        raise fail(exc.ref, None, exc.status_code, exc.message) from exc
+    found = claimable_participant(db, claim.participant_id)
+    if found is None:
+        raise fail(claim.ref, None, 404, CLAIM_NOT_FOUND_MESSAGE)
+    participant, platform = found
+    platform_code = platform.code
+
+    state, own_link = participant_link_state(db, user, participant)
+    if state == "already_yours" and own_link is not None:
+        return _search_token_link_response(db, user, "already_linked", own_link)
+    try:
+        link = confirm_profile_link_by_participant(db, user, participant.id, method=LINK_METHOD_SITE_SEARCH)
+    except ProfileLinkingError as exc:
+        raise fail(claim.ref, platform_code, exc.status_code, exc.message) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        state, own_link = participant_link_state(db, user, participant)
+        if state == "already_yours" and own_link is not None:
+            return _search_token_link_response(db, user, "already_linked", own_link)
+        message = _SEARCH_TOKEN_CONFLICT_MESSAGES.get(state, _SEARCH_TOKEN_CONFLICT_FALLBACK)
+        raise fail(claim.ref, platform_code, 409, message) from exc
+
+    if journal:
+        record_claim_event(db, claim.ref, CLAIM_LINKED, is_authed=True, platform_code=platform_code)
+    return _search_token_link_response(db, user, "linked", link)
 
 
 @router.get("", response_model=list[PlatformLinkResponse])

@@ -4,7 +4,12 @@
 никуда не перешли»: человек что-то увидел, но нужного там не было. Пустая
 выдача — лишь частный случай: «погода» с одиннадцатью Погодаевыми пустой не
 считалась, хотя страницу погоды человек так и не нашёл. Переходы по видам
-(страница / локация / человек) показывают, чем поиск вообще полезен.
+(страница / локация / человек с профилем / человек из протоколов) показывают,
+чем поиск вообще полезен.
+
+Второй журнал — воронка «Это вы?» (search_claim_events): человек из протоколов
+нажал свою строку, вошёл и привязал её. Этапы пишет сервер по токену строки,
+отчёт — блок claim_funnel.
 
 Журнал — диагностика, а не бизнес-логика: его сбой не должен превращаться в
 ошибку у человека, поэтому запись обёрнута в try/except.
@@ -16,17 +21,19 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, not_
 from sqlalchemy.orm import Session
 
-from app.models import SearchQueryLog
+from app.models import SearchClaimEvent, SearchQueryLog
 from app.services.participant_search_service import strip_control_chars
 from app.services.site_search_service import normalize_log_query
 
 logger = logging.getLogger(__name__)
 
 LOG_MIN_QUERY_LENGTH = 2
-CLICK_KINDS = ("page", "location", "person")
+# person — человек с профилем на сайте (переход на /users/…), participant —
+# человек из протоколов (открыл «Это вы?»; target — «система#позиция строки»).
+CLICK_KINDS = ("page", "location", "person", "participant")
 TOP_LIMIT = 50
 RECENT_LIMIT = 50
 _COUNT_CAP = 10_000
@@ -87,6 +94,124 @@ def record_search(db: Session, payload: dict[str, Any], *, is_authed: bool) -> b
         logger.exception("search log: failed to record query")
         db.rollback()
         return False
+
+
+# ---------------------------------------------------------------------------
+# Воронка «Это вы?»
+
+CLAIM_OPEN = "open"
+CLAIM_LOGIN = "login"
+CLAIM_LINKED = "linked"
+CLAIM_FAILED = "failed"
+CLAIM_DECLINED = "declined"
+
+
+def _claim_event_exists(db: Session, ref: str, stage: str, *, is_authed: bool | None, status: int | None) -> bool:
+    query = db.query(SearchClaimEvent.id).filter(SearchClaimEvent.ref == ref, SearchClaimEvent.stage == stage)
+    if is_authed is not None:
+        query = query.filter(SearchClaimEvent.is_authed.is_(is_authed))
+    if status is not None:
+        query = query.filter(SearchClaimEvent.status == status)
+    return query.first() is not None
+
+
+def record_claim_event(
+    db: Session,
+    ref: str,
+    stage: str,
+    *,
+    is_authed: bool,
+    platform_code: str | None = None,
+    status: int | None = None,
+) -> bool:
+    """Записать этап воронки «Это вы?» по ref токена. False — повтор или сбой.
+
+    Этап пишется один раз на заход: окно открывают и перезагружают по
+    нескольку раз, а отчёт считает заходы (distinct ref), не нажатия, —
+    повторы только раздували бы таблицу. «login» отдельного вызова не
+    требует: его отмечает открытие вошедшим, если этот ref уже открывали
+    гостем, — человек вошёл по «Войти и привязать».
+    """
+    stages = [stage]
+    try:
+        if (
+            stage == CLAIM_OPEN
+            and is_authed
+            and _claim_event_exists(db, ref, CLAIM_OPEN, is_authed=False, status=None)
+            and not _claim_event_exists(db, ref, CLAIM_LOGIN, is_authed=None, status=None)
+        ):
+            stages.append(CLAIM_LOGIN)
+        written = False
+        for item in stages:
+            if _claim_event_exists(db, ref, item, is_authed=is_authed, status=status):
+                continue
+            db.add(
+                SearchClaimEvent(
+                    ref=ref,
+                    stage=item,
+                    is_authed=bool(is_authed),
+                    platform_code=platform_code,
+                    status=status,
+                )
+            )
+            written = True
+        if written:
+            db.commit()
+        return written
+    except Exception:  # noqa: BLE001 — журнал не должен ломать сайт
+        logger.exception("search claim: failed to record stage %s", stage)
+        db.rollback()
+        return False
+
+
+def _claim_funnel(db: Session, since: datetime) -> dict[str, Any]:
+    """Заходы «Это вы?» за период: гостевые (открыл → вошёл → привязал) и вошедших.
+
+    Заход — ref токена. Гостевой — хоть раз открыт без входа; открытые только
+    вошедшим считаются отдельно, иначе «вошли» у гостей размывалось бы теми,
+    кто и так был в аккаунте.
+    """
+    event = SearchClaimEvent
+    per_ref = (
+        db.query(
+            event.ref.label("ref"),
+            func.bool_or(and_(event.stage == CLAIM_OPEN, event.is_authed.is_(False))).label("guest_open"),
+            func.bool_or(and_(event.stage == CLAIM_OPEN, event.is_authed.is_(True))).label("authed_open"),
+            func.bool_or(event.stage == CLAIM_LOGIN).label("login"),
+            func.bool_or(event.stage == CLAIM_LINKED).label("linked"),
+            func.bool_or(event.stage == CLAIM_DECLINED).label("declined"),
+        )
+        .filter(event.created_at >= since)
+        .group_by(event.ref)
+        .subquery()
+    )
+    ref = per_ref.c
+    authed_only = and_(ref.authed_open, not_(ref.guest_open))
+    guest_opened, guest_logged_in, guest_linked, authed_opened, authed_linked, declined = db.query(
+        func.count().filter(ref.guest_open),
+        func.count().filter(and_(ref.guest_open, ref.login)),
+        func.count().filter(and_(ref.guest_open, ref.linked)),
+        func.count().filter(authed_only),
+        func.count().filter(and_(authed_only, ref.linked)),
+        func.count().filter(ref.declined),
+    ).one()
+    failed_by_status = {
+        str(status): int(count)
+        for status, count in db.query(event.status, func.count(func.distinct(event.ref)))
+        .filter(event.created_at >= since, event.stage == CLAIM_FAILED, event.status.isnot(None))
+        .group_by(event.status)
+        .order_by(event.status)
+        .all()
+    }
+    return {
+        "guest_opened": int(guest_opened or 0),
+        "guest_logged_in": int(guest_logged_in or 0),
+        "guest_linked": int(guest_linked or 0),
+        "authed_opened": int(authed_opened or 0),
+        "authed_linked": int(authed_linked or 0),
+        "declined": int(declined or 0),
+        "failed_by_status": failed_by_status,
+    }
 
 
 def _zero_results() -> Any:
@@ -215,4 +340,5 @@ def get_search_log_report(db: Session, *, period_days: int = 30) -> dict[str, An
         "clicks_by_kind": clicks_by_kind,
         "daily": daily,
         "recent": recent,
+        "claim_funnel": _claim_funnel(db, since),
     }

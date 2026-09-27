@@ -9,9 +9,11 @@ import {
   telegramStartUrl,
   verifyEmailCode,
 } from "../../lib/api";
+import { platformCodeLabel } from "../../lib/format";
 import { PORTAL_ABOUT_PRIVACY_HREF } from "../../lib/portalRoutes";
 import { EmailSpamHint } from "../../components/EmailSpamHint";
 import { TelegramBotLogin } from "../auth/TelegramBotLogin";
+import { peekSearchClaim } from "./nav/searchClaim";
 import { PortalFooter } from "./PortalFooter";
 import { PortalHeader } from "./PortalHeader";
 import "./portal.css";
@@ -209,6 +211,9 @@ export function PortalLoginPage() {
   const [linkError, setLinkError] = useState<string | null>(() => readLinkError());
   const [redirectingProvider, setRedirectingProvider] = useState<"vk" | "yandex" | null>(null);
   const [returning] = useState<boolean>(() => isReturningUser());
+  // Пришли из «Это вы?» в поиске — напоминаем, зачем входим: после входа
+  // сайт предложит привязать этого человека (nav/searchClaim.ts).
+  const [pendingClaim] = useState(() => peekSearchClaim()?.snapshot ?? null);
   // Вход по почте: сначала адрес, потом код из письма. Второй шаг показываем
   // только после отправки — пустое поле кода на первом экране лишь путает.
   const [emailStep, setEmailStep] = useState<"idle" | "code">(() =>
@@ -409,6 +414,13 @@ export function PortalLoginPage() {
                   Закрыть
                 </button>
               </div>
+            )}
+
+            {pendingClaim && (
+              <p className="portal-login-claim">
+                После входа предложим привязать: <b>{pendingClaim.display_name}</b> ·{" "}
+                {platformCodeLabel(pendingClaim.platform_code)}
+              </p>
             )}
 
             {telegramBotFlow ? (

@@ -2422,6 +2422,22 @@ main[tabindex="-1"]:focus {
   color: var(--tint-amber-text);
 }
 
+/* «После входа предложим привязать: …» — человек пришёл из «Это вы?» в
+   поиске. Спокойная плашка, не ошибка. */
+.portal-login-claim {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--tint-indigo-bg);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.portal-login-claim b {
+  color: var(--text);
+}
+
 .portal-login-consent {
   display: flex;
   gap: 10px;

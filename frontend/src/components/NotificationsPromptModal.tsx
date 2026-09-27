@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { lockBodyScroll } from "../lib/bodyScrollLock";
 import { dismissNotificationNudge, getNotificationNudge, type NotificationNudgeState } from "../lib/api";
 import { PORTAL_NOTIFICATIONS_SETTINGS_HREF } from "../lib/portalRoutes";
+import { hasPendingSearchClaim } from "../features/portal/nav/searchClaim";
 
 // Две модалки под одной механикой показа:
 //  * «На сайте появились уведомления» — пока они выключены. Один раз за вход,
@@ -13,6 +14,9 @@ import { PORTAL_NOTIFICATIONS_SETTINGS_HREF } from "../lib/portalRoutes";
 //    выключить уведомления в настройках.
 // «Не сейчас» прячет до следующего входа (sessionStorage живёт до закрытия
 // вкладки), чтобы модалка не всплывала на каждой странице кабинета.
+// Пока ждёт ответа «Это вы?» из поиска (SearchClaimRunner) — молчим и не
+// снузим: два окна разом после входа не нужны, призыв покажется на следующей
+// странице кабинета.
 const SNOOZE_KEY = "notify-prompt-snoozed";
 
 function snoozed(kind: string): boolean {
@@ -35,10 +39,13 @@ export function NotificationsPromptModal() {
   const [state, setState] = useState<NotificationNudgeState | null>(null);
 
   useEffect(() => {
+    if (hasPendingSearchClaim()) {
+      return;
+    }
     let cancelled = false;
     void getNotificationNudge()
       .then((next) => {
-        if (!cancelled && next.show && next.kind && !snoozed(next.kind)) {
+        if (!cancelled && next.show && next.kind && !snoozed(next.kind) && !hasPendingSearchClaim()) {
           setState(next);
         }
       })

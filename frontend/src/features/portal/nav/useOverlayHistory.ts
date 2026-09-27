@@ -30,6 +30,13 @@
  * предыдущего (оно закрывается без «назад»), так в истории никогда не копятся
  * две заглушки подряд. Хук годится для любого окна сайта — им пользуется и
  * поиск.
+ *
+ * Подшаг (pushStep/popStep) — экран внутри окна, из которого «Назад» ведёт
+ * обратно в окно, а не закрывает его: «Это вы?» в поиске (27.09.2026). Это
+ * вторая запись с тем же токеном и полем шага. Системное «Назад» снимает её —
+ * подшаг закрывается, окно остаётся; второе «Назад» закрывает окно. Закрыть
+ * окно прямо с подшага (крестик, переход по ссылке) — снять обе записи разом
+ * (history.go(-2)). У окон без подшагов всё как раньше: одна запись, один шаг.
  */
 import { useCallback, useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { normalizeAppPath } from "../../../hooks/useAppPath";
@@ -37,6 +44,8 @@ import { onEntryChange } from "../../../lib/historyEntry";
 import { scrollForNavigation, stopScrollRestore } from "../../../lib/scrollMemory";
 
 const OVERLAY_FIELD = "srsOverlay";
+/** Поле записи подшага окна (см. pushStep). */
+const STEP_FIELD = "srsOverlayStep";
 /** Поле с ключом записи — его кладёт обёртка lib/historyEntry. */
 const ENTRY_FIELD = "srsEntry";
 /** Столько ждём popstate после history.back(), потом закрываем окно сами. */
@@ -65,6 +74,10 @@ function overlayTokenOf(state: unknown): string | null {
   return null;
 }
 
+function isStepEntry(state: unknown): boolean {
+  return Boolean(state && typeof state === "object" && (state as Record<string, unknown>)[STEP_FIELD] === 1);
+}
+
 function entryKeyOf(state: unknown): string | null {
   if (state && typeof state === "object") {
     const value = (state as Record<string, unknown>)[ENTRY_FIELD];
@@ -80,14 +93,16 @@ function entryKeyOf(state: unknown): string | null {
  * «Меню» (F5 окно закрывает, а запись остаётся), или окно закрыли и нажали
  * «Вперёд». Страница выглядит обычной, а под заглушкой лежит запись этой же
  * страницы с тем же ключом — и следующее «Назад» ничего видимого не делало
- * (проверка 26.09.2026). Здесь — ключ страницы, на заглушке которой мы стоим.
+ * (проверка 26.09.2026). Здесь — ключ страницы, на заглушке которой мы стоим,
+ * и не запись ли это подшага (под ней — ещё одна заглушка того же окна).
  */
-let ghost: { key: string | null } | null = null;
+type Ghost = { key: string | null; step: boolean };
+let ghost: Ghost | null = null;
 
-function ghostOf(state: unknown): { key: string | null } | null {
+function ghostOf(state: unknown): Ghost | null {
   const token = overlayTokenOf(state);
   if (token === null || holder?.token === token) return null;
-  return { key: entryKeyOf(state) };
+  return { key: entryKeyOf(state), step: isStepEntry(state) };
 }
 
 if (typeof window !== "undefined") {
@@ -101,8 +116,11 @@ if (typeof window !== "undefined") {
     // Снимок это не трогает: обе записи — одна страница с одним ключом, она не
     // пересоздаётся. А докрутку этой страницы (после F5 она ещё может идти)
     // гасим: страница уходит, и докрутка утащила бы прошлую на свою позицию
-    // (NAV-2, см. lib/scrollMemory).
-    if (left && overlayTokenOf(event.state) === null && entryKeyOf(event.state) === left.key) {
+    // (NAV-2, см. lib/scrollMemory). С заглушки подшага «Назад» приходит на
+    // заглушку того же окна под ней — тоже невидимый шаг.
+    const invisible =
+      overlayTokenOf(event.state) === null || (left?.step === true && ghost !== null && !ghost.step);
+    if (left && invisible && entryKeyOf(event.state) === left.key) {
       stopScrollRestore();
       window.history.back();
     }
@@ -121,6 +139,27 @@ function pushOverlayEntry(token: string): void {
   History.prototype.pushState.call(window.history, { ...base, [OVERLAY_FIELD]: token }, "");
   // Если открыли окно, стоя на заглушке, новая запись — живая.
   ghost = null;
+}
+
+/** Запись подшага — поверх записи окна, с тем же токеном. */
+function pushStepEntry(token: string): void {
+  const current = window.history.state;
+  const base = current && typeof current === "object" ? (current as Record<string, unknown>) : {};
+  History.prototype.pushState.call(window.history, { ...base, [OVERLAY_FIELD]: token, [STEP_FIELD]: 1 }, "");
+  ghost = null;
+}
+
+/** Переписать верхнюю запись под другое окно: новый токен, без подшага. */
+function replaceOverlayEntry(token: string): void {
+  const current = window.history.state;
+  const base = current && typeof current === "object" ? { ...(current as Record<string, unknown>) } : {};
+  delete base[STEP_FIELD];
+  History.prototype.replaceState.call(window.history, { ...base, [OVERLAY_FIELD]: token }, "");
+}
+
+function nextToken(): string {
+  sequence += 1;
+  return `ov-${Date.now().toString(36)}-${sequence}`;
 }
 
 type InAppTarget = { url: URL; full: boolean };
@@ -177,6 +216,13 @@ export type OverlayHistory = {
    * сделать что-то своё до перехода (поиск пишет клик в журнал).
    */
   interceptLinks: (event: ReactMouseEvent) => void;
+  /**
+   * Открыть подшаг — экран внутри окна (поиск: «Это вы?»). onBack зовётся,
+   * когда подшаг закрыло системное «Назад»: окно остаётся открытым.
+   */
+  pushStep: (onBack: () => void) => void;
+  /** Подшаг закрыли сами (кнопка, Esc) — снять его запись из истории. */
+  popStep: () => void;
 };
 
 /**
@@ -192,21 +238,50 @@ export function useOverlayHistory(open: boolean, onClose: () => void): OverlayHi
   const tokenRef = useRef<string | null>(null);
   const afterRef = useRef<(() => void) | null>(null);
   const timerRef = useRef(0);
+  // Запись подшага лежит в истории над записью окна.
+  const stepRef = useRef(false);
+  // Мы сами сделали «назад» с подшага и ждём popstate: "silent" — просто
+  // снять запись; "repush" — пока ждали, подшаг открыли снова, запись вернуть.
+  const landingRef = useRef<"silent" | "repush" | null>(null);
+  const stepBackRef = useRef<(() => void) | null>(null);
+  // Окно уже уходит (переход по истории в пути): второй dismiss подряд
+  // (двойной тап по крестику) снял бы ещё запись — уже со страницы.
+  const leavingRef = useRef(false);
+
+  const resetStep = useCallback(() => {
+    stepRef.current = false;
+    landingRef.current = null;
+    stepBackRef.current = null;
+  }, []);
+
+  // Сколько записей окна снять, чтобы уйти на страницу. Наш «назад» с
+  // подшага ещё в пути — он снимет запись подшага сам: не считаем её и не
+  // возвращаем.
+  const depthToLeave = useCallback((): number => {
+    const leaving = landingRef.current !== null;
+    if (leaving) landingRef.current = "silent";
+    return stepRef.current && !leaving ? 2 : 1;
+  }, []);
 
   // Окно закрыто, его записи в истории больше нет.
   const finish = useCallback(() => {
     window.clearTimeout(timerRef.current);
     tokenRef.current = null;
+    leavingRef.current = false;
+    resetStep();
     closeRef.current();
     const after = afterRef.current;
     afterRef.current = null;
     after?.();
-  }, []);
+  }, [resetStep]);
 
   const dismiss = useCallback(() => {
     const token = tokenRef.current;
     if (token !== null && overlayTokenOf(window.history.state) === token) {
-      window.history.back();
+      if (leavingRef.current) return;
+      leavingRef.current = true;
+      // С открытым подшагом — обе записи окна одним переходом.
+      window.history.go(-depthToLeave());
       // Страховка: браузер не прислал popstate — закрываем сами.
       window.clearTimeout(timerRef.current);
       timerRef.current = window.setTimeout(() => {
@@ -215,7 +290,7 @@ export function useOverlayHistory(open: boolean, onClose: () => void): OverlayHi
       return;
     }
     finish();
-  }, [finish]);
+  }, [finish, depthToLeave]);
 
   const dismissThen = useCallback(
     (after: () => void) => {
@@ -231,11 +306,19 @@ export function useOverlayHistory(open: boolean, onClose: () => void): OverlayHi
     if (holder && overlayTokenOf(window.history.state) === holder.token) {
       // Другое окно ещё держит запись на вершине истории — забираем её себе,
       // а его закрываем без «назад»: окно вместо окна — та же одна запись.
-      token = holder.token;
-      holder.release();
+      const previous = holder;
+      if (isStepEntry(window.history.state)) {
+        // У прежнего окна открыт подшаг — две записи одной не заменить. Новое
+        // окно встаёт на место подшага со своим токеном, а запись под ним
+        // остаётся заглушкой: её перешагнёт обход заглушек выше.
+        token = nextToken();
+        replaceOverlayEntry(token);
+      } else {
+        token = holder.token;
+      }
+      previous.release();
     } else {
-      sequence += 1;
-      token = `ov-${Date.now().toString(36)}-${sequence}`;
+      token = nextToken();
       pushOverlayEntry(token);
     }
     tokenRef.current = token;
@@ -244,6 +327,8 @@ export function useOverlayHistory(open: boolean, onClose: () => void): OverlayHi
       release: () => {
         tokenRef.current = null;
         afterRef.current = null;
+        leavingRef.current = false;
+        resetStep();
         closeRef.current();
       },
     };
@@ -253,9 +338,32 @@ export function useOverlayHistory(open: boolean, onClose: () => void): OverlayHi
 
     const onPop = () => {
       const mine = tokenRef.current;
-      if (mine === null || overlayTokenOf(window.history.state) === mine) return;
-      // Запись окна сняли — «Назад» или наш же history.back().
-      finish();
+      if (mine === null) return;
+      const state = window.history.state;
+      if (overlayTokenOf(state) !== mine) {
+        // Запись окна сняли — «Назад» или наш же history.back().
+        finish();
+        return;
+      }
+      if (isStepEntry(state)) {
+        // «Вперёд» на запись подшага, который уже закрыт: показать нечего —
+        // шагаем обратно, иначе следующее «Назад» ничего видимого не сделает.
+        if (!stepRef.current) window.history.back();
+        return;
+      }
+      if (!stepRef.current) return;
+      // Запись подшага сняли: сами (popStep) или системным «Назад».
+      stepRef.current = false;
+      const landing = landingRef.current;
+      landingRef.current = null;
+      if (landing === "repush") {
+        pushStepEntry(mine);
+        stepRef.current = true;
+      } else if (landing === null) {
+        const onBack = stepBackRef.current;
+        stepBackRef.current = null;
+        onBack?.();
+      }
     };
 
     // Любая ссылка сайта, пока окно открыто, — сначала закрыть окно (снять
@@ -292,11 +400,14 @@ export function useOverlayHistory(open: boolean, onClose: () => void): OverlayHi
       tokenRef.current = null;
       // Окно закрыли мимо dismiss (состояние сменили снаружи), а его запись
       // всё ещё на вершине — снимаем, иначе «Назад» один раз «не сработает».
-      if (mine !== null && overlayTokenOf(window.history.state) === mine) {
-        window.history.back();
+      // С подшагом — обе записи. dismiss уже в пути — он их и снимет.
+      if (mine !== null && !leavingRef.current && overlayTokenOf(window.history.state) === mine) {
+        window.history.go(-depthToLeave());
       }
+      leavingRef.current = false;
+      resetStep();
     };
-  }, [open, finish, dismiss]);
+  }, [open, finish, dismiss, resetStep, depthToLeave]);
 
   const interceptLinks = useCallback(
     (event: ReactMouseEvent) => {
@@ -313,7 +424,42 @@ export function useOverlayHistory(open: boolean, onClose: () => void): OverlayHi
     [dismissThen],
   );
 
+  const pushStep = useCallback((onBack: () => void) => {
+    const token = tokenRef.current;
+    if (token === null) return;
+    stepBackRef.current = onBack;
+    if (stepRef.current) {
+      // Прежний подшаг только что закрыли, а его «назад» ещё в пути — запись
+      // вернём, когда он дойдёт (onPop).
+      if (landingRef.current === "silent") landingRef.current = "repush";
+      return;
+    }
+    // Запись окна не на вершине — подшаг в историю не пишем: «Назад» тогда
+    // закроет окно целиком, как раньше.
+    if (overlayTokenOf(window.history.state) !== token) return;
+    pushStepEntry(token);
+    stepRef.current = true;
+  }, []);
+
+  const popStep = useCallback(() => {
+    stepBackRef.current = null;
+    if (!stepRef.current || tokenRef.current === null) return;
+    if (landingRef.current !== null) {
+      // «Назад» уже в пути — только отменяем возврат записи.
+      landingRef.current = "silent";
+      return;
+    }
+    const state = window.history.state;
+    if (overlayTokenOf(state) === tokenRef.current && isStepEntry(state)) {
+      landingRef.current = "silent";
+      window.history.back();
+      return;
+    }
+    // Запись подшага уже не на вершине — снимать нечего.
+    stepRef.current = false;
+  }, []);
+
   useEffect(() => () => window.clearTimeout(timerRef.current), []);
 
-  return { dismiss, dismissThen, interceptLinks };
+  return { dismiss, dismissThen, interceptLinks, pushStep, popStep };
 }

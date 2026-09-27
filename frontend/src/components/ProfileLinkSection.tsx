@@ -19,6 +19,7 @@ import {
   pluralizeRu,
 } from "../lib/format";
 import { platformProfileUrl } from "../lib/platformProfileUrl";
+import { useProfileLinksChanged } from "../lib/profileLinksEvents";
 
 type ParticipantIdConfig = {
   label: string;
@@ -278,6 +279,13 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange, onLinksLoad
   useEffect(() => {
     void loadLinks();
   }, [loadLinks]);
+
+  // Профиль привязали мимо этой секции — из окна «Это вы?» (поиск по сайту
+  // или окно после входа): перечитываем список и сводку кабинета.
+  useProfileLinksChanged(() => {
+    void loadLinks({ background: true });
+    onLinksChange?.();
+  });
 
   useEffect(() => {
     if (window.location.hash !== "#profiles" || didScrollToProfilesRef.current || loadingLinks) {

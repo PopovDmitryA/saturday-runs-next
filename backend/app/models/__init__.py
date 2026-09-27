@@ -1776,12 +1776,38 @@ class SearchQueryLog(Base):
     pages_found: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     locations_found: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     people_found: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
-    # page | location | person; NULL — ушёл, ничего не выбрав.
+    # page | location | person | participant; NULL — ушёл, ничего не выбрав.
     clicked_kind: Mapped[str | None] = mapped_column(String(16))
-    # Куда перешёл: href либо название.
+    # Куда перешёл: href либо название; у participant — «система#позиция строки».
     clicked_target: Mapped[str | None] = mapped_column(String(200))
     is_authed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     is_mobile: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+
+
+class SearchClaimEvent(Base):
+    """Воронка «Это вы?» из поиска по сайту: нажал свою строку → вошёл → привязал.
+
+    Этапы пишет сервер по проверенному токену строки (search_claim_service),
+    а не бекон фронта: подделать или перепутать порядок нельзя. ref — nonce
+    токена: связывает этапы одного захода, но не с человеком. Анонимно, как
+    search_query_log: ни user_id, ни IP, ни participant_id.
+    """
+
+    __tablename__ = "search_claim_events"
+    __table_args__ = (
+        Index("ix_search_claim_events_created_at", "created_at"),
+        Index("ix_search_claim_events_ref", "ref"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    ref: Mapped[str] = mapped_column(String(24), nullable=False)
+    # open | login | linked | failed | declined
+    stage: Mapped[str] = mapped_column(String(16), nullable=False)
+    is_authed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    platform_code: Mapped[str | None] = mapped_column(String(16))
+    # HTTP-код неудачной привязки (stage=failed).
+    status: Mapped[int | None] = mapped_column(SmallInteger)
 
 
 class AbEvent(Base):

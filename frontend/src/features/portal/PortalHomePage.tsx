@@ -286,8 +286,9 @@ export function PortalHomePage() {
     optionalUser != null ? cabinetTabHref(optionalUser, "dashboard") : PORTAL_LOGIN_HREF;
   // Гостю «Найти себя» открывает поиск с подсказкой «фамилия и имя», а не
   // вход: ценность входа видна, когда человек увидел себя в протоколах, и
-  // вход там — в одно касание («Нашли себя? Войдите…»). Ссылка на /login
-  // остаётся в href: Ctrl-клик и новая вкладка ведут на вход, как раньше.
+  // вход там — из своей строки («Это вы?» → «Войти и привязать», после входа
+  // сайт предложит привязать именно её). Ссылка на /login остаётся в href:
+  // Ctrl-клик и новая вкладка ведут на вход, как раньше.
   const onFindSelf = (event: React.MouseEvent<HTMLAnchorElement>, place: string) => {
     trackCtaClick(place);
     if (optionalUser != null || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {

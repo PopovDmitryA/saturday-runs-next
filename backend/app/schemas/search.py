@@ -52,6 +52,10 @@ class SearchParticipantResponse(BaseModel):
     top_location_city: str | None = None
     platform_codes: list[str] = Field(default_factory=list)
     partial: bool = False
+    # «Это вы?»: непрозрачный токен строки (search_claim_service) — по нему
+    # окно показывает карточку, а после входа привязывается ровно этот
+    # человек. Внутреннего id участника в выдаче нет.
+    claim_token: str | None = None
 
 
 SearchPersonResponse = Annotated[
@@ -92,6 +96,26 @@ class SiteSearchResponse(BaseModel):
     people_skipped: bool = False
 
 
+ClaimViewerState = Literal["guest", "can_link", "already_yours", "platform_linked", "taken"]
+
+
+class SearchClaimResponse(BaseModel):
+    """Окно «Это вы?»: та же карточка, что строка выдачи, и что можно сделать.
+
+    viewer_state гостю — всегда "guest": привязан ли человек к кому-то,
+    гостю не сообщаем ни в каком виде.
+    """
+
+    display_name: str
+    platform_code: str
+    total_runs: int = 0
+    total_volunteering: int = 0
+    last_run_date: dt.date | None = None
+    top_location_name: str | None = None
+    top_location_city: str | None = None
+    viewer_state: ClaimViewerState
+
+
 class SearchLogTopQuery(BaseModel):
     query: str
     count: int
@@ -119,6 +143,8 @@ class SearchLogClicksByKind(BaseModel):
     page: int = 0
     location: int = 0
     person: int = 0
+    # Человек из протоколов — открыл «Это вы?».
+    participant: int = 0
     none: int = 0
 
 
@@ -141,6 +167,22 @@ class SearchLogRecentItem(BaseModel):
     is_mobile: bool
 
 
+class SearchClaimFunnel(BaseModel):
+    """Воронка «Это вы?» за период; единица — заход (ref токена), не нажатие."""
+
+    # Нажали строку гостем → вошли → привязали.
+    guest_opened: int = 0
+    guest_logged_in: int = 0
+    guest_linked: int = 0
+    # Нажали уже вошедшими (гостем этот заход не открывали) → привязали.
+    authed_opened: int = 0
+    authed_linked: int = 0
+    # «Это не я».
+    declined: int = 0
+    # Привязка не прошла: HTTP-код → заходов ("409": 3).
+    failed_by_status: dict[str, int] = Field(default_factory=dict)
+
+
 class AdminSearchLogResponse(BaseModel):
     period_days: int
     total: int
@@ -152,3 +194,4 @@ class AdminSearchLogResponse(BaseModel):
     clicks_by_kind: SearchLogClicksByKind
     daily: list[SearchLogDaily] = Field(default_factory=list)
     recent: list[SearchLogRecentItem] = Field(default_factory=list)
+    claim_funnel: SearchClaimFunnel = Field(default_factory=SearchClaimFunnel)

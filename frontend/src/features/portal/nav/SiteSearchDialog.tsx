@@ -7,16 +7,21 @@
  * «Михалевском»), — отдельной группой ниже всех остальных. Людей
  * два вида:
  * - зарегистрированные на сайте с открытым профилем — строка со ссылкой;
- * - все остальные из протоколов (и с закрытым профилем) — только цифры, без
- *   перехода. Ссылок на профили в беговых системах нет намеренно: согласия
- *   этих людей на это у нас нет. Гостю над ними — одна строка «Нашли себя?
- *   Войдите…»: это приглашение, а не ссылка на чужой профиль.
+ * - все остальные из протоколов (и с закрытым профилем) — только цифры.
+ *   Ссылок на профили в беговых системах нет намеренно: согласия этих людей
+ *   на это у нас нет. Строка нажимается и открывает внутри окна подэкран
+ *   «Это вы?» (решение Дмитрия 27.09.2026): вошедший сразу привязывает этого
+ *   человека, гость — входит, и после входа ему предложат привязать именно
+ *   его, без повторного выбора среди однофамильцев (nav/searchClaim.ts,
+ *   SearchClaimRunner). Адреса у подэкрана нет: токен из выдачи в адресную
+ *   строку и историю браузера не попадает.
  *
  * Открывается кнопками в шапке и «Меню», ⌘K / Ctrl+K и «/» (по физической
  * клавише — работает и в русской раскладке). На телефоне — на весь экран.
  *
  * Окно ведёт себя как отдельный экран: «Назад» закрывает его, не уводя со
- * страницы (nav/useOverlayHistory), Tab ходит внутри окна, после закрытия
+ * страницы (nav/useOverlayHistory; с подэкрана «Это вы?» первое «Назад»
+ * возвращает к результатам), Tab ходит внутри окна, после закрытия
  * фокус возвращается туда, где был (nav/useOverlayFocus). Переход по
  * результату — как по обычной ссылке сайта: без перезагрузки, а Ctrl/⌘-клик
  * и средняя кнопка открывают новую вкладку.
@@ -28,23 +33,40 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ApiError,
+  declineSearchClaim,
+  linkBySearchToken,
   logSiteSearch,
+  openSearchClaim,
   searchSite,
+  type SearchClaimPerson,
+  type SearchClaimViewerState,
   type SiteSearchLocation,
   type SiteSearchPerson,
   type SiteSearchResponse,
   type User,
 } from "../../../lib/api";
 import { lockBodyScroll } from "../../../lib/bodyScrollLock";
-import { formatDate } from "../../../lib/format";
-import { PORTAL_LOGIN_HREF } from "../../../lib/portalRoutes";
+import { platformCodeLabel } from "../../../lib/format";
+import { cabinetTabHref, PORTAL_LOGIN_HREF } from "../../../lib/portalRoutes";
+import { notifyProfileLinksChanged } from "../../../lib/profileLinksEvents";
 import { getRecentLocations } from "../../../lib/recentLocations";
-import { useOptionalUser } from "../../../lib/useOptionalUser";
+import { clearCachedUser, useOptionalUser } from "../../../lib/useOptionalUser";
 import { PlatformBadge } from "../../../components/PlatformBadge";
 import type { SiteSearchOpenDetailWithMode, SiteSearchOpenMode } from "./findSelfSearch";
 import { CATALOG_ICON, CLOSE_ICON, LOCATIONS_ICON, SEARCH_ICON } from "./navIcons";
 import { resolveNavState } from "./navState";
 import { useOrganizerLocations } from "./OrganizerSwitcher";
+import { initials, personStats, placeWithCity, plural } from "./personRow";
+import { ProtocolClaimCard } from "./ProtocolClaimCard";
+import {
+  CLAIM_ALREADY_YOURS_TEXT,
+  CLAIM_LINKED_TEXT,
+  CLAIM_LINKED_TITLE,
+  CLAIM_TAKEN_HINT,
+  CLAIM_TAKEN_TEXT,
+  claimPlatformLinkedText,
+  rememberSearchClaim,
+} from "./searchClaim";
 import {
   combineLocationPages,
   mergePageHits,
@@ -86,14 +108,54 @@ const MIN_SERVER_QUERY = 2;
 // обычного организатора их одна-две, больше десятка — уже не организатор.
 const ORGANIZER_PLACES_LIMIT = 12;
 
-type ClickKind = "page" | "location" | "person";
-
-type Selectable = { kind: ClickKind; href: string };
+type LinkKind = "page" | "location" | "person";
+/** participant — нажали на человека из протоколов (подэкран «Это вы?»). */
+type ClickKind = LinkKind | "participant";
 
 type RegisteredPerson = Extract<SiteSearchPerson, { kind: "registered" }>;
+type ParticipantPerson = Extract<SiteSearchPerson, { kind: "participant" }>;
+
+// Строки выдачи, по которым ходят ↑↓ и Enter, — строго в порядке разметки.
+type Selectable = { kind: LinkKind; href: string } | { kind: "participant"; person: ParticipantPerson };
 
 const LISTBOX_ID = "site-search-listbox";
 const LISTBOX_MORE_ID = "site-search-listbox-more";
+const LISTBOX_PROTOCOLS_ID = "site-search-listbox-protocols";
+const LISTBOX_PROTOCOLS_MORE_ID = "site-search-listbox-protocols-more";
+
+/**
+ * Подэкран «Это вы?». viewer — что смотрящий может сделать (ответ сервера по
+ * токену); null — ещё спрашиваем. fatal — дальше этого человека не привязать
+ * (результаты поиска устарели, профиль не найден, сервер отказал в привязке).
+ */
+type ClaimScreen = {
+  token: string;
+  /** Номер строки в выдаче: после «Это не я» выбор возвращается на неё. */
+  index: number;
+  card: SearchClaimPerson;
+  viewer: SearchClaimViewerState | null;
+  status: "loading" | "idle" | "linking" | "linked";
+  error: string | null;
+  fatal: boolean;
+};
+
+function claimCard(person: ParticipantPerson): SearchClaimPerson {
+  return {
+    display_name: person.display_name,
+    platform_code: person.platform_codes[0] ?? "",
+    total_runs: person.total_runs,
+    total_volunteering: person.total_volunteering,
+    last_run_date: person.last_run_date,
+    top_location_name: person.top_location_name,
+    top_location_city: person.top_location_city,
+  };
+}
+
+// Ответ «по этой ссылке больше ничего не сделать» — токен повреждён (400),
+// человека нет (404) или токен устарел (410): текст для экрана даёт сервер.
+function isFinalClaimError(error: unknown): error is ApiError {
+  return error instanceof ApiError && [400, 404, 410].includes(error.status);
+}
 
 // Пример для подсказки «допишите название локации» — известные парки, кроме
 // тех, что уже предложены строками выдачи (и открытой сейчас).
@@ -117,35 +179,6 @@ function isMobileViewport(): boolean {
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
-}
-
-function plural(n: number, one: string, few: string, many: string): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
-  return many;
-}
-
-function personStats(person: SiteSearchPerson): string {
-  const runs = `${person.total_runs} ${plural(person.total_runs, "пробежка", "пробежки", "пробежек")}`;
-  const vol = `${person.total_volunteering} ${plural(person.total_volunteering, "волонтёрство", "волонтёрства", "волонтёрств")}`;
-  // Однофамильцы упорядочены по последнему старту — без даты на экране
-  // порядок выглядел случайным.
-  const last = person.last_run_date ? ` · последний старт ${formatDate(person.last_run_date)}` : "";
-  return `${runs} · ${vol}${last}`;
-}
-
-// «Барнаул (Барнаул)» и «Королёв (Королёв)» читаются как опечатка: город
-// дописываем, только если его нет в названии локации.
-function placeWithCity(name: string, city: string | null): string {
-  if (!city || name.toLowerCase().includes(city.toLowerCase())) return name;
-  return `${name} (${city})`;
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
 // Пока страница локации не загрузилась, дерево знает только адрес — и
@@ -228,6 +261,20 @@ export function SiteSearchDialog() {
   // Повторить запрос после паузы: эффект запроса перезапускается по этому счётчику.
   const [retryTick, setRetryTick] = useState(0);
   const [selected, setSelected] = useState(0);
+  // Подэкран «Это вы?» вместо выдачи; null — показана выдача. В ref — для
+  // обработчиков, которые зовутся мимо рендера («Назад», Esc).
+  const [claim, setClaimState] = useState<ClaimScreen | null>(null);
+  const claimRef = useRef<ClaimScreen | null>(null);
+  const setClaim = useCallback((next: ClaimScreen | null | ((current: ClaimScreen | null) => ClaimScreen | null)) => {
+    const value = typeof next === "function" ? next(claimRef.current) : next;
+    claimRef.current = value;
+    setClaimState(value);
+  }, []);
+  // Номер запроса к серверу по подэкрану: ответ на прежний не должен лечь на новый.
+  const claimSeqRef = useRef(0);
+  // Вернулись с подэкрана — на какой строке выдачи оставить выбор и прокрутку.
+  const returnToRef = useRef<number | null>(null);
+  const claimTitleRef = useRef<HTMLHeadingElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -267,7 +314,11 @@ export function SiteSearchDialog() {
     flushLog(null);
     setOpen(false);
     setMode(null);
-  }, [flushLog]);
+    // Подэкран «Это вы?» с окном не переживает: следующее открытие — с выдачи.
+    claimSeqRef.current += 1;
+    returnToRef.current = null;
+    setClaim(null);
+  }, [flushLog, setClaim]);
 
   const overlay = useOverlayHistory(open, handleClosed);
   const overlayRef = useRef(overlay);
@@ -275,17 +326,54 @@ export function SiteSearchDialog() {
     overlayRef.current = overlay;
   });
 
+  // С подэкрана — обратно к выдаче: выбор на той же строке, фокус в поле.
+  // decline — «Это не я» (этап воронки на сервере); fromHistory — подшаг уже
+  // снят системным «Назад», из истории снимать нечего; newSearch — выдача
+  // будет другая, возвращать выбор на прежнюю строку незачем.
+  const leaveClaim = useCallback(
+    (options: { decline?: boolean; fromHistory?: boolean; newSearch?: boolean } = {}) => {
+      const current = claimRef.current;
+      if (!current) return;
+      if (options.decline) declineSearchClaim(current.token);
+      if (!options.fromHistory) overlayRef.current.popStep();
+      claimSeqRef.current += 1;
+      setClaim(null);
+      // Сервер отказал окончательно (результаты устарели, профиль не найден,
+      // занят): в прежней выдаче у строк те же старые токены, и нажатие снова
+      // кончилось бы тем же. Перезапрашиваем её — у строк будут свежие.
+      if (current.fatal && !options.newSearch) setRetryTick((value) => value + 1);
+      if (!options.newSearch) {
+        returnToRef.current = current.index;
+        setSelected(current.index);
+      }
+    },
+    [setClaim],
+  );
+
   useOverlayFocus({
     open,
+    // Подэкран и выдача — как два окна: фокус при смене ставится заново.
+    contentKey: claim ? "claim" : "results",
     containers: [dialogRef],
     initial: () => {
+      if (claimRef.current) return claimTitleRef.current;
+      const back = returnToRef.current;
+      returnToRef.current = null;
+      if (back !== null) {
+        // Вернулись с «Это вы?»: та же строка на виду, текст запроса не выделяем.
+        listRef.current?.querySelector<HTMLElement>(`[data-index="${back}"]`)?.scrollIntoView({ block: "nearest" });
+        return inputRef.current;
+      }
       inputRef.current?.select();
       return inputRef.current;
     },
-    onEscape: overlay.dismiss,
+    // Esc на подэкране возвращает к выдаче, а не закрывает окно.
+    onEscape: claim ? () => leaveClaim() : overlay.dismiss,
   });
 
   const openWith = useCallback((detail?: SiteSearchOpenDetailWithMode) => {
+    // Новый запрос — подэкран прежнего человека больше ни к чему.
+    if (claimRef.current) leaveClaim({ newSearch: true });
     setMode(detail?.mode ?? null);
     if (typeof detail?.query === "string") {
       setQuery(detail.query);
@@ -294,7 +382,7 @@ export function SiteSearchDialog() {
     }
     setOpenSeq((value) => value + 1);
     setOpen(true);
-  }, []);
+  }, [leaveClaim]);
 
   // Открытие: событие от кнопок и горячие клавиши. Клавиши сравниваем по
   // физической кнопке (event.code): в русской раскладке event.key у Ctrl+K —
@@ -488,6 +576,7 @@ export function SiteSearchDialog() {
   // это вход, а не чужие люди, у которых в имени нашлось «бегал».
   const guest = user === null;
   const people = guest && plan.personal ? [] : (fresh?.people ?? []);
+  const isParticipant = (person: SiteSearchPerson): person is ParticipantPerson => person.kind === "participant";
   const combos = plan.placeless ? placelessLocationPages(plan, places) : combineLocationPages(plan, locations);
   // «Моя: Мещерский» и та же локация в выдаче — одна и та же страница.
   const locationHrefs = new Set(locations.map((location) => location.href));
@@ -503,19 +592,27 @@ export function SiteSearchDialog() {
   const partialPeople = strongPeople.length > 0 ? people.filter((person) => person.partial) : [];
   const isRegistered = (person: SiteSearchPerson): person is RegisteredPerson => person.kind === "registered";
   const registered = mainPeople.filter(isRegistered);
-  const others = mainPeople.filter((person) => person.kind === "participant");
+  const others = mainPeople.filter(isParticipant);
   const partialRegistered = partialPeople.filter(isRegistered);
-  const partialOthers = partialPeople.filter((person) => person.kind === "participant");
+  const partialOthers = partialPeople.filter(isParticipant);
+  // Нажимаются строки с токеном «это я»; без него (старый сервер) — только цифры.
+  const claimableOthers = others.filter((person) => person.claim_token);
+  const claimablePartialOthers = partialOthers.filter((person) => person.claim_token);
 
   const allHref = allLocations ? `/locations?q=${encodeURIComponent(allLocations.query)}` : null;
+  // Порядок — строго как в разметке: по нему раздаются номера строк
+  // (nextIndex), и Enter нажимает строку с тем же номером.
   const selectables: Selectable[] = [
     ...pages.map((hit) => ({ kind: "page" as const, href: hit.href })),
     ...locations.map((location) => ({ kind: "location" as const, href: location.href })),
     ...(allHref ? [{ kind: "location" as const, href: allHref }] : []),
     ...registered.map((person) => ({ kind: "person" as const, href: person.href })),
+    ...claimableOthers.map((person) => ({ kind: "participant" as const, person })),
     ...partialRegistered.map((person) => ({ kind: "person" as const, href: person.href })),
+    ...claimablePartialOthers.map((person) => ({ kind: "participant" as const, person })),
   ];
-  const mainListCount = selectables.length - partialRegistered.length;
+  // Строки главного списка: страницы, локации, «Все локации», участники сайта.
+  const mainListCount = pages.length + locations.length + (allHref ? 1 : 0) + registered.length;
 
   // Запоминаем устоявшийся результат для журнала. Новый поиск, который не
   // продолжает прежний (не дописывание и не стирание), сначала сбрасывает
@@ -548,6 +645,11 @@ export function SiteSearchDialog() {
     setSelected(0);
   }, [query, fresh]);
 
+  // Запрос сменился (openSiteSearch с другим текстом) — подэкран закрываем.
+  useEffect(() => {
+    if (claimRef.current) leaveClaim({ newSearch: true });
+  }, [query, leaveClaim]);
+
   useEffect(() => {
     listRef.current
       ?.querySelector<HTMLElement>(`[data-index="${selected}"]`)
@@ -557,9 +659,83 @@ export function SiteSearchDialog() {
   // Клик по результату: запись в журнал, дальше — как у обычной ссылки сайта.
   // Простой клик закрывает окно (снимая его запись из истории) и переходит
   // без перезагрузки; Ctrl/⌘/Shift-клик браузер открывает в новой вкладке сам.
-  const onResultClick = (event: ReactMouseEvent<HTMLAnchorElement>, kind: ClickKind, target: string) => {
+  const onResultClick = (event: ReactMouseEvent<HTMLAnchorElement>, kind: LinkKind, target: string) => {
     flushLog({ kind, target });
     overlay.interceptLinks(event);
+  };
+
+  // «Это вы?» по токену. Спрашиваем сервер всегда, и гостя тоже: запрос
+  // пишет этап воронки «нажали», а вошедшему отвечает, можно ли привязать.
+  const loadClaim = (token: string, asGuest: boolean) => {
+    const seq = (claimSeqRef.current += 1);
+    const update = (patch: Partial<ClaimScreen>) => {
+      if (claimSeqRef.current !== seq) return;
+      setClaim((current) => (current && current.token === token ? { ...current, ...patch } : current));
+    };
+    update({ status: "loading", error: null, fatal: false });
+    openSearchClaim(token)
+      .then(({ viewer_state, ...card }) => update({ card, viewer: viewer_state, status: "idle" }))
+      .catch((error: unknown) => {
+        if (isFinalClaimError(error)) {
+          update({ status: "idle", error: error.message, fatal: true });
+        } else if (asGuest) {
+          // Сеть или перегрузка. Гостю ответ и не нужен: «Войти и привязать»
+          // работает и так, а после входа сервер спросят ещё раз.
+          update({ status: "idle", viewer: "guest" });
+        } else {
+          update({ status: "idle", error: "Не получилось проверить профиль — попробуйте ещё раз.", fatal: false });
+        }
+      });
+  };
+
+  const openClaim = (person: ParticipantPerson, index: number, position: number) => {
+    const token = person.claim_token;
+    if (!token) return;
+    // Нажатие — в журнал сразу: дальше человек может просто закрыть окно.
+    // Ни имени, ни токена: система и место строки среди протокольных.
+    flushLog({ kind: "participant", target: `${person.platform_codes[0] ?? ""}#${position}` });
+    setClaim({ token, index, card: claimCard(person), viewer: null, status: "loading", error: null, fatal: false });
+    overlay.pushStep(() => leaveClaim({ fromHistory: true }));
+    loadClaim(token, guest);
+  };
+
+  const linkClaim = () => {
+    const current = claimRef.current;
+    if (!current || current.status === "linking") return;
+    const token = current.token;
+    const seq = claimSeqRef.current;
+    const update = (patch: Partial<ClaimScreen>) => {
+      if (claimSeqRef.current !== seq) return;
+      setClaim((screen) => (screen && screen.token === token ? { ...screen, ...patch } : screen));
+    };
+    update({ status: "linking", error: null });
+    linkBySearchToken(token)
+      .then((result) => {
+        if (result.status === "already_linked") {
+          update({ status: "idle", viewer: "already_yours" });
+          return;
+        }
+        // Привязка — даже если человек уже ушёл с подэкрана: имя на сайте и
+        // снимки кабинета пересчитаются, списки профилей перечитаются.
+        clearCachedUser();
+        notifyProfileLinksChanged();
+        update({ status: "linked" });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof ApiError && error.status === 401) {
+          // Сессия кончилась, пока смотрел выдачу, — путь гостя.
+          update({ status: "idle", viewer: "guest" });
+          return;
+        }
+        // Сеть, перегрузка — можно повторить; остальное (занят, заглушка,
+        // устарел) повтором не лечится.
+        const retry = !(error instanceof ApiError) || error.status === 0 || error.status === 429 || error.status >= 500;
+        update({
+          status: "idle",
+          error: error instanceof ApiError ? error.message : "Не получилось привязать — попробуйте ещё раз.",
+          fatal: !retry,
+        });
+      });
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -570,7 +746,7 @@ export function SiteSearchDialog() {
       event.preventDefault();
       setSelected((index) => Math.max(index - 1, 0));
     } else if (event.key === "Enter") {
-      const row = listRef.current?.querySelector<HTMLAnchorElement>(`#site-search-item-${selected}`);
+      const row = listRef.current?.querySelector<HTMLElement>(`#site-search-item-${selected}`);
       if (row) {
         event.preventDefault();
         // Тот же путь, что и у клика мышью: журнал, закрытие, переход.
@@ -643,11 +819,16 @@ export function SiteSearchDialog() {
               : "";
   // aria-controls — только на то, что нарисовано: ссылка на несуществующий
   // список сбивает диктор.
-  const listboxIds = [mainListCount > 0 && LISTBOX_ID, partialRegistered.length > 0 && LISTBOX_MORE_ID]
+  const listboxIds = [
+    mainListCount > 0 && LISTBOX_ID,
+    claimableOthers.length > 0 && LISTBOX_PROTOCOLS_ID,
+    partialRegistered.length > 0 && LISTBOX_MORE_ID,
+    claimablePartialOthers.length > 0 && LISTBOX_PROTOCOLS_MORE_ID,
+  ]
     .filter(Boolean)
     .join(" ");
 
-  const option = (i: number, href: string, kind: ClickKind, content: React.ReactNode, key: string) => (
+  const option = (i: number, href: string, kind: LinkKind, content: React.ReactNode, key: string) => (
     <a
       key={key}
       id={`site-search-item-${i}`}
@@ -706,7 +887,16 @@ export function SiteSearchDialog() {
   };
 
   // Одна строка над людьми из протоколов — над первым таким блоком выдачи.
-  const protocolsLead = guest ? (
+  // Строки нажимаются — подсказка, что будет по нажатию; строки без токена
+  // (старый сервер) — прежнее приглашение войти.
+  const claimable = claimableOthers.length > 0 || claimablePartialOthers.length > 0;
+  const protocolsLead = claimable ? (
+    <p className="site-search-caption">
+      {guest
+        ? "Нашли себя? Нажмите на свою строку — после входа предложим привязать этот профиль."
+        : "Нашли себя — нажмите на строку, чтобы привязать профиль."}
+    </p>
+  ) : guest ? (
     // Приглашение, а не ссылка на чужой профиль: нашёл себя — войди, и всё
     // посчитанное откроется. Правило о согласии соблюдено.
     <a
@@ -720,32 +910,238 @@ export function SiteSearchDialog() {
     <p className="site-search-caption">Профиля на нашем сайте нет — только цифры из протоколов.</p>
   );
 
-  const protocolRows = (list: SiteSearchPerson[]) => (
-    <ul className="site-search-protocol-list">
-      {list.map((person, n) => (
-        <li key={`${person.display_name}-${n}`} className="site-search-row site-search-row-static">
-          <span className="site-search-avatar site-search-avatar-ghost" aria-hidden="true">
-            {initials(person.display_name)}
-          </span>
-          <span className="site-search-row-main">
-            <b>{person.display_name}</b>
-            <small>
-              {personStats(person)}
-              {person.kind === "participant" &&
-                person.top_location_name &&
-                ` · чаще всего: ${placeWithCity(person.top_location_name, person.top_location_city)}`}
-            </small>
-          </span>
-          <span className="site-search-badges">
-            <span className="visually-hidden">Системы: </span>
-            {person.platform_codes.map((code) => (
-              <PlatformBadge key={code} code={code} />
-            ))}
-          </span>
-        </li>
-      ))}
-    </ul>
+  const protocolContent = (person: ParticipantPerson) => (
+    <>
+      <span className="site-search-avatar site-search-avatar-ghost" aria-hidden="true">
+        {initials(person.display_name)}
+      </span>
+      <span className="site-search-row-main">
+        <b>{person.display_name}</b>
+        <small>
+          {personStats(person)}
+          {person.top_location_name &&
+            ` · чаще всего: ${placeWithCity(person.top_location_name, person.top_location_city)}`}
+        </small>
+      </span>
+      <span className="site-search-badges">
+        <span className="visually-hidden">Системы: </span>
+        {/* Бейдж без ссылки и без клика: внутри кнопки-строки — ничего нажимаемого. */}
+        {person.platform_codes.map((code) => (
+          <PlatformBadge key={code} code={code} />
+        ))}
+      </span>
+    </>
   );
+
+  // Люди из протоколов. Строка — кнопка-вариант списка (role=option): ↑↓ и
+  // Enter ходят по ним так же, как по ссылкам выдачи. position — место строки
+  // среди протокольных (с 1), для журнала поиска.
+  const protocolRows = (list: ParticipantPerson[], listboxId: string, label: string, firstPosition: number) => {
+    if (!list.some((person) => person.claim_token)) {
+      return (
+        <ul className="site-search-protocol-list">
+          {list.map((person, n) => (
+            <li key={`${person.display_name}-${n}`} className="site-search-row site-search-row-static">
+              {protocolContent(person)}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+    return (
+      <div role="listbox" id={listboxId} aria-label={label} className="site-search-protocol-list">
+        {list.map((person, n) => {
+          const key = `${person.display_name}-${n}`;
+          if (!person.claim_token) {
+            return (
+              <div key={key} role="option" aria-selected={false} aria-disabled="true" className="site-search-row site-search-row-static">
+                {protocolContent(person)}
+              </div>
+            );
+          }
+          const i = nextIndex();
+          const position = firstPosition + n;
+          return (
+            <button
+              key={key}
+              type="button"
+              id={`site-search-item-${i}`}
+              data-index={i}
+              role="option"
+              aria-selected={selected === i}
+              className={`site-search-row site-search-row-protocol${selected === i ? " selected" : ""}`}
+              onMouseEnter={() => setSelected(i)}
+              onClick={() => openClaim(person, i, position)}
+            >
+              {protocolContent(person)}
+              <span className="site-search-row-claim" aria-hidden="true">
+                <span className="site-search-row-claim-text">Это вы?</span> ›
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const closeButton = (
+    <button type="button" className="site-search-close" onClick={overlay.dismiss} aria-label="Закрыть поиск">
+      <span className="site-search-close-icon" aria-hidden="true">
+        {CLOSE_ICON}
+      </span>
+      <span className="site-search-close-text" aria-hidden="true">
+        Отмена
+      </span>
+    </button>
+  );
+
+  // Подэкран «Это вы?»: карточка человека и что с ним можно сделать.
+  const renderClaim = (screen: ClaimScreen) => {
+    const system = platformCodeLabel(screen.card.platform_code);
+    const busy = screen.status === "loading" || screen.status === "linking";
+    const cabinetHref = cabinetTabHref(user, "dashboard");
+    const toResults = (
+      <button type="button" className="btn secondary modal-btn" onClick={() => leaveClaim()}>
+        К результатам
+      </button>
+    );
+    const decline = (
+      <button type="button" className="btn secondary modal-btn" disabled={busy} onClick={() => leaveClaim({ decline: true })}>
+        Это не я
+      </button>
+    );
+    const openCabinet = (primary: boolean) => (
+      <a className={`btn ${primary ? "primary" : "secondary"} modal-btn`} href={cabinetHref} onClick={overlay.interceptLinks}>
+        Открыть кабинет
+      </a>
+    );
+    const error = screen.error ? (
+      <p className="site-search-note site-search-claim-error" role="alert">
+        {screen.error}
+      </p>
+    ) : null;
+
+    let body: React.ReactNode = null;
+    let actions: React.ReactNode = null;
+    if (screen.viewer === null) {
+      if (screen.status === "loading") {
+        // Пока сервер отвечает — карточка из строки выдачи, кнопки ждут.
+        actions = (
+          <>
+            {decline}
+            <button type="button" className="btn primary modal-btn" disabled>
+              {guest ? "Войти и привязать" : "Это я — привязать"}
+            </button>
+          </>
+        );
+      } else {
+        body = error;
+        actions = screen.fatal ? (
+          toResults
+        ) : (
+          <>
+            {toResults}
+            <button type="button" className="btn primary modal-btn" onClick={() => loadClaim(screen.token, guest)}>
+              Повторить
+            </button>
+          </>
+        );
+      }
+    } else if (screen.viewer === "guest") {
+      body = (
+        <>
+          <p className="site-search-claim-text">
+            Полная статистика — все пробежки, рекорды, карта и достижения — в личном кабинете. Войдите, и сразу
+            после входа предложим привязать этот профиль.
+          </p>
+          <p className="site-search-claim-small">Войти можно через Telegram, VK, Яндекс или почту.</p>
+        </>
+      );
+      actions = (
+        <>
+          {decline}
+          <a
+            className="btn primary modal-btn"
+            href={PORTAL_LOGIN_HREF}
+            onClick={(event) => {
+              // Намерение — до перехода: вход уведёт к провайдеру и обратно,
+              // а после него SearchClaimRunner спросит про этого же человека.
+              rememberSearchClaim(screen.token, screen.card);
+              overlay.interceptLinks(event);
+            }}
+          >
+            Войти и привязать
+          </a>
+        </>
+      );
+    } else if (screen.viewer === "can_link") {
+      if (screen.status === "linked") {
+        body = (
+          <p className="site-search-claim-done" role="status">
+            <b>{CLAIM_LINKED_TITLE} ✓</b> {CLAIM_LINKED_TEXT}
+          </p>
+        );
+        actions = openCabinet(true);
+      } else {
+        body = (
+          <>
+            <p className="site-search-claim-text">Привяжите профиль — пробежки, рекорды и карта появятся в кабинете.</p>
+            {error}
+          </>
+        );
+        actions = screen.fatal ? (
+          toResults
+        ) : (
+          <>
+            {decline}
+            <button type="button" className="btn primary modal-btn" disabled={busy} onClick={linkClaim}>
+              {screen.status === "linking" ? "Привязка…" : "Это я — привязать"}
+            </button>
+          </>
+        );
+      }
+    } else if (screen.viewer === "already_yours") {
+      body = <p className="site-search-claim-text">{CLAIM_ALREADY_YOURS_TEXT}</p>;
+      actions = openCabinet(true);
+    } else if (screen.viewer === "platform_linked") {
+      body = (
+        <p className="site-search-claim-text">{claimPlatformLinkedText(system)}</p>
+      );
+      actions = (
+        <>
+          {toResults}
+          {openCabinet(false)}
+        </>
+      );
+    } else {
+      body = (
+        <>
+          <p className="site-search-claim-text">{CLAIM_TAKEN_TEXT}</p>
+          <p className="site-search-claim-small">{CLAIM_TAKEN_HINT}</p>
+        </>
+      );
+      actions = toResults;
+    }
+
+    return (
+      <div className="site-search-claim" aria-busy={busy}>
+        <div className="site-search-claim-bar">
+          <button type="button" className="site-search-claim-back" onClick={() => leaveClaim()}>
+            ← К результатам
+          </button>
+          {closeButton}
+        </div>
+        <div className="site-search-claim-body">
+          <h2 ref={claimTitleRef} tabIndex={-1} className="site-search-claim-title">
+            Это вы?
+          </h2>
+          <ProtocolClaimCard person={screen.card} />
+          {body}
+          <div className="modal-actions site-search-claim-actions">{actions}</div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="site-search-backdrop" onClick={overlay.dismiss} role="presentation">
@@ -757,7 +1153,11 @@ export function SiteSearchDialog() {
         aria-label="Поиск по сайту"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="site-search-bar">
+        {claim && renderClaim(claim)}
+
+        {/* Выдача на время «Это вы?» только прячется: вернёмся — поле, текст
+            запроса и строки на месте. */}
+        <div className="site-search-bar" hidden={claim !== null}>
           <span className="site-search-bar-icon" aria-hidden="true">
             {SEARCH_ICON}
           </span>
@@ -780,14 +1180,7 @@ export function SiteSearchDialog() {
             aria-activedescendant={selectables.length > 0 ? `site-search-item-${selected}` : undefined}
           />
           {loading && <span className="site-search-spinner" aria-hidden="true" />}
-          <button type="button" className="site-search-close" onClick={overlay.dismiss} aria-label="Закрыть поиск">
-            <span className="site-search-close-icon" aria-hidden="true">
-              {CLOSE_ICON}
-            </span>
-            <span className="site-search-close-text" aria-hidden="true">
-              Отмена
-            </span>
-          </button>
+          {closeButton}
         </div>
 
         {/* Итог поиска для экранного диктора: список он не перечитывает сам. */}
@@ -795,14 +1188,14 @@ export function SiteSearchDialog() {
           {statusText}
         </p>
 
-        <div className="site-search-results" ref={listRef}>
+        <div className="site-search-results" ref={listRef} hidden={claim !== null}>
           {!hasQuery && (
             <div className="site-search-empty">
               {findSelf || guest ? (
                 <>
                   <p className="site-search-lead">
                     Найдите себя: введите фамилию и имя — покажем пробежки из протоколов 5 вёрст, S95, parkrun и
-                    RunPark.
+                    RunPark. Нашли себя — нажмите на строку.
                   </p>
                   {!findSelf && (
                     <p>
@@ -928,7 +1321,7 @@ export function SiteSearchDialog() {
             <section className="site-search-group site-search-protocols" aria-label="Из протоколов">
               <h3>Из протоколов</h3>
               {protocolsLead}
-              {protocolRows(others)}
+              {protocolRows(others, LISTBOX_PROTOCOLS_ID, "Люди из протоколов", 1)}
             </section>
           )}
 
@@ -943,7 +1336,13 @@ export function SiteSearchDialog() {
                 </div>
               )}
               {others.length === 0 && partialOthers.length > 0 && protocolsLead}
-              {partialOthers.length > 0 && protocolRows(partialOthers)}
+              {partialOthers.length > 0 &&
+                protocolRows(
+                  partialOthers,
+                  LISTBOX_PROTOCOLS_MORE_ID,
+                  "Люди из протоколов: совпадение внутри имени",
+                  others.length + 1,
+                )}
             </section>
           )}
 
@@ -976,7 +1375,7 @@ export function SiteSearchDialog() {
           )}
         </div>
 
-        <div className="site-search-foot" aria-hidden="true">
+        <div className="site-search-foot" aria-hidden="true" hidden={claim !== null}>
           <span>
             <kbd>↑</kbd> <kbd>↓</kbd> выбрать · <kbd>Enter</kbd> открыть · <kbd>Esc</kbd> закрыть
           </span>

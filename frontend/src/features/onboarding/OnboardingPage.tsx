@@ -10,6 +10,7 @@ import {
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import { useProfileLinksChanged } from "../../lib/profileLinksEvents";
 import { PortalHeader } from "../portal/PortalHeader";
 
 const ONBOARDING_PLATFORMS = ["five_verst", "s95", "parkrun", "runpark"] as const;
@@ -92,6 +93,9 @@ function OnboardingContent({ user }: { user: User }) {
   useEffect(() => {
     void loadLinks();
   }, [loadLinks]);
+
+  // Привязали из окна «Это вы?» поверх онбординга — плитки обновятся сами.
+  useProfileLinksChanged(() => void loadLinks());
 
   const linkedCodes = useMemo(() => new Set(links.map((link) => link.platform_code)), [links]);
   const linkedCount = ONBOARDING_PLATFORMS.filter((code) => linkedCodes.has(code)).length;

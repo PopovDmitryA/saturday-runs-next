@@ -8,22 +8,26 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import threading
 import time
 from collections.abc import Generator
 from datetime import date, datetime, timedelta, timezone
+from unittest.mock import patch
 from uuid import uuid4
 
 import fakeredis
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.core.abuse_protection import RouteTier, classify_route
+from app.core.security import sign_session_id
 from app.db.session import get_db
 from app.main import app
 from app.models import (
@@ -35,11 +39,20 @@ from app.models import (
     Platform,
     PlatformLink,
     RunResult,
+    SearchClaimEvent,
     SearchQueryLog,
     User,
 )
 from app.services import location_page_service, participant_search_service, site_search_service
+from app.services.newsletter_service import make_token as make_newsletter_token
+from app.services.notification_service import make_unsubscribe_token
 from app.services.participant_search_service import normalize_query_text, significant_words
+from app.services.search_claim_service import (
+    SEARCH_CLAIM_TTL_SECONDS,
+    SearchClaimTokenError,
+    make_claim_token,
+    parse_claim_token,
+)
 from app.services.search_log_service import get_search_log_report, record_search
 from app.services.site_search_service import (
     normalize_log_query,
@@ -529,6 +542,7 @@ def test_admin_search_log_report(client: TestClient, db_session: Session) -> Non
         {"query": "сокольники", "locations_found": 1},
         {"query": "чего нет", "pages_found": 0},
         {"query": "Чего  нет"},
+        {"query": "иванов", "people_found": 3, "clicked_kind": "participant", "clicked_target": "five_verst#2"},
         {"query": "попов", "people_found": 5, "clicked_kind": "person", "clicked_target": "/users/popov"},
     ):
         assert record_search(db_session, payload, is_authed=False)
@@ -538,24 +552,26 @@ def test_admin_search_log_report(client: TestClient, db_session: Session) -> Non
 
     report = get_search_log_report(db_session, period_days=30)
 
-    assert report["total"] == 5
+    assert report["total"] == 6
     assert report["zero_result_total"] == 2
     assert report["top_queries"][:2] == [
         {"query": "сокольники", "count": 2, "zero_results_count": 0, "clicks": 1},
         {"query": "чего нет", "count": 2, "zero_results_count": 2, "clicks": 0},
     ]
     assert [(item["query"], item["count"]) for item in report["zero_result_queries"]] == [("чего нет", 2)]
-    assert report["clicks_by_kind"] == {"page": 0, "location": 1, "person": 1, "none": 3}
-    assert sum(item["count"] for item in report["daily"]) == 5
-    assert len(report["recent"]) == 5
+    assert report["clicks_by_kind"] == {"page": 0, "location": 1, "person": 1, "participant": 1, "none": 3}
+    assert sum(item["count"] for item in report["daily"]) == 6
+    assert len(report["recent"]) == 6
     assert report["recent"][0]["query"] == "попов"
+    assert report["recent"][1]["clicked_target"] == "five_verst#2"
 
     _login(client, 9001)
     response = client.get("/api/admin/search-log", params={"period_days": 90})
     assert response.status_code == 200
     body = response.json()
-    assert body["total"] == 6
+    assert body["total"] == 7
     assert body["clicks_by_kind"]["none"] == 4
+    assert body["clicks_by_kind"]["participant"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1170,3 +1186,389 @@ def test_big_place_scan_limit_is_honest(monkeypatch: pytest.MonkeyPatch, db_sess
     assert page["people_truncated"] is True
     assert page["people_place"] == "Мытищи"
     assert {person["display_name"] for person in page["people"]} <= set(local)
+
+
+# ---------------------------------------------------------------------------
+# «Это вы?»: токен строки, окно, привязка по токену, воронка
+# ---------------------------------------------------------------------------
+
+API_SECRET = "test-secret-key"
+# Привязка в тестах не ставит синк и не пересчитывает кабинет.
+_NO_SYNC = (
+    "app.services.profile_linking_service.linking_sync_should_run",
+    "app.services.profile_linking_service.complete_link_without_sync",
+)
+
+
+def _new_telegram_id() -> int:
+    return int(uuid4().int % 10_000_000_000) + 100_000
+
+
+def _login_user(client: TestClient, db_session: Session) -> User:
+    telegram_id = _new_telegram_id()
+    _login(client, telegram_id)
+    return db_session.query(User).filter(User.telegram_id == telegram_id).one()
+
+
+def _claim_events(db_session: Session) -> list[tuple[str, str, bool, int | None]]:
+    return [
+        (row.ref, row.stage, row.is_authed, row.status)
+        for row in db_session.query(SearchClaimEvent).order_by(SearchClaimEvent.id).all()
+    ]
+
+
+def _link_by_token(client: TestClient, token: str):
+    with patch(_NO_SYNC[0], return_value=False), patch(_NO_SYNC[1]):
+        return client.post("/api/profiles/link-by-search-token", json={"token": token})
+
+
+def test_claim_token_roundtrip_and_every_issue_differs() -> None:
+    participant_id = uuid4()
+    token = make_claim_token(participant_id, API_SECRET, now=1_800_000_000)
+
+    claim = parse_claim_token(token, API_SECRET, now=1_800_000_060)
+
+    assert claim.participant_id == participant_id
+    assert len(token) == 66
+    assert len(claim.ref) == 16
+    # Непрозрачный: id не читается ни строкой, ни байтами в base64.
+    assert str(participant_id) not in token
+    assert participant_id.hex not in base64.urlsafe_b64decode(token + "==").hex()
+    # Та же строка в другой выдаче — другой токен и другой ref: выдачи не склеиваются.
+    again = make_claim_token(participant_id, API_SECRET, now=1_800_000_000)
+    assert again != token
+    assert parse_claim_token(again, API_SECRET, now=1_800_000_060).ref != claim.ref
+    with pytest.raises(SearchClaimTokenError) as foreign_key:
+        parse_claim_token(token, "other-secret", now=1_800_000_060)
+    assert foreign_key.value.kind == "bad"
+
+
+def test_claim_token_expires_with_ref() -> None:
+    token = make_claim_token(uuid4(), API_SECRET, now=1_800_000_000)
+    ref = parse_claim_token(token, API_SECRET, now=1_800_000_000).ref
+
+    assert parse_claim_token(token, API_SECRET, now=1_800_000_000 + SEARCH_CLAIM_TTL_SECONDS).ref == ref
+    with pytest.raises(SearchClaimTokenError) as expired:
+        parse_claim_token(token, API_SECRET, now=1_800_000_001 + SEARCH_CLAIM_TTL_SECONDS)
+    assert (expired.value.kind, expired.value.ref, expired.value.status_code) == ("expired", ref, 410)
+
+
+def test_claim_token_rejects_any_changed_byte_and_garbage() -> None:
+    token = make_claim_token(uuid4(), API_SECRET)
+    raw = base64.urlsafe_b64decode(token + "==")
+    for index in range(len(raw)):
+        broken = bytearray(raw)
+        broken[index] ^= 0x01
+        forged = base64.urlsafe_b64encode(bytes(broken)).decode().rstrip("=")
+        with pytest.raises(SearchClaimTokenError) as error:
+            parse_claim_token(forged, API_SECRET)
+        assert error.value.kind == "bad", index
+
+    # Последний знак base64 несёт лишние биты: другое написание тех же байтов
+    # тоже не токен — у токена ровно одна запись.
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    last = alphabet.index(token[-1])
+    twin = token[:-1] + alphabet[(last & 0b110000) | ((last + 1) & 0b001111)]
+    assert base64.urlsafe_b64decode(twin + "==") == raw
+    for garbage in (twin, "", "x", token[:-1], token + "A", "é" * 66, "." * 66, token.upper()):
+        with pytest.raises(SearchClaimTokenError) as error:
+            parse_claim_token(garbage, API_SECRET)
+        assert error.value.kind == "bad"
+
+
+def test_claim_token_does_not_accept_other_signed_tokens() -> None:
+    """Ссылки отписки, рассылки и кука сессии подписаны тем же ключом — токеном строки они не становятся."""
+    for foreign in (
+        make_unsubscribe_token(uuid4(), "all", API_SECRET),
+        make_newsletter_token("runner@example.org", "unsub", API_SECRET),
+        sign_session_id("session-id", API_SECRET),
+    ):
+        with pytest.raises(SearchClaimTokenError) as error:
+            parse_claim_token(foreign, API_SECRET)
+        assert error.value.kind == "bad"
+
+
+def test_claim_routes_abuse_tiers() -> None:
+    assert classify_route("/api/search/claim", "GET") is RouteTier.search
+    assert classify_route("/api/search/claim/decline", "POST") is RouteTier.search
+    # Пишущая ручка — в обычном тарифе со штрафами, а не в щедром поисковом.
+    assert classify_route("/api/profiles/link-by-search-token", "POST") is RouteTier.default
+
+
+def test_search_participant_rows_carry_claim_token_without_ids(
+    client: TestClient, db_session: Session, no_locations: None
+) -> None:
+    five = _platform(db_session, "five_verst")
+    registered = _participant(db_session, five, "Токенов Выдачатест")
+    plain = _participant(db_session, five, "Токенов Выдачатест")
+    _runs(db_session, five, plain, 2)
+    _link(db_session, _user(db_session, display_name="Токенов Выдачатест"), registered)
+
+    response = client.get("/api/search", params={"q": "выдачатест"})
+
+    assert response.status_code == 200
+    registered_row, participant_row = response.json()["people"]
+    assert registered_row["kind"] == "registered"
+    assert "claim_token" not in registered_row
+    assert participant_row["kind"] == "participant"
+    assert parse_claim_token(participant_row["claim_token"], API_SECRET).participant_id == plain.id
+    for internal_id in (plain.id, registered.id):
+        assert str(internal_id) not in response.text
+        assert internal_id.hex not in response.text
+    assert "participant_id" not in response.text
+
+    again = client.get("/api/search", params={"q": "выдачатест"}).json()["people"][1]
+    assert again["claim_token"] != participant_row["claim_token"]
+
+
+def test_search_gives_no_claim_token_to_anonymous_rows_with_real_names(
+    client: TestClient, db_session: Session, no_locations: None
+) -> None:
+    """Старые протоколы 5 вёрст: настоящее имя, но ключ unknown:… — строка видна, нажать нельзя.
+
+    Иначе сервер выпустил бы токен, который сам же отклонит 404, и окно
+    «Это вы?» гоняло бы человека «найдите себя ещё раз» по кругу.
+    """
+    five = _platform(db_session, "five_verst")
+    anonymous = Participant(
+        platform_id=five.id,
+        external_user_id=f"unknown:loc{uuid4().hex[:8]}:2023-01-01:5",
+        display_name="Безключев Протоколтест",
+    )
+    db_session.add(anonymous)
+    db_session.flush()
+    _runs(db_session, five, anonymous, 1)
+    real = _participant(db_session, five, "Безключев Протоколтест")
+    _runs(db_session, five, real, 2)
+
+    response = client.get("/api/search", params={"q": "протоколтест"})
+
+    assert response.status_code == 200
+    rows = response.json()["people"]
+    assert [row["kind"] for row in rows] == ["participant", "participant"]
+    by_runs = {row["total_runs"]: row for row in rows}
+    assert by_runs[1]["claim_token"] is None
+    assert parse_claim_token(by_runs[2]["claim_token"], API_SECRET).participant_id == real.id
+    assert str(anonymous.id) not in response.text
+
+
+def test_claim_guest_sees_card_but_never_whether_taken(
+    client: TestClient, db_session: Session, no_locations: None
+) -> None:
+    five = _platform(db_session, "five_verst")
+    participant = _participant(db_session, five, "Гостев ЗАКРЫТЫЙКАРТОЧКА")
+    _runs(db_session, five, participant, 3, location_name="Карточный парк", city="Карточград")
+    owner = _user(db_session, display_name="Гостев Закрытыйкарточка", profile_private=True)
+    _link(db_session, owner, participant)
+
+    row = client.get("/api/search", params={"q": "закрытыйкарточка"}).json()["people"][0]
+    response = client.get("/api/search/claim", params={"token": row["claim_token"]})
+
+    assert response.status_code == 200
+    card = response.json()
+    assert card == {
+        "display_name": row["display_name"],
+        "platform_code": "five_verst",
+        "total_runs": row["total_runs"],
+        "total_volunteering": row["total_volunteering"],
+        "last_run_date": row["last_run_date"],
+        "top_location_name": "Карточный парк",
+        "top_location_city": "Карточград",
+        "viewer_state": "guest",
+    }
+    assert card["total_runs"] == 3
+    assert "example.org" not in response.text
+    assert participant.external_user_id not in response.text
+
+
+def test_claim_viewer_states_for_logged_in(client: TestClient, db_session: Session, no_locations: None) -> None:
+    five = _platform(db_session, "five_verst")
+    free = _participant(db_session, five, "Свободнов Состояние")
+    taken = _participant(db_session, five, "Занятов Состояние")
+    _link(db_session, _user(db_session, display_name="Занятов Состояние"), taken)
+    mine = _participant(db_session, five, "Мойнов Состояние")
+    viewer = _login_user(client, db_session)
+
+    def state(participant: Participant) -> str:
+        response = client.get("/api/search/claim", params={"token": make_claim_token(participant.id, API_SECRET)})
+        assert response.status_code == 200
+        return response.json()["viewer_state"]
+
+    assert state(free) == "can_link"
+    assert state(taken) == "taken"
+    _link(db_session, viewer, mine)
+    assert state(mine) == "already_yours"
+    # От системы — один профиль: второй той же системы привязать нельзя.
+    assert state(free) == "platform_linked"
+    # Другая система — можно.
+    s95_person = _participant(db_session, _platform(db_session, "s95"), "Свободнов Состояние")
+    assert state(s95_person) == "can_link"
+
+
+def test_claim_errors_bad_expired_missing_and_placeholder(client: TestClient, db_session: Session) -> None:
+    five = _platform(db_session, "five_verst")
+    placeholder = Participant(
+        platform_id=five.id, external_user_id=f"unknown:loc:{uuid4().hex[:8]}:1", display_name="НЕИЗВЕСТНЫЙ"
+    )
+    db_session.add(placeholder)
+    db_session.flush()
+    expired = make_claim_token(uuid4(), API_SECRET, now=int(time.time()) - SEARCH_CLAIM_TTL_SECONDS - 5)
+
+    cases = {
+        "испорченный": (400, "Не получилось открыть профиль — найдите себя в поиске ещё раз."),
+        expired: (410, "Результаты поиска устарели — найдите себя в поиске ещё раз."),
+        make_claim_token(uuid4(), API_SECRET): (404, "Профиль не найден — найдите себя в поиске ещё раз."),
+        make_claim_token(placeholder.id, API_SECRET): (404, "Профиль не найден — найдите себя в поиске ещё раз."),
+    }
+    for token, (status, detail) in cases.items():
+        response = client.get("/api/search/claim", params={"token": token})
+        assert (response.status_code, response.json()) == (status, {"detail": detail}), token
+    assert client.get("/api/search/claim").status_code == 400
+    # Привязка по тем же токенам — те же ответы.
+    _login(client, _new_telegram_id())
+    for token, (status, detail) in cases.items():
+        response = _link_by_token(client, token)
+        assert (response.status_code, response.json()) == (status, {"detail": detail}), token
+
+
+def test_link_by_search_token_links_exactly_this_person(
+    client: TestClient, db_session: Session, no_locations: None
+) -> None:
+    five = _platform(db_session, "five_verst")
+    namesake = _participant(db_session, five, "Однофамильцев Привязкин")
+    chosen = _participant(db_session, five, "Однофамильцев Привязкин")
+    token = make_claim_token(chosen.id, API_SECRET)
+    assert _link_by_token(client, token).status_code == 401
+
+    user = _login_user(client, db_session)
+    response = _link_by_token(client, token)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "linked"
+    assert body["link"]["platform_code"] == "five_verst"
+    link = db_session.query(PlatformLink).filter(PlatformLink.user_id == user.id).one()
+    assert (link.participant_id, link.link_method) == (chosen.id, "site_search")
+    assert link.participant_id != namesake.id
+
+    # Второе нажатие (вторая вкладка, окно после входа) — успех, а не 409.
+    repeat = _link_by_token(client, make_claim_token(chosen.id, API_SECRET))
+    assert (repeat.status_code, repeat.json()["status"]) == (200, "already_linked")
+    assert db_session.query(PlatformLink).filter(PlatformLink.user_id == user.id).count() == 1
+    # Однофамилец той же системы — уже нельзя: от системы один профиль.
+    other = _link_by_token(client, make_claim_token(namesake.id, API_SECRET))
+    assert other.status_code == 409
+
+
+def test_link_by_search_token_someone_elses_profile_is_409(
+    client: TestClient, db_session: Session, no_locations: None
+) -> None:
+    five = _platform(db_session, "five_verst")
+    participant = _participant(db_session, five, "Чужаков Привязкин")
+    _link(db_session, _user(db_session, display_name="Чужаков Привязкин"), participant)
+    _login(client, _new_telegram_id())
+
+    response = _link_by_token(client, make_claim_token(participant.id, API_SECRET))
+
+    assert (response.status_code, response.json()) == (409, {"detail": "Этот профиль уже привязан к другому аккаунту"})
+
+
+def test_link_by_search_token_race_is_409_not_500(
+    client: TestClient, db_session: Session, no_locations: None
+) -> None:
+    five = _platform(db_session, "five_verst")
+    participant = _participant(db_session, five, "Гонкин Привязкин")
+    _login(client, _new_telegram_id())
+
+    def lost_race(*_args, **_kwargs):
+        raise IntegrityError("INSERT INTO platform_links", {}, Exception("uq_platform_links_user_platform"))
+
+    with patch("app.api.routes.profiles.confirm_profile_link_by_participant", side_effect=lost_race):
+        response = client.post(
+            "/api/profiles/link-by-search-token", json={"token": make_claim_token(participant.id, API_SECRET)}
+        )
+
+    assert (response.status_code, response.json()) == (409, {"detail": "Профиль уже привязан — обновите страницу"})
+
+
+def test_claim_funnel_guest_to_linked_and_report(
+    client: TestClient, db_session: Session, no_locations: None
+) -> None:
+    db_session.query(SearchClaimEvent).delete()
+    five = _platform(db_session, "five_verst")
+    guest_path = _participant(db_session, five, "Воронкин Гостевой")
+    declined = _participant(db_session, five, "Воронкин Отказной")
+    authed_path = _participant(db_session, _platform(db_session, "s95"), "Воронкин Вошедший")
+    guest_token = make_claim_token(guest_path.id, API_SECRET)
+    guest_ref = parse_claim_token(guest_token, API_SECRET).ref
+    declined_token = make_claim_token(declined.id, API_SECRET)
+    declined_ref = parse_claim_token(declined_token, API_SECRET).ref
+
+    # Гость: нажал строку дважды (перезагрузил) и «Это не я» по другой строке.
+    for _ in range(2):
+        assert client.get("/api/search/claim", params={"token": guest_token}).json()["viewer_state"] == "guest"
+    decline = client.post("/api/search/claim/decline", json={"token": declined_token})
+    assert decline.status_code == 204
+    # Мусор и истёкший токен — тоже 204, но не пишется.
+    for body in ('{"token": "bad"}', "не json", "[1]", ""):
+        assert client.post("/api/search/claim/decline", content=body).status_code == 204
+    assert _claim_events(db_session) == [
+        (guest_ref, "open", False, None),
+        (declined_ref, "declined", False, None),
+    ]
+
+    # Вошёл по «Войти и привязать»: окно после входа — этап «вошёл», потом привязка.
+    _login(client, _new_telegram_id())
+    assert client.get("/api/search/claim", params={"token": guest_token}).json()["viewer_state"] == "can_link"
+    assert _link_by_token(client, guest_token).json()["status"] == "linked"
+    # Повтор после успеха — already_linked, в воронку не пишется.
+    assert _link_by_token(client, guest_token).json()["status"] == "already_linked"
+    # Уже вошедший нажал другую строку и привязал её.
+    authed_token = make_claim_token(authed_path.id, API_SECRET)
+    authed_ref = parse_claim_token(authed_token, API_SECRET).ref
+    assert client.get("/api/search/claim", params={"token": authed_token}).json()["viewer_state"] == "can_link"
+    assert _link_by_token(client, authed_token).status_code == 200
+    # Неудачная привязка — с кодом: однофамилец в той же системе, что уже привязана.
+    failed_token = make_claim_token(declined.id, API_SECRET)
+    assert _link_by_token(client, failed_token).status_code == 409
+
+    events = _claim_events(db_session)
+    assert events[2:] == [
+        (guest_ref, "open", True, None),
+        (guest_ref, "login", True, None),
+        (guest_ref, "linked", True, None),
+        (authed_ref, "open", True, None),
+        (authed_ref, "linked", True, None),
+        (parse_claim_token(failed_token, API_SECRET).ref, "failed", True, 409),
+    ]
+
+    funnel = get_search_log_report(db_session, period_days=7)["claim_funnel"]
+    assert funnel == {
+        "guest_opened": 1,
+        "guest_logged_in": 1,
+        "guest_linked": 1,
+        "authed_opened": 1,
+        "authed_linked": 1,
+        "declined": 1,
+        "failed_by_status": {"409": 1},
+    }
+
+    # Админ проверяет окно — в воронку не пишется ничего.
+    _login(client, 9001)
+    admin_token = make_claim_token(guest_path.id, API_SECRET)
+    assert client.get("/api/search/claim", params={"token": admin_token}).status_code == 200
+    client.post("/api/search/claim/decline", json={"token": admin_token})
+    _link_by_token(client, admin_token)
+    assert len(_claim_events(db_session)) == len(events)
+    report = client.get("/api/admin/search-log", params={"period_days": 7}).json()
+    assert report["claim_funnel"] == funnel
+
+
+def test_log_accepts_participant_click(client: TestClient, db_session: Session) -> None:
+    db_session.query(SearchQueryLog).delete()
+    client.post(
+        "/api/search/log",
+        json={"query": "Иванов", "people_found": 7, "clicked_kind": "participant", "clicked_target": "s95#3"},
+    )
+    row = _log_rows(db_session)[0]
+    assert (row.clicked_kind, row.clicked_target) == ("participant", "s95#3")

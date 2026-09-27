@@ -236,6 +236,8 @@ function StatCard({ label, value, hint }: { label: string; value: string | numbe
 // «только 5 вёрст» с «5 вёрст + parkrun» напрямую.
 const LINK_METHOD_LABELS: Record<string, string> = {
   search: "поиск",
+  // «Это вы?» в поиске по сайту — рядом с поиском по ФИО в онбординге.
+  site_search: "поиск по сайту",
   url: "ссылка",
   claim: "тизер главной",
   s95_pair: "parkrun с С95",
@@ -273,7 +275,7 @@ function OnboardingFunnel({
       }
     }
     // Порядок фиксирован: сначала интересное (поиск), «до отметки» — в конец.
-    const order = ["search", "url", "claim", "s95_pair", "legacy"];
+    const order = ["search", "site_search", "url", "claim", "s95_pair", "legacy"];
     return [...codes].sort((a, b) => order.indexOf(a) - order.indexOf(b));
   }, [methods]);
 

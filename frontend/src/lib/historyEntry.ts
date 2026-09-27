@@ -21,6 +21,8 @@ const KEY_FIELD = "srsEntry";
  * Здесь о ней знаем только затем, чтобы replaceState страницы её не стёр.
  */
 const OVERLAY_FIELD = "srsOverlay";
+/** Метка записи подшага окна (подэкран «Это вы?» в поиске) — переносится вместе с меткой окна. */
+const OVERLAY_STEP_FIELD = "srsOverlayStep";
 
 export type EntryChange = {
   /** Запись, которую покидаем: под этим ключом сохраняется её снимок. */
@@ -111,10 +113,14 @@ export function installHistoryEntries(): void {
     // стирали: окно, закрытое кнопкой или Esc, больше не узнавало свою запись,
     // не снимало её, и первое «Назад» после этого ничего видимого не делало
     // (ревью перед пушем 26.09.2026, NAV-3). Метку переносим, если страница
-    // не передала свою.
+    // не передала свою, — и метку подшага с ней: без неё запись подэкрана
+    // «Это вы?» стала бы обычной записью окна, «← К результатам» её бы не
+    // снял, и «Назад» опять «не срабатывал» бы.
     const overlay = stringField(window.history.state, OVERLAY_FIELD);
     if (overlay !== null && !(OVERLAY_FIELD in next)) {
       next[OVERLAY_FIELD] = overlay;
+      const step = (window.history.state as Record<string, unknown>)[OVERLAY_STEP_FIELD];
+      if (step !== undefined) next[OVERLAY_STEP_FIELD] = step;
     }
     replaceState(next, unused, url);
   };
