@@ -613,7 +613,7 @@ Telegram / HTML письма / текст VK), `services/notification_service.py
   (`_STATUS_TAIL_AUTHOR` / `_STATUS_TAIL_WATCHER`). Статусы Дмитрий проставляет
   пачкой, поэтому смены копятся в Redis по получателю
   (`services/backlog_status_digest.py`) и уходят ОДНИМ сообщением: beat
-  `notifications.flush_backlog_statuses` раз в минуту отдаёт группы, где тихо
+  `notifications.flush_backlog_statuses` раз в пять минут отдаёт группы, где тихо
   QUIET_SECONDS или которые ждут дольше MAX_WAIT_SECONDS. Одна карточка —
   прежний подробный текст, несколько — список строк. Redis недоступен —
   отправляем сразу по одной.
