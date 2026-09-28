@@ -200,6 +200,13 @@ celery_app.conf.update(
         },
         # Уведомления, застрявшие в queued/failed (брокер моргнул, канал лежал):
         # подметальщик раз в 10 минут, внутри базы и сети каналов.
+        # Смены статусов карточек: Дмитрий разбирает бэклог пачкой, и каждый
+        # подписчик должен получить одно сообщение, а не три подряд.
+        "notifications-flush-backlog-statuses": {
+            "task": "notifications.flush_backlog_statuses",
+            "schedule": crontab(minute="*"),
+            "options": {"queue": "celery", "expires": 55},
+        },
         "notifications-retry-queued": {
             "task": "notifications.retry_queued",
             "schedule": crontab(minute="*/10"),

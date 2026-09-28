@@ -67,6 +67,18 @@ def flush_admin_copies() -> int:
     return sent
 
 
+@celery_app.task(name="notifications.flush_backlog_statuses", **LIMITS_SHORT)
+def flush_backlog_statuses() -> int:
+    """Раз в минуту: смены статусов карточек, накопившиеся за разбор бэклога,
+    — одним сообщением на человека (см. backlog_status_digest)."""
+    from app.services.backlog_service import flush_status_digests
+
+    sent = flush_status_digests()
+    if sent:
+        logger.info("notify: backlog status digests sent %d", sent)
+    return sent
+
+
 @celery_app.task(name="notifications.scan_activity", **LIMITS_MEDIUM)
 def scan_activity(user_ids: list[str]) -> dict[str, int]:
     """Новые пробежки, рейтинги, уровни и вехи у перечисленных людей."""

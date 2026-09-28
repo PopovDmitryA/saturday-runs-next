@@ -451,6 +451,7 @@ AGREED_LIMITS_MINUTES: dict[str, tuple[int, int]] = {
     # Копия админу — один запрос в Telegram; пятничная сводка отмен считает
     # подписчиков пачкой, как остальные проходы уведомлений.
     "notifications.flush_admin_copies": (5, 6),
+    "notifications.flush_backlog_statuses": (5, 6),
     "notifications.friday_cancellations": (20, 25),
 }
 

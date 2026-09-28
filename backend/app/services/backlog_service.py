@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -28,7 +30,7 @@ from app.models import (
     User,
     UserNotificationPrefs,
 )
-from app.notification_markup import bold
+from app.notification_markup import bold, link
 from app.schemas.backlog import (
     BacklogCardAdminResponse,
     BacklogCardResponse,
@@ -37,9 +39,12 @@ from app.schemas.backlog import (
     BacklogVoteAdminListResponse,
 )
 from app.schemas.photo import PhotoResponse
+from app.services import backlog_status_digest as status_digest
 from app.services import notification_service as notifications
 from app.services.admin_notify import notify_admin
 from app.services.photo_service import PhotoPayload, delete_backlog_photo, list_backlog_photos
+
+logger = logging.getLogger(__name__)
 
 _TYPE_LABELS = {BacklogCardType.bug: "баг", BacklogCardType.feature: "фича"}
 _COMMENT_PREVIEW_LIMIT = 200
@@ -256,27 +261,127 @@ _STATUS_TAIL_WATCHER = {
 }
 
 
-def _notify_status_changed(db: Session, card: BacklogCard, status: BacklogCardStatus) -> None:
-    """Смена статуса — автору и всем следящим, но текст у них разный."""
-    label = _STATUS_LABELS[status]
-    title = f"{_STATUS_ICONS[status]} Карточка «{card.title}»: {label.lower()}"
-    dedupe_key = f"status:{card.id}:{status.value}:{datetime.now(UTC).strftime('%Y%m%d%H%M')}"
-    subscribers = _card_subscribers(db, card.id)
-    author = [user for user in subscribers if user.id == card.author_user_id]
-    watchers = [user for user in subscribers if user.id != card.author_user_id]
-    for users, tail in ((author, _STATUS_TAIL_AUTHOR[status]), (watchers, _STATUS_TAIL_WATCHER[status])):
-        if not users:
-            continue
-        _queue_for(
-            db,
-            users,
-            kind="backlog",
-            title=title,
-            text=f"Новый статус — {bold(label)}. {tail}",
-            dedupe_key=dedupe_key,
-            url=_card_link(card.id),
-            url_label="Открыть карточку",
+def status_message(changes: list[status_digest.StatusChange]) -> tuple[str, str, str | None]:
+    """(заголовок, тело, ссылка) на пачку смен статуса одного человека.
+
+    Одна карточка — подробный текст, как раньше. Несколько (Дмитрий разобрал
+    бэклог пачкой) — список строк, а благодарность добавляется, только если
+    среди реализованных есть карточка самого человека.
+    """
+    if len(changes) == 1:
+        change = changes[0]
+        status = BacklogCardStatus(change.status)
+        tail = (_STATUS_TAIL_AUTHOR if change.is_author else _STATUS_TAIL_WATCHER)[status]
+        return (
+            f"{change.icon} Карточка «{change.title}»: {change.label.lower()}",
+            f"Новый статус — {bold(change.label)}. {tail}",
+            change.url,
         )
+
+    lines = [f"{item.icon} {link(bold(item.title), item.url)} — {item.label.lower()}" for item in changes]
+    own_done = [item for item in changes if item.is_author and item.status == BacklogCardStatus.done.value]
+    if own_done:
+        word = "идея" if len(own_done) == 1 else "идеи"
+        lines.append(f"Спасибо, что предложили — ваши {word} уже на сайте.")
+    return f"🗂 Статусы карточек обновились: {len(changes)}", "\n\n".join(lines), None
+
+
+def _flush_status_group(db: Session, user_id: UUID, changes: list[status_digest.StatusChange]) -> UUID | None:
+    """Поставить одно уведомление на всю пачку. Возвращает id доставки."""
+    user = db.get(User, user_id)
+    if user is None or not changes:
+        return None
+    title, text, url = status_message(changes)
+    delivery = notifications.notify_user(
+        db,
+        user,
+        "backlog",
+        title=title,
+        text=text,
+        dedupe_key="status:"
+        + hashlib.sha1("|".join(sorted(f"{c.card_id}:{c.status}" for c in changes)).encode()).hexdigest()[:24],
+        url=url or f"{get_settings().app_base_url.rstrip('/')}/backlog",
+        url_label="Открыть карточку" if url else "Открыть бэклог",
+        commit=False,
+    )
+    return delivery.id if delivery is not None else None
+
+
+def flush_status_digests(db: Session | None = None, *, force: bool = False) -> int:
+    """Отправить готовые пачки смен статуса. Зовётся beat-задачей раз в минуту.
+
+    db — чужая сессия (тесты, ручной прогон): тогда её не закрываем.
+    """
+    from app.db.session import get_session_factory
+
+    try:
+        ready = status_digest.ready_groups(force=force)
+    except Exception:  # noqa: BLE001 — Redis лёг: пачки подождут следующего прогона
+        logger.exception("backlog: не удалось прочитать группы статусов")
+        return 0
+    if not ready:
+        return 0
+    own_session = db is None
+    session = db or get_session_factory()()
+    queued: list[UUID] = []
+    try:
+        for raw_user_id in ready:
+            changes = status_digest.take(raw_user_id)
+            delivery_id = _flush_status_group(session, UUID(raw_user_id), changes)
+            if delivery_id is not None:
+                queued.append(delivery_id)
+        session.commit()
+    except Exception:  # noqa: BLE001 — одна битая группа не должна ронять задачу
+        session.rollback()
+        logger.exception("backlog: рассылка статусов не удалась")
+        return 0
+    finally:
+        if own_session:
+            session.close()
+    for delivery_id in queued:
+        notifications.enqueue_delivery(delivery_id)
+    return len(queued)
+
+
+def _notify_status_changed(db: Session, card: BacklogCard, status: BacklogCardStatus) -> None:
+    """Смена статуса — автору и всем следящим, пачкой (см. backlog_status_digest)."""
+    label = _STATUS_LABELS[status]
+    subscribers = _card_subscribers(db, card.id)
+    direct: list[tuple[User, status_digest.StatusChange]] = []
+    for user in subscribers:
+        change = status_digest.StatusChange(
+            card_id=str(card.id),
+            title=card.title,
+            url=_card_link(card.id),
+            status=status.value,
+            label=label,
+            icon=_STATUS_ICONS[status],
+            is_author=user.id == card.author_user_id,
+        )
+        if not status_digest.add_change(user.id, change):
+            direct.append((user, change))
+    if not direct:
+        return
+    # Redis недоступен — отправляем по одной, как до склейки.
+    queued: list[UUID] = []
+    for user, change in direct:
+        title, text, url = status_message([change])
+        delivery = notifications.notify_user(
+            db,
+            user,
+            "backlog",
+            title=title,
+            text=text,
+            dedupe_key=f"status:{card.id}:{status.value}:{datetime.now(UTC).strftime('%Y%m%d%H%M')}",
+            url=url,
+            url_label="Открыть карточку",
+            commit=False,
+        )
+        if delivery is not None:
+            queued.append(delivery.id)
+    db.commit()
+    for delivery_id in queued:
+        notifications.enqueue_delivery(delivery_id)
 
 
 def _get_card(db: Session, card_id: UUID, *, for_update_author: bool = False) -> BacklogCard:

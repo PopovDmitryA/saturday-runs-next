@@ -35,6 +35,7 @@ from app.services import notification_service as notify
 from app.services.backlog_service import (
     create_card,
     create_comment,
+    flush_status_digests,
     get_card,
     set_card_subscription,
     update_card_status,
@@ -520,6 +521,7 @@ def test_backlog_status_change_notifies_followers(db_session: Session) -> None:
     set_card_subscription(db_session, card.id, user_id=fan.id, subscribed=True)
 
     update_card_status(db_session, card.id, status=BacklogCardStatus.done)
+    assert flush_status_digests(db_session, force=True) == 2
     rows = db_session.query(NotificationDelivery).filter(NotificationDelivery.dedupe_key.like("status:%")).all()
     by_user = {r.user_id: r for r in rows}
     assert set(by_user) == {author.id, fan.id}
@@ -533,6 +535,7 @@ def test_backlog_status_change_notifies_followers(db_session: Session) -> None:
 
     # Тот же статус ещё раз — тишина.
     update_card_status(db_session, card.id, status=BacklogCardStatus.done)
+    flush_status_digests(db_session, force=True)
     assert db_session.query(NotificationDelivery).filter(NotificationDelivery.dedupe_key.like("status:%")).count() == 2
 
 
@@ -547,6 +550,7 @@ def test_backlog_status_change_without_author_subscription(db_session: Session) 
     set_card_subscription(db_session, card.id, user_id=author.id, subscribed=False)
 
     update_card_status(db_session, card.id, status=BacklogCardStatus.in_progress)
+    assert flush_status_digests(db_session, force=True) == 1
     rows = db_session.query(NotificationDelivery).filter(NotificationDelivery.dedupe_key.like("status:%")).all()
     assert {r.user_id for r in rows} == {fan.id}
     assert rows[0].payload["text"] == "Новый статус — **В реализации**. Идею взяли в работу."
@@ -1011,3 +1015,52 @@ def test_watched_ratings_cover_volunteering(db_session: Session) -> None:
     assert {"runs", "volunteering", "volunteer_locations", "volunteer_roles"} <= codes
     # «Дальность от дома» намеренно вне списка: там место — про километры.
     assert "home_distance" not in codes
+
+
+def test_status_changes_are_merged_into_one_message(db_session: Session) -> None:
+    """Разбор бэклога пачкой: три карточки — одно сообщение, а не три подряд."""
+    author = _make_user(db_session, name="Автор", chat_id=21)
+    fan = _make_user(db_session, name="Фанат", chat_id=22)
+    _on(db_session, author)
+    _on(db_session, fan)
+    cards = [_card(db_session, author, title=name) for name in ("Первая", "Вторая", "Третья")]
+    for card in cards:
+        set_card_subscription(db_session, card.id, user_id=fan.id, subscribed=True)
+
+    update_card_status(db_session, cards[0].id, status=BacklogCardStatus.done)
+    update_card_status(db_session, cards[1].id, status=BacklogCardStatus.done)
+    update_card_status(db_session, cards[2].id, status=BacklogCardStatus.in_progress)
+    # Пока пачка копится — ни одного сообщения.
+    assert db_session.query(NotificationDelivery).filter(NotificationDelivery.dedupe_key.like("status:%")).count() == 0
+
+    assert flush_status_digests(db_session, force=True) == 2  # автору и фанату по одному
+    rows = db_session.query(NotificationDelivery).filter(NotificationDelivery.dedupe_key.like("status:%")).all()
+    by_user = {r.user_id: r for r in rows}
+    assert set(by_user) == {author.id, fan.id}
+
+    mine = by_user[author.id].payload
+    assert mine["title"] == "🗂 Статусы карточек обновились: 3"
+    assert "✅ [**Первая**](" in mine["text"] and "🛠 [**Третья**](" in mine["text"]
+    assert "Спасибо, что предложили — ваши идеи уже на сайте." in mine["text"]
+    assert mine["url"].endswith("/backlog")
+
+    # Следящему — тот же список без благодарности.
+    theirs = by_user[fan.id].payload
+    assert theirs["title"] == "🗂 Статусы карточек обновились: 3"
+    assert "Спасибо" not in theirs["text"]
+
+    # Группы забраны: повторный прогон молчит.
+    assert flush_status_digests(db_session, force=True) == 0
+
+
+def test_single_status_change_keeps_detailed_text(db_session: Session) -> None:
+    author = _make_user(db_session, name="Автор", chat_id=31)
+    _on(db_session, author)
+    card = _card(db_session, author, title="Одна идея")
+
+    update_card_status(db_session, card.id, status=BacklogCardStatus.rejected)
+    assert flush_status_digests(db_session, force=True) == 1
+    row = db_session.query(NotificationDelivery).filter(NotificationDelivery.dedupe_key.like("status:%")).one()
+    assert row.payload["title"] == "🚫 Карточка «Одна идея»: отклонено"
+    assert row.payload["text"] == "Новый статус — **Отклонено**. Причина — в комментариях к карточке."
+    assert row.payload["url"].endswith(f"/backlog?card={card.id}")
