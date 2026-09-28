@@ -239,25 +239,44 @@ def _notify_card_created(db: Session, card: BacklogCard) -> None:
     )
 
 
+# Хвост сообщения о смене статуса. Автору — с благодарностью: идея его, и
+# «спасибо, что предложили» уместно только ему. Остальным следящим — тот же
+# факт без личного обращения: они за карточкой просто наблюдают.
+_STATUS_TAIL_AUTHOR = {
+    BacklogCardStatus.done: "Спасибо, что предложили — это уже на сайте.",
+    BacklogCardStatus.in_progress: "Взяли вашу идею в работу.",
+    BacklogCardStatus.rejected: "Причина — в комментариях к карточке.",
+    BacklogCardStatus.pending: "Карточка снова ждёт решения.",
+}
+_STATUS_TAIL_WATCHER = {
+    BacklogCardStatus.done: "Идея уже на сайте.",
+    BacklogCardStatus.in_progress: "Идею взяли в работу.",
+    BacklogCardStatus.rejected: "Причина — в комментариях к карточке.",
+    BacklogCardStatus.pending: "Карточка снова ждёт решения.",
+}
+
+
 def _notify_status_changed(db: Session, card: BacklogCard, status: BacklogCardStatus) -> None:
-    """Смена статуса — автору и всем следящим."""
+    """Смена статуса — автору и всем следящим, но текст у них разный."""
     label = _STATUS_LABELS[status]
-    tail = {
-        BacklogCardStatus.done: "Спасибо, что предложили — это уже на сайте.",
-        BacklogCardStatus.in_progress: "Взяли в работу.",
-        BacklogCardStatus.rejected: "Причина — в комментариях к карточке.",
-        BacklogCardStatus.pending: "Карточка снова ждёт решения.",
-    }[status]
-    _queue_for(
-        db,
-        _card_subscribers(db, card.id),
-        kind="backlog",
-        title=f"{_STATUS_ICONS[status]} Карточка «{card.title}»: {label.lower()}",
-        text=f"Новый статус — {bold(label)}. {tail}",
-        dedupe_key=f"status:{card.id}:{status.value}:{datetime.now(UTC).strftime('%Y%m%d%H%M')}",
-        url=_card_link(card.id),
-        url_label="Открыть карточку",
-    )
+    title = f"{_STATUS_ICONS[status]} Карточка «{card.title}»: {label.lower()}"
+    dedupe_key = f"status:{card.id}:{status.value}:{datetime.now(UTC).strftime('%Y%m%d%H%M')}"
+    subscribers = _card_subscribers(db, card.id)
+    author = [user for user in subscribers if user.id == card.author_user_id]
+    watchers = [user for user in subscribers if user.id != card.author_user_id]
+    for users, tail in ((author, _STATUS_TAIL_AUTHOR[status]), (watchers, _STATUS_TAIL_WATCHER[status])):
+        if not users:
+            continue
+        _queue_for(
+            db,
+            users,
+            kind="backlog",
+            title=title,
+            text=f"Новый статус — {bold(label)}. {tail}",
+            dedupe_key=dedupe_key,
+            url=_card_link(card.id),
+            url_label="Открыть карточку",
+        )
 
 
 def _get_card(db: Session, card_id: UUID, *, for_update_author: bool = False) -> BacklogCard:
@@ -331,9 +350,7 @@ def _card_to_response(
     )
 
 
-def _cards_to_responses(
-    db: Session, cards: list[BacklogCard], viewer_id: UUID | None
-) -> list[BacklogCardResponse]:
+def _cards_to_responses(db: Session, cards: list[BacklogCard], viewer_id: UUID | None) -> list[BacklogCardResponse]:
     card_ids = [card.id for card in cards]
     comment_counts = _comment_counts(db, card_ids)
     my_votes = _my_votes(db, card_ids, viewer_id)

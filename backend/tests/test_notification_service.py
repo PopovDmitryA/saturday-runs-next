@@ -521,13 +521,35 @@ def test_backlog_status_change_notifies_followers(db_session: Session) -> None:
 
     update_card_status(db_session, card.id, status=BacklogCardStatus.done)
     rows = db_session.query(NotificationDelivery).filter(NotificationDelivery.dedupe_key.like("status:%")).all()
-    assert {r.user_id for r in rows} == {author.id, fan.id}
-    assert rows[0].payload["title"] == "✅ Карточка «Идея»: реализовано"
-    assert "**Реализовано**" in rows[0].payload["text"]
+    by_user = {r.user_id: r for r in rows}
+    assert set(by_user) == {author.id, fan.id}
+    assert all(r.payload["title"] == "✅ Карточка «Идея»: реализовано" for r in rows)
+    # Благодарность — только автору идеи; следящий получает тот же факт без нёе.
+    assert (
+        by_user[author.id].payload["text"]
+        == "Новый статус — **Реализовано**. Спасибо, что предложили — это уже на сайте."
+    )
+    assert by_user[fan.id].payload["text"] == "Новый статус — **Реализовано**. Идея уже на сайте."
 
     # Тот же статус ещё раз — тишина.
     update_card_status(db_session, card.id, status=BacklogCardStatus.done)
     assert db_session.query(NotificationDelivery).filter(NotificationDelivery.dedupe_key.like("status:%")).count() == 2
+
+
+def test_backlog_status_change_without_author_subscription(db_session: Session) -> None:
+    """Автор отписался от своей карточки — следящие всё равно узнают статус."""
+    author = _make_user(db_session, name="Автор", chat_id=11)
+    fan = _make_user(db_session, name="Фанат", chat_id=12)
+    _on(db_session, author)
+    _on(db_session, fan)
+    card = _card(db_session, author, title="Чужая идея")
+    set_card_subscription(db_session, card.id, user_id=fan.id, subscribed=True)
+    set_card_subscription(db_session, card.id, user_id=author.id, subscribed=False)
+
+    update_card_status(db_session, card.id, status=BacklogCardStatus.in_progress)
+    rows = db_session.query(NotificationDelivery).filter(NotificationDelivery.dedupe_key.like("status:%")).all()
+    assert {r.user_id for r in rows} == {fan.id}
+    assert rows[0].payload["text"] == "Новый статус — **В реализации**. Идею взяли в работу."
 
 
 def test_backlog_new_cards_go_only_to_opted_in(db_session: Session) -> None:
