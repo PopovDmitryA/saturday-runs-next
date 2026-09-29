@@ -26,6 +26,8 @@ class TrackImportItem(BaseModel):
     # Есть ли высоты по точкам: без них не будет профиля рельефа.
     has_elevation_profile: bool = False
     device_name: str | None = None
+    # None — модель прибора незнакома; False — барометра нет, высоте не верим.
+    has_barometer: bool | None = None
     quality_class: str | None = None
     lap_count: int | None = None
     # К какой пробежке привязался трек: локация и дата старта из протокола.

@@ -106,7 +106,14 @@ function PreviewRow({
       </td>
       <td className="num">{formatDistance(item.distance_m)}</td>
       <td className="num">{formatDuration(item.duration_sec)}</td>
-      <td className="num">{item.elevation_gain_m == null ? "—" : `${Math.round(item.elevation_gain_m)} м`}</td>
+      {/* Без барометра набор считается по GPS и врёт в разы — не показываем. */}
+      <td className="num" title={item.has_barometer === false ? "Часы без барометра: высота по GPS" : undefined}>
+        {item.has_barometer === false
+          ? "—"
+          : item.elevation_gain_m == null
+            ? "—"
+            : `${Math.round(item.elevation_gain_m)} м`}
+      </td>
       <td className="center">
         {item.has_elevation_profile ? (
           <span className="badge-ok" title="Высоты по точкам есть — профиль рельефа построится">

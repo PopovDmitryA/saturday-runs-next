@@ -568,3 +568,59 @@ def test_batch_says_when_the_archive_was_cut_short() -> None:
     from app.services import admin_track_import_service as track_import
 
     assert track_import.MAX_FILES_PER_BATCH >= 20000
+
+
+def test_barometer_is_read_from_the_model_not_from_the_file() -> None:
+    # fr55 пишет в FIT набор высоты, но барометра в нём нет — набор посчитан
+    # по GPS. Раньше мы делали вывод «набор есть, значит барометр есть», и
+    # у Егора Свиридова fr55 числился барометрическим: 72, 96 и 108 м на трёх
+    # подряд субботах Дружбы там, где Garmin и Strava показывают 26.
+    from app.services.track_parsing import device_has_barometer
+
+    assert device_has_barometer("fr55") is False
+    assert device_has_barometer("fr245_music") is False
+    assert device_has_barometer("fr965") is True
+    assert device_has_barometer("fr265_small") is True
+    assert device_has_barometer("fenix 7") is True
+    # Незнакомую модель не выдумываем.
+    assert device_has_barometer("какие-то часы") is None
+    assert device_has_barometer(None) is None
+
+
+def test_course_profile_ignores_elevation_without_a_barometer() -> None:
+    # Геометрия у таких треков нормальная, поэтому целиком их не выбрасываем —
+    # из высоты исключаем.
+    from app.services.location_course_service import _fill_profile
+
+    class _Track:
+        def __init__(self, gain, span, baro, user):
+            self.elevation_gain_m = gain
+            self.has_barometer = baro
+            self.user_id = user
+            self.distance_m = 5000.0
+            self.started_at = None
+            self.points = []
+            self.metrics = {
+                "elevation_min_m": 100.0,
+                "elevation_max_m": 100.0 + span,
+                "elevation_profile": [[0, 0.0], [5000, 0.0]],
+            }
+
+    class _Profile:
+        pass
+
+    profile = _Profile()
+    _fill_profile(
+        profile,  # type: ignore[arg-type]
+        [
+            _Track(26.0, 9.0, True, "a"),
+            _Track(108.0, 30.0, False, "b"),
+            _Track(24.0, 9.0, True, "c"),
+        ],  # type: ignore[list-item]
+    )
+
+    # Медиана только по двум барометрическим, трек fr55 в высоту не попал.
+    assert profile.elevation_gain_m == 25.0
+    assert profile.elevation_span_m == 9.0
+    # Но сам трек в счёте трасс участвует: длина и геометрия у него в порядке.
+    assert profile.tracks_count == 3

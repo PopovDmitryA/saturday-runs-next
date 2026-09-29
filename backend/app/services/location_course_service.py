@@ -188,17 +188,24 @@ def rebuild_location_profile(db: Session, location_id: UUID) -> LocationCoursePr
 def _fill_profile(profile: LocationCourseProfile, tracks: list[RunTrack]) -> None:
     metrics = [track.metrics or {} for track in tracks]
     distances = [value for value in (track.distance_m for track in tracks) if value]
+    # Высоту берём только с приборов, у которых есть барометр. Часы без него
+    # пишут высоту по GPS, и её погрешность больше рельефа парка: у fr55 на
+    # Дружбе выходило 72, 96 и 108 м набора на трёх подряд субботах там, где
+    # на самом деле 26. Геометрия и длина у таких треков при этом нормальные,
+    # поэтому целиком их не выбрасываем — исключаем только высоту.
+    barometric = [track for track in tracks if track.has_barometer is not False]
+    baro_metrics = [track.metrics or {} for track in barometric]
 
     profile.tracks_count = len(tracks)
     profile.unique_user_count = len({track.user_id for track in tracks})
     profile.distance_m = _median_or_none(distances)
     profile.distance_min_m = round(min(distances), 1) if distances else None
     profile.distance_max_m = round(max(distances), 1) if distances else None
-    profile.elevation_gain_m = _median_or_none([track.elevation_gain_m for track in tracks])
+    profile.elevation_gain_m = _median_or_none([track.elevation_gain_m for track in barometric])
     profile.elevation_span_m = _median_or_none(
         [
             item["elevation_max_m"] - item["elevation_min_m"]
-            for item in metrics
+            for item in baro_metrics
             if item.get("elevation_max_m") is not None and item.get("elevation_min_m") is not None
         ]
     )
@@ -210,12 +217,12 @@ def _fill_profile(profile: LocationCourseProfile, tracks: list[RunTrack]) -> Non
     profile.box_area_m2 = _median_or_none([item.get("box_area_m2") for item in metrics])
     laps = [int(item["lap_count"]) for item in metrics if item.get("lap_count")]
     profile.lap_count = int(median(laps)) if laps else None
-    profile.uphill_share = _median_or_none([item.get("uphill_share") for item in metrics])
-    profile.downhill_share = _median_or_none([item.get("downhill_share") for item in metrics])
-    profile.climb_length_m = _median_or_none([item.get("climb_length_m") for item in metrics])
-    profile.climb_rise_m = _median_or_none([item.get("climb_rise_m") for item in metrics])
-    profile.climb_grade_percent = _median_or_none([item.get("climb_grade_percent") for item in metrics])
-    profile.elevation_profile = _median_profile(tracks)
+    profile.uphill_share = _median_or_none([item.get("uphill_share") for item in baro_metrics])
+    profile.downhill_share = _median_or_none([item.get("downhill_share") for item in baro_metrics])
+    profile.climb_length_m = _median_or_none([item.get("climb_length_m") for item in baro_metrics])
+    profile.climb_rise_m = _median_or_none([item.get("climb_rise_m") for item in baro_metrics])
+    profile.climb_grade_percent = _median_or_none([item.get("climb_grade_percent") for item in baro_metrics])
+    profile.elevation_profile = _median_profile(barometric)
 
     # Линия для карты — трек с медианной длиной: он и есть «типичный» проход
     # трассы, в отличие от самого короткого или самого длинного.

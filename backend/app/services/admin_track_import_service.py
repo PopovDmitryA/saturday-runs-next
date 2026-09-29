@@ -389,6 +389,7 @@ def preview_items(db: Session, batch: AdminTrackImport) -> list[dict[str, Any]]:
                 "elevation_gain_m": track.elevation_gain_m,
                 "has_elevation_profile": bool(metrics.get("elevation_profile")),
                 "device_name": track.device_name,
+                "has_barometer": track.has_barometer,
                 "quality_class": track.quality_class,
                 "lap_count": metrics.get("lap_count"),
                 "location_name": location.name if location else None,

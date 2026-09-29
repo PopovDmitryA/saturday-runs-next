@@ -276,9 +276,18 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
               </b>
               <span>средний темп</span>
             </div>
-            <div>
-              <b>{track.elevation_gain_m != null ? `${Math.round(track.elevation_gain_m)} м` : "—"}</b>
-              <span>набор высоты</span>
+            {/* Без барометра высоту пишет GPS, и её погрешность больше рельефа
+                парка: у fr55 на Дружбе выходило 72, 96 и 108 м на трёх подряд
+                субботах там, где на самом деле 26. Такое число не показываем. */}
+            <div className={track.has_barometer === false ? "run-track-fact-warn" : ""}>
+              <b>
+                {track.has_barometer === false
+                  ? "—"
+                  : track.elevation_gain_m != null
+                    ? `${Math.round(track.elevation_gain_m)} м`
+                    : "—"}
+              </b>
+              <span>{track.has_barometer === false ? "набор не меряем" : "набор высоты"}</span>
             </div>
             {/* Плотность записи — главный показатель того, можно ли верить
                 геометрии: при 8 м между точками поворот занижается на треть. */}
@@ -342,6 +351,16 @@ export function RunTrackModal({ run, onClose, onChanged }: RunTrackModalProps) {
               <li>
                 Прибор показал {(track.device_distance_m / 1000).toFixed(2).replace(".", ",")} км, наш замер —{" "}
                 {(track.distance_m / 1000).toFixed(2).replace(".", ",")} км.
+              </li>
+            )}
+            {track.has_barometer === false && (
+              <li>
+                В этих часах нет барометра — высоту они считают по GPS, а её погрешность на парковой
+                пятёрке больше самого рельефа: на трёх подряд субботах одной трассы выходило 72, 96 и
+                108 м набора. Garmin Connect и Strava в таких записях подменяют высоту картой рельефа,
+                поэтому у них ровные 26–28 м. Мы такую карту пока не используем и просто не показываем
+                набор: лучше прочерк, чем неверная цифра. На длину, темп и геометрию трассы это не
+                влияет — горизонтальные координаты GPS берёт точно.
               </li>
             )}
             <li>

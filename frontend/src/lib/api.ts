@@ -4042,6 +4042,8 @@ export type TrackImportItem = {
   // Есть ли высоты по точкам: без них профиля рельефа не будет.
   has_elevation_profile: boolean;
   device_name: string | null;
+  // false — у часов нет барометра: высоту считает GPS, ей верить нельзя.
+  has_barometer: boolean | null;
   quality_class: string | null;
   lap_count: number | null;
   location_name: string | null;

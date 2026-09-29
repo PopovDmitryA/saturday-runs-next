@@ -197,6 +197,43 @@ def parse_tcx(data: bytes, filename: str = "") -> ParsedTrack:
 # пульс, настройки — у них тип другой, и координат в них нет по определению.
 FIT_ACTIVITY_TYPES = {"activity", "course"}
 
+# Барометрический альтиметр — свойство железа, а не записи. Без него часы
+# пишут высоту по GPS, а её погрешность на пятёрке больше самого рельефа.
+# Проверено на наших данных 29.09.2026: у приборов с барометром средний набор
+# 21-26 м при размахе 9-10 м, у fr55 — 297 м при размахе 131 м, у fr245 —
+# 68 м при 35 м. Именно поэтому Garmin Connect и Strava подменяют таким
+# записям высоту картой рельефа и показывают ровные 26-28 м там, где в самом
+# FIT-файле лежит 72, 96 или 108.
+GARMIN_WITHOUT_BAROMETER = {
+    "fr25", "fr30", "fr35", "fr45", "fr45s", "fr55", "fr235", "fr245", "fr245_music",
+    "venu_sq", "venu_sq_music", "vivoactive3",
+}
+GARMIN_WITH_BAROMETER_PREFIXES = (
+    "fr255", "fr265", "fr570", "fr745", "fr935", "fr945", "fr955", "fr965", "fr970",
+    "fenix", "epix", "instinct2", "instinct3", "venu2", "venu3", "vivoactive4",
+    "vivoactive5", "enduro", "marq", "tactix", "descent", "forerunner 2", "forerunner 7",
+    "forerunner 9",
+)
+
+
+def device_has_barometer(device_name: str | None) -> bool | None:
+    """Есть ли у прибора барометрический альтиметр. None — модель незнакомая.
+
+    Раньше это выводилось из «в файле есть total_ascent», но набор пишут и
+    часы без барометра — просто считают его по GPS. Из-за этого fr55 у нас
+    числился барометрическим, а его набор попадал в паспорт трассы.
+    """
+    if not device_name:
+        return None
+    key = device_name.strip().lower()
+    if key in GARMIN_WITHOUT_BAROMETER:
+        return False
+    if key.startswith(tuple(GARMIN_WITHOUT_BAROMETER)):
+        return False
+    if key.startswith(GARMIN_WITH_BAROMETER_PREFIXES):
+        return True
+    return None
+
 
 def fit_file_kind(data: bytes) -> str | None:
     """Тип FIT-файла по первому сообщению — без разбора всего содержимого.
@@ -297,9 +334,9 @@ def parse_fit(data: bytes, filename: str = "") -> ParsedTrack:
 
     if not device_name:
         device_name = " ".join(part for part in (manufacturer, product) if part) or None
-    if ascent is not None:
-        # Набор из прибора есть — значит альтиметр отработал.
-        has_barometer = True
+    # Барометр определяем по модели прибора, а не по наличию набора в файле:
+    # набор пишут и часы без барометра, считая его по шумной высоте GPS.
+    has_barometer = device_has_barometer(device_name)
 
     track = ParsedTrack(
         source="fit",
