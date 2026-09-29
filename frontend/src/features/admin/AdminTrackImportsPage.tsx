@@ -18,7 +18,7 @@ import {
   type TrackImportBatchDetail,
   type TrackImportItem,
 } from "../../lib/api";
-import { formatDateTime } from "../../lib/format";
+import { formatDateTime, pluralizeRu } from "../../lib/format";
 import "./adminTrackImports.css";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -39,6 +39,27 @@ function formatDuration(seconds: number | null): string {
   }
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(Math.round(seconds % 60)).padStart(2, "0")}`;
+}
+
+/** Схлопывает одинаковые причины в одну строку с числом и примерами. */
+function groupProblems(problems: { name: string; reason: string }[]) {
+  const byReason = new Map<string, string[]>();
+  for (const problem of problems) {
+    const names = byReason.get(problem.reason);
+    if (names) {
+      names.push(problem.name);
+    } else {
+      byReason.set(problem.reason, [problem.name]);
+    }
+  }
+  return [...byReason.entries()]
+    .map(([reason, names]) => ({
+      reason,
+      count: names.length,
+      names: names.slice(0, 3),
+      more: names.length > 3,
+    }))
+    .sort((left, right) => right.count - left.count);
 }
 
 function formatStart(value: string | null): string {
@@ -627,10 +648,22 @@ function AdminTrackImportsContent() {
           {batch.problems.length > 0 && (
             <details className="track-import-problems">
               <summary>Не разобрано: {batch.problems.length}</summary>
+              {/* Группируем по причине: в выгрузке аккаунта одна и та же строка
+                  повторялась тысячи раз и прятала настоящие ошибки. */}
               <ul>
-                {batch.problems.slice(0, 200).map((problem, index) => (
-                  <li key={`${problem.name}-${index}`}>
-                    <code>{problem.name}</code> — {problem.reason}
+                {groupProblems(batch.problems).map((group) => (
+                  <li key={group.reason}>
+                    {group.reason}
+                    {group.count > 1 ? (
+                      <>
+                        {" "}
+                        — <b>{group.count}</b>{" "}
+                        {pluralizeRu(group.count, ["файл", "файла", "файлов"])}
+                        <span className="dim"> ({group.names.join(", ")}{group.more ? ", …" : ""})</span>
+                      </>
+                    ) : (
+                      <span className="dim"> — {group.names[0]}</span>
+                    )}
                   </li>
                 ))}
               </ul>

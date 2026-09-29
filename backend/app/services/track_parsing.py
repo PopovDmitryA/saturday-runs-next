@@ -192,6 +192,45 @@ def parse_tcx(data: bytes, filename: str = "") -> ParsedTrack:
     return track
 
 
+# Типы FIT-файлов, в которых вообще бывает трасса. Полная выгрузка аккаунта
+# Garmin состоит в основном не из тренировок: там суточный мониторинг, сон,
+# пульс, настройки — у них тип другой, и координат в них нет по определению.
+FIT_ACTIVITY_TYPES = {"activity", "course"}
+
+
+def fit_file_kind(data: bytes) -> str | None:
+    """Тип FIT-файла по первому сообщению — без разбора всего содержимого.
+
+    В выгрузке Егора Свиридова 28.09.2026 из 2000 файлов 1876 оказались не
+    тренировками. Каждый из них разбирался целиком, чтобы в конце выяснить,
+    что координат нет, и занимал строку в списке проблем. Сообщение `file_id`
+    в FIT идёт первым, поэтому тип виден сразу.
+
+    None — тип определить не удалось: такой файл отдаём обычному разбору,
+    пусть он сам решает.
+    """
+    try:
+        import fitdecode  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover — зависимость есть в образе
+        return None
+
+    import io
+
+    try:
+        with fitdecode.FitReader(io.BytesIO(data)) as reader:
+            for frame in reader:
+                if not isinstance(frame, fitdecode.FitDataMessage):
+                    continue
+                if frame.name != "file_id":
+                    # file_id обязан быть первым; если первым пришло другое,
+                    # дальше искать смысла нет.
+                    return None
+                return _fit_str(_fit_value(frame, "type"))
+    except Exception:  # noqa: BLE001 — битый файл разберёт основной парсер
+        return None
+    return None
+
+
 def parse_fit(data: bytes, filename: str = "") -> ParsedTrack:
     try:
         import fitdecode  # type: ignore[import-not-found]

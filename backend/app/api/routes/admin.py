@@ -1167,6 +1167,7 @@ def admin_track_import_create(
         raise HTTPException(status_code=404, detail="Участник не найден")
 
     extracted: list[track_import.ExtractedFile] = []
+    stats = track_import.ExtractStats()
     total_bytes = 0
     for upload in files or []:
         data = upload.file.read(track_import.MAX_ARCHIVE_BYTES + 1)
@@ -1174,9 +1175,13 @@ def admin_track_import_create(
         if total_bytes > track_import.MAX_ARCHIVE_BYTES:
             raise HTTPException(status_code=413, detail="Слишком много данных за один раз")
         try:
-            extracted.extend(track_import.extract_track_files(upload.filename or "", data))
+            extracted.extend(
+                track_import.extract_track_files(upload.filename or "", data, stats=stats)
+            )
         except track_import.TrackImportError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if len(extracted) > track_import.MAX_FILES_PER_BATCH:
+        stats.truncated = True
 
     link_list = [line.strip() for line in (links or "").splitlines() if line.strip()]
     source_kind = "links" if link_list and not extracted else ("archive" if len(extracted) > 1 else "files")
@@ -1189,6 +1194,7 @@ def admin_track_import_create(
             source_kind=source_kind,
             files=extracted[: track_import.MAX_FILES_PER_BATCH],
             links=link_list,
+            stats=stats,
         )
     except track_import.TrackImportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

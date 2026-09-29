@@ -525,3 +525,46 @@ def test_sparse_track_is_kept_out_of_course_measurements() -> None:
     assert eligible is False
     assert reason == "sparse_recording"
     assert "8 м" in note
+
+
+def test_monitoring_files_never_reach_the_queue() -> None:
+    # Выгрузка аккаунта Garmin состоит в основном не из тренировок: суточный
+    # мониторинг, сон, настройки. У Егора Свиридова 28.09.2026 таких оказалось
+    # 1876 из 2000 — каждый разбирался целиком, чтобы в конце занять строку
+    # «нет координат», а настоящие тренировки не влезли в потолок.
+    import io
+    import zipfile
+
+    from app.services import admin_track_import_service as track_import
+
+    monkey_kinds = {b"MONITOR": "monitoring", b"ACTIVITY": "activity"}
+
+    def fake_kind(data: bytes) -> str | None:
+        for marker, kind in monkey_kinds.items():
+            if data.startswith(marker):
+                return kind
+        return None
+
+    original = track_import.fit_file_kind
+    track_import.fit_file_kind = fake_kind  # type: ignore[assignment]
+    try:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            for index in range(5):
+                archive.writestr(f"wellness/{index}.fit", b"MONITOR data")
+            archive.writestr("activities/run.fit", b"ACTIVITY data")
+
+        stats = track_import.ExtractStats()
+        found = track_import.extract_track_files("export.zip", buffer.getvalue(), stats=stats)
+    finally:
+        track_import.fit_file_kind = original  # type: ignore[assignment]
+
+    assert [item.name for item in found] == ["run.fit"]
+    assert stats.not_activity == 5
+    assert stats.truncated is False
+
+
+def test_batch_says_when_the_archive_was_cut_short() -> None:
+    from app.services import admin_track_import_service as track_import
+
+    assert track_import.MAX_FILES_PER_BATCH >= 20000

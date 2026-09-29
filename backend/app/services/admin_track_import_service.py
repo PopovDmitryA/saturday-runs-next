@@ -27,7 +27,13 @@ from sqlalchemy.orm import Session
 from app.models import AdminTrackImport, Event, Location, RunTrack, User
 from app.services.location_course_service import rebuild_for_tracks
 from app.services.run_track_service import build_track
-from app.services.track_parsing import TrackParseError, parse_garmin_link, parse_upload
+from app.services.track_parsing import (
+    FIT_ACTIVITY_TYPES,
+    TrackParseError,
+    fit_file_kind,
+    parse_garmin_link,
+    parse_upload,
+)
 
 # Где лежат распакованные файлы до подтверждения. Не /tmp: он живёт внутри
 # контейнера, и деплой посреди разбора уносил очередь вместе с ним — архив
@@ -40,7 +46,12 @@ TRACK_SUFFIXES = (".fit", ".gpx", ".tcx")
 # nginx/conf.d/default.conf): без него запрос не доходил до приложения и
 # админ видел HTML-страницу «413 Request Entity Too Large» вместо ошибки.
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
-MAX_FILES_PER_BATCH = 2000
+# Потолок файлов на одну загрузку. 2000 было мало: полная выгрузка аккаунта
+# Garmin за годы — это десятки тысяч файлов, и архив Егора Свиридова
+# 28.09.2026 обрезался ровно на двух тысячах, причём в них попал в основном
+# суточный мониторинг. Теперь мониторинг отсеивается при распаковке, а в
+# потолок упираются только настоящие тренировки.
+MAX_FILES_PER_BATCH = 20000
 # Вложенные архивы: выгрузка аккаунта кладёт zip внутрь zip.
 MAX_ARCHIVE_DEPTH = 3
 # Сколько источников разбираем за один запрос: 25 файлов укладываются
@@ -64,8 +75,31 @@ def _staging_dir(batch_id: UUID) -> Path:
     return STAGING_ROOT / str(batch_id)
 
 
-def extract_track_files(name: str, data: bytes, *, depth: int = 0) -> list[ExtractedFile]:
-    """Разворачивает архив в список файлов треков; обычный файл возвращает как есть."""
+@dataclass
+class ExtractStats:
+    """Что осталось за бортом распаковки — чтобы сказать об этом админу."""
+
+    # Файлы, которые заведомо не тренировки: суточный мониторинг, сон, пульс.
+    not_activity: int = 0
+    # Упёрлись в потолок файлов на одну загрузку — архив прочитан не целиком.
+    truncated: bool = False
+
+
+def extract_track_files(
+    name: str,
+    data: bytes,
+    *,
+    depth: int = 0,
+    stats: ExtractStats | None = None,
+) -> list[ExtractedFile]:
+    """Разворачивает архив в список файлов треков; обычный файл возвращает как есть.
+
+    Файлы, которые заведомо не тренировки, отсеиваются здесь и в очередь не
+    попадают: полная выгрузка аккаунта Garmin состоит из них на 90%, и раньше
+    каждый разбирался целиком (по полсекунды), чтобы в конце занять строку
+    «нет координат» в списке проблем.
+    """
+    counters = stats if stats is not None else ExtractStats()
     lowered = name.lower()
     if lowered.endswith(".zip") or data[:2] == b"PK":
         if depth >= MAX_ARCHIVE_DEPTH:
@@ -80,14 +114,22 @@ def extract_track_files(name: str, data: bytes, *, depth: int = 0) -> list[Extra
                     if not (inner.endswith(TRACK_SUFFIXES) or inner.endswith(".zip")):
                         continue
                     found.extend(
-                        extract_track_files(info.filename, archive.read(info), depth=depth + 1)
+                        extract_track_files(
+                            info.filename, archive.read(info), depth=depth + 1, stats=counters
+                        )
                     )
                     if len(found) >= MAX_FILES_PER_BATCH:
+                        counters.truncated = True
                         break
         except zipfile.BadZipFile as exc:
             raise TrackImportError(f"Архив «{name}» не читается.") from exc
         return found
     if lowered.endswith(TRACK_SUFFIXES):
+        if lowered.endswith(".fit"):
+            kind = fit_file_kind(data)
+            if kind is not None and kind not in FIT_ACTIVITY_TYPES:
+                counters.not_activity += 1
+                return []
         return [ExtractedFile(name=Path(name).name, data=data)]
     return []
 
@@ -100,9 +142,15 @@ def create_batch(
     source_kind: str,
     files: list[ExtractedFile],
     links: list[str],
+    stats: ExtractStats | None = None,
 ) -> AdminTrackImport:
     """Создаёт сессию импорта и раскладывает источники в очередь на разбор."""
     if not files and not links:
+        if stats is not None and stats.not_activity:
+            raise TrackImportError(
+                f"В архиве не нашлось тренировок: все {stats.not_activity} файлов — "
+                "суточный мониторинг и настройки часов, трасс в них нет."
+            )
         raise TrackImportError("Не нашёл ни одного трека: приложите файлы, архив или ссылки.")
 
     batch = AdminTrackImport(
@@ -129,6 +177,28 @@ def create_batch(
         pending.append({"kind": "link", "name": link, "path": link})
 
     batch.pending = pending
+    # Что отсеяли ещё при распаковке — говорим сразу, а не молчим: именно
+    # незаметная обрезка архива на 2000 файлов и стоила нам выгрузки Егора.
+    notes: list[dict[str, str]] = []
+    if stats is not None and stats.not_activity:
+        notes.append(
+            {
+                "name": f"{stats.not_activity} файлов",
+                "reason": "не тренировки (суточный мониторинг, сон, настройки) — пропущены при распаковке",
+            }
+        )
+    if stats is not None and stats.truncated:
+        notes.append(
+            {
+                "name": "архив прочитан не целиком",
+                "reason": (
+                    f"взяли первые {MAX_FILES_PER_BATCH} тренировок, остальное осталось за бортом — "
+                    "загрузите остаток отдельной пачкой"
+                ),
+            }
+        )
+    if notes:
+        batch.problems = notes
     db.flush()
     return batch
 
