@@ -580,6 +580,12 @@ def test_barometer_is_read_from_the_model_not_from_the_file() -> None:
     assert device_has_barometer("fr55") is False
     assert device_has_barometer("fr245_music") is False
     assert device_has_barometer("fr965") is True
+    # «fr25» — префикс «fr255», и сравнение по началу строки записывало
+    # Forerunner 255 в приборы без барометра. Номер модели сверяем ровно.
+    assert device_has_barometer("fr25") is False
+    assert device_has_barometer("fr255") is True
+    assert device_has_barometer("fr255_music") is True
+    assert device_has_barometer("Forerunner 965") is True
     assert device_has_barometer("fr265_small") is True
     assert device_has_barometer("fenix 7") is True
     # Незнакомую модель не выдумываем.
