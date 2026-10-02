@@ -195,3 +195,38 @@ def test_close_location_is_not_a_white_spot(db_session: Session) -> None:
         is_linked=False,
     )
     assert row_id is None
+
+
+def test_place_label_drops_iso_region_codes() -> None:
+    from app.services.nearby_query_log_service import _place_label
+
+    assert _place_label({"city": "Минск", "region": "BY-HM", "country": "Беларусь"}) == "Минск, Беларусь"
+    assert _place_label({"city": "Норильск", "region": "Красноярский", "country": "Россия"}) == (
+        "Норильск, Красноярский, Россия"
+    )
+    assert _place_label({"city": None, "region": None, "country": None}) is None
+
+
+def test_cells_of_one_place_merge_into_one_spot(db_session: Session) -> None:
+    for latitude, longitude, distance in ((53.90, 27.56, 250.0), (53.91, 27.56, 250.0), (53.88, 27.60, 249.0)):
+        record_nearby_query(
+            db_session,
+            source="bot",
+            latitude=latitude,
+            longitude=longitude,
+            nearest_identity_key=None,
+            nearest_distance_km=distance,
+            within_radius=0,
+            is_linked=False,
+        )
+    db_session.query(NearbyQueryLog).filter(NearbyQueryLog.cell_latitude == 53.9).update(
+        {NearbyQueryLog.place_label: "Тестоград, Беларусь"}, synchronize_session=False
+    )
+
+    report = get_nearby_log_report(db_session, period_days=1)
+    spots = [spot for spot in report["white_spots"] if spot["place_label"] == "Тестоград, Беларусь"]
+    assert len(spots) == 1
+    assert spots[0]["count"] == 3
+    assert spots[0]["nearest_distance_km"] == 249.0
+    # Ссылка на карту — самая частая клетка.
+    assert (spots[0]["cell_latitude"], spots[0]["cell_longitude"]) == (53.9, 27.55)

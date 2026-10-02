@@ -19,6 +19,7 @@ nearby.label_place: Nominatim отвечает секунду, держать н
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
@@ -96,11 +97,16 @@ def record_nearby_query(
     return row.id if is_white_spot and label is None else None
 
 
+# У городов-регионов (Минск) Nominatim отдаёт вместо области код ISO
+# «BY-HM» — человеку он ничего не говорит.
+_ISO_REGION = re.compile(r"^[A-Z]{2}-[A-Z0-9]{1,3}$")
+
+
 def _place_label(address: dict[str, str | None]) -> str | None:
     parts = [address.get("city"), address.get("region"), address.get("country")]
     seen: list[str] = []
     for part in parts:
-        if part and part not in seen:
+        if part and part not in seen and not _ISO_REGION.match(part):
             seen.append(part)
     return ", ".join(seen)[:200] or None
 
@@ -157,17 +163,8 @@ def get_nearby_log_report(db: Session, *, period_days: int = 30) -> dict[str, An
         info = names.get(identity_key or "") or {}
         return {"nearest_name": info.get("name"), "nearest_slug": info.get("slug")}
 
-    white_spots = [
-        {
-            "cell_latitude": row.cell_latitude,
-            "cell_longitude": row.cell_longitude,
-            "place_label": row.place_label,
-            "count": int(row.queries),
-            "nearest_distance_km": float(row.distance) if row.distance is not None else None,
-            "last_at": row.last_at,
-            **location_ref(row.nearest_key),
-        }
-        for row in db.query(
+    cells = (
+        db.query(
             NearbyQueryLog.cell_latitude,
             NearbyQueryLog.cell_longitude,
             func.max(NearbyQueryLog.place_label).label("place_label"),
@@ -178,10 +175,33 @@ def get_nearby_log_report(db: Session, *, period_days: int = 30) -> dict[str, An
         )
         .filter(in_period, NearbyQueryLog.nearest_distance_km > WHITE_SPOT_KM)
         .group_by(NearbyQueryLog.cell_latitude, NearbyQueryLog.cell_longitude)
-        .order_by(func.count(NearbyQueryLog.id).desc(), func.max(NearbyQueryLog.created_at).desc())
-        .limit(TOP_LIMIT)
         .all()
-    ]
+    )
+    # Клетки одного места — одна строка: Минск ложится в несколько клеток
+    # сетки, и «Минск 2 + Минск 1» читается хуже, чем «Минск 3». Без подписи
+    # клетка остаётся сама по себе. Ссылка на карту — на самую частую клетку.
+    spots: dict[object, dict[str, Any]] = {}
+    for row in sorted(cells, key=lambda item: -int(item.queries)):
+        key = row.place_label or (row.cell_latitude, row.cell_longitude)
+        distance = float(row.distance) if row.distance is not None else None
+        spot = spots.get(key)
+        if spot is None:
+            spots[key] = {
+                "cell_latitude": row.cell_latitude,
+                "cell_longitude": row.cell_longitude,
+                "place_label": row.place_label,
+                "count": int(row.queries),
+                "nearest_distance_km": distance,
+                "last_at": row.last_at,
+                **location_ref(row.nearest_key),
+            }
+            continue
+        spot["count"] += int(row.queries)
+        spot["last_at"] = max(spot["last_at"], row.last_at)
+        if distance is not None and (spot["nearest_distance_km"] is None or distance < spot["nearest_distance_km"]):
+            spot["nearest_distance_km"] = distance
+            spot.update(location_ref(row.nearest_key))
+    white_spots = sorted(spots.values(), key=lambda spot: (-spot["count"], -spot["last_at"].timestamp()))[:TOP_LIMIT]
 
     top_nearest = [
         {"count": int(row.queries), **location_ref(row.nearest_key)}
