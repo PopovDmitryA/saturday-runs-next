@@ -139,12 +139,18 @@ def test_outgoing_message_telegram_html_has_title_link_and_settings() -> None:
     assert html.startswith("<b>🏃 Пробежка попала на сайт</b>\n\n<b>📍 Парк</b> · 20 сентября\n⏱ 24:31")
     assert '<a href="https://run5k.test/users/1/runs">Мои пробежки</a>' in html
     # Подвал ведёт в настройки: отписка одним кликом остаётся в письмах.
-    assert html.endswith('──────────\n⚙️ <a href="https://run5k.test/settings#notifications">Настроить уведомления</a>')
+    # Подвал — одна тихая строка: домен сайта первым (его видно при пересылке),
+    # настройки рядом, без шестерёнки и черты.
+    assert html.endswith(
+        '\n\n<a href="https://run5k.test">run5k.test</a> · '
+        '<a href="https://run5k.test/settings#notifications">настроить уведомления</a>'
+    )
+    assert "──" not in html and "⚙️" not in html
     assert "unsubscribe" not in html
 
     plain = message.plain_text()
     assert "<b>" not in plain and "Мои пробежки: https://run5k.test/users/1/runs" in plain
-    assert plain.endswith("──────────\n⚙️ Настроить уведомления: https://run5k.test/settings#notifications")
+    assert plain.endswith("\n\nrun5k.test · настроить уведомления: https://run5k.test/settings#notifications")
 
 
 # ---------------------------------------------------------------------------

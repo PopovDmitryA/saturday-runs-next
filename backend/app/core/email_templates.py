@@ -36,7 +36,10 @@ def _shell(inner: str) -> str:
         f'{_BORDER};border-radius:12px;">'
         f'<tr><td style="padding:28px 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;'
         f'font-size:15px;line-height:1.5;color:{_TEXT};">'
-        f'<div style="font-size:17px;font-weight:bold;color:{_TEXT};">{_SITE}</div>'
+        # Шапка — ссылка на сайт: письмо пересылают, и получатель должен
+        # видеть, откуда оно, и попасть на сайт одним нажатием.
+        f'<div style="font-size:17px;font-weight:bold;">'
+        f'<a href="https://{_SITE}" style="color:{_TEXT};text-decoration:none;">{_SITE}</a></div>'
         f'<div style="font-size:13px;color:{_MUTED};padding-top:2px;">'
         "Статистика парковых пробежек</div>"
         "</td></tr>"

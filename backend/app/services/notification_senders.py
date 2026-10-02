@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -28,9 +29,6 @@ from app.services.vk_client import VkApiError, send_vk_message
 
 logger = logging.getLogger(__name__)
 
-# Разделитель перед служебной строкой подвала: в мессенджерах нет <hr>, а
-# без черты ссылка на настройки читается как часть самого уведомления.
-FOOTER_RULE = "──────────"
 
 
 @dataclass(frozen=True)
@@ -50,23 +48,43 @@ class OutgoingMessage:
     settings_url: str
     html: str | None = None
 
+    @property
+    def site_url(self) -> str:
+        """Главная сайта — из адреса настроек: он всегда абсолютный и наш."""
+        parts = urlsplit(self.settings_url)
+        return f"{parts.scheme}://{parts.netloc}"
+
+    @property
+    def site_name(self) -> str:
+        """Подпись сайта в подвале — сам домен (run5k.run)."""
+        return urlsplit(self.settings_url).netloc
+
     def telegram_html(self) -> str:
-        """Подвал ведёт в настройки, а не на мгновенную отписку: человеку чаще
-        нужно донастроить, а не отрезать всё сразу — выключить вид там же в
-        два клика. Одноразовая ссылка отписки остаётся в письмах, где её
-        требуют почтовые провайдеры."""
+        """Подвал — одна тихая строка: сайт и ссылка на настройки.
+
+        Домен первым: уведомление пересылают в чаты (отмена старта, свежий
+        протокол), и получатель должен видеть, откуда оно. Настройки — рядом,
+        без шестерёнки и черты: возможность есть, но кричать о ней в каждом
+        сообщении незачем (решение Дмитрия 02.10.2026). Одноразовая ссылка
+        отписки остаётся в письмах, где её требуют почтовые провайдеры.
+        """
         parts = [f"<b>{to_telegram_html(self.title)}</b>", "", to_telegram_html(self.text)]
         if self.url:
             parts += ["", f'🔗 <a href="{self.url}">{to_telegram_html(self.url_label)}</a>']
-        parts += ["", FOOTER_RULE, f'⚙️ <a href="{self.settings_url}">Настроить уведомления</a>']
+        parts += [
+            "",
+            f'<a href="{self.site_url}">{self.site_name}</a> · '
+            f'<a href="{self.settings_url}">настроить уведомления</a>',
+        ]
         return "\n".join(parts)
 
     def plain_text(self) -> str:
-        """VK: без форматирования, ссылки открытым адресом — VK подсветит сам."""
+        """VK: без форматирования, ссылки открытым адресом — VK подсветит сам.
+        Домен в подвале VK тоже делает кликабельным."""
         lines = [to_plain(self.title), "", to_plain(self.text)]
         if self.url:
             lines += ["", f"🔗 {to_plain(self.url_label)}: {self.url}"]
-        lines += ["", FOOTER_RULE, f"⚙️ Настроить уведомления: {self.settings_url}"]
+        lines += ["", f"{self.site_name} · настроить уведомления: {self.settings_url}"]
         return "\n".join(lines)
 
     def email_text(self) -> str:
