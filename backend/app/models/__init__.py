@@ -1810,6 +1810,36 @@ class SearchClaimEvent(Base):
     status: Mapped[int | None] = mapped_column(SmallInteger)
 
 
+class NearbyQueryLog(Base):
+    """Журнал «где ищут старт»: геопозиции, присланные боту (миграция 106).
+
+    Отвечает на вопрос владельца проекта «где люди ищут субботний старт, а его
+    нет» — спрос на новые локации. Анонимно намеренно: ни telegram_id, ни
+    user_id; точка огрублена до клетки сетки ~5 км (nearby_query_log_service),
+    точные координаты в базу не попадают никогда. is_linked — только разрез.
+    """
+
+    __tablename__ = "nearby_query_log"
+    __table_args__ = (
+        Index("ix_nearby_query_log_created_at", "created_at"),
+        Index("ix_nearby_query_log_cell", "cell_latitude", "cell_longitude"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # bot — геопозиция в личке бота; inline — запрос @бота в чужом чате.
+    source: Mapped[str] = mapped_column(String(8), nullable=False)
+    cell_latitude: Mapped[float] = mapped_column(nullable=False)
+    cell_longitude: Mapped[float] = mapped_column(nullable=False)
+    nearest_identity_key: Mapped[str | None] = mapped_column(String(64))
+    nearest_distance_km: Mapped[float | None] = mapped_column()
+    # Сколько локаций нашлось в радиусе ответа (0 — «рядом стартов нет»).
+    within_radius: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("0"))
+    is_linked: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # «Минск, Беларусь» — обратный геокодинг клетки; только для белых пятен.
+    place_label: Mapped[str | None] = mapped_column(String(200))
+
+
 class AbEvent(Base):
     """Сырое событие АБ-эксперимента (скролл, клики, конверсия) с вариантом.
 

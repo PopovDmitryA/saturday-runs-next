@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -16,6 +16,7 @@ from app.services.admin_pipeline_status_service import get_admin_pipeline_status
 from app.services.admin_protocol_sync_service import sync_protocol_from_url
 from app.services.admin_site_stats_service import get_admin_site_stats
 from app.services.admin_sync_service import enqueue_pipeline, list_pipelines
+from app.services.auth_identity_service import find_user_by_telegram_id
 from app.services.broadcast_compose_state import (
     clear_broadcast_state,
     get_broadcast_draft,
@@ -24,7 +25,16 @@ from app.services.broadcast_compose_state import (
     start_broadcast_compose,
 )
 from app.services.location_coordinate_service import handle_admin_coordinate_message
+from app.services.nearby_locations_service import (
+    build_inline_results,
+    build_nearby,
+    describe_identity,
+    nearby_summary,
+)
+from app.services.nearby_query_log_service import record_nearby_query
 from app.services.news_broadcast_service import list_news_subscribers, send_news_broadcast
+from app.services.platform_titles import platform_title
+from app.workers.tasks.nearby import queue_label_place
 
 router = APIRouter(prefix="/internal/bot", tags=["internal-bot"])
 
@@ -311,3 +321,124 @@ def admin_sync_protocol(
         return sync_protocol_from_url(db, body.url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Локации рядом: геопозиция в личке бота и inline-режим (nearby_locations_service)
+
+
+class NearbyRequest(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    telegram_id: int | None = None
+
+
+class NearbyItem(BaseModel):
+    identity_key: str
+    name: str
+    latitude: float
+    longitude: float
+    distance_km: float | None = None
+    site_url: str | None = None
+    status: str
+
+
+class NearbyResponse(BaseModel):
+    has_nearby: bool
+    text_html: str
+    items: list[NearbyItem] = Field(default_factory=list)
+
+
+class NearbyInlineRequest(BaseModel):
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    query: str = Field(default="", max_length=256)
+
+
+class NearbyInlineItem(NearbyItem):
+    platform_title: str
+    address: str | None = None
+    start_label: str | None = None
+    text_html: str
+
+
+class NearbyInlineResponse(BaseModel):
+    items: list[NearbyInlineItem] = Field(default_factory=list)
+
+
+class NearbyPointResponse(BaseModel):
+    name: str
+    latitude: float
+    longitude: float
+    address: str | None = None
+    site_url: str | None = None
+
+
+def _log_nearby(db: Session, payload: dict[str, object], *, source: str, latitude: float, longitude: float) -> None:
+    row_id = record_nearby_query(
+        db,
+        source=source,
+        latitude=latitude,
+        longitude=longitude,
+        nearest_identity_key=cast("str | None", payload.get("nearest_identity_key")),
+        nearest_distance_km=cast("float | None", payload.get("nearest_distance_km")),
+        within_radius=int(cast(int, payload.get("within_radius") or 0)),
+        is_linked=bool(payload.get("linked")),
+    )
+    if row_id is not None:
+        queue_label_place(row_id)
+
+
+@router.post("/nearby", response_model=NearbyResponse)
+def bot_nearby(
+    body: NearbyRequest,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(_verify_bot_secret)],
+) -> NearbyResponse:
+    """Ответ на геопозицию в личке бота: до трёх локаций рядом и готовый текст.
+
+    Если Telegram привязан к профилю, в тексте личное — «бегали здесь N раз»,
+    «+1 в Нумераторе». Сообщение уходит только в чат самого человека.
+    """
+    user = find_user_by_telegram_id(db, body.telegram_id) if body.telegram_id else None
+    payload = build_nearby(db, body.latitude, body.longitude, base_url=settings.app_base_url, user=user)
+    _log_nearby(db, payload, source="bot", latitude=body.latitude, longitude=body.longitude)
+    return NearbyResponse.model_validate(payload)
+
+
+@router.post("/nearby/inline", response_model=NearbyInlineResponse)
+def bot_nearby_inline(
+    body: NearbyInlineRequest,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(_verify_bot_secret)],
+) -> NearbyInlineResponse:
+    """Варианты для inline-режима: без текста — локации рядом, с текстом — поиск
+    по названию и городу. Без личного: сообщение уходит в чужой чат."""
+    items = build_inline_results(
+        db,
+        base_url=settings.app_base_url,
+        latitude=body.latitude,
+        longitude=body.longitude,
+        query=body.query,
+    )
+    # В журнал — только «что рядом»: поиск по названию про другое, а каждая
+    # набранная буква inline-запроса прилетает отдельным вызовом.
+    if body.latitude is not None and body.longitude is not None and not body.query.strip():
+        nearby = nearby_summary(items, linked=False)
+        _log_nearby(db, nearby, source="inline", latitude=body.latitude, longitude=body.longitude)
+    for item in items:
+        item["platform_title"] = platform_title(item.get("platform_code"))
+    return NearbyInlineResponse.model_validate({"items": items})
+
+
+@router.get("/nearby/point", response_model=NearbyPointResponse)
+def bot_nearby_point(
+    identity_key: str,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(_verify_bot_secret)],
+) -> NearbyPointResponse:
+    """Одна локация для кнопки «на карте»: бот отправит её точкой с адресом."""
+    item = describe_identity(db, identity_key, base_url=settings.app_base_url)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Локация не найдена")
+    return NearbyPointResponse.model_validate(item)

@@ -5600,3 +5600,34 @@ export type SearchClaimFunnel = {
 export function getAdminSearchLog(periodDays: number) {
   return apiFetch<AdminSearchLogResponse>(`/admin/search-log?period_days=${periodDays}`);
 }
+
+/** Белое пятно: клетка ~5 км, где искали старт, а ближайшая локация далеко. */
+export type NearbyWhiteSpot = {
+  cell_latitude: number;
+  cell_longitude: number;
+  /** «Минск, Беларусь» — подписывает воркер; null, пока подписи нет. */
+  place_label: string | null;
+  count: number;
+  nearest_name: string | null;
+  nearest_slug: string | null;
+  nearest_distance_km: number | null;
+  last_at: string;
+};
+
+export type AdminNearbyLogResponse = {
+  period_days: number;
+  radius_km: number;
+  white_spot_km: number;
+  total: number;
+  /** В радиусе ответа пусто — бот сказал «рядом стартов нет». */
+  nothing_near_total: number;
+  linked_total: number;
+  inline_total: number;
+  white_spots: NearbyWhiteSpot[];
+  top_nearest: { nearest_name: string | null; nearest_slug: string | null; count: number }[];
+  daily: { day: string; count: number; nothing_near: number }[];
+};
+
+export function getAdminNearbyLog(periodDays: number) {
+  return apiFetch<AdminNearbyLogResponse>(`/admin/nearby-log?period_days=${periodDays}`);
+}

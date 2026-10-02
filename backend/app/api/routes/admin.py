@@ -82,6 +82,7 @@ from app.schemas.location_openings import (
     LocationOpeningResponse,
     LocationOpeningUpdateRequest,
 )
+from app.schemas.nearby import AdminNearbyLogResponse
 from app.schemas.notifications import AdminNotificationsResponse
 from app.schemas.rating import (
     AdminLocationRatingsResponse,
@@ -159,6 +160,7 @@ from app.services.location_openings_service import (
     set_opening,
 )
 from app.services.login_journal_service import list_login_events, summarize_login_events
+from app.services.nearby_query_log_service import get_nearby_log_report
 from app.services.page_analytics_service import (
     build_funnel_stats,
     build_home_ab_stats,
@@ -578,6 +580,18 @@ def admin_search_log(
     """Что ищут на сайте: топ запросов, пустые выдачи, переходы, последние поиски."""
     payload = get_search_log_report(db, period_days=period_days)
     return AdminSearchLogResponse.model_validate(payload)
+
+
+@router.get("/nearby-log", response_model=AdminNearbyLogResponse)
+def admin_nearby_log(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> AdminNearbyLogResponse:
+    """Где ищут старт в боте: белые пятна (ближайшая локация за 30 км) и
+    локации, к которым чаще всего приводит геопозиция."""
+    payload = get_nearby_log_report(db, period_days=period_days)
+    return AdminNearbyLogResponse.model_validate(payload)
 
 
 @router.get("/stats/geography", response_model=AdminUsersGeographyResponse)

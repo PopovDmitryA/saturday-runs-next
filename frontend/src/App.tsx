@@ -59,6 +59,7 @@ const AdminStatsPage = lazyPage(() => import("./features/admin/AdminStatsPage"),
 const AdminSyncRunsPage = lazyPage(() => import("./features/admin/AdminSyncRunsPage"), (m) => m.AdminSyncRunsPage);
 const AdminPageAnalyticsPage = lazyPage(() => import("./features/admin/AdminPageAnalyticsPage"), (m) => m.AdminPageAnalyticsPage);
 const AdminSearchLogPage = lazyPage(() => import("./features/admin/AdminSearchLogPage"), (m) => m.AdminSearchLogPage);
+const AdminNearbyPage = lazyPage(() => import("./features/admin/AdminNearbyPage"), (m) => m.AdminNearbyPage);
 const AdminRatingsPage = lazyPage(() => import("./features/admin/AdminRatingsPage"), (m) => m.AdminRatingsPage);
 const AdminResyncPage = lazyPage(() => import("./features/admin/AdminResyncPage"), (m) => m.AdminResyncPage);
 const AdminLocationContactsPage = lazyPage(() => import("./features/admin/AdminLocationContactsPage"), (m) => m.AdminLocationContactsPage);
@@ -298,6 +299,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/page-analytics": () => <AdminPageAnalyticsPage />,
   // Журнал поиска по сайту: что ищут и что не находится.
   "/admin/search": () => <AdminSearchLogPage />,
+  "/admin/nearby": () => <AdminNearbyPage />,
   "/admin/ratings": () => <AdminRatingsPage />,
   "/admin/resync": () => <AdminResyncPage />,
   "/admin/records-digest": () => <AdminRecordsDigestPage />,

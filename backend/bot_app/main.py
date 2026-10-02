@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import httpx
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
     BotCommand,
@@ -16,11 +17,12 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InlineQuery,
     Message,
 )
 
 from app.legal.consent_text import consent_bot_message
-from bot_app import admin_ops
+from bot_app import admin_ops, nearby
 from bot_app.broadcast import (
     BROADCAST_CANCEL_CALLBACK,
     BROADCAST_SEND_CALLBACK,
@@ -76,6 +78,9 @@ START_MESSAGE = (
     "🔐 Вход на сайт\n"
     "Нажмите «Войти через Telegram» на run5k.run — сюда придёт запрос с устройством и городом, "
     "вы подтвердите его кнопкой. Ни пароля, ни кода вводить не нужно.\n\n"
+    "📍 Старты рядом\n"
+    "Пришлите геопозицию (📎 → «Геопозиция») — покажу до трёх ближайших локаций: когда старт, "
+    "какая погода и где сбор. Подойдёт и точка, выбранная на карте, — удобно планировать поездку.\n\n"
     "📬 Новости и уведомления\n"
     "Новости проекта и личные уведомления — пробежка попала на сайт, движение в рейтингах, "
     "ответы по вашим карточкам в бэклоге — приходят сюда, если включить их в настройках профиля. "
@@ -490,7 +495,27 @@ async def on_start(message: Message, command: CommandObject) -> None:
         await _prompt_login_confirmation(message, request_token, context)
         return
 
-    await message.answer(START_MESSAGE, reply_markup=_site_keyboard())
+    # Кнопка-подсказка из inline-режима: t.me/<bot>?start=inline_help.
+    if command.args == nearby.INLINE_HELP_START:
+        await message.answer(nearby.INLINE_HELP_MESSAGE)
+        return
+
+    await message.answer(await start_message(message), reply_markup=_site_keyboard())
+
+
+async def start_message(message: Message) -> str:
+    """Приветствие; про inline-режим — только когда он включён в BotFather,
+    иначе подсказка вела бы в пустоту."""
+    try:
+        me = await message.bot.me()  # type: ignore[union-attr]
+    except Exception:  # noqa: BLE001 — приветствие важнее подсказки
+        me = None
+    if me is None or not me.supports_inline_queries or not me.username:
+        return START_MESSAGE
+    return (
+        f"{START_MESSAGE}\n\n"
+        f"💬 В любом чате наберите @{me.username} и пробел — и отправьте друзьям локацию рядом с собой."
+    )
 
 
 async def on_login_callback(callback: CallbackQuery) -> None:
@@ -533,6 +558,18 @@ async def on_text(message: Message) -> None:
         return
     if await _handle_coordinate_admin_message(message):
         return
+
+
+async def on_location(message: Message) -> None:
+    await nearby.on_location(message, settings)
+
+
+async def on_nearby_pin(callback: CallbackQuery) -> None:
+    await nearby.on_nearby_pin(callback, settings)
+
+
+async def on_inline_query(inline_query: InlineQuery) -> None:
+    await nearby.on_inline_query(inline_query, settings)
 
 
 async def on_cmd_broadcast(message: Message) -> None:
@@ -609,6 +646,10 @@ async def main() -> None:
     dispatcher.message.register(on_cmd_sync, Command("sync"))
     dispatcher.message.register(on_cmd_admin_help, Command("admin_help"))
     dispatcher.message.register(on_text, F.text & ~F.text.startswith("/"))
+    # Геопозиция — только в личке: в группе бот отвечал бы на каждую чужую точку.
+    dispatcher.message.register(on_location, F.location, F.chat.type == ChatType.PRIVATE)
+    dispatcher.callback_query.register(on_nearby_pin, F.data.startswith(nearby.NEARBY_PIN_PREFIX))
+    dispatcher.inline_query.register(on_inline_query)
     dispatcher.callback_query.register(
         on_notify_callback,
         F.data.startswith(NOTIFY_CONFIRM_PREFIX) | F.data.startswith(NOTIFY_DECLINE_PREFIX),

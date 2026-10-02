@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/admin/stats", label: "Статистика" },
   { href: "/admin/page-analytics", label: "Популярность" },
   { href: "/admin/search", label: "Поиск" },
+  { href: "/admin/nearby", label: "Старты рядом" },
   { href: "/admin/ratings", label: "Рейтинг" },
   { href: "/admin/resync", label: "Обновить по ссылке" },
   { href: "/admin/track-imports", label: "Треки участников" },

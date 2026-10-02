@@ -61,6 +61,7 @@ celery_app.conf.update(
         "app.workers.tasks.admin_digest",
         "app.workers.tasks.og_render",
         "app.workers.tasks.email_send",
+        "app.workers.tasks.nearby",
         "app.workers.tasks.user_names",
         "app.workers.tasks.weather_collect",
         "app.workers.tasks.weather_forecast",
