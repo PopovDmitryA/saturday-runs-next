@@ -223,47 +223,152 @@ class StaleImportError(RuntimeError):
     """Raised when replace=True would shrink the catalog — likely a stale JSON."""
 
 
+class ReferencedNodeRemovalError(RuntimeError):
+    """Raised when the import would drop catalog nodes that live data still points at."""
+
+
+def _match_existing_nodes(
+    entries: list[CatalogEntry], existing: list, links_by_catalog: dict
+) -> list:
+    """Для каждой записи JSON — существующий узел каталога или None (новый узел).
+
+    id узла — личность локации, за него держатся гранты организаторов, дом,
+    оценки (CATALOG_KEY_REFERENCES). Поэтому сначала ищем узел по
+    parkrun-слагу — он уникален и не меняется при переименовании и смене
+    основной системы, как у Раменского 26.09.2026; потом по общим связкам
+    (система, slug); потом по названию. Связки идут вторыми: связка может
+    переехать к другому узлу и не должна увести с собой чужой id.
+    Узел достаётся не больше чем одной записи.
+    """
+    from app.services.location_catalog_service import normalize_platform_code
+
+    node_by_link: dict[tuple[str, str], object] = {}
+    for catalog in existing:
+        for platform_code, external_key in links_by_catalog.get(catalog.id, ()):
+            node_by_link[(platform_code, external_key)] = catalog
+    node_by_slug = {c.legacy_parkrun_slug: c for c in existing if c.legacy_parkrun_slug}
+    node_by_name: dict[str, object] = {}
+    for catalog in existing:
+        node_by_name.setdefault(catalog.canonical_name, catalog)
+
+    claimed: set = set()
+    matches: list = [None] * len(entries)
+
+    def claim(index: int, candidate) -> bool:
+        if candidate is None or candidate.id in claimed:
+            return False
+        claimed.add(candidate.id)
+        matches[index] = candidate
+        return True
+
+    # Проходы по убыванию надёжности: запись, совпавшая лишь по связке или
+    # названию, не должна отнять узел у записи с тем же parkrun-слагом.
+    for index, entry in enumerate(entries):
+        if entry.legacy_parkrun_slug:
+            claim(index, node_by_slug.get(entry.legacy_parkrun_slug))
+    for index, entry in enumerate(entries):
+        if matches[index] is not None:
+            continue
+        votes: dict = {}
+        for link in entry.links:
+            code = normalize_platform_code(link["platform"]) or link["platform"]
+            node = node_by_link.get((code, link["external_key"]))
+            if node is not None:
+                votes[node.id] = (votes.get(node.id, (0, node))[0] + 1, node)
+        for _count, node in sorted(votes.values(), key=lambda item: (-item[0], str(item[1].id))):
+            if claim(index, node):
+                break
+    for index, entry in enumerate(entries):
+        if matches[index] is None:
+            claim(index, node_by_name.get(entry.canonical_name))
+    return matches
+
+
 def import_to_db(
-    entries: list[CatalogEntry], *, replace: bool = True, force: bool = False
+    entries: list[CatalogEntry],
+    *,
+    replace: bool = True,
+    force: bool = False,
+    db=None,
 ) -> dict[str, int]:
+    """Привести каталог в БД к `entries`, сохранив id существующих узлов.
+
+    До 29.09.2026 импорт делал DELETE всего каталога и вставлял узлы заново —
+    с новыми id. Ключи «catalog:<id>» в грантах организаторов, домашних
+    локациях, оценках и гео-пингах после этого указывали в пустоту: 26.09.2026
+    правка одного Раменского сняла все ручные доступы к кабинету организатора.
+    Теперь узлы обновляются на месте, а удаление узла, на который кто-то
+    ссылается, без --force отказывается.
+
+    replace=False — только добавить/обновить, узлы вне `entries` не трогать.
+    """
     backend_path = str(BACKEND_ROOT)
     if backend_path not in sys.path and (BACKEND_ROOT / "app").is_dir():
         sys.path.insert(0, backend_path)
 
     from app.db.session import get_session_factory
     from app.models import Location, LocationCatalog, LocationCatalogLink, Platform
-    from app.services.location_catalog_service import normalize_platform_code
+    from app.services.location_catalog_service import (
+        catalog_key_reference_counts,
+        normalize_platform_code,
+    )
 
-    db = get_session_factory()()
-    stats = {"catalog": 0, "links": 0, "linked_locations": 0}
+    own_session = db is None
+    if own_session:
+        db = get_session_factory()()
+    stats = {
+        "catalog": 0,
+        "links": 0,
+        "linked_locations": 0,
+        "catalog_created": 0,
+        "catalog_updated": 0,
+        "catalog_removed": 0,
+    }
     try:
         platforms = {p.code: p for p in db.query(Platform).all()}
+        platform_code_by_id = {p.id: code for code, p in platforms.items()}
         if replace:
-            # replace=True DELETEs the whole catalog before rebuilding from `entries` —
-            # if `entries` came from a stale data/location_catalog.json (an old
-            # worktree that never pulled later catalog-linking commits), this would
-            # silently wipe manually-curated links with no trace in git history.
-            # 20.07.2026: found 16/20 local worktrees sitting on a stale copy after a
-            # 21-link batch landed in main. Refuse the shrink unless --force.
+            # Импорт устаревшего data/location_catalog.json (старый worktree без
+            # свежих связок) выкинул бы кураторские связки без следа в git.
+            # 20.07.2026: 16 из 20 worktree сидели на старой копии. Сжатие — только с --force.
             current_links = db.query(LocationCatalogLink).count()
             incoming_links = sum(len(e.links) for e in entries)
             if not force and incoming_links < current_links:
                 raise StaleImportError(
                     f"Refusing to import: incoming JSON has {incoming_links} links, "
-                    f"DB currently has {current_links}. This --import-db would DELETE "
-                    "and shrink the catalog — almost always a stale data/location_catalog.json "
+                    f"DB currently has {current_links}. This --import-db would "
+                    "shrink the catalog — almost always a stale data/location_catalog.json "
                     "(git pull origin main first). If this reduction is intentional "
                     "(e.g. removing a bad link), pass --force."
                 )
-            db.query(LocationCatalogLink).delete()
-            db.query(LocationCatalog).delete()
+
+        existing = db.query(LocationCatalog).all()
+        existing_links = db.query(LocationCatalogLink).all()
+        links_by_catalog: dict = {}
+        for link in existing_links:
+            code = platform_code_by_id.get(link.platform_id)
+            links_by_catalog.setdefault(link.catalog_id, []).append((code, link.external_key))
+
+        matches = _match_existing_nodes(entries, existing, links_by_catalog)
+        matched_ids = {node.id for node in matches if node is not None}
+
+        # Узлы, которых нет в JSON, удаляются только при replace и только если
+        # на них никто не ссылается: иначе чьи-то гранты и оценки осиротеют.
+        removed = [c for c in existing if c.id not in matched_ids] if replace else []
+        if removed:
+            references = catalog_key_reference_counts(db, [c.id for c in removed])
+            if references and not force:
+                names = ", ".join(sorted(c.canonical_name for c in removed))
+                raise ReferencedNodeRemovalError(
+                    f"Refusing to import: nodes missing from JSON are still referenced "
+                    f"({references}): {names}. Keep them in the JSON, or pass --force "
+                    "after moving the references to the surviving node."
+                )
+            for catalog in removed:
+                db.delete(catalog)
+            stats["catalog_removed"] = len(removed)
             db.flush()
 
-        # Отдельные словари для точного и нормализованного slug: если у одной
-        # платформы несколько Location с разными реальными external_key нормализуются
-        # в одинаковый слаг (легаси-дубли вроде "voronezh-central-park" и
-        # "voronezhcentralpark"), точное совпадение не должно затираться более
-        # поздним по итерации нормализованным совпадением от другой локации.
         location_by_exact_key: dict[tuple[str, str], Location] = {}
         location_by_norm_key: dict[tuple[str, str], Location] = {}
         for loc, platform in db.query(Location, Platform).join(Platform, Location.platform_id == Platform.id):
@@ -272,53 +377,96 @@ def import_to_db(
             if normalized:
                 location_by_norm_key.setdefault((platform.code, normalized), loc)
 
-        for entry in entries:
-            catalog = LocationCatalog(
-                canonical_name=entry.canonical_name,
-                legacy_parkrun_slug=entry.legacy_parkrun_slug or None,
-                active_platform=entry.active_platform,
-                is_closed=entry.is_closed,
-                notes=entry.notes or None,
-            )
-            db.add(catalog)
-            db.flush()
-            stats["catalog"] += 1
-
-            seen_links: set[tuple[str, str]] = set()
+        # Желаемые связки: (platform_id, external_key) → индекс записи.
+        desired: dict[tuple, int] = {}
+        entry_links: list[list[tuple]] = []
+        for index, entry in enumerate(entries):
+            keys: list[tuple] = []
             for link in entry.links:
                 platform_code = normalize_platform_code(link["platform"]) or link["platform"]
-                external_key = link["external_key"]
-                key = (platform_code, external_key)
-                if key in seen_links:
-                    continue
-                seen_links.add(key)
-
                 platform = platforms.get(platform_code)
                 if platform is None:
                     continue
+                key = (platform.id, link["external_key"])
+                if key in desired:
+                    continue
+                desired[key] = index
+                keys.append((key, platform_code))
+            entry_links.append(keys)
 
-                location = location_by_exact_key.get(key) or location_by_norm_key.get(
+        # Связка уникальна по (система, slug) — переезд связки к другому узлу
+        # идёт через удаление и вставку, и удаления должны уйти в базу первыми.
+        removed_ids = {c.id for c in removed}
+        kept_links: dict[tuple, object] = {}
+        for link in existing_links:
+            if link.catalog_id in removed_ids:
+                continue
+            key = (link.platform_id, link.external_key)
+            index = desired.get(key)
+            target = matches[index] if index is not None else None
+            if target is not None and target.id == link.catalog_id:
+                kept_links[key] = link
+            elif replace or index is not None:
+                db.delete(link)
+        db.flush()
+
+        # parkrun-слаг уникален: если узлы обмениваются слагами, сначала снять.
+        for index, entry in enumerate(entries):
+            node = matches[index]
+            if node is not None and node.legacy_parkrun_slug != (entry.legacy_parkrun_slug or None):
+                node.legacy_parkrun_slug = None
+        db.flush()
+
+        for index, entry in enumerate(entries):
+            catalog = matches[index]
+            if catalog is None:
+                catalog = LocationCatalog()
+                db.add(catalog)
+                stats["catalog_created"] += 1
+            else:
+                stats["catalog_updated"] += 1
+            catalog.canonical_name = entry.canonical_name
+            catalog.legacy_parkrun_slug = entry.legacy_parkrun_slug or None
+            catalog.active_platform = entry.active_platform
+            catalog.is_closed = entry.is_closed
+            catalog.notes = entry.notes or None
+            db.flush()
+            stats["catalog"] += 1
+
+            for key, platform_code in entry_links[index]:
+                platform_id, external_key = key
+                location = location_by_exact_key.get((platform_code, external_key)) or location_by_norm_key.get(
                     (platform_code, norm_slug(external_key))
                 )
-                db.add(
-                    LocationCatalogLink(
-                        catalog_id=catalog.id,
-                        platform_id=platform.id,
-                        external_key=external_key,
-                        location_id=location.id if location else None,
+                location_id = location.id if location else None
+                link = kept_links.get(key)
+                if link is None:
+                    db.add(
+                        LocationCatalogLink(
+                            catalog_id=catalog.id,
+                            platform_id=platform_id,
+                            external_key=external_key,
+                            location_id=location_id,
+                        )
                     )
-                )
+                elif link.location_id != location_id and location_id is not None:
+                    link.location_id = location_id
                 stats["links"] += 1
                 if location:
                     stats["linked_locations"] += 1
 
-        db.commit()
+        if own_session:
+            db.commit()
+        else:
+            db.flush()
         return stats
     except Exception:
-        db.rollback()
+        if own_session:
+            db.rollback()
         raise
     finally:
-        db.close()
+        if own_session:
+            db.close()
 
 
 def main() -> int:
@@ -330,7 +478,10 @@ def main() -> int:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Allow --import-db to shrink the catalog (bypasses the stale-JSON guard)",
+        help=(
+            "Allow --import-db to shrink the catalog and drop referenced nodes "
+            "(bypasses the stale-JSON and orphaned-references guards)"
+        ),
     )
     args = parser.parse_args()
 
@@ -350,7 +501,7 @@ def main() -> int:
     if args.import_db:
         try:
             stats = import_to_db(entries, force=args.force)
-        except StaleImportError as exc:
+        except (StaleImportError, ReferencedNodeRemovalError) as exc:
             print(f"DB import ABORTED: {exc}", file=sys.stderr)
             return 1
         print(f"DB import: {stats}")

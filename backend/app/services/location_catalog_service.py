@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.location_page_url import PLATFORM_ORDER
@@ -11,6 +12,39 @@ from app.models import EventSummary, Location, LocationCatalog, LocationCatalogL
 # Системы, чьё название площадки считаем актуальным. parkrun сюда не входит:
 # он закрыт с 2022, и его латинское имя как раз то, от которого мы уходим.
 DISPLAY_OVERRIDE_PLATFORMS = frozenset({"five_verst", "s95", "runpark"})
+
+
+# Колонки, где хранится канонический ключ «catalog:<id узла>». id узла — это
+# и есть личность физической локации: ручные гранты кабинета организатора,
+# выбранная руками домашняя локация, оценки локаций и гео-пинги держатся за
+# него. Пересоздать узел с новым id = молча отобрать всё это у людей (так
+# 26.09.2026 импорт каталога через DELETE + INSERT снял доступы организаторов).
+# Новая колонка с таким ключом — сюда же: её проверяет импорт каталога перед
+# удалением узла, а сторож tests/test_import_location_catalog.py не даст забыть.
+CATALOG_KEY_PREFIX = "catalog:"
+CATALOG_KEY_REFERENCES: tuple[tuple[str, str], ...] = (
+    ("location_organizer_access", "location_key"),
+    ("users", "home_location_key"),
+    ("location_ratings", "location_key"),
+    ("user_geo_pings", "nearest_identity_key"),
+    ("user_geo_pings", "home_identity_key"),
+)
+
+
+def catalog_key_reference_counts(db: Session, catalog_ids: list[UUID]) -> dict[str, int]:
+    """«таблица.колонка» → сколько строк ссылается на эти узлы каталога."""
+    if not catalog_ids:
+        return {}
+    keys = [f"{CATALOG_KEY_PREFIX}{catalog_id}" for catalog_id in catalog_ids]
+    counts: dict[str, int] = {}
+    for table, column in CATALOG_KEY_REFERENCES:
+        count = db.execute(
+            text(f'SELECT count(*) FROM "{table}" WHERE "{column}" = ANY(:keys)'),
+            {"keys": keys},
+        ).scalar_one()
+        if count:
+            counts[f"{table}.{column}"] = int(count)
+    return counts
 
 
 def normalize_location_slug(value: str) -> str:

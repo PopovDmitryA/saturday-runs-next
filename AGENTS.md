@@ -385,6 +385,18 @@ Backfill: `scripts/recalculate_personal_records.py --platform all`.
 
 Import: `make location-catalog-import-docker`.
 
+**id узла каталога — личность локации, его нельзя менять.** Ключ
+`catalog:<id>` хранят ручные гранты кабинета организатора, выбранная руками
+домашняя локация, оценки локаций и гео-пинги (`CATALOG_KEY_REFERENCES` в
+`location_catalog_service.py`). До 29.09.2026 импорт делал DELETE + INSERT
+всего каталога: 26.09.2026 правка одного Раменского выдала всем узлам новые id,
+и организаторы молча потеряли доступ к кабинету (починено скриптом
+`backend/scripts/archive/restore_catalog_keys_20260926.py` по дампу 25.09).
+Теперь импорт обновляет узлы на месте (parkrun-слаг → связки → название), а
+узел, на который кто-то ссылается, без `--force` не удаляет. Новая колонка с
+таким ключом — в `CATALOG_KEY_REFERENCES`; сторож —
+`pytest tests/test_import_location_catalog.py`.
+
 ---
 
 ## 9. Privacy, UI (июнь 2026)
