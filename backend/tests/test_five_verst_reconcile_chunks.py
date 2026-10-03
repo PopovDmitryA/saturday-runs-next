@@ -7,9 +7,24 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.workers.tasks.five_verst_sync import reconcile_stale_protocols_task
+
+
+@pytest.fixture(autouse=True)
+def freshness_window() -> Iterator[MagicMock]:
+    """По умолчанию — будний день: в выходные по Москве цепочка звено не ставит.
+
+    Без подмены тесты зависели от дня запуска: в субботу и воскресенье падал
+    `test_full_batch_enqueues_next_chunk`, а тесты «звена нет» проходили бы и
+    со сломанным условием — их выручали выходные. Выходные — отдельный тест.
+    """
+    with patch("app.workers.tasks.five_verst_sync.is_freshness_window", return_value=False) as window:
+        yield window
 
 
 def _payload(candidates: int) -> dict[str, object]:
@@ -30,6 +45,20 @@ def test_full_batch_enqueues_next_chunk(run_sync: MagicMock, apply_async: MagicM
     # force=True: часовой слот уже занят этим же прогоном, иначе звено
     # отвалилось бы как duplicate_hour_slot.
     assert kwargs["force"] is True
+
+
+@patch("app.workers.tasks.five_verst_sync.reconcile_stale_protocols_task.apply_async")
+@patch("app.workers.tasks.five_verst_sync.run_reported_sync")
+def test_weekend_stops_chain(run_sync: MagicMock, apply_async: MagicMock, freshness_window: MagicMock) -> None:
+    """Полная пачка в выходные: хвост нормы ждёт понедельника, суббота — свежим протоколам."""
+    run_sync.return_value = _payload(100)
+    freshness_window.return_value = True
+
+    result = reconcile_stale_protocols_task.run(limit=100, chunks_left=2)
+
+    assert result["next_chunk_skipped"] == "freshness_window"
+    assert "next_chunk_enqueued" not in result
+    apply_async.assert_not_called()
 
 
 @patch("app.workers.tasks.five_verst_sync.reconcile_stale_protocols_task.apply_async")
