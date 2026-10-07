@@ -985,11 +985,33 @@ LOCATION_ATTENDANCE_MAX_LIMIT = 100
 LOCATION_ATTENDANCE_KINDS = ("all", "runners", "volunteers")
 
 
-def location_attendance_cache_key(slug: str, year: int, kind: str, offset: int, limit: int) -> str:
+def location_attendance_cache_key(
+    slug: str, year: int, kind: str, offset: int, limit: int, month: str | None = None
+) -> str:
     # v2 — в строках появились month_totals. Без бампа страница до истечения
     # TTL отдавала бы payload без них, и «Всего» в срезе месяца считалось бы
     # по клеткам (у закрытого профиля их нет — вышел бы ноль).
-    return f"locations:attendance:v2:{slug.strip().lower()}:{year}:{kind}:o{offset}:l{limit}"
+    # Месяц меняет порядок строк, а значит и состав каждой порции.
+    month_part = f":m{month}" if month else ""
+    return f"locations:attendance:v2:{slug.strip().lower()}:{year}:{kind}{month_part}:o{offset}:l{limit}"
+
+
+def _attendance_month(month: str | None, year: int | None) -> str | None:
+    """Месяц журнала («2026-09») или None, если он не задан или не из этого года.
+
+    Чужой год не ошибка: фронт сбрасывает месяц вместе со сменой года, но
+    запрос со старым месяцем всё равно может проскочить — тогда это просто год.
+    year=None — проверить только формат (год журнала ещё не известен).
+    """
+    if not month or len(month) != 7 or month[4] != "-":
+        return None
+    try:
+        month_year, month_number = int(month[:4]), int(month[5:])
+    except ValueError:
+        return None
+    if (year is not None and month_year != year) or not 1 <= month_number <= 12:
+        return None
+    return month
 
 
 @dataclass
@@ -1077,6 +1099,22 @@ def _attendance_dates(person: _AttendancePerson, kind: str) -> set[date]:
     return person.dates
 
 
+def _attendance_sort_key(person: _AttendancePerson, kind: str, month: str | None = None) -> tuple:
+    """Порядок строк журнала: сверху самые активные в выбранном срезе.
+
+    С выбранным месяцем первым идёт счёт ЭТОГО месяца. Журнал приходит
+    порциями по 50, а месяц раньше сужал только уже загруженные строки — и
+    новички с одним выходом за год в первую порцию не попадали. 06.10.2026 у
+    Мещерского в сентябре волонтёрили 45 человек, а видно было 25: Замира
+    Ханбикова стояла 113-й, и координатор волонтёров решила, что пропустила её
+    при проставлении. Кто в этом месяце не был, уезжает вниз, но из журнала
+    не пропадает — как и при смене разреза.
+    """
+    dates = _attendance_dates(person, kind)
+    month_count = sum(1 for day in dates if day.strftime("%Y-%m") == month) if month else 0
+    return (-month_count, -len(dates), -len(person.dates), person.display_name or "")
+
+
 def _attendance_row_payload(person: _AttendancePerson, *, me: bool = False, kind: str = "all") -> dict[str, object]:
     """Строка журнала в выбранном разрезе.
 
@@ -1123,6 +1161,7 @@ def build_location_attendance(
     *,
     year: int | None = None,
     kind: str = "all",
+    month: str | None = None,
     offset: int = 0,
     limit: int = LOCATION_ATTENDANCE_PAGE_LIMIT,
     viewer_user_id: UUID | None = None,
@@ -1143,7 +1182,9 @@ def build_location_attendance(
     # Быстрый путь анонима: ключ на ЗАПРОШЕННЫЙ slug (год 0 = «последний»),
     # чтобы попадание в кэш не тянуло резолв идентичности (он перечитывает все
     # локации и каталог). Залогиненному нужен блок «Вы» — ему полный путь.
-    requested_key = location_attendance_cache_key(slug, year or 0, kind, offset, limit)
+    # Год «последний» здесь ещё неизвестен — месяц сверяем только по формату.
+    requested_month = _attendance_month(month, year)
+    requested_key = location_attendance_cache_key(slug, year or 0, kind, offset, limit, requested_month)
     if use_cache and viewer_user_id is None:
         cached = _read_json_cache(requested_key)
         if cached is not None:
@@ -1180,8 +1221,9 @@ def build_location_attendance(
         }
     if year is None or year not in years:
         year = years[0]
+    month = _attendance_month(month, year)
 
-    cache_key = location_attendance_cache_key(identity.slug, year, kind, offset, limit)
+    cache_key = location_attendance_cache_key(identity.slug, year, kind, offset, limit, month)
     payload: dict[str, object] | None = None
     if use_cache:
         payload = _read_json_cache(cache_key)
@@ -1230,14 +1272,7 @@ def build_location_attendance(
         # тех, кто и бежал, и волонтёрил»). Разрез меняет заливку клеток и счёт,
         # а порядок ставит наверх самых активных именно в нём: у кого в разрезе
         # пусто, тот честно уезжает вниз, но из журнала не пропадает.
-        selected = sorted(
-            people.values(),
-            key=lambda person: (
-                -len(_attendance_dates(person, kind)),
-                -len(person.dates),
-                person.display_name or "",
-            ),
-        )
+        selected = sorted(people.values(), key=lambda person: _attendance_sort_key(person, kind, month))
         page = selected[offset : offset + limit]
 
         payload = {
@@ -1246,6 +1281,7 @@ def build_location_attendance(
             "year": year,
             "years": years,
             "kind": kind,
+            "month": month,
             "offset": offset,
             "limit": limit,
             "total_rows": len(selected),

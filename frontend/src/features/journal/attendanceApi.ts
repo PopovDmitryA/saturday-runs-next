@@ -73,6 +73,8 @@ export type LocationAttendance = {
   year: number;
   years: number[];
   kind: LocationAttendanceKind;
+  // Месяц («2026-09»), по которому сервер упорядочил строки; null — по году.
+  month?: string | null;
   offset: number;
   limit: number;
   total_rows: number;
@@ -115,7 +117,12 @@ export function getAttendanceJournal(
 
 export function getLocationAttendance(
   slug: string,
-  options: { year?: number | null; kind?: LocationAttendanceKind; offset?: number } = {},
+  options: {
+    year?: number | null;
+    kind?: LocationAttendanceKind;
+    month?: string | null;
+    offset?: number;
+  } = {},
 ): Promise<LocationAttendance> {
   const params = new URLSearchParams();
   if (options.year != null) {
@@ -123,6 +130,9 @@ export function getLocationAttendance(
   }
   if (options.kind && options.kind !== "all") {
     params.set("kind", options.kind);
+  }
+  if (options.month) {
+    params.set("month", options.month);
   }
   if (options.offset) {
     params.set("offset", String(options.offset));

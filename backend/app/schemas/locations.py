@@ -477,6 +477,8 @@ class LocationAttendanceResponse(BaseModel):
     year: int
     years: list[int] = Field(default_factory=list)
     kind: str = "all"
+    # Месяц («2026-09»), по которому упорядочены строки; None — по году.
+    month: str | None = None
     offset: int = 0
     limit: int = 50
     total_rows: int = 0

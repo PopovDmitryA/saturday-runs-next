@@ -15,7 +15,9 @@ from app.services.attendance_journal_service import (
 )
 from app.services.leaderboard_service import LEADERBOARD_METRICS
 from app.services.location_page_service import (
+    _attendance_month,
     _attendance_row_payload,
+    _attendance_sort_key,
     _AttendancePerson,
     location_attendance_cache_key,
 )
@@ -122,6 +124,57 @@ def test_location_attendance_cache_key_normalizes_slug() -> None:
     assert location_attendance_cache_key(" Meshchersky ", 2026, "all", 0, 50) == (
         "locations:attendance:v2:meshchersky:2026:all:o0:l50"
     )
+
+
+def test_location_attendance_cache_key_separates_months() -> None:
+    # Без месяца ключ прежний — кэш годового журнала не сбрасывается.
+    assert location_attendance_cache_key("meshchersky", 2026, "volunteers", 0, 50, None) == (
+        "locations:attendance:v2:meshchersky:2026:volunteers:o0:l50"
+    )
+    assert location_attendance_cache_key("meshchersky", 2026, "volunteers", 0, 50, "2026-09") == (
+        "locations:attendance:v2:meshchersky:2026:volunteers:m2026-09:o0:l50"
+    )
+
+
+@pytest.mark.parametrize(
+    ("month", "year", "expected"),
+    [
+        ("2026-09", 2026, "2026-09"),
+        ("2026-09", None, "2026-09"),
+        ("2025-09", 2026, None),
+        ("2026-13", 2026, None),
+        ("2026-9", 2026, None),
+        ("сентябрь", 2026, None),
+        (None, 2026, None),
+    ],
+)
+def test_attendance_month_accepts_only_months_of_the_year(month, year, expected) -> None:
+    assert _attendance_month(month, year) == expected
+
+
+def test_attendance_month_puts_month_volunteers_first() -> None:
+    """Новичок с одним выходом в сентябре обгоняет ветеранов без сентября.
+
+    06.10.2026: у Мещерского в сентябре волонтёрили 45 человек, а фильтр
+    месяца показывал 25 — сервер резал порцию по годовому счёту, и Замира
+    Ханбикова с единственным выходом 12.09 стояла 113-й.
+    """
+    veteran = _AttendancePerson(name="Анна СМИРНОВА")
+    for day in (7, 14, 21, 28):
+        veteran.vol_roles[date(2026, 2, day)] = {"Маршал"}
+    newcomer = _AttendancePerson(name="Замира ХАНБИКОВА")
+    newcomer.vol_roles[date(2026, 9, 12)] = {"Маршал"}
+    runner = _AttendancePerson(name="Иван ИВАНОВ")
+    runner.run_dates.add(date(2026, 9, 12))
+
+    people = [veteran, runner, newcomer]
+    by_year = sorted(people, key=lambda person: _attendance_sort_key(person, "volunteers"))
+    assert by_year[0] is veteran
+
+    by_month = sorted(people, key=lambda person: _attendance_sort_key(person, "volunteers", "2026-09"))
+    # Пробежка в сентябре в волонтёрском срезе не считается — бегун ниже
+    # ветерана, но из журнала не пропадает.
+    assert by_month == [newcomer, veteran, runner]
 
 
 def test_attendance_row_payload_hides_private_cells() -> None:

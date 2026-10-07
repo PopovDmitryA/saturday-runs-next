@@ -110,8 +110,10 @@ function matrixRow(
 export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendanceJournalProps) {
   const [year, setYear] = useState<number | null>(null);
   // Месяц сужает видимые колонки дат: за год их набирается полсотни, и найти
-  // конкретную субботу глазами тяжело. Счёт в «Всего» остаётся годовым —
-  // так и подписан.
+  // конкретную субботу глазами тяжело. И он же уходит на сервер: журнал
+  // приходит порциями по 50, и без месяца порция режется по годовому счёту —
+  // новички месяца оставались за «Показать ещё», и фильтр их будто не видел
+  // (Мещерский, сентябрь 2026: видно 25 волонтёров из 45).
   const [month, setMonth] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ key: MatrixSortKey; asc: boolean } | null>(null);
@@ -126,7 +128,7 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
     let cancelled = false;
     setLoading(true);
     setError(null);
-    getLocationAttendance(slug, { year, kind })
+    getLocationAttendance(slug, { year, kind, month: month === "all" ? null : month })
       .then((payload) => {
         if (!cancelled) {
           setData(payload);
@@ -146,12 +148,14 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
     return () => {
       cancelled = true;
     };
-  }, [slug, year, kind]);
+  }, [slug, year, kind, month]);
 
-  // Год сменился — прежний месяц к новому набору колонок отношения не имеет.
+  // Сменилась локация — прежний месяц к ней отношения не имеет. Смену года
+  // сбрасывает сам переключатель года: эффект здесь дал бы лишний запрос со
+  // старым месяцем.
   useEffect(() => {
     setMonth("all");
-  }, [year, slug]);
+  }, [slug]);
 
   const loadMore = () => {
     if (!data) {
@@ -161,6 +165,7 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
     getLocationAttendance(slug, {
       year: data.year,
       kind,
+      month: data.month ?? null,
       offset: data.rows.length + extraRows.length,
     })
       .then((payload) => setExtraRows((rows) => [...rows, ...payload.rows]))
@@ -307,7 +312,10 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
             <FilterSelect
               ariaLabel="Год"
               value={data.year}
-              onChange={(value) => setYear(value)}
+              onChange={(value) => {
+                setYear(value);
+                setMonth("all");
+              }}
               options={data.years.map((value) => ({ value, label: String(value) }))}
             />
           </FilterGroup>
@@ -411,8 +419,8 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
             )}
             {kind !== "all" &&
               (kind === "runners"
-                ? " · сверху те, кто чаще бегал; волонтёрства не закрашены"
-                : " · сверху те, кто чаще волонтёрил; пробежки не закрашены")}
+                ? ` · сверху те, кто чаще бегал${month === "all" ? "" : " в этом месяце"}; волонтёрства не закрашены`
+                : ` · сверху те, кто чаще волонтёрил${month === "all" ? "" : " в этом месяце"}; пробежки не закрашены`)}
           </p>
           {hasMore && (
             <div className="aj-more">

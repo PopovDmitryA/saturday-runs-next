@@ -136,15 +136,22 @@ def location_attendance(
     viewer: Annotated[User | None, Depends(get_optional_user)],
     year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
     kind: str = "all",
+    month: Annotated[str | None, Query(max_length=7)] = None,
     offset: Annotated[int, Query(ge=0, le=10000)] = 0,
     limit: Annotated[int, Query(ge=1, le=LOCATION_ATTENDANCE_MAX_LIMIT)] = LOCATION_ATTENDANCE_PAGE_LIMIT,
 ) -> LocationAttendanceResponse:
-    """Журнал посещаемости локации: участники × даты стартов выбранного года."""
+    """Журнал посещаемости локации: участники × даты стартов выбранного года.
+
+    month («2026-09») ставит наверх активных в этом месяце: месяц на странице
+    выбирают, чтобы найти, кто был в эти субботы, а порции по 50 иначе
+    режутся по годовому счёту.
+    """
     payload = build_location_attendance(
         db,
         slug,
         year=year,
         kind=kind,
+        month=month,
         offset=offset,
         limit=limit,
         viewer_user_id=viewer.id if viewer is not None else None,
