@@ -1067,80 +1067,114 @@ def list_event_travelers(
     самая ранняя пробежка, всё за всю историю). Гость, который набегал у нас
     пять стартов, но живёт в другом парке, в рубрику не попадает.
 
-    Participant платформенный, поэтому фильтр по системе не нужен; дубли
-    RunPark отсекаются кросслинками.
+    Человек склеен по системам через привязки на сайте (coalesce(user_id,
+    participant_id), как в «Долгой паузе»): и финиши «у нас», и выезд
+    считаются по всем его профилям. До 08.10.2026 всё шло по одному
+    платформенному participant, и выезд в другую систему терялся: Дмитрий
+    Дьяченко — свой в Измайлово (S95 + parkrun), а в Химки 03.10.2026 бежал
+    по профилю 5 вёрст, на котором у Измайлово ноль финишей. Без привязки
+    человек остаётся своим participant'ом, как и раньше. Дубли RunPark
+    отсекаются кросслинками.
     """
     location_ids = [location.id for location, _code in identity.locations]
     event_ids = _location_event_ids(db, location_ids)
     if not event_ids:
         return []
 
-    locals_sq = (
-        select(RunResult.participant_id)
-        .where(RunResult.event_id.in_(event_ids), RunResult.participant_id.isnot(None))
-        .group_by(RunResult.participant_id)
-        .having(func.count(func.distinct(RunResult.event_id)) >= min_runs)
-    )
+    group_key = func.coalesce(PlatformLink.user_id, RunResult.participant_id)
+    local_keys = [
+        row[0]
+        for row in (
+            db.query(group_key)
+            .select_from(RunResult)
+            .join(Participant, RunResult.participant_id == Participant.id)
+            .outerjoin(PlatformLink, _platform_link_join())
+            .filter(RunResult.event_id.in_(event_ids), RunResult.finish_time_sec.isnot(None))
+            .group_by(group_key)
+            .having(func.count(func.distinct(RunResult.event_id)) >= min_runs)
+            .all()
+        )
+    ]
+    if not local_keys:
+        return []
+    local_set = set(local_keys)
+    participant_ids = _participant_ids_for_groups(db, local_keys)
+
     secondary_events = select(EventCrosslink.secondary_event_id)
-    rows = (
-        db.query(
-            RunResult.participant_id,
-            Participant.display_name,
-            Participant.profile_url,
-            Location.name,
-            Location.city,
-            RunResult.finish_time_sec,
+    rows = [
+        row
+        for row in (
+            db.query(
+                group_key.label("group_key"),
+                RunResult.participant_id,
+                Participant.display_name,
+                Participant.profile_url,
+                Location.name,
+                Location.city,
+                RunResult.finish_time_sec,
+            )
+            .select_from(RunResult)
+            .join(Participant, RunResult.participant_id == Participant.id)
+            .outerjoin(PlatformLink, _platform_link_join())
+            .join(Event, RunResult.event_id == Event.id)
+            .join(Location, Event.location_id == Location.id)
+            .filter(
+                Event.event_date == event_date,
+                Event.is_test_event.is_(False),
+                Event.id.notin_(secondary_events),
+                Event.location_id.notin_(location_ids),
+                RunResult.participant_id.in_(participant_ids),
+                RunResult.finish_time_sec.isnot(None),
+            )
+            .order_by(Location.name, Participant.display_name)
+            .all()
         )
-        .join(RunResult, RunResult.participant_id == Participant.id)
-        .join(Event, RunResult.event_id == Event.id)
-        .join(Location, Event.location_id == Location.id)
-        .filter(
-            Event.event_date == event_date,
-            Event.is_test_event.is_(False),
-            Event.id.notin_(secondary_events),
-            Event.location_id.notin_(location_ids),
-            RunResult.participant_id.in_(locals_sq),
-            RunResult.finish_time_sec.isnot(None),
-        )
-        .order_by(Location.name, Participant.display_name)
-        .all()
-    )
+        if row.group_key in local_set
+    ]
     if not rows:
         return []
 
-    candidate_ids = {row[0] for row in rows}
-    home_ids = home_participant_ids(db, identity.identity_key, candidate_ids)
-    if not home_ids:
+    # Дом проверяется по participant выезда: у привязанного он резолвится через
+    # профиль на сайте (кросс-платформенно), у непривязанного — по его данным.
+    home_ids = home_participant_ids(db, identity.identity_key, {row.participant_id for row in rows})
+    rows = [row for row in rows if row.participant_id in home_ids]
+    if not rows:
         return []
 
     # Сколько раз бежал у нас — на дату события, а не «сегодня»: пост про
     # конкретную субботу, и для старого события число не должно ехать вперёд.
+    # Считаем по всем профилям человека: «105 у нас» на parkrun и 85 на S95 —
+    # это всё пробежки в нашем парке.
+    traveler_keys = list({row.group_key for row in rows})
     runs_here = {
-        pid: int(count)
-        for pid, count in (
-            db.query(RunResult.participant_id, func.count(func.distinct(RunResult.event_id)))
+        key: int(count)
+        for key, count in (
+            db.query(group_key, func.count(func.distinct(RunResult.event_id)))
+            .select_from(RunResult)
+            .join(Participant, RunResult.participant_id == Participant.id)
+            .outerjoin(PlatformLink, _platform_link_join())
             .join(Event, RunResult.event_id == Event.id)
             .filter(
-                RunResult.participant_id.in_(home_ids),
+                RunResult.participant_id.in_(_participant_ids_for_groups(db, traveler_keys)),
                 RunResult.event_id.in_(event_ids),
+                RunResult.finish_time_sec.isnot(None),
                 Event.event_date <= event_date,
             )
-            .group_by(RunResult.participant_id)
+            .group_by(group_key)
             .all()
         )
     }
 
     return [
         {
-            "name": name,
-            "profile_url": profile_url,
-            "away_location": away_name,
-            "away_city": away_city,
-            "finish_time_sec": int(finish_time_sec) if finish_time_sec else None,
-            "runs_here": runs_here.get(pid, 0),
+            "name": row.display_name,
+            "profile_url": row.profile_url,
+            "away_location": row.name,
+            "away_city": row.city,
+            "finish_time_sec": int(row.finish_time_sec) if row.finish_time_sec else None,
+            "runs_here": runs_here.get(row.group_key, 0),
         }
-        for pid, name, profile_url, away_name, away_city, finish_time_sec in rows
-        if pid in home_ids
+        for row in rows
     ]
 
 

@@ -1006,6 +1006,65 @@ def test_travelers_post(
     assert "Постоянный Гость" not in text
 
 
+def test_travelers_post_follows_linked_profiles_across_systems(
+    client: TestClient, db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> None:
+    """Свой в локации S95 уехал на старт 5 вёрст под другим профилем — он в рубрике.
+
+    08.10.2026: Дмитрий Дьяченко — свой в Измайлово (S95 + parkrun), в Химки
+    бежал по профилю 5 вёрст, и рубрика его не видела: и «свои», и выезды
+    искались по участнику одной системы.
+    """
+    suffix = str(uuid4().int % 1_000_000)
+    s95 = _platform(db_session, "s95", "S95")
+    five_verst = _platform(db_session, "five_verst", "5 вёрст")
+    home = _location(db_session, s95, f"org-s95home-{suffix}")
+    away = _location(db_session, five_verst, f"org-5vaway-{suffix}")
+    events = [
+        _event(db_session, s95, home, date(2026, 1, 3) + timedelta(days=7 * i), i + 1)
+        for i in range(6)
+    ]
+    away_event = _event(db_session, five_verst, away, events[-1].event_date, 1)
+
+    runner = User(telegram_id=int(uuid4().int % 10_000_000_000), telegram_username=f"r{suffix}")
+    db_session.add(runner)
+    db_session.flush()
+    home_profile = _participant(db_session, s95, f"{suffix}-s95", "Дмитрий ДЬЯЧЕНКО")
+    away_profile = _participant(db_session, five_verst, f"{suffix}-5v", "Дмитрий ДЬЯЧЕНКО")
+    _link(db_session, runner, s95, home_profile)
+    _link(db_session, runner, five_verst, away_profile)
+    for event in events[:5]:
+        _run(db_session, event, home_profile)
+    _run(db_session, away_event, away_profile, finish_time_sec=1834)
+
+    # Тот же выезд без привязки к сайту: профили разных систем не склеить,
+    # и у профиля 5 вёрст своих финишей здесь нет — в рубрику не попадает.
+    stranger_home = _participant(db_session, s95, f"{suffix}-s95x", "Без Привязки")
+    stranger_away = _participant(db_session, five_verst, f"{suffix}-5vx", "Без Привязки")
+    for event in events[:5]:
+        _run(db_session, event, stranger_home)
+    _run(db_session, away_event, stranger_away)
+
+    organizer = _participant(db_session, s95, f"{suffix}-org", "Организатор")
+    _volunteer(db_session, events[-1], organizer, "Организатор")
+    user = User(telegram_id=int(uuid4().int % 10_000_000_000), telegram_username=f"u{suffix}")
+    db_session.add(user)
+    db_session.flush()
+    _link(db_session, user, s95, organizer)
+    db_session.commit()
+    fake_redis.delete(LOCATIONS_INDEX_CACHE_KEY)
+    _login(client, user.telegram_id or 0, "organizer")
+
+    response = client.get(
+        f"/api/organizer/{home.external_key}/event-post",
+        params={"event_id": str(events[-1].id), "template": "travelers"},
+    )
+    assert response.status_code == 200
+    text = response.json()["post_text"]
+    assert f"Дмитрий ДЬЯЧЕНКО (5 пробежек у нас) — Локация org-5vaway-{suffix}" in text
+    assert "Без Привязки" not in text
+
+
 def test_parse_volunteer_roster() -> None:
     """Парсер таблицы записи 5 вёрст: даты, роли, занятые клетки."""
     from app.services.organizer_roster_service import parse_volunteer_roster
