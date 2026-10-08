@@ -1,19 +1,27 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { lockBodyScroll } from "../lib/bodyScrollLock";
-import { dismissNotificationNudge, getNotificationNudge, type NotificationNudgeState } from "../lib/api";
+import {
+  dismissNotificationNudge,
+  getNotificationNudge,
+  snoozeNotificationNudge,
+  type NotificationNudgeState,
+} from "../lib/api";
 import { PORTAL_NOTIFICATIONS_SETTINGS_HREF } from "../lib/portalRoutes";
 import { hasPendingSearchClaim } from "../features/portal/nav/searchClaim";
 
 // Две модалки под одной механикой показа:
-//  * «На сайте появились уведомления» — пока они выключены. Один раз за вход,
-//    «Больше не напоминать» гасит навсегда (на сервере).
+//  * «На сайте появились уведомления» — пока они выключены. «Не сейчас»
+//    откладывает на два месяца (на сервере, на всех устройствах),
+//    «Больше не напоминать» гасит навсегда. До 08.10.2026 «Не сейчас» жило
+//    только в sessionStorage, и окно всплывало при каждом новом открытии
+//    сайта — карточка бэклога «Навязчивый пуш включить уведомления».
 //  * «Мы не можем вам написать» — уведомления включены, но ни один канал не
 //    доставляет: бот заблокирован или сообщество без разрешения. Это поломка,
 //    а не реклама, поэтому навсегда её не выключить — только починить или
 //    выключить уведомления в настройках.
-// «Не сейчас» прячет до следующего входа (sessionStorage живёт до закрытия
-// вкладки), чтобы модалка не всплывала на каждой странице кабинета.
+// Вкладка дополнительно помнит отказ в sessionStorage: тревогу о доставке
+// сервер не откладывает, и без этого она всплывала бы на каждой странице.
 // Пока ждёт ответа «Это вы?» из поиска (SearchClaimRunner) — молчим и не
 // снузим: два окна разом после входа не нужны, призыв покажется на следующей
 // странице кабинета.
@@ -71,6 +79,14 @@ export function NotificationsPromptModal() {
     snooze(kind);
     setState(null);
   };
+  // Отказ от призыва — на два месяца; тревогу о поломке откладываем только
+  // до закрытия вкладки.
+  const later = () => {
+    close();
+    if (kind === "enable") {
+      void snoozeNotificationNudge().catch(() => undefined);
+    }
+  };
   const never = () => {
     close();
     void dismissNotificationNudge().catch(() => undefined);
@@ -80,7 +96,7 @@ export function NotificationsPromptModal() {
   const action = broken.find((item) => item.action_url);
 
   return createPortal(
-    <div className="modal-overlay" onClick={close}>
+    <div className="modal-overlay" onClick={later}>
       <div
         className={`modal-panel notify-intro ${kind === "fix_delivery" ? "notify-intro-alert" : ""}`}
         role="dialog"
@@ -114,7 +130,7 @@ export function NotificationsPromptModal() {
               нужно нажать кнопку подтверждения. После этого уведомления заработают сами.
             </p>
             <div className="modal-actions notify-intro-actions">
-              <button type="button" className="btn secondary modal-btn" onClick={close}>
+              <button type="button" className="btn secondary modal-btn" onClick={later}>
                 Не сейчас
               </button>
               {action?.action_url ? (
@@ -184,7 +200,7 @@ export function NotificationsPromptModal() {
               сообщения.
             </p>
             <div className="modal-actions notify-intro-actions">
-              <button type="button" className="btn secondary modal-btn" onClick={close}>
+              <button type="button" className="btn secondary modal-btn" onClick={later}>
                 Не сейчас
               </button>
               <a className="btn primary modal-btn" href={PORTAL_NOTIFICATIONS_SETTINGS_HREF} onClick={close}>

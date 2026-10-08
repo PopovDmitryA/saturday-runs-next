@@ -26,7 +26,7 @@ import base64
 import hashlib
 import hmac
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -235,7 +235,7 @@ def nudge_state(db: Session, user: User) -> dict[str, Any]:
     linked = [c for c in channels.CHANNEL_ORDER if channels._address_for(db, user, c)]
 
     if not enabled:
-        kind = "enable" if (linked and not dismissed) else None
+        kind = "enable" if (linked and not dismissed and not _nudge_snoozed(prefs)) else None
         return {"kind": kind, "show": kind is not None, "enabled": False, "linked_channels": linked, "broken": []}
 
     state = channels.channels_state(db, user)
@@ -269,6 +269,29 @@ def nudge_state(db: Session, user: User) -> dict[str, Any]:
 def dismiss_nudge(db: Session, user_id: UUID) -> None:
     prefs = ensure_prefs(db, user_id)
     prefs.nudge_dismissed_at = datetime.now(UTC)
+    db.flush()
+
+
+# «Не сейчас» в призыве включить уведомления — «раз в пару месяцев» из
+# карточки бэклога 05.10.2026. До неё отказ жил в sessionStorage, и окно
+# всплывало на каждом новом открытии сайта.
+NUDGE_SNOOZE_DAYS = 60
+
+
+def _nudge_snoozed(prefs: UserNotificationPrefs | None, now: datetime | None = None) -> bool:
+    if prefs is None or prefs.nudge_snoozed_at is None:
+        return False
+    return (now or datetime.now(UTC)) - prefs.nudge_snoozed_at < timedelta(days=NUDGE_SNOOZE_DAYS)
+
+
+def snooze_nudge(db: Session, user_id: UUID) -> None:
+    """«Не сейчас»: призыв включить уведомления молчит NUDGE_SNOOZE_DAYS.
+
+    Только для призыва. Тревога «включённые уведомления не доходят» — поломка,
+    её откладывает лишь текущая вкладка (как и прежде, на клиенте).
+    """
+    prefs = ensure_prefs(db, user_id)
+    prefs.nudge_snoozed_at = datetime.now(UTC)
     db.flush()
 
 

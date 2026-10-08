@@ -565,8 +565,10 @@ Telegram / HTML письма / текст VK), `services/notification_service.py
   `messages.isMessagesFromGroupAllowed`; результат на строке канала
   (`check_ok`), перепроверка не чаще 10 минут. Не доходит — в настройках
   красная подсказка «откройте бота и нажмите Start».
-- **Призывы включить:** модалка в кабинете (`NotificationsPromptModal`, один
-  раз за вход через sessionStorage; «Больше не напоминать» — `nudge_dismissed_at`)
+- **Призывы включить:** модалка в кабинете (`NotificationsPromptModal`;
+  «Не сейчас» — молчим 60 дней, `nudge_snoozed_at`, на всех устройствах;
+  «Больше не напоминать» — навсегда, `nudge_dismissed_at`. До 08.10.2026
+  «Не сейчас» жило в sessionStorage, и окно всплывало на каждом открытии сайта)
   и модалка после создания карточки бэклога; кнопка включает лучший доступный
   канал (`POST /settings/notifications/enable`). Та же модалка во втором
   режиме (`kind=fix_delivery` в `GET /settings/notifications/nudge`) поднимает
