@@ -19,6 +19,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineQuery,
     Message,
+    ReplyKeyboardRemove,
 )
 
 from app.legal.consent_text import consent_bot_message
@@ -89,6 +90,29 @@ START_MESSAGE = (
     "рейтинги, карта локаций и протоколы стартов. Пригодится, когда решаетесь на первый старт там, "
     "где ещё не бегали."
 )
+
+LINKED_MESSAGE = (
+    "Telegram привязан ✅ Вернитесь во вкладку сайта — она обновится сама. "
+    "Если этим Telegram уже владеет другой профиль, сайт предложит объединить их."
+)
+
+# Ответ на текст, который бот не разбирает. Чаще всего это нажатие кнопок
+# «Мой профиль / Дэшборды / Настройки»: их прислал прежний бот статистики 5 вёрст
+# с тем же токеном, и Telegram хранит такую клавиатуру у человека, пока бот сам
+# её не уберёт. Прежний бот выключен, отвечать на эти кнопки некому — поэтому
+# ответ снимает клавиатуру (жалоба 08.10.2026).
+UNKNOWN_TEXT_MESSAGE = (
+    "Текстовые сообщения я не разбираю.\n\n"
+    "📍 Пришлите геопозицию (📎 → «Геопозиция») — покажу старты рядом.\n"
+    "👤 Профиль, статистика и настройки уведомлений — на run5k.run.\n"
+    "/start — всё, что умеет бот.\n\n"
+    "Если внизу были кнопки «Мой профиль», «Дэшборды», «Настройки» — это меню "
+    "прежней версии бота, оно больше не работает. Я его убрал."
+)
+
+# Снимает клавиатуру прежнего бота. Добавляется к сообщениям без своих кнопок:
+# у сообщения одна reply_markup, и inline-кнопки ею не заменишь.
+REMOVE_LEGACY_KEYBOARD = ReplyKeyboardRemove()
 
 ADMIN_HELP_TEXT = (
     "Admin-команды:\n"
@@ -272,10 +296,7 @@ async def confirm_login(
 
     magic_link = response.json().get("magic_link") or ""
     if not magic_link:
-        await message.answer(
-            "Telegram привязан ✅ Вернитесь во вкладку сайта — она обновится сама. "
-            "Если этим Telegram уже владеет другой профиль, сайт предложит объединить их."
-        )
+        await message.answer(LINKED_MESSAGE, reply_markup=REMOVE_LEGACY_KEYBOARD)
         return
     await _send_magic_link(message, magic_link)
 
@@ -490,7 +511,7 @@ async def on_start(message: Message, command: CommandObject) -> None:
             await message.answer("Сайт сейчас не отвечает. Попробуйте ещё раз через минуту.")
             return
         if context.get("status") != "pending":
-            await message.answer(LOGIN_EXPIRED_MESSAGE)
+            await message.answer(LOGIN_EXPIRED_MESSAGE, reply_markup=REMOVE_LEGACY_KEYBOARD)
             return
         await _prompt_login_confirmation(message, request_token, context)
         return
@@ -532,7 +553,7 @@ async def on_login_callback(callback: CallbackQuery) -> None:
         request_token = callback.data.removeprefix(LOGIN_DECLINE_PREFIX)
         await callback.answer("Запрос отменён")
         await _deny_login(request_token, callback.from_user.id)
-        await callback.message.answer(LOGIN_DENIED_MESSAGE)
+        await callback.message.answer(LOGIN_DENIED_MESSAGE, reply_markup=REMOVE_LEGACY_KEYBOARD)
         return
 
     if callback.data.startswith(LOGIN_CONSENT_PREFIX):
@@ -558,6 +579,10 @@ async def on_text(message: Message) -> None:
         return
     if await _handle_coordinate_admin_message(message):
         return
+    # Раньше непонятный текст тонул в молчании, и кнопки прежнего бота
+    # выглядели сломанными. В группах молчим: там текст адресован не боту.
+    if message.chat is not None and message.chat.type == ChatType.PRIVATE:
+        await message.answer(UNKNOWN_TEXT_MESSAGE, reply_markup=REMOVE_LEGACY_KEYBOARD)
 
 
 async def on_location(message: Message) -> None:

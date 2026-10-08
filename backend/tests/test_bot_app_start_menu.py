@@ -85,3 +85,74 @@ def test_publish_commands_survives_telegram_outage(bot_main: object) -> None:
             raise RuntimeError("Telegram недоступен")
 
     asyncio.run(bot_main._publish_commands(BrokenBot()))
+
+
+class FakeChat:
+    def __init__(self, chat_type: str) -> None:
+        self.id = 42
+        self.type = chat_type
+
+
+class FakeMessage:
+    """Ровно то, что читает on_text: текст, чат, автор — и что бот ответил."""
+
+    def __init__(self, text: str, chat_type: str = "private") -> None:
+        self.text = text
+        self.chat = FakeChat(chat_type)
+        self.from_user = None
+        self.reply_to_message = None
+        self.message_id = 1
+        self.answers: list[tuple[str, object]] = []
+
+    async def answer(self, text: str, reply_markup=None, **_kwargs) -> None:  # noqa: ANN001
+        self.answers.append((text, reply_markup))
+
+
+def _no_admin_handlers(bot_main: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def not_handled(*_args, **_kwargs) -> bool:  # noqa: ANN002, ANN003
+        return False
+
+    monkeypatch.setattr(bot_main, "handle_broadcast_draft_text", not_handled)
+    monkeypatch.setattr(bot_main, "_handle_coordinate_admin_message", not_handled)
+
+
+def test_legacy_menu_button_gets_answer_and_removes_keyboard(
+    bot_main: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Кнопка прежнего бота («⚙️ Настройки») больше не тонет в молчании.
+
+    08.10.2026: клавиатуру «Мой профиль / Дэшборды / Настройки» прислал
+    прежний бот с тем же токеном, Telegram хранил её у людей, а новый бот на
+    нажатия молчал. Ответ снимает её.
+    """
+    from aiogram.types import ReplyKeyboardRemove
+
+    _no_admin_handlers(bot_main, monkeypatch)
+    message = FakeMessage("⚙️ Настройки")
+    asyncio.run(bot_main.on_text(message))
+
+    assert len(message.answers) == 1
+    text, markup = message.answers[0]
+    assert "Геопозиция" in text
+    assert isinstance(markup, ReplyKeyboardRemove)
+
+
+def test_unknown_text_in_group_stays_silent(bot_main: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_admin_handlers(bot_main, monkeypatch)
+    message = FakeMessage("всем привет", chat_type="group")
+    asyncio.run(bot_main.on_text(message))
+    assert message.answers == []
+
+
+def test_admin_dialog_reply_is_not_answered_twice(bot_main: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def handled(*_args, **_kwargs) -> bool:  # noqa: ANN002, ANN003
+        return True
+
+    async def not_handled(*_args, **_kwargs) -> bool:  # noqa: ANN002, ANN003
+        return False
+
+    monkeypatch.setattr(bot_main, "handle_broadcast_draft_text", not_handled)
+    monkeypatch.setattr(bot_main, "_handle_coordinate_admin_message", handled)
+    message = FakeMessage("55.75:37.61")
+    asyncio.run(bot_main.on_text(message))
+    assert message.answers == []
