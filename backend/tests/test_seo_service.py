@@ -149,7 +149,10 @@ def test_frontend_mirror_keeps_location_wording_in_sync() -> None:
         '"финишировал", "финишировали", "финишировали"',
         "старты здесь проводили",
         "журнал протоколов",
-        " — результаты и статистика",
+        " — расширенные результаты",
+        "Расширенные результаты и рейтинги участников.",
+        "Расширенные результаты старта ",
+        "SERIES_MIN_EVENTS_TO_INDEX = 3",
         ". Результаты субботних забегов, посещаемость и рейтинги участников.",
         # Свежий старт в описании: порядок слов тут — суть правки, разъедется
         # зеркало — робот и человек снова увидят разные сниппеты.
@@ -550,15 +553,18 @@ def test_catalog_body_lists_locations_with_links() -> None:
     items = [
         {"slug": "a", "name": "Бутово", "city": "Москва", "platform_codes": ["five_verst"]},
         {"slug": "b", "name": "Кузьминки", "city": "Москва", "platform_codes": ["s95"]},
-        {"slug": "c", "name": "Закрытая", "city": "Тверь", "platform_codes": ["parkrun"], "is_cancelled": True},
+        {"slug": "c", "name": "Отмена", "city": "Тверь", "platform_codes": ["parkrun"], "is_cancelled": True},
     ]
     body = _catalog_body(items)
-    assert "<h1>Локации 5 вёрст, С95, parkrun и RunPark</h1>" in body
-    assert "2 локации в 1 городе" in body
+    assert "<h1>Локации 5 вёрст, С95, parkrun и RunPark — карта и каталог</h1>" in body
+    assert "3 локации в 2 городах" in body
     assert '<a href="/locations/a">Бутово</a> — Москва' in body
-    # Отменённые площадки в каталоге робота не участвуют.
-    assert "Закрытая" not in body
+    # Отменён ближайший старт — это одна суббота, а не закрытие: площадка
+    # остаётся в каталоге (до 10.2026 её на эти дни выкидывало).
+    assert '<a href="/locations/c">Отмена</a>' in body
     assert "5 вёрст — 1 площадка" in body
+    # «s95» ищут латиницей — в тексте каталога есть оба написания.
+    assert "С95 (S95)" in body
 
 
 @pytest.mark.parametrize(
@@ -687,13 +693,13 @@ def test_catalog_json_ld_lists_live_locations() -> None:
         [
             {"slug": "b", "name": "Бутово", "city": "Москва"},
             {"slug": "a", "name": "Алёшкинский", "city": "Москва"},
-            {"slug": "x", "name": "Закрытая", "is_cancelled": True},
+            {"slug": "x", "name": "Отмена", "is_cancelled": True},
         ]
     )
     listing = objects[0]
-    assert listing["numberOfItems"] == 2
+    assert listing["numberOfItems"] == 3
     # По алфавиту, как и на самой странице.
-    assert [i["name"] for i in listing["itemListElement"]] == ["Алёшкинский", "Бутово"]
+    assert [i["name"] for i in listing["itemListElement"]] == ["Алёшкинский", "Бутово", "Отмена"]
 
 
 def test_og_image_tags_are_complete_for_previews() -> None:

@@ -58,19 +58,22 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
   },
   // Каталог ловит запросы без названия парка — «5 вёрст карта», «5 вёрст
   // результаты»: перечисляем системы, иначе страница не связывается с ними.
+  // «Карта» в заголовке и «С95 (S95)» в описании — зеркало seo_service.py.
   "/locations": {
-    title: "Локации 5 вёрст, С95, parkrun и RunPark — каталог площадок — run5k.run",
+    title: "Локации 5 вёрст, С95, parkrun и RunPark — карта и каталог — run5k.run",
     description:
-      "Все площадки субботних пробежек на одной карте: сколько было стартов и " +
-      "финишей, когда прошёл первый забег, в каких системах живёт локация.",
+      "Все площадки 5 вёрст, С95 (S95), parkrun и RunPark на одной карте: сколько " +
+      "было стартов и финишей, когда прошёл первый забег, где бегать рядом.",
     indexable: true,
   },
   // Посадочная под запросы «5 вёрст результаты»: свежие протоколы всех площадок.
+  // «Расширенные» — идея Дмитрия (10.2026): у нас места по полу и возрасту,
+  // рекорды и новички, а не голый протокол.
   "/results": {
-    title: "Результаты 5 вёрст, С95 и RunPark — последняя суббота — run5k.run",
+    title: "Расширенные результаты 5 вёрст, С95 и RunPark за субботу — run5k.run",
     description:
-      "Результаты последней субботы по всем паркам: сколько финишёров и волонтёров " +
-      "было на каждой площадке, лучшие времена, новички и дата последнего старта.",
+      "Расширенные результаты последней субботы по всем паркам: финишёры и " +
+      "волонтёры каждой площадки, лучшие времена, новички и ссылка на протокол.",
     indexable: true,
   },
   // Единый протокол недели: последняя неделя без даты в адресе.
@@ -242,6 +245,7 @@ const UNIFIED_PROTOCOL_RE = /^\/protocol\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_EVENTS_RE = /^\/locations\/([^/]+)\/events$/;
 const LOCATION_PARTICIPANTS_RE = /^\/locations\/([^/]+)\/participants$/;
 const LOCATION_TOPS_RE = /^\/locations\/([^/]+)\/tops$/;
+const LOCATION_WEATHER_RE = /^\/locations\/([^/]+)\/weather$/;
 const LOCATION_PROTOCOL_RE = /^\/locations\/([^/]+)\/protocol\/([^/]+)\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_RE = /^\/locations\/([^/]+)$/;
 
@@ -255,7 +259,8 @@ export function isLocationEntityPath(rawPath: string): boolean {
     LOCATION_RE.test(path) ||
     LOCATION_EVENTS_RE.test(path) ||
     LOCATION_PARTICIPANTS_RE.test(path) ||
-    LOCATION_TOPS_RE.test(path)
+    LOCATION_TOPS_RE.test(path) ||
+    LOCATION_WEATHER_RE.test(path)
   );
 }
 
@@ -342,6 +347,13 @@ export function resolvePageMeta(rawPath: string): PageMeta {
       description:
         "Кто на площадке бежал быстрее всех и кто чаще всех выигрывал: лучшее время " +
         "каждого участника и число побед в абсолюте и среди женщин.",
+    };
+  }
+  if (LOCATION_WEATHER_RE.test(path)) {
+    return {
+      title: "Погода на стартах локации — run5k.run",
+      description:
+        "Какая погода была на субботних стартах площадки и какую обещают к ближайшему.",
     };
   }
   if (LOCATION_RE.test(path)) {
@@ -571,13 +583,15 @@ export function locationPageMeta(
         ". Дата, номер события, финишёры, волонтёры и лучшее время дня.",
         ". Дата, номер, финишёры и лучшее время дня.",
       ),
-      indexable: true,
+      indexable: !isThinSeries(payload),
     };
   }
+  const indexable = !isThinSeries(payload);
 
   // Систему называем и в описании — один раз и по-человечески, подлежащим,
   // а не списком ключевых слов.
-  let lead = platform ? `${platform}, «${name}»` : `Локация «${name}»`;
+  let lead =
+    platform && !nameHasPlatform(name, platform) ? `${platform}, «${name}»` : `Локация «${name}»`;
   if (city) {
     lead += ` (${city})`;
   }
@@ -589,9 +603,11 @@ export function locationPageMeta(
     const candidates: string[] = [];
     if (parts.length) {
       // parts[0] — «271 старт»: сколько их всего за историю площадки.
+      candidates.push(`${lead}. ${recent}. Всего ${parts[0]}. Расширенные результаты и рейтинги.`);
       candidates.push(`${lead}. ${recent}. Всего ${parts[0]}. Результаты и рейтинги.`);
     }
     candidates.push(
+      `${lead}. ${recent}. Расширенные результаты и рейтинги участников.`,
       `${lead}. ${recent}. Результаты и рейтинги участников.`,
       `${lead}. ${recent}. Результаты забегов.`,
       `${lead}. ${recent}.`,
@@ -600,22 +616,22 @@ export function locationPageMeta(
       candidates.find((text) => text.length <= DESCRIPTION_BUDGET) ??
       fitDescription(`${lead}. ${recent}.`);
     return {
-      title: fitTitle(where, " — результаты и статистика", " — результаты"),
+      title: fitTitle(where, " — расширенные результаты", " — результаты"),
       description,
-      indexable: true,
+      indexable,
     };
   }
 
   // Свежего старта нет (площадка без событий) — прежнее описание по суммам.
   return {
-    title: fitTitle(where, " — результаты и статистика", " — результаты"),
+    title: fitTitle(where, " — расширенные результаты", " — результаты"),
     description: describe(
       lead,
       numbers,
       ". Результаты субботних забегов, посещаемость и рейтинги участников.",
       ". Результаты забегов и рейтинги участников.",
     ),
-    indexable: true,
+    indexable,
   };
 }
 
@@ -631,7 +647,6 @@ export function locationProtocolMeta(payload: {
   const name = payload.name || "Локация";
   const platform = PLATFORM_LABELS[payload.platform_code] ?? payload.platform_code;
   const day = formatDate(payload.event_date);
-  const numberPart = payload.event_number ? ` №${payload.event_number}` : "";
   const parts: string[] = [];
   if (payload.summary.finishers) {
     parts.push(
@@ -644,9 +659,9 @@ export function locationProtocolMeta(payload: {
     );
   }
   return {
-    title: fitTitle(`${name}${numberPart} — протокол ${day}`),
+    title: protocolTitle(name, platform, payload.event_number, day),
     description: describe(
-      `Протокол старта ${platform} «${name}» ${day}`,
+      `Расширенные результаты старта ${platform} «${name}» ${day}`.replace("  ", " ").trim(),
       parts.join(", "),
       ". Места по полу и возрастным группам, личные рекорды и новички.",
       ". Места, рекорды и новички дня.",
@@ -675,9 +690,36 @@ function activePlatformLabel(payload: LocationMetaSource): string | null {
   return PLATFORM_LABELS[newest.platform_code] ?? null;
 }
 
+/**
+ * «5 вёрст Парк Горького №214 — расширенные результаты 19.09.2026» — зеркало
+ * protocol_title из seo_service.py: «расширенные» уходят первыми, бренд следом.
+ */
+function protocolTitle(name: string, platform: string, num: number | null, day: string): string {
+  let head = platform && !nameHasPlatform(name, platform) ? `${platform} ${name}` : name;
+  head += num ? ` №${num}` : "";
+  const candidates = [
+    `${head} — расширенные результаты ${day} — ${SITE_NAME}`,
+    `${head} — расширенные результаты ${day}`,
+    `${head} — результаты ${day} — ${SITE_NAME}`,
+  ];
+  return candidates.find((text) => text.length <= TITLE_BUDGET) ?? `${head} — результаты ${day}`;
+}
+
+/** Серия из одного-двух стартов — не посадочная (зеркало is_thin_series). */
+const SERIES_MIN_EVENTS_TO_INDEX = 3;
+
+function isThinSeries(payload: LocationMetaSource): boolean {
+  return payload.is_series === true && (payload.stats?.events_count ?? 0) < SERIES_MIN_EVENTS_TO_INDEX;
+}
+
+/** Название уже начинается с системы: «С95 и друзья» — зеркало _name_has_platform. */
+function nameHasPlatform(name: string, platform: string): boolean {
+  return name.toLowerCase().startsWith(platform.toLowerCase());
+}
+
 /** «5 вёрст Мещерское озеро, Нижний Новгород» — зеркало _location_headline. */
 function locationHeadline(name: string, city: string | null, platform: string | null): string {
-  let head = platform ? `${platform} ${name}` : name;
+  let head = platform && !nameHasPlatform(name, platform) ? `${platform} ${name}` : name;
   const cityText = (city ?? "").trim();
   // Город не приписываем, если он уже внутри названия («Томск Сосновый Бор»).
   if (cityText && !head.toLowerCase().includes(cityText.toLowerCase())) {

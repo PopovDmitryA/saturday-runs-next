@@ -6,6 +6,7 @@ import httpx
 
 from app.auth.providers.base import OAuthProfile
 from app.config import Settings
+from app.core.display_name import strip_email
 
 
 def yandex_authorize_url(settings: Settings, state: str) -> str:
@@ -56,6 +57,10 @@ def yandex_exchange_code(settings: Settings, code: str) -> OAuthProfile:
     display_name = profile.get("display_name") or profile.get("real_name") or profile.get("login")
     if not display_name and email:
         display_name = email.split("@", 1)[0]
+    # У аккаунтов с почтой на своём домене логин и display_name — весь адрес.
+    # Он уезжал в имя публичного профиля и в <title> карточки (см.
+    # app/core/display_name.py) — оставляем только часть до «@».
+    display_name = strip_email(display_name)
     profile_json: dict[str, object] = {"default_email": email}
     if profile.get("login"):
         profile_json["login"] = profile.get("login")

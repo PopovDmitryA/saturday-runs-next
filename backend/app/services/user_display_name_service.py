@@ -21,6 +21,7 @@ from uuid import UUID
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
+from app.core.display_name import strip_email
 from app.models import AuthIdentity, Event, Participant, Platform, PlatformLink, RunResult, User
 from app.services.co_runners_service import _is_unknown_participant_name
 from app.services.platform_titles import PLATFORM_TITLES
@@ -255,7 +256,9 @@ def _fallback_name(db: Session, user: User) -> str:
         .all()
     )
     for identity in identities:
-        name = (identity.display_name or "").strip()
+        # Яндекс у почты на своём домене отдаёт именем весь адрес — на публичной
+        # карточке и в её <title> его быть не должно (app/core/display_name.py).
+        name = strip_email(identity.display_name) or ""
         if name:
             return name[:_MAX_DISPLAY_NAME_LENGTH]
     telegram_parts = [
@@ -268,7 +271,7 @@ def _fallback_name(db: Session, user: User) -> str:
     # Уже показанное имя лучше безликого «Участник #123»: пересчёт имени не
     # должен ухудшать то, что человек видел раньше (например, если провайдер
     # входа вернул профиль без имени).
-    current = (user.display_name or "").strip()
+    current = strip_email(user.display_name) or ""
     if current:
         return current[:_MAX_DISPLAY_NAME_LENGTH]
     return f"Участник #{user.serial_id}"

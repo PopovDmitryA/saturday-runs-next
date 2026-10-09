@@ -101,11 +101,18 @@ def prerender(
             )
         except Exception:  # noqa: BLE001 — аналитика не должна ломать пререндер
             db.rollback()
-    html, status = render_prerendered_page(db, path_with_query)
+    page = render_prerendered_page(db, path_with_query)
+    # 404 и 503 не кэшируем: страница может появиться (новая локация в каталоге)
+    # или подняться после сбоя. 301 кэшируем, как и 200, — адрес основной.
+    headers = {"Cache-Control": "public, max-age=600" if page.status in (200, 301) else "no-store"}
+    if page.location:
+        headers["Location"] = page.location
+    if page.retry_after:
+        headers["Retry-After"] = str(page.retry_after)
+    headers.update(page.headers)
     return Response(
-        content=html,
-        status_code=status,
+        content=page.html,
+        status_code=page.status,
         media_type="text/html; charset=utf-8",
-        # 404 не кэшируем: страница может появиться (новая локация в каталоге).
-        headers={"Cache-Control": "public, max-age=600" if status == 200 else "no-store"},
+        headers=headers,
     )

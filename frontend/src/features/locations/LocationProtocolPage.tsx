@@ -63,7 +63,13 @@ function unifiedWeekHref(eventDate: string): string {
   const monday = new Date(day);
   monday.setDate(day.getDate() - ((day.getDay() + 6) % 7));
   monday.setDate(monday.getDate() + 5);
-  return `/protocol/${monday.toISOString().slice(0, 10)}`;
+  // Дата — в местном времени, как её и считали. toISOString() переводил
+  // полночь субботы в UTC, и в Москве (UTC+3) адрес становился пятничным:
+  // в индекс Яндекса ушли дубли /protocol/{пятница} (выгрузка 03.10.2026).
+  const yyyy = monday.getFullYear();
+  const mm = String(monday.getMonth() + 1).padStart(2, "0");
+  const dd = String(monday.getDate()).padStart(2, "0");
+  return `/protocol/${yyyy}-${mm}-${dd}`;
 }
 
 /** «00:21:07» → секунды; null, если времени нет. */

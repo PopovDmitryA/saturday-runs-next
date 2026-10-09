@@ -376,6 +376,29 @@ def _identity_country(locations: list[tuple[Location, str]]) -> str | None:
     return cast(str | None, _first_by_platform_order(locations, lambda loc: loc.country))
 
 
+def identity_primary_slug(locations: list[tuple[Location, str]]) -> str:
+    """Основной адрес локации — один на сайт, sitemap и canonical.
+
+    До 10.2026 его считали в двух местах по-разному: страница брала первую
+    строку идентичности вместе с parkrun-эпохой и неофициальными строками,
+    каталог (а за ним sitemap) — только витринные строки. У закрытых parkrun-
+    площадок и у части сменивших систему адреса расходились, и Яндекс то
+    выкидывал адрес из sitemap как дубль, то держал в поиске второстепенный
+    (выгрузка «Исключённых страниц» 03.10.2026).
+
+    Правило повторяет выбор каталога: первая витринная строка действующей
+    системы, иначе первая не-parkrun, иначе первая вообще. `locations` уже
+    отсортированы _sort_identity_locations — активная система первой.
+    """
+    for location, code in locations:
+        if code in ("five_verst", "s95", "runpark") and location.is_official_map:
+            return location.external_key.strip().lower()
+    for location, code in locations:
+        if code != "parkrun":
+            return location.external_key.strip().lower()
+    return locations[0][0].external_key.strip().lower()
+
+
 def resolve_location_identity(db: Session, slug: str) -> LocationIdentity | None:
     requested = (slug or "").strip().lower()
     if not requested:
@@ -427,7 +450,7 @@ def resolve_location_identity(db: Session, slug: str) -> LocationIdentity | None
         identity_key=identity_key,
         catalog=catalog,
         locations=locations,
-        slug=locations[0][0].external_key.strip().lower(),
+        slug=identity_primary_slug(locations),
         name=_identity_display_name(catalog, locations, catalog_index),
         catalog_index=catalog_index,
     )
@@ -3449,7 +3472,7 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
         )
         items.append(
             {
-                "slug": primary_location.external_key.strip().lower(),
+                "slug": identity_primary_slug(ordered),
                 "identity_key": identity_key,
                 "name": _identity_display_name(catalog, ordered, catalog_index),
                 "city": _first_by_platform_order(ordered, lambda loc: loc.city),
@@ -3767,7 +3790,7 @@ def _compute_last_results(db: Session) -> dict[str, object]:
         primary_summary = summaries.get(primary_event.id)
         items.append(
             {
-                "slug": primary_location.external_key.strip().lower(),
+                "slug": identity_primary_slug(ordered),
                 "identity_key": identity_key,
                 "name": _identity_display_name(catalog, ordered, catalog_index),
                 "city": _first_by_platform_order(ordered, lambda loc: loc.city),

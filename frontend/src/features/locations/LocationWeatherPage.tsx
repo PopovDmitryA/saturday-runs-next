@@ -184,7 +184,9 @@ export function LocationWeatherPage({ slug }: { slug: string }) {
       applyPageMeta({
         title: `${data.name} — погода на стартах — run5k.run`,
         description: `Какая погода бывает на старте «${data.name}» по месяцам: температура в час старта, дождь и снег, рекорды и явка.`,
-        indexable: true,
+        // noindex, как у пререндера (seo_service.build_location_meta): до
+        // 10.2026 робот получал здесь 404, своей выдачи у страницы нет.
+        indexable: false,
       });
     }
   }, [data]);
