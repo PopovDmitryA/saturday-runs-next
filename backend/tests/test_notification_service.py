@@ -271,8 +271,8 @@ def test_nudge_shown_until_enabled_or_dismissed(db_session: Session) -> None:
     assert notify.nudge_state(db_session, nobody)["show"] is False  # включать нечего
 
 
-def test_nudge_snooze_hides_enable_prompt_for_two_months(db_session: Session) -> None:
-    """«Не сейчас» — на 60 дней, а не до закрытия вкладки.
+def test_nudge_snooze_hides_enable_prompt_for_a_week(db_session: Session) -> None:
+    """«Не сейчас» — на 7 дней, а не до закрытия вкладки.
 
     Карточка бэклога 05.10.2026: окно всплывало при каждом открытии сайта,
     потому что отказ жил только в sessionStorage.

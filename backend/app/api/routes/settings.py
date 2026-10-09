@@ -258,7 +258,7 @@ def snooze_notification_nudge(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> NotificationNudgeState:
-    """«Не сейчас»: не звать включить уведомления ближайшие два месяца."""
+    """«Не сейчас»: не звать включить уведомления ближайшую неделю."""
     notifications.snooze_nudge(db, user.id)
     db.commit()
     return NotificationNudgeState.model_validate(notifications.nudge_state(db, user))

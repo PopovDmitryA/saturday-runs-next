@@ -2170,7 +2170,7 @@ class UserNotificationPrefs(Base):
     # уведомления тому, кто их выключил осознанно.
     settings_touched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     nudge_dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # «Не сейчас» в призыве включить уведомления: молчим NUDGE_SNOOZE_DAYS.
+    # «Не сейчас» в призыве включить уведомления: молчим NUDGE_SNOOZE_DAYS (7).
     nudge_snoozed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
