@@ -3733,6 +3733,10 @@ export function getNotificationNudge() {
   return apiFetch<NotificationNudgeState>("/settings/notifications/nudge");
 }
 
+export function snoozeNotificationNudge() {
+  return apiFetch<NotificationNudgeState>("/settings/notifications/nudge/snooze", { method: "POST" });
+}
+
 export function dismissNotificationNudge() {
   return apiFetch<NotificationNudgeState>("/settings/notifications/nudge/dismiss", { method: "POST" });
 }

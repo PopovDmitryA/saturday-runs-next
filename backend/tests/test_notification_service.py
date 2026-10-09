@@ -271,6 +271,29 @@ def test_nudge_shown_until_enabled_or_dismissed(db_session: Session) -> None:
     assert notify.nudge_state(db_session, nobody)["show"] is False  # включать нечего
 
 
+def test_nudge_snooze_hides_enable_prompt_for_a_week(db_session: Session) -> None:
+    """«Не сейчас» — на 7 дней, а не до закрытия вкладки.
+
+    Карточка бэклога 05.10.2026: окно всплывало при каждом открытии сайта,
+    потому что отказ жил только в sessionStorage.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    user = _make_user(db_session, chat_id=100)
+    notify.snooze_nudge(db_session, user.id)
+    assert notify.nudge_state(db_session, user)["show"] is False
+
+    prefs = notify.get_prefs(db_session, user.id)
+    assert prefs is not None
+    prefs.nudge_snoozed_at = datetime.now(UTC) - timedelta(days=notify.NUDGE_SNOOZE_DAYS - 1)
+    db_session.flush()
+    assert notify.nudge_state(db_session, user)["show"] is False
+
+    prefs.nudge_snoozed_at = datetime.now(UTC) - timedelta(days=notify.NUDGE_SNOOZE_DAYS + 1)
+    db_session.flush()
+    assert notify.nudge_state(db_session, user)["kind"] == "enable"
+
+
 # ---------------------------------------------------------------------------
 # Очередь и доставка
 
