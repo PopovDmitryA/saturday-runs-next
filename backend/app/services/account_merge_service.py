@@ -47,15 +47,17 @@ class AccountMergeError(Exception):
 
 #: Таблицы, ссылающиеся на users.id без ON DELETE: удаление профиля упрётся
 #: в каждую, где остались строки. platform_links снимается отвязкой профилей
-#: до вызова, остальные разбирает delete_user_with_dependencies.
+#: до вызова, остальные разбирает delete_user_with_dependencies (объединение)
+#: и account_deletion_service (удаление профиля самим человеком). Бэклог из
+#: списка ушёл с миграцией 109: авторство — SET NULL, голоса — CASCADE.
+#: Сторож — tests/test_account_deletion.py: новый FK на users без ON DELETE
+#: обязан попасть сюда, в мир сквозного теста удаления и в шаги
+#: account_deletion_service.delete_account.
 BLOCKING_USER_REFERENCES = (
     "platform_links",
     "dashboard_cache",
     "sync_jobs",
     "auth_one_time_tokens",
-    "backlog_cards",
-    "backlog_votes",
-    "backlog_comments",
 )
 
 
@@ -112,21 +114,20 @@ def _reassign_backlog_subscriptions(db: Session, merged_id: UUID, survivor_id: U
     query.update({"user_id": survivor_id}, synchronize_session=False)
 
 
-def _delete_backlog(db: Session, merged_id: UUID) -> None:
-    """Наследника нет — карточки автора уходят вместе с ним (голоса и
-    комментарии под ними снимет ON DELETE CASCADE по card_id)."""
-    db.query(BacklogVote).filter(BacklogVote.user_id == merged_id).delete(synchronize_session=False)
-    db.query(BacklogComment).filter(BacklogComment.author_user_id == merged_id).delete(synchronize_session=False)
-    db.query(BacklogCard).filter(BacklogCard.author_user_id == merged_id).delete(synchronize_session=False)
-
-
 def delete_user_with_dependencies(
     db: Session,
     merged: User,
     *,
-    reassign_to: UUID | None = None,
+    reassign_to: UUID,
 ) -> None:
-    """Удаление профиля со снятием строк, которые FK не гасит сам.
+    """Удаление поглощённого профиля: его строки переезжают к выжившему.
+
+    Только для объединения аккаунтов — наследник обязателен. Удаление профиля
+    без наследника (человек удаляет себя сам) живёт в account_deletion_service:
+    там другой порядок шагов и уборка за пределами базы. До 12.10.2026 здесь
+    была и ветка без наследника, но ни разу не вызывалась и была с ошибками:
+    падала на auth_identities (ORM обнуляет NOT NULL-ключ раньше CASCADE базы)
+    и снимала голоса без пересчёта счётчиков чужих карточек.
 
     Список таблиц — BLOCKING_USER_REFERENCES; забытая означает
     ForeignKeyViolation на DELETE FROM users прямо в лицо пользователю.
@@ -136,13 +137,9 @@ def delete_user_with_dependencies(
     # только помечаются used_at. У любого, кто хоть раз входил через бота,
     # здесь лежит строка — и она держит удаление профиля.
     db.query(AuthOneTimeToken).filter(AuthOneTimeToken.user_id == merged.id).delete(synchronize_session=False)
-    if reassign_to is not None:
-        db.query(SyncJob).filter(SyncJob.user_id == merged.id).update({"user_id": reassign_to})
-        _reassign_backlog(db, merged.id, reassign_to)
-        _reassign_backlog_subscriptions(db, merged.id, reassign_to)
-    else:
-        db.query(SyncJob).filter(SyncJob.user_id == merged.id).delete(synchronize_session=False)
-        _delete_backlog(db, merged.id)
+    db.query(SyncJob).filter(SyncJob.user_id == merged.id).update({"user_id": reassign_to})
+    _reassign_backlog(db, merged.id, reassign_to)
+    _reassign_backlog_subscriptions(db, merged.id, reassign_to)
     db.flush()
     db.delete(merged)
 

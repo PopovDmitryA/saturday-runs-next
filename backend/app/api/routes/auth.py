@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import logging
 from typing import Annotated
@@ -17,6 +18,7 @@ from app.config import Settings, get_settings
 from app.core.admin import user_response
 from app.core.bot_heartbeat import is_bot_alive
 from app.core.redis_client import get_redis_client
+from app.core.return_path import sanitize_return_path
 from app.core.security import generate_token
 from app.core.session import delete_session
 from app.core.signup_guard import SignupContext, ensure_device_cookie, read_device_id
@@ -71,6 +73,7 @@ from app.services.auth_service import (
     create_user_session,
     get_login_request_context,
     get_login_request_status,
+    login_request_return_path,
 )
 from app.services.email_auth_service import link_email
 from app.services.email_auth_service import request_code as request_email_code
@@ -88,6 +91,7 @@ from app.services.oauth_service import (
     confirm_merge,
     get_merge_preview_by_token,
     handle_oauth_callback,
+    peek_oauth_return_path,
     start_oauth_flow,
 )
 from app.services.telegram_login_service import (
@@ -249,8 +253,15 @@ def _signup_context(request: Request | None, settings: Settings) -> SignupContex
     return SignupContext(ip=get_client_ip(request), device_id=read_device_id(request, settings))
 
 
-def _oauth_login_error_redirect(settings: Settings, message: str) -> RedirectResponse:
+def _oauth_login_error_redirect(
+    settings: Settings, message: str, *, return_path: str | None = None
+) -> RedirectResponse:
     login_url = f"{settings.app_base_url.rstrip('/')}/login?oauth_error={quote(message)}"
+    # Со страницы входа человек попробует ещё раз — и вернуться должен туда
+    # же, откуда начинал.
+    safe_return_path = sanitize_return_path(return_path)
+    if safe_return_path is not None:
+        login_url += f"&next={quote(safe_return_path, safe='')}"
     return RedirectResponse(url=login_url, status_code=status.HTTP_302_FOUND)
 
 
@@ -280,23 +291,43 @@ def _oauth_redirect_url(settings: Settings, *, redirect_target: str, merge_token
     return f"{settings.app_base_url.rstrip('/')}/{redirect_target}"
 
 
+def _json_for_script(value: str) -> str:
+    """JSON-строка, которую можно вставить внутрь <script>.
+
+    json.dumps не экранирует «</»: адрес с «</script>» закрыл бы тег и
+    дописал на страницу свою разметку. В адресе теперь есть кусок, пришедший
+    от человека (страница возврата), — экранируем всё, что значимо для HTML.
+    """
+    return (
+        json.dumps(value)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
 def _oauth_success_response(
     settings: Settings,
     signed_session: str,
     redirect_url: str,
 ) -> HTMLResponse:
     """Return HTML (not 302) so iOS Safari stores the session cookie before navigation."""
-    safe_url = redirect_url.replace("&", "&amp;").replace('"', "&quot;")
-    html = f"""<!DOCTYPE html>
+    # Адрес ведёт на страницу, откуда начинали вход, а она пришла от клиента.
+    # Санитайзер её уже закодировал, но страница успеха не должна полагаться
+    # на чужую проверку: атрибут и скрипт экранируем каждый по своим правилам.
+    attr_url = html.escape(redirect_url, quote=True)
+    page = f"""<!DOCTYPE html>
 <html lang="ru"><head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="0;url={safe_url}">
+<meta http-equiv="refresh" content="0;url={attr_url}">
 <title>Вход выполнен</title>
 </head><body>
-<p>Вход выполнен. <a href="{safe_url}">Перейти в личный кабинет</a></p>
-<script>window.location.replace({json.dumps(redirect_url)});</script>
+<p>Вход выполнен. <a href="{attr_url}">Продолжить</a></p>
+<script>window.location.replace({_json_for_script(redirect_url)});</script>
 </body></html>"""
-    response = HTMLResponse(content=html, status_code=status.HTTP_200_OK)
+    response = HTMLResponse(content=page, status_code=status.HTTP_200_OK)
     _set_session_cookie(response, settings, signed_session)
     return response
 
@@ -352,12 +383,14 @@ def login_request(
     response: Response,
     link: Annotated[bool, Query()] = False,
     consent: Annotated[bool, Query()] = False,
+    next_path: Annotated[str | None, Query(alias="next")] = None,
     user_id: Annotated[UUID | None, Depends(get_optional_session_user_id)] = None,
 ) -> LoginRequestResponse:
     """Начать вход подтверждением в боте.
 
     consent — галочка согласия уже стоит на сайте: бот не станет переспрашивать
     у нового человека. Без неё новому покажут условия прямо в боте.
+    next — страница, с которой нажали «Войти»: туда вернут после входа.
     """
     try:
         link_user_id = user_id if link else None
@@ -370,6 +403,7 @@ def login_request(
             link_user_id=link_user_id,
             user_agent=request.headers.get("User-Agent") or "",
             consent=consent or link,
+            return_path=None if link else next_path,
         )
     except AuthError as exc:
         raise _handle_auth_error(exc) from exc
@@ -418,7 +452,9 @@ def login_request_claim(
 
     from app.services.onboarding_service import post_login_redirect_target
 
-    return LoginRequestClaimResponse(redirect=post_login_redirect_target(db, user_id))
+    return LoginRequestClaimResponse(
+        redirect=post_login_redirect_target(db, user_id, login_request_return_path(request_token))
+    )
 
 
 @router.post("/bot/confirm", response_model=BotConfirmResponse, dependencies=[Depends(_verify_bot_secret)])
@@ -514,6 +550,7 @@ def oauth_start(
     request: Request,
     mode: Annotated[str, Query()] = "login",
     consent: Annotated[bool, Query()] = False,
+    next_path: Annotated[str | None, Query(alias="next")] = None,
     user_id: Annotated[UUID | None, Depends(get_optional_session_user_id)] = None,
 ) -> RedirectResponse:
     try:
@@ -525,6 +562,7 @@ def oauth_start(
             mode=mode,
             link_user_id=user_id if mode == "link" else None,
             consent=consent,
+            return_path=None if mode == "link" else next_path,
         )
     except AuthError as exc:
         raise _handle_auth_error(exc) from exc
@@ -605,10 +643,12 @@ def email_verify(
     )
     _set_session_cookie(response, settings, signed_session)
     # Новичка ведём туда же, куда и после OAuth: на онбординг, если профиль
-    # ещё не привязан к беговой системе.
+    # ещё не привязан к беговой системе. Остальных — на страницу, с которой
+    # нажали «Войти»: у кода нет своего состояния на сервере, и адрес
+    # приезжает прямо в теле запроса.
     from app.services.onboarding_service import post_login_redirect_target
 
-    return EmailVerifyResponse(redirect=post_login_redirect_target(db, user_id))
+    return EmailVerifyResponse(redirect=post_login_redirect_target(db, user_id, body.next))
 
 
 @router.get("/telegram/config", response_model=TelegramLoginConfigResponse)
@@ -641,6 +681,7 @@ def telegram_login_start(
     request: Request,
     consent: Annotated[bool, Query()] = False,
     mode: Annotated[str, Query()] = "login",
+    next_path: Annotated[str | None, Query(alias="next")] = None,
     user_id: Annotated[UUID | None, Depends(get_optional_session_user_id)] = None,
 ) -> RedirectResponse:
     """Отправить человека подтверждать вход в Telegram.
@@ -650,7 +691,7 @@ def telegram_login_start(
 
     И режим, и согласие храним в Redis под state, а не в адресе: всё, что
     вернётся в return_to, Telegram не подписывает, и подменить такой параметр
-    может кто угодно.
+    может кто угодно. Туда же — страницу возврата (next).
     """
     if not telegram_login_configured(settings):
         raise _handle_auth_error(AuthError("Вход через Telegram недоступен.", 503))
@@ -665,10 +706,17 @@ def telegram_login_start(
     # свой, и оба должны совпасть с тем, что прописан боту через /setdomain.
     origin = _request_origin(request)
     state = generate_token(24)
+    state_payload: dict[str, str | None] = {
+        "mode": mode,
+        "link_user_id": str(user_id) if mode == "link" else None,
+    }
+    return_path = sanitize_return_path(next_path) if mode != "link" else None
+    if return_path is not None:
+        state_payload["return_path"] = return_path
     get_redis_client().setex(
         f"{TELEGRAM_STATE_PREFIX}{state}",
         TELEGRAM_STATE_TTL_SECONDS,
-        json.dumps({"mode": mode, "link_user_id": str(user_id) if mode == "link" else None}),
+        json.dumps(state_payload),
     )
     return_to = f"{origin}/auth/telegram/return?state={state}"
     url = telegram_authorize_url(settings, origin=origin, return_to=return_to)
@@ -729,7 +777,10 @@ def telegram_widget_login(
 
     from app.services.onboarding_service import post_login_redirect_target
 
-    return TelegramWidgetLoginResponse(redirect=post_login_redirect_target(db, user_id))
+    return_path = state_payload.get("return_path")
+    return TelegramWidgetLoginResponse(
+        redirect=post_login_redirect_target(db, user_id, return_path if isinstance(return_path, str) else None)
+    )
 
 
 @router.post("/email/link", response_model=EmailLinkResponse)
@@ -803,9 +854,12 @@ def oauth_callback(
     error: Annotated[str | None, Query()] = None,
     error_description: Annotated[str | None, Query()] = None,
 ) -> HTMLResponse | RedirectResponse:
+    # Страницу возврата смотрим заранее: handle_oauth_callback забирает state
+    # из Redis первым делом, и при сорвавшемся обмене кода адрес уже потерян.
+    return_path = peek_oauth_return_path(state)
     if error:
         message = error_description or error
-        return _oauth_login_error_redirect(settings, message)
+        return _oauth_login_error_redirect(settings, message, return_path=return_path)
 
     try:
         if provider == "vk":
@@ -819,6 +873,9 @@ def oauth_callback(
             if not code or not state:
                 raise AuthError("OAuth callback is missing code or state.", 400)
             code_value, state_value, device_id_value = code, state, device_id
+        if return_path is None:
+            # VK может прислать state только внутри payload.
+            return_path = peek_oauth_return_path(state_value)
 
         signed_session, _merge_token, redirect_url = _complete_oauth_login(
             db,
@@ -831,8 +888,8 @@ def oauth_callback(
         )
     except (AuthError, json.JSONDecodeError) as exc:
         if isinstance(exc, json.JSONDecodeError):
-            return _oauth_login_error_redirect(settings, "Некорректный ответ VK ID.")
-        return _oauth_login_error_redirect(settings, exc.message)
+            return _oauth_login_error_redirect(settings, "Некорректный ответ VK ID.", return_path=return_path)
+        return _oauth_login_error_redirect(settings, exc.message, return_path=return_path)
 
     return _oauth_success_response(settings, signed_session, redirect_url)
 
@@ -931,7 +988,8 @@ def auth_callback(
 
     from app.services.onboarding_service import post_login_redirect_target
 
-    redirect_url = f"{settings.app_base_url.rstrip('/')}/{post_login_redirect_target(db, user_id)}"
+    target = post_login_redirect_target(db, user_id, login.return_path)
+    redirect_url = f"{settings.app_base_url.rstrip('/')}/{target}"
     response = RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
     _set_session_cookie(response, settings, signed_session)
     return response

@@ -12,6 +12,7 @@ from app.auth.providers.base import OAuthProfile
 from app.config import Settings
 from app.core import email_address
 from app.core.redis_client import get_redis_client
+from app.core.return_path import sanitize_return_path
 from app.core.security import generate_token
 from app.core.signup_guard import (
     SignupContext,
@@ -64,6 +65,7 @@ def start_oauth_flow(
     mode: str,
     link_user_id: UUID | None,
     consent: bool,
+    return_path: str | None = None,
 ) -> str:
     provider = _provider_from_name(provider_name)
     if mode == "login" and not consent:
@@ -85,6 +87,12 @@ def start_oauth_flow(
     }
     if provider == AuthProvider.vk:
         payload["code_verifier"] = vk_provider.generate_code_verifier()
+    # Страница, с которой нажали «Войти»: провайдер вернёт человека на свой
+    # служебный адрес, и наш ?next= до него не доедет — едет в state. При
+    # привязке возврат не нужен: она всегда заканчивается в настройках.
+    safe_return_path = sanitize_return_path(return_path) if mode != "link" else None
+    if safe_return_path is not None:
+        payload["return_path"] = safe_return_path
     get_redis_client().setex(_oauth_state_key(state), OAUTH_STATE_TTL_SECONDS, json.dumps(payload))
 
     if provider == AuthProvider.vk:
@@ -97,6 +105,27 @@ def _load_oauth_state(state: str) -> dict[str, object]:
     if raw is None:
         raise AuthError("OAuth state expired or invalid.", 400)
     return json.loads(raw)
+
+
+def peek_oauth_return_path(state: str | None) -> str | None:
+    """Адрес возврата из state, не забирая сам state.
+
+    handle_oauth_callback забирает state первым делом (GETDEL), и если потом
+    сорвётся обмен кода, адрес уже не достать. Колбэк смотрит его заранее —
+    чтобы с ошибкой отправить человека на вход вместе с исходной страницей.
+    """
+    if not state:
+        return None
+    raw = get_redis_client().get(_oauth_state_key(state))
+    if not isinstance(raw, str):
+        return None
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict) or payload.get("mode") == "link":
+        return None
+    return sanitize_return_path(payload.get("return_path"))
 
 
 def _exchange_profile(
@@ -216,7 +245,12 @@ def handle_oauth_callback(
 
     from app.services.onboarding_service import post_login_redirect_target
 
-    return user.id, None, post_login_redirect_target(db, user.id)
+    return_path = state_payload.get("return_path")
+    return (
+        user.id,
+        None,
+        post_login_redirect_target(db, user.id, return_path if isinstance(return_path, str) else None),
+    )
 
 
 def _user_by_verified_email(db: Session, profile: OAuthProfile) -> User | None:

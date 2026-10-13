@@ -843,13 +843,20 @@ async function apiFetch<T>(
   return JSON.parse(rawText) as T;
 }
 
-export function createLoginRequest(options: { link?: boolean; consent?: boolean } = {}) {
+export function createLoginRequest(
+  options: { link?: boolean; consent?: boolean; next?: string | null } = {},
+) {
   const params = new URLSearchParams();
   if (options.link) {
     params.set("link", "true");
   }
   if (options.consent) {
     params.set("consent", "true");
+  }
+  // Страница, с которой нажали «Войти» (lib/loginReturn): сервер вернёт туда
+  // после подтверждения в боте. Привязке возврат не нужен.
+  if (!options.link && options.next) {
+    params.set("next", options.next);
   }
   const query = params.toString();
   return apiFetch<LoginRequestResponse>(`/auth/login-request${query ? `?${query}` : ""}`, {
@@ -864,8 +871,18 @@ export function claimLoginRequest(requestToken: string) {
   });
 }
 
-export function oauthStartUrl(provider: "vk" | "yandex", mode: "login" | "link", consent = false) {
+export function oauthStartUrl(
+  provider: "vk" | "yandex",
+  mode: "login" | "link",
+  consent = false,
+  next?: string | null,
+) {
   const params = new URLSearchParams({ mode, consent: consent ? "true" : "false" });
+  // Провайдер вернёт человека на свою служебную страницу — адрес возврата
+  // сервер держит в state OAuth и сам поведёт туда после входа.
+  if (mode === "login" && next) {
+    params.set("next", next);
+  }
   return `${API_BASE}/auth/oauth/${provider}/start?${params.toString()}`;
 }
 
@@ -883,10 +900,10 @@ export function requestEmailCode(email: string, consent: boolean, newsConsent = 
   });
 }
 
-export function verifyEmailCode(email: string, code: string) {
+export function verifyEmailCode(email: string, code: string, next?: string | null) {
   return apiFetch<{ redirect: string }>("/auth/email/verify", {
     method: "POST",
-    body: JSON.stringify({ email, code }),
+    body: JSON.stringify(next ? { email, code, next } : { email, code }),
   });
 }
 
@@ -902,8 +919,12 @@ export function getTelegramLoginConfig() {
   return apiFetch<TelegramLoginConfig>("/auth/telegram/config");
 }
 
-export function telegramStartUrl(mode: "login" | "link", consent = false) {
+export function telegramStartUrl(mode: "login" | "link", consent = false, next?: string | null) {
   const params = new URLSearchParams({ mode, consent: consent ? "true" : "false" });
+  // Как у OAuth: адрес возврата сервер хранит в state виджета.
+  if (mode === "login" && next) {
+    params.set("next", next);
+  }
   return `${API_BASE}/auth/telegram/start?${params.toString()}`;
 }
 

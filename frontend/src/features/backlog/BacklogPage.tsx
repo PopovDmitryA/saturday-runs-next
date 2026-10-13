@@ -8,6 +8,7 @@ import { PhotoAttachments } from "../../components/PhotoAttachments";
 import { DonateBlock } from "../../components/DonateBlock";
 import { probeCurrentUser, type User } from "../../lib/api";
 import { formatRelativeTime } from "../../lib/format";
+import { goToLogin } from "../../lib/loginReturn";
 import {
   BACKLOG_CATEGORIES,
   BACKLOG_STATUS_LABELS,
@@ -205,7 +206,20 @@ function sortCards(items: BacklogCard[]): BacklogCard[] {
   });
 }
 
+// Автор удалил профиль (с 12.10.2026 карточки и реплики при этом остаются).
+const DELETED_AUTHOR_LABEL = "Профиль удалён";
+
+function cardAuthorLabel(card: BacklogCard): string {
+  if (card.author_deleted) {
+    return DELETED_AUTHOR_LABEL;
+  }
+  return card.is_anonymous || !card.author_display_name ? "Аноним" : card.author_display_name;
+}
+
 function commentAuthorLabel(comment: BacklogComment): string {
+  if (comment.author_deleted) {
+    return DELETED_AUTHOR_LABEL;
+  }
   if (comment.is_anonymous || !comment.author_display_name) {
     return comment.is_mine ? "Аноним (вы)" : "Аноним";
   }
@@ -388,7 +402,8 @@ function BacklogContent() {
       return;
     }
     if (!isLoggedIn) {
-      window.location.href = "/login";
+      // На вход — и обратно сюда же, к открытой карточке.
+      goToLogin();
       return;
     }
     // Стрелка меняет голос ровно на 1 с клампом в [-1, 1]: с +1 «вниз» даёт 0,
@@ -548,7 +563,7 @@ function BacklogContent() {
             avatarUrl={card.is_anonymous ? null : card.author_avatar_url}
             fullUrl={card.is_anonymous ? null : card.author_avatar_full_url}
           />
-          {card.is_anonymous || !card.author_display_name ? "Аноним" : card.author_display_name}
+          {cardAuthorLabel(card)}
           {" · "}
           {/* Возраст карточки, а не дата: в ленте важнее «давно ли». Точная
               дата — в подсказке; в самой карточке (модалке) остаётся дата. */}
@@ -800,12 +815,12 @@ function BacklogContent() {
                 avatarUrl={openedCard.is_anonymous ? null : openedCard.author_avatar_url}
                 fullUrl={openedCard.is_anonymous ? null : openedCard.author_avatar_full_url}
               />
-              {openedCard.is_anonymous || !openedCard.author_display_name ? (
-                "Аноним"
-              ) : (
+              {!openedCard.is_anonymous && openedCard.author_display_name && openedCard.author_handle ? (
                 <a href={`/users/${openedCard.author_handle}`} target="_blank" rel="noreferrer">
                   {openedCard.author_display_name}
                 </a>
+              ) : (
+                cardAuthorLabel(openedCard)
               )}
               {" · "}
               {formatDate(openedCard.created_at)}

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ApiError, getCurrentUser, type User } from "../lib/api";
+import { withLoginReturn } from "../lib/loginReturn";
 
 type RequireAuthProps = {
   children: (user: User) => ReactNode;
@@ -18,7 +19,10 @@ export function RequireAuth({ children, loginHref = "/login" }: RequireAuthProps
       .then(setUser)
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) {
-          window.location.href = loginHref;
+          // После входа — обратно сюда (?next=, lib/loginReturn). replace, а
+          // не переход: иначе «Назад» со входа вернул бы на эту же страницу,
+          // и она снова отправила бы на вход.
+          window.location.replace(withLoginReturn(loginHref));
           return;
         }
         setError(err instanceof Error ? err.message : "Не удалось проверить сессию");
@@ -40,7 +44,7 @@ export function RequireAuth({ children, loginHref = "/login" }: RequireAuthProps
         <div className="card error">
           <p>{error}</p>
           <p>
-            <a className="btn secondary" href={loginHref}>
+            <a className="btn secondary" href={withLoginReturn(loginHref)}>
               Перейти ко входу
             </a>
           </p>

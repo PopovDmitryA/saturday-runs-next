@@ -79,6 +79,21 @@ def _detach_sync_job_references(db: Session, link_id: UUID) -> None:
     )
 
 
+def release_link_sync_jobs(db: Session, link: PlatformLink) -> int:
+    """Отменить идущие синки по привязке и отцепить от неё историю задач.
+
+    Без этого строку platform_links не удалить: sync_jobs.platform_link_id
+    ссылается на неё без ON DELETE, а воркер дописал бы результат уже в
+    чужую пустоту. Отдельно от unlink_user_profile — для удаления профиля
+    целиком (account_deletion_service): отвязка там была бы лишней работой
+    (пересчёт сводки и имени для профиля, которого через миг не станет) и
+    отказывала бы на выключенной системе. Возвращает число отменённых задач.
+    """
+    cancelled = _cancel_active_sync_jobs(db, link)
+    _detach_sync_job_references(db, link.id)
+    return cancelled
+
+
 def unlink_user_profile(
     db: Session,
     user: User,
@@ -110,8 +125,7 @@ def unlink_user_profile(
     if link is None:
         raise ProfileLinkingError("Профиль на этой платформе не привязан", 404)
 
-    cancelled_jobs = _cancel_active_sync_jobs(db, link)
-    _detach_sync_job_references(db, link.id)
+    cancelled_jobs = release_link_sync_jobs(db, link)
     clear_profile_preview_cache(user.id, platform_code, link.external_url)
 
     db.delete(link)

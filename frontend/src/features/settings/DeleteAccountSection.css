@@ -1,0 +1,88 @@
+/* «Удаление профиля» (DeleteAccountSection.tsx). Отдельный файл, а не
+   index.css: раздел самостоятельный, и стили уезжают вместе с ним. */
+
+/* Приходим по якорю со страницы «О проекте». Шапка сайта липкая — без
+   отступа заголовок раздела уезжает под неё (как у .display-name-card). */
+.delete-account-card {
+  scroll-margin-top: 5rem;
+}
+
+.delete-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Окно подтверждения: списки «удалится / останется» и поле для слова. Общий
+   ConfirmModal центрирует текст и сужает панель до вопроса «да/нет» — здесь
+   читают перечень, поэтому панель шире, текст по левому краю, а на низком
+   экране (телефон с открытой клавиатурой) панель прокручивается целиком. */
+.modal-panel:has(.delete-account-modal) {
+  width: min(100%, 28rem);
+  max-height: calc(100dvh - 2.5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.modal-panel:has(.delete-account-modal) .modal-body {
+  text-align: left;
+}
+
+.delete-account-modal {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.delete-account-modal p {
+  margin: 0;
+}
+
+.delete-account-modal-heading {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.delete-account-list {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.2rem;
+  color: var(--text-2);
+}
+
+.delete-account-cache-note {
+  font-size: 0.85rem;
+}
+
+.delete-account-confirm-label {
+  margin-top: 0.35rem;
+  color: var(--text);
+}
+
+.delete-account-confirm-label strong {
+  color: var(--tint-red-text);
+}
+
+/* 16px и больше — иначе iOS увеличивает страницу при фокусе на поле. */
+.delete-account-confirm-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: max(16px, 1rem);
+}
+
+.delete-account-confirm-input:focus-visible {
+  outline: 2px solid var(--tint-red-border-strong);
+  outline-offset: 1px;
+  border-color: var(--tint-red-text);
+}
+
+.delete-account-confirm-input[aria-invalid="true"] {
+  border-color: var(--tint-red-text);
+}

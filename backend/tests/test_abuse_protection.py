@@ -54,6 +54,9 @@ def test_classify_route_tiers() -> None:
     assert classify_route("/api/auth/logout", "POST") is RouteTier.default
     assert classify_route("/api/profiles/s95/preview", "POST") is RouteTier.expensive
     assert classify_route("/api/dashboard", "GET") is RouteTier.default
+    # Удаление профиля — не вход: тесная корзина OAuth (auth) ему ни к чему.
+    assert classify_route("/api/account/deletion-preview", "GET") is RouteTier.default
+    assert classify_route("/api/account/delete", "POST") is RouteTier.default
     assert classify_route("/api/search", "GET") is RouteTier.search
     assert classify_route("/api/search/log", "POST") is RouteTier.search_log
 

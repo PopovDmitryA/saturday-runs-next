@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -64,6 +65,20 @@ def _author_display(user: User) -> tuple[str, str]:
     return name, handle
 
 
+def _author_label(user: User | None, *, anonymous: bool) -> str:
+    """Подпись автора в текстах уведомлений.
+
+    user=None — автор удалил профиль (миграция 109): карточки и реплики
+    остаются, а имени у них больше нет. На момент создания автор всегда есть,
+    но статус и комментарии приходят и к осиротевшей карточке.
+    """
+    if anonymous:
+        return "аноним"
+    if user is None:
+        return "профиль удалён"
+    return _author_display(user)[0]
+
+
 def _card_link(card_id: UUID) -> str:
     base = get_settings().app_base_url.rstrip("/")
     return f"{base}/backlog?card={card_id}"
@@ -77,7 +92,7 @@ def _truncate(text: str, limit: int) -> str:
 
 
 def _notify_new_card(card: BacklogCard) -> None:
-    author = "аноним" if card.is_anonymous else _author_display(card.author)[0]
+    author = _author_label(card.author, anonymous=card.is_anonymous)
     text = (
         f"🆕 Новая карточка бэклога: [{_TYPE_LABELS[card.type]}] «{card.title}» от {author}\n"
         f"{_truncate(card.description, _DESCRIPTION_PREVIEW_LIMIT)}\n\n{_card_link(card.id)}"
@@ -95,7 +110,7 @@ def _notify_new_vote(card: BacklogCard, value: int) -> None:
 
 
 def _notify_new_comment(card: BacklogCard, comment: BacklogComment) -> None:
-    author = "аноним" if comment.is_anonymous else _author_display(comment.author)[0]
+    author = _author_label(comment.author, anonymous=comment.is_anonymous)
     text = (
         f"💬 Комментарий к «{card.title}» от {author}: "
         f"{_truncate(comment.body, _COMMENT_PREVIEW_LIMIT)}\n\n{_card_link(card.id)}"
@@ -197,7 +212,7 @@ def _queue_for(
 
 def _notify_subscribers(db: Session, card: BacklogCard, comment: BacklogComment) -> None:
     """Новый комментарий — всем следящим за карточкой, кроме автора реплики."""
-    author = "аноним" if comment.is_anonymous else _author_display(comment.author)[0]
+    author = _author_label(comment.author, anonymous=comment.is_anonymous)
     _queue_for(
         db,
         _card_subscribers(db, card.id, exclude=comment.author_user_id),
@@ -215,7 +230,7 @@ def _notify_card_created(db: Session, card: BacklogCard) -> None:
     author = card.author
     _queue_for(
         db,
-        [author],
+        [author] if author is not None else [],
         kind="backlog",
         title=f"✅ Карточка «{card.title}» принята в бэклог",
         text="Спасибо за идею! Будем сообщать сюда о новых комментариях и о том, как меняется статус карточки: "
@@ -230,7 +245,7 @@ def _notify_card_created(db: Session, card: BacklogCard) -> None:
         .filter(User.id != card.author_user_id)
         .all()
     )
-    author_label = "аноним" if card.is_anonymous else _author_display(author)[0]
+    author_label = _author_label(author, anonymous=card.is_anonymous)
     _queue_for(
         db,
         watchers,
@@ -425,7 +440,9 @@ def _card_to_response(
     photos: list[PhotoPayload] | None = None,
     is_subscribed: bool = False,
 ) -> BacklogCardResponse:
-    author_name, author_handle = (None, None) if card.is_anonymous else _author_display(card.author)
+    # Анонимность скрывает автора целиком; у удалившего профиль автора нет вовсе.
+    author = None if card.is_anonymous else card.author
+    author_name, author_handle = _author_display(author) if author is not None else (None, None)
     return BacklogCardResponse(
         id=card.id,
         type=card.type,
@@ -436,8 +453,9 @@ def _card_to_response(
         is_anonymous=card.is_anonymous,
         author_display_name=author_name,
         author_handle=author_handle,
-        author_avatar_url=None if card.is_anonymous else card.author.avatar_url,
-        author_avatar_full_url=None if card.is_anonymous else card.author.avatar_full_url,
+        author_avatar_url=author.avatar_url if author is not None else None,
+        author_avatar_full_url=author.avatar_full_url if author is not None else None,
+        author_deleted=not card.is_anonymous and card.author_user_id is None,
         upvotes=card.upvotes,
         downvotes=card.downvotes,
         score=card.score,
@@ -649,6 +667,53 @@ def update_card_admin(
     return _card_to_admin_response(card, comment_count=comment_count)
 
 
+@dataclass(frozen=True)
+class BacklogDetachResult:
+    """Что стало с бэклогом человека, удалившего профиль."""
+
+    votes_removed: int
+    cards_recounted: int
+    cards_kept: int
+    comments_kept: int
+
+
+def detach_user_from_backlog(db: Session, user_id: UUID) -> BacklogDetachResult:
+    """Бэклог без автора: голоса снять, написанное оставить. Без коммита.
+
+    Шаг удаления профиля (account_deletion_service, решение Дмитрия
+    12.10.2026). Карточки и комментарии остаются с автором «Профиль удалён»:
+    под ними голоса, ответы и подписки других людей. Голоса удаляем сами, а не
+    ждём ON DELETE CASCADE: счётчики карточек денормализованы, и без пересчёта
+    лента сортировала бы по голосам, которых уже нет. Авторство снимаем явным
+    UPDATE, хотя FK сделал бы это сам (SET NULL): так известно, сколько
+    карточек и реплик осталось без автора, — это уходит в заметку админу.
+    """
+    voted_card_ids = [
+        row[0] for row in db.query(BacklogVote.card_id).filter(BacklogVote.user_id == user_id).all()
+    ]
+    votes_removed = 0
+    if voted_card_ids:
+        votes_removed = db.query(BacklogVote).filter(BacklogVote.user_id == user_id).delete(
+            synchronize_session="fetch"
+        )
+        db.flush()
+        for card in db.query(BacklogCard).filter(BacklogCard.id.in_(voted_card_ids)).all():
+            recompute_vote_counts(db, card)
+    cards_kept = db.query(BacklogCard).filter(BacklogCard.author_user_id == user_id).update(
+        {BacklogCard.author_user_id: None}, synchronize_session="fetch"
+    )
+    comments_kept = db.query(BacklogComment).filter(BacklogComment.author_user_id == user_id).update(
+        {BacklogComment.author_user_id: None}, synchronize_session="fetch"
+    )
+    db.flush()
+    return BacklogDetachResult(
+        votes_removed=int(votes_removed),
+        cards_recounted=len(voted_card_ids),
+        cards_kept=int(cards_kept),
+        comments_kept=int(comments_kept),
+    )
+
+
 def recompute_vote_counts(db: Session, card: BacklogCard) -> None:
     """Счётчики карточки пересобираются из строк голосов.
 
@@ -717,27 +782,28 @@ def _is_admin_author(comment: BacklogComment) -> bool:
     идёт вместе с настоящим именем — читатель понимает, что это официальный
     ответ разработчика.
     """
-    return is_admin_user(comment.author, get_settings())
+    author = comment.author
+    return author is not None and is_admin_user(author, get_settings())
 
 
-def _resolve_anonymous(db: Session, author_id: UUID, requested: bool) -> bool:
+def _resolve_anonymous(db: Session, author_id: UUID | None, requested: bool) -> bool:
     """Админ пишет только под своим именем — анонимность для него отключена.
 
     Иначе ответ разработчика выглядел бы как «Аноним» с плашкой «Админ», что
-    только путает читателей.
+    только путает читателей. author_id=None — карточка, чей автор удалил
+    профиль (админ правит её анонимность): проверять некого.
     """
     if not requested:
         return False
-    author = db.get(User, author_id)
+    author = db.get(User, author_id) if author_id is not None else None
     if author is not None and is_admin_user(author, get_settings()):
         return False
     return True
 
 
 def _comment_to_response(comment: BacklogComment, *, viewer_id: UUID | None = None) -> BacklogCommentResponse:
-    author_name, author_handle = (None, None) if comment.is_anonymous else _author_display(comment.author)
-    author_avatar = None if comment.is_anonymous else comment.author.avatar_url
-    author_avatar_full = None if comment.is_anonymous else comment.author.avatar_full_url
+    author = None if comment.is_anonymous else comment.author
+    author_name, author_handle = _author_display(author) if author is not None else (None, None)
     return BacklogCommentResponse(
         id=comment.id,
         card_id=comment.card_id,
@@ -745,8 +811,9 @@ def _comment_to_response(comment: BacklogComment, *, viewer_id: UUID | None = No
         is_anonymous=comment.is_anonymous,
         author_display_name=author_name,
         author_handle=author_handle,
-        author_avatar_url=author_avatar,
-        author_avatar_full_url=author_avatar_full,
+        author_avatar_url=author.avatar_url if author is not None else None,
+        author_avatar_full_url=author.avatar_full_url if author is not None else None,
+        author_deleted=not comment.is_anonymous and comment.author_user_id is None,
         is_admin_author=_is_admin_author(comment),
         is_mine=viewer_id is not None and comment.author_user_id == viewer_id,
         created_at=comment.created_at,
@@ -782,7 +849,10 @@ def create_comment(
 
 
 def _card_to_admin_response(card: BacklogCard, *, comment_count: int) -> BacklogCardAdminResponse:
-    author_name, author_handle = _author_display(card.author)
+    author = card.author
+    author_name, author_handle = _author_display(author) if author is not None else (None, None)
+    # Аватар и админу не показываем у анонимной карточки — как было до 109.
+    avatar_owner = None if card.is_anonymous else author
     return BacklogCardAdminResponse(
         id=card.id,
         type=card.type,
@@ -793,8 +863,9 @@ def _card_to_admin_response(card: BacklogCard, *, comment_count: int) -> Backlog
         is_anonymous=card.is_anonymous,
         author_display_name=author_name,
         author_handle=author_handle,
-        author_avatar_url=None if card.is_anonymous else card.author.avatar_url,
-        author_avatar_full_url=None if card.is_anonymous else card.author.avatar_full_url,
+        author_avatar_url=avatar_owner.avatar_url if avatar_owner is not None else None,
+        author_avatar_full_url=avatar_owner.avatar_full_url if avatar_owner is not None else None,
+        author_deleted=card.author_user_id is None,
         upvotes=card.upvotes,
         downvotes=card.downvotes,
         score=card.score,

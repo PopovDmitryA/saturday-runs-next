@@ -55,6 +55,10 @@ class BacklogCardResponse(BaseModel):
     author_avatar_url: str | None = None
     # Оригинал аватара — раскрывается по клику на неё.
     author_avatar_full_url: str | None = None
+    # Автор удалил профиль: имени, ссылки и аватара нет, фронт пишет «Профиль
+    # удалён». У анонимной карточки остаётся False — анонимность скрывает об
+    # авторе всё, в том числе то, что его больше нет.
+    author_deleted: bool = False
     upvotes: int
     downvotes: int
     score: int
@@ -92,6 +96,8 @@ class BacklogCommentResponse(BaseModel):
     author_handle: str | None = None
     author_avatar_url: str | None = None
     author_avatar_full_url: str | None = None
+    # Автор удалил профиль — как у карточки (BacklogCardResponse.author_deleted).
+    author_deleted: bool = False
     # Ответ администратора/разработчика сайта — помечается на фронте бейджем
     # (админу анонимность недоступна, см. _resolve_anonymous в backlog_service).
     is_admin_author: bool = False
@@ -119,6 +125,8 @@ class BacklogCardAdminResponse(BaseModel):
     author_avatar_url: str | None = None
     # Оригинал аватара — раскрывается по клику на неё.
     author_avatar_full_url: str | None = None
+    # Автор удалил профиль. Админу — всегда, и у анонимной карточки тоже.
+    author_deleted: bool = False
     upvotes: int
     downvotes: int
     score: int

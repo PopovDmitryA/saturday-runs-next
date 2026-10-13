@@ -187,6 +187,26 @@ def get_media_storage() -> MediaStorage:
     return LocalMediaStorage(settings.media_dir)
 
 
+def delete_avatar_media(key: str | None, settings: Settings) -> None:
+    """Снять файл аватарки: ключ хранилища или имя файла на диске.
+
+    Аватарки до переезда на S3 лежали файлом в settings.avatars_dir, и в
+    users.avatar_path тогда хранилось голое имя без папки — по «/» их и
+    различаем. Ошибку хранилища глотаем: файл-сирота хуже 500-ки, но заметно
+    менее вреден. Зовут смена и удаление аватарки (routes/avatars.py) и
+    удаление профиля (account_deletion_service).
+    """
+    if not key:
+        return
+    try:
+        if "/" in key:
+            get_media_storage().delete(key)
+        else:
+            (Path(settings.avatars_dir) / key).unlink(missing_ok=True)
+    except (MediaStorageError, OSError):
+        pass
+
+
 def reset_media_storage_cache() -> None:
     """Сбросить выбранный бэкенд (тесты подменяют настройки на лету)."""
     get_media_storage.cache_clear()

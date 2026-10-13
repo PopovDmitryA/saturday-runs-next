@@ -5,6 +5,8 @@ import {
   getLoginRequestStatus,
   type LoginRequestResponse,
 } from "../../lib/api";
+import { forgetLoginNext, safeReturnPath } from "../../lib/loginReturn";
+import { clearCachedUser } from "../../lib/useOptionalUser";
 import "./telegramBotLogin.css";
 
 // Вход подтверждением в боте. Вкладка создаёт запрос, человек уходит по deep
@@ -22,6 +24,9 @@ type Phase = "starting" | "waiting" | "claiming" | "done" | "denied" | "expired"
 
 type TelegramBotLoginProps = {
   mode: TelegramBotLoginMode;
+  // Страница, с которой нажали «Войти» (только для входа): сервер хранит её
+  // рядом с заявкой и после подтверждения ведёт туда, а не в кабинет.
+  next?: string | null;
   // Куда уводить, когда бот молчит: /auth/telegram/start виджета.
   fallbackHref: string;
   onLinked?: () => void;
@@ -35,6 +40,7 @@ const BOT_SILENT_POLLS = 3;
 
 export function TelegramBotLogin({
   mode,
+  next = null,
   fallbackHref,
   onLinked,
   onMergeRequired,
@@ -46,10 +52,13 @@ export function TelegramBotLogin({
   const [botSilent, setBotSilent] = useState(false);
   const silentPolls = useRef(0);
   const finished = useRef(false);
+  // Заявка создаётся один раз на монтирование: смена next заявку не пересоздаёт.
+  const nextRef = useRef(next);
 
   useEffect(() => {
     let cancelled = false;
-    void createLoginRequest({ link: mode === "link", consent: true })
+    const linking = mode === "link";
+    void createLoginRequest({ link: linking, consent: true, next: linking ? null : nextRef.current })
       .then((result) => {
         if (cancelled) {
           return;
@@ -104,13 +113,20 @@ export function TelegramBotLogin({
           case "confirmed": {
             finish("claiming");
             const result = await claimLoginRequest(token);
+            // Кэш сессии помнит «аноним»: без сброса страница, куда вернёмся,
+            // на миг показала бы вошедшему «Войти».
+            clearCachedUser();
+            forgetLoginNext();
             window.location.replace(`/${result.redirect}`);
             return;
           }
           case "claimed":
-            // Сессию уже забрали (например, в соседней вкладке) — просто уходим.
+            // Сессию уже забрали (например, в соседней вкладке) — просто уходим
+            // туда, откуда начинали вход.
             finish("done");
-            window.location.replace("/dashboard");
+            clearCachedUser();
+            forgetLoginNext();
+            window.location.replace(safeReturnPath(nextRef.current) ?? "/dashboard");
             return;
           case "linked":
             finish("done");

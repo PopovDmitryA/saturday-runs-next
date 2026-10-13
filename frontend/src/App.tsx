@@ -29,6 +29,7 @@ import {
 } from "./lib/portalRoutes";
 import { NotFoundPage } from "./features/NotFoundPage";
 import { TapTooltipLayer } from "./components/TapTooltipLayer";
+import { AccountDeletedNotice } from "./components/AccountDeletedNotice";
 import { SiteSearchDialog } from "./features/portal/nav/SiteSearchDialog";
 import { SearchClaimRunner } from "./features/portal/nav/SearchClaimRunner";
 import { useEntryKey } from "./hooks/useEntryKey";
@@ -37,6 +38,7 @@ import { ShareSheetProvider } from "./features/sharing/ShareSheetContext";
 import { TeaserClaimRunner } from "./features/portal/teaserClaim";
 import { reportAuthDoneOnce } from "./lib/abTest";
 import { getCurrentUser } from "./lib/api";
+import { goToLogin, installLoginLinkReturn } from "./lib/loginReturn";
 import { useOptionalUser } from "./lib/useOptionalUser";
 import { startPageView } from "./lib/pageAnalytics";
 import { applyPageMeta, isLocationEntityPath, resolvePageMeta } from "./lib/pageMeta";
@@ -182,7 +184,8 @@ function CabinetLegacyRedirect({ tab }: { tab: CabinetTabSegmentKey }) {
       return;
     }
     if (user === null) {
-      window.location.replace(PORTAL_LOGIN_HREF);
+      // С возвратом: /dashboard#profiles после входа доведёт до той же секции.
+      goToLogin({ replace: true });
       return;
     }
     const target = profileBaseHref(user) ? cabinetTabHref(user, tab) : null;
@@ -494,6 +497,10 @@ export function App() {
   const path = useAppPath();
   useSitePageviewTracking(path);
   usePageMeta(path);
+  // Любая ссылка «Войти» на сайте уносит адрес текущей страницы в ?next= —
+  // в момент нажатия, раньше роутера (lib/loginReturn). Один перехватчик на
+  // всё приложение: App живёт, пока открыт сайт.
+  useEffect(() => installLoginLinkReturn(), []);
   // Отложенная привязка из тизера главной: сработает на любой странице, куда
   // провайдер вернул человека после входа, поэтому живёт на уровне App.
   const viewer = useOptionalUser();
@@ -515,6 +522,9 @@ export function App() {
       {/* «Это вы?» из поиска → вход → «Это я — привязать» с тем же человеком
           (nav/searchClaim.ts): окно после входа, на любой странице. */}
       <SearchClaimRunner path={path} />
+      {/* «Профиль удалён» на первой странице после удаления профиля из
+          настроек (метка в sessionStorage, см. AccountDeletedNotice). */}
+      <AccountDeletedNotice />
       {/* Тап-подсказки на телефоне — один слой на весь сайт (см. TapTooltipLayer). */}
       <TapTooltipLayer />
       {/* Поиск по сайту — одно окно на всё приложение, открывается из шапки,

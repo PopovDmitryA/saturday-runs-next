@@ -13,6 +13,7 @@ from app.core.abuse_store import is_telegram_banned
 from app.core.admin import is_admin_telegram_id
 from app.core.rate_limit import check_rate_limit
 from app.core.redis_client import get_redis_client
+from app.core.return_path import sanitize_return_path
 from app.core.security import generate_token, hash_token
 from app.core.session import create_session
 from app.core.site_stats import record_login_request
@@ -35,6 +36,10 @@ LOGIN_REQUEST_CONTEXT_PREFIX = "login_req_ctx:"
 # Подтверждённый в боте вход, который вкладка сайта ещё не забрала: user_id
 # под токеном запроса. Живёт столько же, сколько ссылка-страховка в боте.
 LOGIN_REQUEST_CLAIM_PREFIX = "login_req_claim:"
+# Страница, с которой нажали «Войти» (?next= у /login). Отдельным ключом, а не
+# в контексте: контекст стирается при подтверждении в боте, а адрес нужен
+# позже — и вкладке при claim, и ссылке-страховке, пока та жива.
+LOGIN_REQUEST_NEXT_PREFIX = "login_req_next:"
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
@@ -45,10 +50,14 @@ class MagicLinkLogin(NamedTuple):
     first_use=False — по той же ссылке уже входили. Сессия честная и новая, но
     в журнале входов её нужно отличать от самостоятельного логина: иначе второй
     тап по кнопке в чате читается как «сессия слетела сама».
+
+    return_path — страница, с которой человек начинал вход на сайте; None —
+    не было или ключ в Redis уже истёк.
     """
 
     user_id: UUID
     first_use: bool
+    return_path: str | None = None
 
 
 class AuthError(Exception):
@@ -88,6 +97,20 @@ def _login_request_claim_redis_key(token: str) -> str:
     return f"{LOGIN_REQUEST_CLAIM_PREFIX}{token}"
 
 
+def _login_request_next_redis_key(token: str) -> str:
+    return f"{LOGIN_REQUEST_NEXT_PREFIX}{token}"
+
+
+def login_request_return_path(request_token: str) -> str | None:
+    """Адрес возврата заявки на вход через бота — уже проверенный.
+
+    Читаем без удаления: после того как вкладка забрала вход, ссылка-страховка
+    в боте всё ещё работает, и вести она должна туда же.
+    """
+    raw = get_redis_client().get(_login_request_next_redis_key(request_token))
+    return sanitize_return_path(raw)
+
+
 def create_login_request(
     db: Session,
     settings: Settings,
@@ -96,6 +119,7 @@ def create_login_request(
     link_user_id: UUID | None = None,
     user_agent: str = "",
     consent: bool = False,
+    return_path: str | None = None,
 ) -> dict[str, object]:
     rate_key = f"auth:login:ip:{client_ip}"
     if not check_rate_limit(rate_key, settings.auth_rate_limit_login_per_ip, settings.auth_rate_limit_login_window_seconds):
@@ -137,6 +161,14 @@ def create_login_request(
             }
         ),
     )
+    # Привязка заканчивается в настройках, возвращать её некуда.
+    safe_return_path = sanitize_return_path(return_path) if link_user_id is None else None
+    if safe_return_path is not None:
+        redis_client.setex(
+            _login_request_next_redis_key(request_token),
+            settings.login_request_ttl_seconds,
+            safe_return_path,
+        )
 
     bot_username = settings.telegram_bot_username.lstrip("@")
     if not bot_username:
@@ -250,6 +282,7 @@ def bot_deny_login(db: Session, settings: Settings, request_token: str) -> None:
     redis_client.setex(_login_request_redis_key(request_token), settings.login_request_ttl_seconds, "denied")
     redis_client.delete(_login_request_context_redis_key(request_token))
     redis_client.delete(_login_request_link_redis_key(request_token))
+    redis_client.delete(_login_request_next_redis_key(request_token))
 
 
 def claim_login_request(db: Session, settings: Settings, request_token: str) -> UUID:
@@ -446,6 +479,9 @@ def bot_confirm_login(
         settings.magic_link_ttl_seconds,
         str(user.id),
     )
+    # Адрес возврата доживает до конца ссылки-страховки: по ней могут войти и
+    # после claim, а заявка к тому моменту своё уже отжила. Нет ключа — no-op.
+    redis_client.expire(_login_request_next_redis_key(request_token), settings.magic_link_ttl_seconds)
 
     return f"{settings.app_base_url.rstrip('/')}/api/auth/callback?token={raw_magic_token}"
 
@@ -500,7 +536,11 @@ def consume_magic_link(db: Session, settings: Settings, raw_token: str) -> Magic
     user.last_login_at = now
     db.commit()
 
-    return MagicLinkLogin(user_id=user.id, first_use=first_use)
+    # Ссылка знает свою заявку, а заявка — страницу, с которой начинали вход.
+    login_request = db.get(AuthLoginRequest, magic_record.login_request_id)
+    return_path = login_request_return_path(login_request.request_token) if login_request is not None else None
+
+    return MagicLinkLogin(user_id=user.id, first_use=first_use, return_path=return_path)
 
 
 def purge_old_one_time_tokens(db: Session, *, retention_days: int) -> int:

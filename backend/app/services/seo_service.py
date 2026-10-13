@@ -1115,7 +1115,9 @@ def build_robots_txt() -> str:
         # их закрывает canonical, а параметр page у «Обновлений» значим.
         "Clean-param: utm_source&utm_medium&utm_campaign&utm_content&utm_term&yclid&ysclid&gclid&fbclid",
         "Clean-param: from&to&timezone&orgId&peer_id&is_channel&v6probe",
-        "Clean-param: oauth_error&link_error /login",
+        # next — страница возврата после входа (?next= у /login): у каждой
+        # ссылки «Войти» свой, а страница одна.
+        "Clean-param: oauth_error&link_error&next /login",
         "",
         f"Sitemap: {base}/sitemap.xml",
         "",

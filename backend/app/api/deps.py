@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 from uuid import UUID
 
@@ -15,9 +16,11 @@ from app.core.admin import is_admin_user
 # бравшая ПЕРВЫЙ элемент X-Forwarded-For, то есть адрес, который клиент
 # написал сам, — подробности в docstring core/client_ip.py.
 from app.core.client_ip import get_client_ip as get_client_ip
-from app.core.session import get_session_user_id
+from app.core.session import delete_session, get_session_user_id
 from app.db.session import get_db
 from app.models import User
+
+logger = logging.getLogger(__name__)
 
 
 def get_optional_session_user_id(
@@ -33,6 +36,24 @@ def get_optional_session_user_id(
     return UUID(user_id)
 
 
+def _forget_orphan_session(request: Request, settings: Settings) -> None:
+    """Сессия жива, а профиля нет: его удалили с другого устройства или
+    поглотило объединение аккаунтов.
+
+    Индекса «сессии человека» в Redis нет, и обходить все session:* при
+    удалении профиля дорого. Поэтому такие сессии гасим здесь, на первом же
+    запросе с них: иначе каждый заход продлевал бы мёртвую сессию ещё на 30
+    дней (скользящий TTL в get_session_user_id).
+    """
+    signed = request.cookies.get(settings.session_cookie_name)
+    if not signed:
+        return
+    try:
+        delete_session(settings, signed)
+    except Exception:  # noqa: BLE001 — не вышло сейчас, выйдет на следующем запросе
+        logger.exception("auth: failed to drop session of a missing user")
+
+
 def get_current_user(
     db: Annotated[Session, Depends(get_db)],
     user_id: Annotated[UUID | None, Depends(get_optional_session_user_id)],
@@ -43,6 +64,7 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     user = db.query(User).filter(User.id == user_id).one_or_none()
     if user is None:
+        _forget_orphan_session(request, settings)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     from app.core.abuse_store import remember_user_ip
 
@@ -56,10 +78,15 @@ def get_current_user(
 def get_optional_user(
     db: Annotated[Session, Depends(get_db)],
     user_id: Annotated[UUID | None, Depends(get_optional_session_user_id)],
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> User | None:
     if user_id is None:
         return None
-    return db.query(User).filter(User.id == user_id).one_or_none()
+    user = db.query(User).filter(User.id == user_id).one_or_none()
+    if user is None:
+        _forget_orphan_session(request, settings)
+    return user
 
 
 def get_current_admin_user(

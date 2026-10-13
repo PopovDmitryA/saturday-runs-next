@@ -205,7 +205,11 @@ function AdminBacklogContent() {
                           {BACKLOG_TYPE_LABELS[card.type]} · {card.category}
                         </td>
                         <td>
-                          {card.author_display_name}
+                          {card.author_deleted ? (
+                            <span className="muted">Профиль удалён</span>
+                          ) : (
+                            card.author_display_name
+                          )}
                           {card.is_anonymous && (
                             <span
                               className="badge backlog-badge-anon-warn"

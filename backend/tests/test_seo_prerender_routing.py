@@ -174,7 +174,7 @@ def test_robots_closes_service_sections_and_cleans_params() -> None:
     robots = build_robots_txt()
     for closed in ("/organizer", "/auth/", "/welcome", "/backlog", "/demo", "/d/"):
         assert f"Disallow: {closed}\n" in robots
-    assert "Clean-param: oauth_error&link_error /login" in robots
+    assert "Clean-param: oauth_error&link_error&next /login" in robots
     assert "utm_source" in robots
     # Посадочная под «личный кабинет» по-прежнему открыта.
     assert "Disallow: /login" not in robots

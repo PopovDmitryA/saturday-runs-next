@@ -28,6 +28,9 @@ export type BacklogCard = {
   author_handle: string | null;
   author_avatar_url: string | null;
   author_avatar_full_url: string | null;
+  // Автор удалил профиль: имени, ссылки и аватара нет — пишем «Профиль удалён».
+  // У анонимной карточки всегда false: анонимность скрывает автора целиком.
+  author_deleted: boolean;
   upvotes: number;
   downvotes: number;
   score: number;
@@ -53,6 +56,7 @@ export type BacklogComment = {
   author_handle: string | null;
   author_avatar_url: string | null;
   author_avatar_full_url: string | null;
+  author_deleted: boolean;
   is_admin_author: boolean;
   // Считается на бэкенде: своя ли реплика для текущего зрителя (для чата).
   is_mine: boolean;

@@ -4,6 +4,7 @@ import { PROJECT_MISSION } from "../../lib/projectMission";
 import {
   cabinetTabHref,
   PORTAL_BLOG_HREF,
+  PORTAL_CABINET_SETTINGS_HREF,
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
 } from "../../lib/portalRoutes";
@@ -152,7 +153,12 @@ const PUBLIC_SECTIONS = [
   },
 ] as const;
 
-const PRINCIPLES = [
+// Раздел «Удаление профиля» в настройках (якорь — DeleteAccountSection).
+const DELETE_ACCOUNT_HREF = `${PORTAL_CABINET_SETTINGS_HREF}#delete-account`;
+
+type Principle = { title: string; text: string; link?: { href: string; label: string } };
+
+const PRINCIPLES: readonly Principle[] = [
   {
     title: "Неофициальный проект",
     text: "Сайт не связан ни с одной из систем парковых пробежек и не представляет их интересы.",
@@ -163,9 +169,10 @@ const PRINCIPLES = [
   },
   {
     title: "Приватность под контролем",
-    text: "Публичный профиль можно скрыть в настройках, профили платформ — отвязать, а использование — прекратить в любой момент.",
+    text: "Публичный профиль можно скрыть в настройках, профили платформ — отвязать, а сам профиль на сайте — удалить в любой момент.",
+    link: { href: DELETE_ACCOUNT_HREF, label: "Удаление профиля →" },
   },
-] as const;
+];
 
 // Фото автора — тот же снимок, что и в его профиле на сайте (frontend/public).
 const AUTHOR_PHOTO_SRC = "/author-popov.jpg";
@@ -317,7 +324,15 @@ export function PortalAboutPage() {
             {PRINCIPLES.map((principle) => (
               <div className="portal-about-principle" key={principle.title}>
                 <b>{principle.title}</b>
-                <p>{principle.text}</p>
+                <p>
+                  {principle.text}
+                  {principle.link && (
+                    <>
+                      {" "}
+                      <a href={principle.link.href}>{principle.link.label}</a>
+                    </>
+                  )}
+                </p>
               </div>
             ))}
           </div>
@@ -362,7 +377,11 @@ export function PortalAboutPage() {
               <p>
                 Согласие даётся добровольным действием: вход через выбранный способ и привязка
                 профилей на сайте. Вы можете прекратить использование сервиса, отвязать профили
-                платформ и написать автору через контакты ниже.
+                платформ, удалить профиль в настройках — раздел{" "}
+                <a href={DELETE_ACCOUNT_HREF}>«Удаление профиля»</a> — и написать автору через
+                контакты ниже. Удаление стирает профиль, способы входа, привязки, настройки, цели,
+                отзывы и треки; результаты в протоколах беговых систем остаются — они принадлежат
+                системам, а не сайту.
               </p>
             </div>
           </details>

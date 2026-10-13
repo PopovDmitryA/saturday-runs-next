@@ -8,13 +8,14 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.models import BacklogCardStatus, BacklogCardType, User
+from app.models import BacklogCard, BacklogCardStatus, BacklogCardType, BacklogComment, BacklogVote, User
 from app.services.backlog_service import (
     BacklogError,
     create_card,
     create_comment,
     delete_card,
     delete_comment,
+    detach_user_from_backlog,
     get_card,
     list_card_votes_admin,
     list_cards,
@@ -369,3 +370,95 @@ def test_admin_can_edit_any_card_including_status(db_session: Session, admin_set
     )
     assert updated.title == "Правка администратора"
     assert updated.status == BacklogCardStatus.in_progress
+
+
+# ---------------------------------------------------------------------------
+# Автор удалил профиль (миграция 109): карточки и реплики остаются без автора
+
+
+def _orphan(db: Session, user: User) -> None:
+    """Снять автора так же, как это делает удаление профиля."""
+    detach_user_from_backlog(db, user.id)
+    db.delete(user)
+    db.commit()
+    db.expire_all()
+
+
+def test_detach_keeps_content_and_recounts_votes(db_session: Session) -> None:
+    leaving = _make_user(db_session, name="Уходящий")
+    staying = _make_user(db_session, name="Остающийся")
+    own = _make_card(db_session, leaving.id, title="Своя")
+    foreign = _make_card(db_session, staying.id, title="Чужая")
+    vote_card(db_session, own.id, user_id=staying.id, value=1)
+    vote_card(db_session, foreign.id, user_id=leaving.id, value=-1)
+    create_comment(db_session, foreign.id, author_id=leaving.id, body="Реплика", is_anonymous=False)
+
+    result = detach_user_from_backlog(db_session, leaving.id)
+
+    assert (result.votes_removed, result.cards_recounted, result.cards_kept, result.comments_kept) == (1, 1, 1, 1)
+    db_session.commit()
+    foreign_card = db_session.get(BacklogCard, foreign.id)
+    assert foreign_card is not None
+    assert (foreign_card.upvotes, foreign_card.downvotes, foreign_card.score) == (0, 0, 0)
+    own_card = db_session.get(BacklogCard, own.id)
+    assert own_card is not None and own_card.author_user_id is None and own_card.score == 1
+    assert db_session.query(BacklogVote).filter(BacklogVote.user_id == leaving.id).count() == 0
+    comment = db_session.query(BacklogComment).filter(BacklogComment.card_id == foreign.id).one()
+    assert comment.author_user_id is None
+
+
+def test_orphan_card_and_comment_render_as_deleted_profile(db_session: Session) -> None:
+    leaving = _make_user(db_session, name="Уходящий")
+    reader = _make_user(db_session, name="Читатель")
+    card = _make_card(db_session, leaving.id, title="Сирота")
+    hidden = _make_card(db_session, leaving.id, title="Анонимная сирота", is_anonymous=True)
+    create_comment(db_session, card.id, author_id=leaving.id, body="Открыто", is_anonymous=False)
+    create_comment(db_session, card.id, author_id=leaving.id, body="Тайно", is_anonymous=True)
+    _orphan(db_session, leaving)
+
+    public = {item.title: item for item in list_cards(db_session, viewer_id=reader.id)}
+    orphan = public["Сирота"]
+    assert orphan.author_deleted is True
+    assert (orphan.author_display_name, orphan.author_handle, orphan.author_avatar_url) == (None, None, None)
+    assert orphan.is_mine is False
+    # Анонимность скрывает об авторе всё, в том числе то, что его больше нет.
+    assert public["Анонимная сирота"].author_deleted is False
+    assert get_card(db_session, card.id, viewer_id=None).author_deleted is True
+
+    comments = {item.body: item for item in list_comments(db_session, card.id, viewer_id=reader.id)}
+    assert comments["Открыто"].author_deleted is True
+    assert comments["Открыто"].author_handle is None
+    assert comments["Открыто"].is_admin_author is False
+    assert comments["Тайно"].author_deleted is False
+    assert comments["Тайно"].author_display_name is None
+
+    admin = {item.title: item for item in list_cards_admin(db_session)}
+    assert admin["Сирота"].author_deleted is True
+    assert admin["Анонимная сирота"].author_deleted is True
+    assert admin["Сирота"].author_display_name is None
+    assert hidden.id == admin["Анонимная сирота"].id
+
+
+def test_orphan_card_moderation_still_works(db_session: Session, admin_settings: Settings) -> None:
+    leaving = _make_user(db_session, name="Уходящий")
+    stranger = _make_user(db_session, name="Прохожий")
+    admin = _make_user(db_session, name="Дмитрий Попов")
+    admin.telegram_id = ADMIN_TELEGRAM_ID
+    db_session.commit()
+    card = _make_card(db_session, leaving.id, title="Сирота")
+    _orphan(db_session, leaving)
+
+    # Править чужую (ничью) карточку обычный человек не может.
+    with pytest.raises(BacklogError) as exc:
+        update_card(db_session, card.id, editor=stranger, title="Моя теперь")
+    assert exc.value.status_code == 403
+
+    # Админ меняет статус и анонимность; голос и комментарий к ней работают.
+    status_view = update_card_status(db_session, card.id, status=BacklogCardStatus.in_progress)
+    assert status_view.status == BacklogCardStatus.in_progress and status_view.author_deleted is True
+    edited = update_card_admin(db_session, card.id, editor=admin, is_anonymous=True)
+    assert edited.is_anonymous is True
+    voted = vote_card(db_session, card.id, user_id=stranger.id, value=1)
+    assert voted.score == 1
+    reply = create_comment(db_session, card.id, author_id=stranger.id, body="Подхвачу", is_anonymous=False)
+    assert reply.author_display_name == "Прохожий"

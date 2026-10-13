@@ -1985,7 +1985,9 @@ class BacklogCard(Base):
         Enum(BacklogCardStatus, name="backlog_card_status_enum"), nullable=False, server_default="pending"
     )
     is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
-    author_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    # NULL — автор удалил профиль (миграция 109): карточка остаётся, потому что
+    # под ней голоса и ответы других людей; автор показывается «Профиль удалён».
+    author_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     upvotes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     downvotes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     score: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
@@ -1996,14 +1998,16 @@ class BacklogCard(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    author: Mapped["User"] = relationship()
+    author: Mapped["User | None"] = relationship()
 
 
 class BacklogVote(Base):
     __tablename__ = "backlog_votes"
 
     card_id: Mapped[UUID] = mapped_column(ForeignKey("backlog_cards.id", ondelete="CASCADE"), primary_key=True)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    # Голос уходит вместе с профилем (миграция 109); счётчики карточек при
+    # удалении профиля пересчитывает backlog_service.detach_user_from_backlog.
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     value: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -2016,12 +2020,13 @@ class BacklogComment(Base):
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     card_id: Mapped[UUID] = mapped_column(ForeignKey("backlog_cards.id", ondelete="CASCADE"), nullable=False)
-    author_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    # NULL — автор удалил профиль (миграция 109), реплика остаётся в обсуждении.
+    author_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     body: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    author: Mapped["User"] = relationship()
+    author: Mapped["User | None"] = relationship()
 
 
 class LocationRatingPhoto(Base):

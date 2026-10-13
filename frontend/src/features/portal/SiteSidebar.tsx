@@ -31,7 +31,8 @@ import {
 import { logout, type User } from "../../lib/api";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { userLabel } from "../../lib/userLabel";
-import { clearCachedUser, useOptionalUser } from "../../lib/useOptionalUser";
+import { forgetSessionBrowserState } from "../../lib/browserState";
+import { useOptionalUser } from "../../lib/useOptionalUser";
 import {
   CHEVRON_LEFT_ICON,
   CHEVRON_RIGHT_ICON,
@@ -46,8 +47,7 @@ import {
   SETTINGS_ICON,
 } from "./nav/navIcons";
 import { resolveNavState, type SiteSidebarActive } from "./nav/navState";
-import { forgetOrganizer, rememberOrganizerPlace } from "./nav/organizerMemory";
-import { forgetSearchClaim } from "./nav/searchClaim";
+import { rememberOrganizerPlace } from "./nav/organizerMemory";
 import { OrganizerSwitcher, useOrganizerLocations } from "./nav/OrganizerSwitcher";
 import { canSeeOrganizer, isLinkCurrent, type NavSection, type NavSectionKey, type NavPlace } from "./nav/siteNav";
 import "./cabinet/cabinet.css";
@@ -510,12 +510,12 @@ export function LogoutButton({ className }: { className?: string }) {
     try {
       await logout();
     } finally {
-      clearCachedUser();
-      // Роль и локации организатора — тоже личное: следующему, кто войдёт в
-      // этом браузере, «Оргкабинет» чужого не покажет. И отложенное «Это вы?»
-      // из поиска: следующему вошедшему чужого человека не предложим.
-      forgetOrganizer();
-      forgetSearchClaim();
+      // Кэш пользователя, роль и локации организатора, отложенное «Это вы?»
+      // из поиска и адрес возврата после входа — всё это следующему, кто
+      // войдёт в этом браузере, чужим не покажем (lib/browserState).
+      forgetSessionBrowserState();
+      // Голый /login, без ?next=: возвращать на личную страницу после выхода
+      // бессмысленно, а программный переход перехватчик ссылок не трогает.
       window.location.href = PORTAL_LOGIN_HREF;
     }
   };

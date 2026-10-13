@@ -21,6 +21,8 @@ const ENTRY_LIMIT = 40;
 
 const memory = new Map<string, Record<string, unknown>>();
 let hydrated = false;
+/** Снимки забыты (forgetEntryMemory): копию в sessionStorage больше не пишем. */
+let forgotten = false;
 
 function hydrate(): void {
   if (hydrated) {
@@ -47,6 +49,12 @@ function hydrate(): void {
 
 function persist(): void {
   try {
+    if (forgotten) {
+      // Уход с документа после forgetEntryMemory: всё, что успели дописать
+      // в память после «забыть» (позиция прокрутки на pagehide), не копируем.
+      window.sessionStorage.removeItem(STORAGE_KEY);
+      return;
+    }
     window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...memory]));
   } catch {
     // квота или приватный режим: снимок в памяти вкладки всё равно работает
@@ -82,6 +90,29 @@ export function writeEntryValue(name: string, value: unknown, key: string = curr
   values[name] = value;
   memory.set(key, values);
   trim();
+}
+
+/**
+ * Забыть снимки всех записей вкладки — профиль удалён (lib/browserState.ts).
+ *
+ * Стереть ключ sessionStorage мало: снимки живут в памяти, а persist()
+ * на pagehide и visibilitychange — они срабатывают и при уходе с документа
+ * по location.replace сразу после удаления — записал бы их обратно, и
+ * следующий документ поднял бы фильтры и запросы удалённого человека.
+ * Поэтому чистим память и копию, hydrated не даёт чтению поднять копию
+ * заново, а до конца жизни документа копию больше не пишем. Вызывается
+ * перед уходом с документа: снимки в памяти после этого работают, но
+ * перезагрузку уже не переживут.
+ */
+export function forgetEntryMemory(): void {
+  forgotten = true;
+  hydrated = true;
+  memory.clear();
+  try {
+    window.sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // хранилище недоступно — и забывать в нём нечего
+  }
 }
 
 export function installEntryMemory(): void {

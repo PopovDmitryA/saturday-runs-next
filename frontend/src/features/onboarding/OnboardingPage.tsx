@@ -9,7 +9,7 @@ import {
   type User,
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
-import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
+import { loginHref, readLoginNext } from "../../lib/loginReturn";
 import { useProfileLinksChanged } from "../../lib/profileLinksEvents";
 import { PortalHeader } from "../portal/PortalHeader";
 
@@ -72,7 +72,7 @@ function SystemTile({
   );
 }
 
-function OnboardingContent({ user }: { user: User }) {
+function OnboardingContent({ user, returnTo }: { user: User; returnTo: string | null }) {
   const [links, setLinks] = useState<PlatformLink[]>([]);
   const [noAccountCodes, setNoAccountCodes] = useState<Set<string>>(
     () => new Set(user.onboarding_no_account_platforms ?? []),
@@ -144,7 +144,9 @@ function OnboardingContent({ user }: { user: User }) {
     } catch {
       // Флаг онбординга — не повод застрять на странице: кабинет доступен всегда.
     }
-    window.location.href = "/dashboard";
+    // Вход начинали с другой страницы — возвращаем туда, онбординг был лишь
+    // остановкой по пути (сервер привёл сюда как /welcome?next=…).
+    window.location.href = returnTo ?? "/dashboard";
   };
 
   const firstName = (user.display_name ?? "").trim().split(/\s+/)[0] || null;
@@ -231,9 +233,13 @@ function OnboardingContent({ user }: { user: User }) {
           >
             {finishing
               ? "Переходим…"
-              : doneCount > 0
-                ? "Готово — в личный кабинет"
-                : "Перейти в личный кабинет"}
+              : returnTo
+                ? doneCount > 0
+                  ? "Готово — вернуться на страницу"
+                  : "Вернуться на страницу"
+                : doneCount > 0
+                  ? "Готово — в личный кабинет"
+                  : "Перейти в личный кабинет"}
           </button>
           {doneCount === 0 && (
             <button
@@ -252,9 +258,13 @@ function OnboardingContent({ user }: { user: User }) {
 }
 
 export function OnboardingPage() {
+  // Страница, откуда начинали вход: /welcome?next=… (onboarding_service).
+  const [returnTo] = useState<string | null>(() => readLoginNext());
   return (
-    <RequireAuth loginHref={PORTAL_LOGIN_HREF}>
-      {(user) => <OnboardingContent user={user} />}
+    // Сессия пропала прямо на онбординге — после входа вернём туда же, куда
+    // онбординг вёл бы и сам: сам /welcome адресом возврата не бывает.
+    <RequireAuth loginHref={loginHref(returnTo)}>
+      {(user) => <OnboardingContent user={user} returnTo={returnTo} />}
     </RequireAuth>
   );
 }

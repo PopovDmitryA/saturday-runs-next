@@ -41,7 +41,13 @@ from app.api.deps import get_current_user
 from app.config import Settings, get_settings
 from app.core.admin import user_response
 from app.core.image_processing import ImageProcessingError, extract_image_metadata, strip_image_metadata
-from app.core.media_storage import MediaStorageError, build_key, content_type_for, get_media_storage
+from app.core.media_storage import (
+    MediaStorageError,
+    build_key,
+    content_type_for,
+    delete_avatar_media,
+    get_media_storage,
+)
 from app.db.session import get_db
 from app.models import User
 from app.schemas.auth import UserResponse
@@ -60,21 +66,6 @@ _EXTENSION_BY_FORMAT = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp", "GIF": "gif
 
 def _avatar_file(settings: Settings, filename: str) -> Path:
     return Path(settings.avatars_dir) / filename
-
-
-def _delete_stored(key: str | None, settings: Settings) -> None:
-    """Снять старую аватарку: ключ хранилища или файл на диске (старый формат)."""
-    if not key:
-        return
-    try:
-        if "/" in key:
-            get_media_storage().delete(key)
-        else:
-            _avatar_file(settings, key).unlink(missing_ok=True)
-    except (MediaStorageError, OSError):
-        # Недоступное хранилище не должно ронять запрос: файл-сирота хуже
-        # 500-ки, но заметно менее вреден.
-        pass
 
 
 # HEIC с айфонов — см. app/core/image_processing.py.
@@ -159,9 +150,9 @@ async def upload_avatar(
     db.commit()
     # Старые файлы стираем ПОСЛЕ коммита: если коммит упал, аватарка не потеряна.
     if old_preview != preview_key:
-        _delete_stored(old_preview, settings)
+        delete_avatar_media(old_preview, settings)
     if old_full != full_key:
-        _delete_stored(old_full, settings)
+        delete_avatar_media(old_full, settings)
     # Ответ собираем канонически (как /auth/me): model_validate на ORM-модели
     # падает на вложенных auth_identities и не проставляет is_admin.
     return user_response(user, settings, db=db)
@@ -178,8 +169,8 @@ def delete_avatar(
     user.avatar_full_path = None
     user.avatar_exif = None
     db.commit()
-    _delete_stored(old_preview, settings)
-    _delete_stored(old_full, settings)
+    delete_avatar_media(old_preview, settings)
+    delete_avatar_media(old_full, settings)
     return user_response(user, settings, db=db)
 
 

@@ -263,6 +263,10 @@ class EmailCodeResponse(BaseModel):
 class EmailVerifyRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     code: str = Field(min_length=4, max_length=12)
+    # Страница, с которой нажали «Войти» (?next= у /login): после входа ведём
+    # туда. Схема общая с привязкой почты в настройках (/email/link) — там поле
+    # не читается, привязка всегда остаётся в настройках.
+    next: str | None = Field(default=None, max_length=2048)
 
 
 class EmailVerifyResponse(BaseModel):

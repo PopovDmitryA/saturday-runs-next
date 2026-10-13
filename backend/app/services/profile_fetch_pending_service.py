@@ -48,6 +48,18 @@ RUNPARK_SEED_NOTE_PREFIX = "seed from RunPark Pakrun archive"
 # и у s95 — разные платформы, один и тот же паттерн).
 PERMANENT_ERROR_PREFIX = "[permanent] "
 
+# Метка заявки, закрытой удалением профиля (account_deletion_service): все
+# незавершённые заявки человека становятся окончательным отказом, а user_id
+# обнуляет FK. process_pending_row по ней узнаёт заявку, закрытую, пока была
+# в работе, и не возвращает её в очередь — без хозяина она ушла бы анонимным
+# сбором чужого профиля.
+ACCOUNT_DELETED_ERROR = PERMANENT_ERROR_PREFIX + "профиль удалён"
+# Сколько закрытая удалением заявка не переоткрывается заявкой без владельца.
+# Дольше любого сбора: столько может идти прогон, внутри которого импорт сам
+# ставит ту же строку в очередь при бане. Позже анонимный сбор того же
+# публичного профиля (кто-то нашёл его в поиске) — уже обычная заявка.
+ACCOUNT_DELETED_REOPEN_GUARD = timedelta(hours=1)
+
 # Общий порог для двух независимых веток process_pending_row: обычная ошибка
 # (см. "error" ниже) и cooldown/бан (см. "cooldown_exhausted") — обе после
 # этого числа попыток сдаются и ставят PERMANENT_ERROR_PREFIX.
@@ -136,6 +148,20 @@ def enqueue_profile_fetch_pending(
             .order_by(ProfileFetchPending.created_at.desc())
             .first()
         )
+
+    if (
+        existing is not None
+        and user_id is None
+        and existing.last_error == ACCOUNT_DELETED_ERROR
+        and existing.updated_at is not None
+        and existing.updated_at > datetime.now(timezone.utc) - ACCOUNT_DELETED_REOPEN_GUARD
+    ):
+        # Заявку только что закрыло удаление профиля, а сюда пришёл сбор без
+        # владельца — обычно сам демон: импорт активности поймал бан посреди
+        # обработки этой же строки и ставит её в очередь. Переоткрой мы её —
+        # профиль удалённого ушёл бы анонимным сбором (повторное ревью
+        # 13.10.2026).
+        return existing
 
     reason = _reason_from_error(exc)
     cooldown_until = parse_cooldown_until_from_message(str(exc))
@@ -388,6 +414,15 @@ def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
     db.commit()
 
     row_id = row.id
+    # Профиль могли удалить прямо перед нашим коммитом: тогда мы только что
+    # перезаписали его «failed» своим «processing», а user_id уже пуст — и
+    # ниже строка ушла бы анонимным сбором. Метка удаления осталась на месте.
+    db.refresh(row)
+    if row.last_error == ACCOUNT_DELETED_ERROR:
+        row.status = ProfileFetchPendingStatus.failed
+        row.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return "skipped_status"
     platform = _get_platform(db, row.platform_code)
     profile_input = row.canonical_profile_url or row.profile_input
     try:
@@ -426,11 +461,22 @@ def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
         # рабочее состояние; строку перечитываем, потому что после отката её
         # версия в памяти протухла.
         db.rollback()
-        refreshed = db.get(ProfileFetchPending, row_id)
+        # FOR UPDATE: если удаление профиля прямо сейчас закрывает эту строку
+        # в незакоммиченной транзакции, ждём его коммита и видим метку. Без
+        # блокировки чтение вернуло бы прежнее «processing», а наша запись
+        # «pending» легла бы поверх закрытия после его коммита.
+        refreshed = db.get(ProfileFetchPending, row_id, with_for_update=True)
         if refreshed is None:
             logger.warning("pending profile fetch: строка %s исчезла после отката", row_id)
             return "error"
         row = refreshed
+        if row.last_error == ACCOUNT_DELETED_ERROR:
+            # Профиль удалили, пока шёл сбор (отсюда и сама ошибка: «User not
+            # found» или FK на platform_links). Заявку уже закрыли — не
+            # возвращаем её в очередь поверх этой отметки.
+            logger.info("pending profile fetch: строка %s закрыта удалением профиля", row_id)
+            db.rollback()
+            return "skipped_status"
 
         if _is_exit_unavailable_error(exc):
             # Наши выходы молчат — parkrun этого запроса не видел. Строка ни в

@@ -245,6 +245,42 @@ def _fill_profile(profile: LocationCourseProfile, tracks: list[RunTrack]) -> Non
     profile.updated_at = datetime.now(UTC)
 
 
+def refresh_profiles_after_track_removal(db: Session, location_id: UUID) -> tuple[int, int]:
+    """Пересчитывает ВСЕ версии паспорта после того, как часть треков удалили.
+
+    rebuild_location_profile для этого не годится. Он трогает только текущую
+    версию, а эталон, с которым сверяет последние треки, после удаления может
+    описывать как раз удалённые треки: тогда чужие старые треки «уходят» в
+    новую версию, а версия из удалённых треков остаётся в истории со своей
+    линией. Здесь версии треков не меняются: каждая версия собирается заново
+    из своих оставшихся треков, опустевшая снимается, а если снялась текущая —
+    текущей становится самая новая из оставшихся.
+
+    Возвращает (пересобрано версий, снято версий).
+    """
+    refilled = removed = 0
+    survivors: list[LocationCourseProfile] = []
+    for profile in profile_history(db, location_id):
+        tracks = eligible_tracks(db, location_id, course_version=profile.course_version)
+        if not tracks:
+            db.delete(profile)
+            removed += 1
+            continue
+        # _fill_profile меняет линию трассы, только если у треков есть длина;
+        # без сброса в паспорте осталась бы линия удалённого трека.
+        profile.geometry = []
+        _fill_profile(profile, tracks)
+        survivors.append(profile)
+        refilled += 1
+    db.flush()
+
+    # profile_history идёт от новой версии к старой.
+    if survivors and not any(profile.is_current for profile in survivors):
+        survivors[0].is_current = True
+        db.flush()
+    return refilled, removed
+
+
 def rebuild_for_tracks(db: Session, tracks: list[RunTrack]) -> None:
     """Пересобирает паспорта всех локаций, которых коснулись эти треки."""
     for location_id in {track.location_id for track in tracks if track.location_id}:

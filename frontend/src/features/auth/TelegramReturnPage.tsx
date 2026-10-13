@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { loginWithTelegramWidget } from "../../lib/api";
+import { forgetLoginNext, loginRetryHref } from "../../lib/loginReturn";
+import { clearCachedUser } from "../../lib/useOptionalUser";
 
 // Telegram возвращает человека с данными во фрагменте адреса
 // (#tgAuthResult=<base64 от JSON>). Фрагмент браузер сервер не отправляет,
@@ -45,6 +47,11 @@ export function TelegramReturnPage() {
         // тем же телеграмом — тогда несём токен в настройки, где человек решит,
         // объединять ли профили.
         const suffix = result.merge_token ? `?merge_token=${result.merge_token}` : "";
+        // Кэш сессии помнит «аноним» — без сброса страница, куда вернёмся,
+        // на миг показала бы вошедшему «Войти». Страницу возврата сервер
+        // хранил в state виджета, запас вкладки больше не нужен.
+        clearCachedUser();
+        forgetLoginNext();
         window.location.replace(`/${result.redirect}${suffix}`);
       })
       .catch((err: unknown) => {
@@ -58,7 +65,9 @@ export function TelegramReturnPage() {
         <div className="portal-login-card" role="alert">
           <h1 className="portal-login-card-title">Вход не завершён</h1>
           <p>{error}</p>
-          <a className="btn primary" href="/login">
+          {/* Со служебной страницы Telegram наш ?next= сюда не доехал — берём
+              запас вкладки, чтобы повторный вход вернул на исходную страницу. */}
+          <a className="btn primary" href={loginRetryHref()}>
             Вернуться ко входу
           </a>
         </div>

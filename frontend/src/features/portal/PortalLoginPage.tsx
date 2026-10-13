@@ -10,7 +10,9 @@ import {
   verifyEmailCode,
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
+import { forgetLoginNext, readLoginNext, rememberLoginNext } from "../../lib/loginReturn";
 import { PORTAL_ABOUT_PRIVACY_HREF } from "../../lib/portalRoutes";
+import { clearCachedUser } from "../../lib/useOptionalUser";
 import { EmailSpamHint } from "../../components/EmailSpamHint";
 import { TelegramBotLogin } from "../auth/TelegramBotLogin";
 import { peekSearchClaim } from "./nav/searchClaim";
@@ -25,8 +27,8 @@ function readOAuthError(): string | null {
 // Ссылка-страховка из бота ведёт на /api/auth/callback. Когда она не сработала
 // (истекла — она живёт 5 минут), сервер приводит человека сюда с готовым
 // объяснением вместо JSON-а поверх мини-браузера Telegram. Тот, кто по ссылке
-// всё же вошёл, до этого текста не доберётся: проверка сессии выше уводит его
-// на /dashboard.
+// всё же вошёл, до этого текста не доберётся: проверка сессии ниже уводит его
+// на исходную страницу (?next=) или в кабинет.
 function readLinkError(): string | null {
   return new URLSearchParams(window.location.search).get("link_error");
 }
@@ -199,6 +201,10 @@ function MailMark() {
 }
 
 export function PortalLoginPage() {
+  // Страница, с которой нажали «Войти» (?next=, lib/loginReturn). Читаем один
+  // раз: адрес страницы входа потом правится (закрытие ошибки), а возврат —
+  // нет. Каждый способ входа несёт его серверу, тот и решает, куда вести.
+  const [next] = useState<string | null>(() => readLoginNext());
   const consentRef = useRef<HTMLInputElement>(null);
   const [knownDevice] = useState<boolean>(() => hasLoggedInBefore());
   const [consentChecked, setConsentChecked] = useState(() => hasLoggedInBefore());
@@ -238,11 +244,18 @@ export function PortalLoginPage() {
   const [emailSender, setEmailSender] = useState<string>(() => readPendingEmail()?.sender ?? "");
 
   useEffect(() => {
+    // Запас на случай ошибки у провайдера: его служебная страница вернёт
+    // человека на вход без нашего ?next= (OAuthCallbackPage, TelegramReturnPage).
+    rememberLoginNext(next);
+  }, [next]);
+
+  useEffect(() => {
     const timeoutId = window.setTimeout(() => setCheckingAuth(false), 8_000);
     getCurrentUser()
       .then(() => {
         markReturningUser();
-        window.location.href = "/dashboard";
+        forgetLoginNext();
+        window.location.href = next ?? "/dashboard";
       })
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) {
@@ -253,7 +266,7 @@ export function PortalLoginPage() {
         window.clearTimeout(timeoutId);
         setCheckingAuth(false);
       });
-  }, []);
+  }, [next]);
 
   useEffect(() => {
     let cancelled = false;
@@ -344,8 +357,12 @@ export function PortalLoginPage() {
     setEmailError(null);
     setEmailBusy(true);
     try {
-      const result = await verifyEmailCode(email.trim(), emailCode.trim());
+      const result = await verifyEmailCode(email.trim(), emailCode.trim(), next);
       forgetPendingEmail();
+      forgetLoginNext();
+      // Кэш сессии помнит «аноним» с этой страницы: без сброса исходная
+      // страница на долю секунды показала бы вошедшему «Войти».
+      clearCachedUser();
       window.location.href = `/${result.redirect}`;
     } catch (err) {
       setEmailError(err instanceof Error ? err.message : "Не удалось войти");
@@ -426,13 +443,14 @@ export function PortalLoginPage() {
             {telegramBotFlow ? (
               <TelegramBotLogin
                 mode="login"
-                fallbackHref={telegramStartUrl("login", true)}
+                next={next}
+                fallbackHref={telegramStartUrl("login", true, next)}
                 onCancel={() => setTelegramBotFlow(false)}
               />
             ) : (
             <div className="portal-login-providers">
               <a
-                href={oauthStartUrl("vk", "login", true)}
+                href={oauthStartUrl("vk", "login", true, next)}
                 className="portal-login-provider portal-login-provider-vk"
                 data-full-nav
                 onClick={(event) => handleProviderClick(event, "vk")}
@@ -443,7 +461,7 @@ export function PortalLoginPage() {
                 {redirectingProvider === "vk" ? "Переход…" : "Войти через VK"}
               </a>
               <a
-                href={oauthStartUrl("yandex", "login", true)}
+                href={oauthStartUrl("yandex", "login", true, next)}
                 className="portal-login-provider portal-login-provider-yandex"
                 data-full-nav
                 onClick={(event) => handleProviderClick(event, "yandex")}
@@ -455,7 +473,7 @@ export function PortalLoginPage() {
               </a>
               {telegramReady && (
                 <a
-                  href={telegramStartUrl("login", true)}
+                  href={telegramStartUrl("login", true, next)}
                   className="portal-login-provider portal-login-provider-telegram"
                   data-full-nav
                   onClick={(event) => {

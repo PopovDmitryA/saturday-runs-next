@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { AuthProvidersSection } from "./AuthProvidersSection";
 import { AvatarSection } from "./AvatarSection";
+import { DeleteAccountSection } from "./DeleteAccountSection";
 import { DisplayNameSection } from "./DisplayNameSection";
 import { HomeLocationSection } from "./HomeLocationSection";
 import { NewsletterSection } from "./NewsletterSection";
@@ -25,6 +26,7 @@ export function SettingsContent() {
       <ProfileLinkSection />
       <HomeLocationSection />
       <AuthProvidersSection initialMergeToken={mergeToken} />
+      <DeleteAccountSection />
     </>
   );
 
