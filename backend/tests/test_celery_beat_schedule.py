@@ -115,14 +115,15 @@ def test_protocol_watch_stays_out_of_the_five_verst_queue() -> None:
 
 def test_five_verst_reconcile_weekdays_only() -> None:
     """Прогон сверки занимает пару часов и в выходные задерживал часовой latest
-    (duplicate_hour_slot на проде), поэтому ходит только по будням."""
+    (duplicate_hour_slot на проде), поэтому ходит только по будням. С 13.10.2026
+    — раз в сутки: 5 вёрст попросили снизить нагрузку на их серверы."""
     schedule = celery_app.conf.beat_schedule
     assert "five-verst-reconcile-protocols" not in schedule
     assert "five-verst-reconcile-protocols-weekend" not in schedule
 
     weekday = schedule["five-verst-reconcile-protocols-weekday"]
     assert weekday["schedule"].day_of_week == {1, 2, 3, 4, 5}
-    assert weekday["schedule"].hour == {0, 3, 6, 9, 12, 15, 18, 21}
+    assert weekday["schedule"].hour == {22}
 
 
 def test_five_verst_clubs_schedule() -> None:

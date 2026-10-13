@@ -81,7 +81,7 @@ Docker: `worker-five-verst` (`-Q five_verst --concurrency=1`), `beat` — рас
 | `five-verst-latest-saturday-hourly` | `sync_latest_results` | сб 01:00–23:00 каждый час |
 | `five-verst-latest-sunday-hourly` | `sync_latest_results` | вс 00:00–23:00 каждый час |
 | `five-verst-location-rotation` | `sync_location_rotation` | каждые 4 ч, 20 summary одной локации |
-| `five-verst-reconcile-protocols` | `reconcile_stale_protocols` | каждые 3 ч, 100 старейших по `last_protocol_check_at` |
+| `five-verst-reconcile-protocols-weekday` | `reconcile_stale_protocols` | пн–пт 22:10, 90 старейших по `last_protocol_check_at` (до 13.10.2026 — каждые 3 ч; снижено по просьбе 5 вёрст) |
 
 | Celery task | Назначение |
 |-------------|------------|
