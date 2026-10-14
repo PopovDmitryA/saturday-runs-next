@@ -441,6 +441,28 @@ def challenge_progress(
     return result
 
 
+def refresh_challenge_snapshots_quietly(db: Session, user_id: UUID, codes: set[str]) -> bool:
+    """Подвинуть снимки челленджей codes к текущему состоянию, ничего не отправляя.
+
+    Для правок данных задним числом: дозаливка снежного покрова (14.10.2026)
+    закрывает людям клетки «По снегу» за прошлые зимы, и без этого ближайшее
+    сообщение о пробежке выдало бы их за новость (решение Дмитрия — тихо).
+    Остальные челленджи не трогаем: их прогресс с прошлого сообщения человек
+    должен увидеть. Снимка ещё нет — первый скан и так молчит.
+    """
+    prefs = notifications.get_prefs(db, user_id)
+    if prefs is None or (prefs.challenge_levels is None and prefs.challenge_counts is None):
+        return False
+    payload = compute_challenges(db, user_id)
+    if prefs.challenge_levels is not None:
+        levels = challenge_levels_snapshot(payload)
+        prefs.challenge_levels = {**prefs.challenge_levels, **{c: levels[c] for c in codes if c in levels}}
+    if prefs.challenge_counts is not None:
+        counts = challenge_counts_snapshot(payload)
+        prefs.challenge_counts = {**prefs.challenge_counts, **{c: counts[c] for c in codes if c in counts}}
+    return True
+
+
 def ratings_snapshot(db: Session, user: User) -> dict[str, int]:
     """Текущее место в каждом из рейтингов; нет в рейтинге — метрики нет в снимке."""
     snapshot: dict[str, int] = {}

@@ -39,13 +39,14 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import bindparam, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, LocationDescription, Platform, StartWeather
 from app.services.location_freshness import mark_location_results_changed
 from app.services.location_schedule_service import start_time_for_date
+from app.services.start_weather_service import is_snow_cover
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,18 @@ HOURLY_VARS = (
     "wind_gusts_10m",
 )
 
+# Снежный покров ERA5 не отдаёт: snow_depth в его ответе — null на любой дате.
+# С 17.09.2026 окончательная строка писала пустой покров поверх значения от
+# best_match, и к 14.10.2026 он был пуст у всех 66 тыс. строк era5 — вместе с
+# клеткой «По снегу» во «Всепогодном». Покров берём отдельным запросом у
+# ERA5-Land: тот же реанализ на сетке 0.1°, отстаёт ровно как ERA5 (14.10.2026
+# обе модели кончались на 08.10), а на 8 точках за зиму 2024/25 совпал с
+# прежним best_match в 25–26 субботах из 26 — включая побережья, где сетка
+# суши могла бы промахнуться (Сочи, Владивосток, Кронштадт).
+SNOW_DEPTH_MODEL = "era5_land"
+SNOW_DEPTH_VARS = ("snow_depth",)
+FINAL_HOURLY_VARS = tuple(var for var in HOURLY_VARS if var not in SNOW_DEPTH_VARS)
+
 
 @dataclass(frozen=True)
 class WeatherLocation:
@@ -125,15 +138,18 @@ class RateLimitDaily(RuntimeError):
 
 # Open-Meteo считает лимит не запросами, а «вызовами»: один вызов — это две
 # недели по десяти переменным. Запрос на год стоит 27 вызовов, поэтому счётчик
-# HTTP-запросов о расходе суточного лимита не говорит ничего.
+# HTTP-запросов о расходе суточного лимита не говорит ничего. Меньше десяти
+# переменных — дешевле, но не меньше вызова за запрос: у сервиса
+# max(1, переменные/10 × дни/14) (calculateQueryWeight в исходниках Open-Meteo).
 DAYS_PER_CALL = 14
+VARS_PER_CALL = 10
 
 
-def call_weight(start: date, end: date) -> int:
+def call_weight(start: date, end: date, variables: int = len(HOURLY_VARS)) -> int:
     """Во сколько вызовов Open-Meteo обойдётся запрос за этот диапазон дат."""
 
     days = (end - start).days + 1
-    return max(1, -(-days // DAYS_PER_CALL))
+    return max(1, -(-(days * variables) // (DAYS_PER_CALL * VARS_PER_CALL)))
 
 
 # --------------------------------------------------------------------------- scope
@@ -383,6 +399,55 @@ def fetch_archive(
         raise RuntimeError(f"Open-Meteo {response.status_code}: {response.text[:300]}")
 
 
+def fetch_final(
+    client: httpx.Client,
+    latitude: float,
+    longitude: float,
+    start: date,
+    end: date,
+    *,
+    wait_hourly_reset: bool = True,
+) -> dict[str, Any]:
+    """Окончательная строка: ERA5 без покрова плюс покров из ERA5-Land тем же рядом.
+
+    Второй запрос просит часовой пояс первого ответа явно: метки времени у
+    рядов совпадают, и покров встаёт на свой час.
+    """
+
+    payload = fetch_archive(
+        client,
+        latitude,
+        longitude,
+        start,
+        end,
+        wait_hourly_reset=wait_hourly_reset,
+        model=FINAL_MODEL,
+        extra_params={"hourly": ",".join(FINAL_HOURLY_VARS)},
+    )
+    snow = fetch_archive(
+        client,
+        latitude,
+        longitude,
+        start,
+        end,
+        wait_hourly_reset=wait_hourly_reset,
+        model=SNOW_DEPTH_MODEL,
+        extra_params={"hourly": ",".join(SNOW_DEPTH_VARS), "timezone": payload.get("timezone") or "auto"},
+    )
+    hourly = payload.get("hourly")
+    if hourly:
+        snow_hourly = snow.get("hourly") or {}
+        depth_at = dict(zip(snow_hourly.get("time") or [], snow_hourly.get("snow_depth") or [], strict=False))
+        hourly["snow_depth"] = [depth_at.get(stamp) for stamp in hourly.get("time") or []]
+    return payload
+
+
+def final_call_weight(start: date, end: date) -> int:
+    """Вес fetch_final: девять переменных ERA5 и одна ERA5-Land — два запроса."""
+
+    return call_weight(start, end, len(FINAL_HOURLY_VARS)) + call_weight(start, end, len(SNOW_DEPTH_VARS))
+
+
 def _seconds_to_next_hour() -> float:
     now = datetime.now(UTC)
     next_hour = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
@@ -542,12 +607,22 @@ def build_rows(
     return rows, skipped
 
 
+# Колонки, которые пустой ответ не стирает. Покров: если модель промолчала
+# (ERA5-Land не догнал, сбой второго запроса), остаётся значение прошлой
+# ступени лестницы, а не пустота — пустой покров молча закрывал клетку
+# «По снегу». Любое настоящее значение, и ноль тоже, перезаписывает старое.
+KEEP_WHEN_MISSING = ("snow_depth_cm",)
+
+
 def upsert_rows(db: Session, rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
     stmt = insert(StartWeather).values(rows)
     key = {"location_id", "obs_date"}
-    update_cols = {c.name: getattr(stmt.excluded, c.name) for c in StartWeather.__table__.columns if c.name not in key}
+    table = StartWeather.__table__
+    update_cols = {c.name: getattr(stmt.excluded, c.name) for c in table.columns if c.name not in key}
+    for name in KEEP_WHEN_MISSING:
+        update_cols[name] = func.coalesce(getattr(stmt.excluded, name), table.c[name])
     stmt = stmt.on_conflict_do_update(index_elements=["location_id", "obs_date"], set_=update_cols)
     db.execute(stmt)
     return len(rows)
@@ -643,23 +718,31 @@ def collect_location_weather(
             if fresh_dates:
                 groups.append((FALLBACK_MODEL, SOURCE_ARCHIVE, fresh_dates))
         for model, source, group_dates in groups:
-            weight = call_weight(group_dates[0], group_dates[-1])
+            first, last = group_dates[0], group_dates[-1]
+            final = source == SOURCE_ERA5
+            weight = final_call_weight(first, last) if final else call_weight(first, last)
             if weight_budget is not None and stats.weighted_calls + weight > weight_budget:
                 # Бюджет кончился — уходим по-хорошему, недобранное доберём
                 # завтра: строки предыдущих групп уже закоммичены.
                 stats.stopped_by_budget = True
                 return stats
-            payload = fetch_archive(
-                client,
-                location.latitude,
-                location.longitude,
-                group_dates[0],
-                group_dates[-1],
-                wait_hourly_reset=wait_hourly_reset,
-                endpoint=endpoint,
-                model=model,
-            )
-            stats.api_calls += 1
+            if final:
+                payload = fetch_final(
+                    client, location.latitude, location.longitude, first, last, wait_hourly_reset=wait_hourly_reset
+                )
+                stats.api_calls += 2
+            else:
+                payload = fetch_archive(
+                    client,
+                    location.latitude,
+                    location.longitude,
+                    first,
+                    last,
+                    wait_hourly_reset=wait_hourly_reset,
+                    endpoint=endpoint,
+                    model=model,
+                )
+                stats.api_calls += 1
             stats.weighted_calls += weight
             remember_timezone(db, location.id, payload.get("timezone"))
             rows, skipped = build_rows(payload, location, group_dates, fetched_at=datetime.now(UTC), source=source)
@@ -727,6 +810,155 @@ def collect_event_weather(
         mark_location_results_changed(db, [location.id], reason="погода старта")
     db.commit()
     return written
+
+
+# --------------------------------------------------------------------------- snow depth backfill
+
+
+@dataclass(frozen=True)
+class SnowGapLocation:
+    """Локация, у окончательных строк которой покров пустой."""
+
+    id: UUID
+    name: str
+    latitude: float
+    longitude: float
+    timezone: str | None
+    rows: int
+
+
+@dataclass
+class SnowBackfillStats:
+    rows_missing: int = 0
+    rows_filled: int = 0
+    #: Из заполненных — с покровом от 1 см (клетка «По снегу»).
+    rows_with_cover: int = 0
+    #: ERA5-Land не дал значения на час старта — строка осталась пустой.
+    rows_no_data: int = 0
+    api_calls: int = 0
+    weighted_calls: int = 0
+    stopped_by_budget: bool = False
+
+
+def snow_gap_locations(db: Session) -> list[SnowGapLocation]:
+    """Локации со строками era5 без покрова — их и дозаливать."""
+
+    stmt = (
+        select(
+            Location.id,
+            Location.name,
+            Location.latitude,
+            Location.longitude,
+            Location.timezone,
+            func.count(),
+        )
+        .join(StartWeather, StartWeather.location_id == Location.id)
+        .where(StartWeather.source == SOURCE_ERA5, StartWeather.snow_depth_cm.is_(None))
+        .where(Location.latitude.isnot(None), Location.longitude.isnot(None))
+        .group_by(Location.id)
+        .order_by(Location.name)
+    )
+    return [
+        SnowGapLocation(
+            id=row[0],
+            name=row[1],
+            latitude=float(row[2]),
+            longitude=float(row[3]),
+            timezone=row[4],
+            rows=int(row[5]),
+        )
+        for row in db.execute(stmt).all()
+    ]
+
+
+def snow_gap_dates(db: Session, location_id: UUID) -> dict[date, time]:
+    """Даты строк era5 без покрова → время старта, на час которого брать покров."""
+
+    stmt = select(StartWeather.obs_date, StartWeather.start_time_local).where(
+        StartWeather.location_id == location_id,
+        StartWeather.source == SOURCE_ERA5,
+        StartWeather.snow_depth_cm.is_(None),
+    )
+    return {row[0]: row[1] for row in db.execute(stmt).all()}
+
+
+def snow_backfill_weight(dates: Iterable[date]) -> int:
+    """Вес дозаливки по датам одной локации — для --dry-run и бюджета."""
+
+    return sum(call_weight(first, last, len(SNOW_DEPTH_VARS)) for first, last, _ in _year_chunks(sorted(dates)))
+
+
+def backfill_snow_depth(
+    db: Session,
+    client: httpx.Client,
+    location: SnowGapLocation,
+    *,
+    weight_budget: int | None = None,
+    pause_per_weight: float = 0.0,
+    wait_hourly_reset: bool = True,
+) -> SnowBackfillStats:
+    """Дозалить покров ERA5-Land в окончательные строки, где он пуст.
+
+    Пишется только snow_depth_cm и только поверх NULL: остальные колонки, и
+    fetched_at тоже (по нему выбирается порог дождя старых строк), не меняются.
+    Час — по start_time_local строки, как при сборе (sample_hour); часовой
+    пояс — тот, что сбор запомнил у локации, чтобы метки совпали с исходными.
+
+    pause_per_weight — пауза после запроса на единицу его веса: держит темп в
+    вызовах в час, чтобы не отнять часовой лимит у ночных сборов погоды.
+    """
+
+    stats = SnowBackfillStats()
+    gaps = snow_gap_dates(db, location.id)
+    stats.rows_missing = len(gaps)
+    # Закрыть транзакцию чтения до похода в сеть (idle-in-transaction на проде).
+    db.rollback()
+    table = StartWeather.__table__
+    fill = (
+        update(table)
+        .where(
+            table.c.location_id == bindparam("b_location_id"),
+            table.c.obs_date == bindparam("b_obs_date"),
+            table.c.snow_depth_cm.is_(None),
+        )
+        .values(snow_depth_cm=bindparam("b_snow_depth_cm"))
+    )
+    for first, last, chunk_dates in _year_chunks(sorted(gaps)):
+        weight = call_weight(first, last, len(SNOW_DEPTH_VARS))
+        if weight_budget is not None and stats.weighted_calls + weight > weight_budget:
+            stats.stopped_by_budget = True
+            return stats
+        payload = fetch_archive(
+            client,
+            location.latitude,
+            location.longitude,
+            first,
+            last,
+            wait_hourly_reset=wait_hourly_reset,
+            model=SNOW_DEPTH_MODEL,
+            extra_params={"hourly": ",".join(SNOW_DEPTH_VARS), "timezone": location.timezone or "auto"},
+        )
+        stats.api_calls += 1
+        stats.weighted_calls += weight
+        hourly = payload.get("hourly") or {}
+        depth_at = dict(zip(hourly.get("time") or [], hourly.get("snow_depth") or [], strict=False))
+        params: list[dict[str, Any]] = []
+        for obs_date in chunk_dates:
+            depth_m = depth_at.get(f"{obs_date.isoformat()}T{sample_hour(gaps[obs_date]):02d}:00")
+            if depth_m is None:
+                stats.rows_no_data += 1
+                continue
+            depth_cm = _dec(depth_m * 100, 1)
+            params.append({"b_location_id": location.id, "b_obs_date": obs_date, "b_snow_depth_cm": depth_cm})
+            if depth_cm is not None and is_snow_cover(float(depth_cm)):
+                stats.rows_with_cover += 1
+        if params:
+            db.execute(fill, params)
+            stats.rows_filled += len(params)
+        db.commit()
+        if pause_per_weight:
+            _time.sleep(weight * pause_per_weight)
+    return stats
 
 
 def coverage_summary(db: Session) -> tuple[int, int]:

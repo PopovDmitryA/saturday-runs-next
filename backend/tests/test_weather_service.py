@@ -256,6 +256,20 @@ def test_call_weight_counts_two_week_blocks() -> None:
     assert call_weight(date(2025, 1, 1), date(2025, 12, 31)) == 27
 
 
+def test_snow_depth_request_is_cheap() -> None:
+    """Покров из ERA5-Land — одна переменная: суббота стоит вызов, год — три.
+
+    Из запроса ERA5 покров убран (он там всегда пустой), поэтому год
+    окончательных строк стоит те же 27 вызовов, что и до второго запроса.
+    """
+    from app.services.weather_service import call_weight, final_call_weight
+
+    assert call_weight(date(2026, 1, 3), date(2026, 1, 3), 1) == 1
+    assert call_weight(date(2025, 1, 1), date(2025, 12, 31), 1) == 3
+    assert final_call_weight(date(2026, 1, 3), date(2026, 1, 3)) == 2
+    assert final_call_weight(date(2025, 1, 1), date(2025, 12, 31)) == 27
+
+
 def test_liquid_window_does_not_count_snow_as_rain() -> None:
     """Зимний старт под снегопадом — не дождливый.
 
@@ -415,3 +429,233 @@ def test_collect_event_weather_writes_forecast_row_once(db_session) -> None:  # 
     # Старт старше лага архива — сеть не трогаем вовсе.
     assert collect_event_weather(db_session, FakeClient(), location.id, date(2026, 9, 12), today=day) == 0  # type: ignore[arg-type]
     assert len(calls) == 1
+
+
+def _weather_location(db_session, name: str):  # type: ignore[no-untyped-def]
+    """Локация пятёрки со стартом 10.10.2026 — субботой с покровом в Якутске."""
+    import pytest
+
+    from app.models import Event, Location, Platform
+
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        pytest.skip("five_verst platform not seeded")
+    location = Location(
+        platform_id=platform.id,
+        external_key=f"weather-snow-{uuid4().hex[:8]}",
+        name=name,
+        country="Россия",
+        latitude=62.035638,
+        longitude=129.714129,
+        source_url="https://5verst.ru/weather-snow/",
+    )
+    db_session.add(location)
+    db_session.flush()
+    day = date(2026, 10, 10)
+    db_session.add(
+        Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"{location.external_key}:1:{day.isoformat()}",
+            event_date=day,
+            title=name,
+        )
+    )
+    return location, day
+
+
+def _archive_row(location_id, day: date, snow_cm: str) -> dict[str, object]:  # type: ignore[no-untyped-def]
+    return {
+        "location_id": location_id,
+        "obs_date": day,
+        "start_time_local": time(9, 0),
+        "source": "archive",
+        "temperature_c": Decimal("-5.1"),
+        "snow_depth_cm": Decimal(snow_cm),
+        "fetched_at": datetime(2026, 10, 12, tzinfo=UTC),
+    }
+
+
+def test_era5_rewrite_keeps_snow_cover(db_session) -> None:  # type: ignore[no-untyped-def]
+    """Пустой покров окончательной строки не стирает покров от best_match.
+
+    До 14.10.2026 перепись ERA5 обнуляла его у всех: клетка «По снегу» за
+    10.10.2026 в Якутске, Мирном и Тынде пропала бы через неделю.
+    """
+    from app.models import StartWeather
+    from app.services.weather_service import upsert_rows
+
+    location, day = _weather_location(db_session, "Снежный парк")
+    db_session.flush()
+    upsert_rows(db_session, [_archive_row(location.id, day, "21.0")])
+
+    era5 = {**_archive_row(location.id, day, "0"), "source": "era5", "temperature_c": Decimal("-6.0")}
+    upsert_rows(db_session, [{**era5, "snow_depth_cm": None}])
+    db_session.expire_all()
+    row = db_session.get(StartWeather, (location.id, day))
+    assert row.source == "era5"
+    assert row.temperature_c == Decimal("-6.0")
+    assert row.snow_depth_cm == Decimal("21.0")
+
+    # Настоящее значение, даже ноль, по-прежнему перезаписывает.
+    upsert_rows(db_session, [era5])
+    db_session.expire_all()
+    assert db_session.get(StartWeather, (location.id, day)).snow_depth_cm == Decimal("0.0")
+
+
+def test_final_rows_take_snow_depth_from_era5_land(db_session) -> None:  # type: ignore[no-untyped-def]
+    """Окончательная строка: погода ERA5, покров ERA5-Land по тем же часам."""
+    from datetime import timedelta
+
+    import httpx
+
+    from app.models import StartWeather
+    from app.services.weather_service import (
+        FINAL_MODEL,
+        SNOW_DEPTH_MODEL,
+        WeatherLocation,
+        collect_location_weather,
+        upsert_rows,
+    )
+
+    location, day = _weather_location(db_session, "Снежный парк ERA5")
+    db_session.flush()
+    upsert_rows(db_session, [_archive_row(location.id, day, "1.0")])
+    # Сбор откатывает транзакцию перед походом в сеть — подготовку фиксируем.
+    db_session.commit()
+    target = WeatherLocation(
+        id=location.id,
+        name=location.name,
+        platform_code="five_verst",
+        country="Россия",
+        latitude=62.035638,
+        longitude=129.714129,
+        schedule=None,
+    )
+    calls: list[dict[str, str]] = []
+    snow_m: dict[str, float | None] = {"value": 0.33}
+
+    class FakeClient:
+        def get(self, url, params, timeout):  # type: ignore[no-untyped-def]
+            calls.append(params)
+            start = date.fromisoformat(params["start_date"])
+            days = (date.fromisoformat(params["end_date"]) - start).days + 1
+            stamps = [f"{start + timedelta(days=d)}T{h:02d}:00" for d in range(days) for h in range(24)]
+            if params["models"] == SNOW_DEPTH_MODEL:
+                # Ряд покрова задом наперёд: склейка обязана идти по меткам, а не по позиции.
+                hourly = {"time": stamps[::-1], "snow_depth": [snow_m["value"]] * len(stamps)}
+            else:
+                hourly = {"time": stamps, **{var: [-6.0] * len(stamps) for var in params["hourly"].split(",")}}
+            body = {"timezone": "Asia/Yakutsk", "hourly": hourly}
+            return httpx.Response(200, json=body, request=httpx.Request("GET", url))
+
+    today = date(2026, 10, 17)  # ERA5 дошёл до 11.10: 10.10 — окончательная
+    stats = collect_location_weather(db_session, FakeClient(), target, today=today, pause_seconds=0)  # type: ignore[arg-type]
+    era5_call, snow_call = calls
+    assert era5_call["models"] == FINAL_MODEL
+    assert "snow_depth" not in era5_call["hourly"].split(",")
+    assert snow_call["models"] == SNOW_DEPTH_MODEL
+    assert snow_call["hourly"] == "snow_depth"
+    # Часовой пояс второго запроса — из первого ответа, чтобы метки совпали.
+    assert snow_call["timezone"] == "Asia/Yakutsk"
+    assert stats.api_calls == 2 and stats.weighted_calls == 2
+    db_session.expire_all()
+    row = db_session.get(StartWeather, (location.id, day))
+    assert row.source == "era5"
+    assert row.temperature_c == Decimal("-6.0")
+    assert row.snow_depth_cm == Decimal("33.0")
+
+    # ERA5-Land промолчал — покров остаётся прежним, а не пустым.
+    snow_m["value"] = None
+    calls.clear()
+    collect_location_weather(db_session, FakeClient(), target, today=today, resume=False, pause_seconds=0)  # type: ignore[arg-type]
+    assert len(calls) == 2
+    db_session.expire_all()
+    assert db_session.get(StartWeather, (location.id, day)).snow_depth_cm == Decimal("33.0")
+
+
+def test_backfill_snow_depth_fills_only_empty_final_rows(db_session) -> None:  # type: ignore[no-untyped-def]
+    """Дозаливка истории: только пустой покров строк era5, на час старта строки."""
+    from datetime import timedelta
+
+    import httpx
+    import pytest
+
+    from app.models import Location, Platform, StartWeather
+    from app.services.weather_service import SNOW_DEPTH_MODEL, backfill_snow_depth, snow_gap_locations, upsert_rows
+
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        pytest.skip("five_verst platform not seeded")
+    location = Location(
+        platform_id=platform.id,
+        external_key=f"weather-backfill-{uuid4().hex[:8]}",
+        name=f"Снежная дозаливка {uuid4().hex[:6]}",
+        country="Россия",
+        latitude=62.035638,
+        longitude=129.714129,
+        timezone="Asia/Yakutsk",
+        source_url="https://5verst.ru/weather-backfill/",
+    )
+    db_session.add(location)
+    db_session.flush()
+    old_fetch = datetime(2026, 9, 18, tzinfo=UTC)
+
+    def row(day: date, source: str, snow: str | None, start: time = time(9, 0)) -> dict[str, object]:
+        return {
+            "location_id": location.id,
+            "obs_date": day,
+            "start_time_local": start,
+            "source": source,
+            "temperature_c": Decimal("-30.0"),
+            "snow_depth_cm": Decimal(snow) if snow is not None else None,
+            "fetched_at": old_fetch,
+        }
+
+    upsert_rows(
+        db_session,
+        [
+            row(date(2025, 1, 4), "era5", None),
+            row(date(2025, 1, 11), "era5", None, start=time(8, 0)),  # летнее расписание не при чём: час строки
+            row(date(2025, 1, 18), "era5", "5.0"),  # уже есть — не трогаем
+            row(date(2025, 1, 25), "archive", None),  # не окончательная — её перепишет сбор
+            row(date(2025, 2, 1), "era5", None),  # у ERA5-Land нет значения — остаётся пустой
+        ],
+    )
+    # Дозаливка откатывает транзакцию перед походом в сеть — подготовку фиксируем.
+    db_session.commit()
+    gap = next(loc for loc in snow_gap_locations(db_session) if loc.id == location.id)
+    assert gap.rows == 3 and gap.timezone == "Asia/Yakutsk"
+
+    calls: list[dict[str, str]] = []
+
+    class FakeClient:
+        def get(self, url, params, timeout):  # type: ignore[no-untyped-def]
+            calls.append(params)
+            start = date.fromisoformat(params["start_date"])
+            days = (date.fromisoformat(params["end_date"]) - start).days + 1
+            stamps = [f"{start + timedelta(days=d)}T{h:02d}:00" for d in range(days) for h in range(24)]
+            # Покров в метрах = час / 100: по значению видно, какой час взят.
+            depth = [None if s.startswith("2025-02-01") else int(s[11:13]) / 100 for s in stamps]
+            body = {"timezone": params["timezone"], "hourly": {"time": stamps, "snow_depth": depth}}
+            return httpx.Response(200, json=body, request=httpx.Request("GET", url))
+
+    stats = backfill_snow_depth(db_session, FakeClient(), gap)  # type: ignore[arg-type]
+    (call,) = calls
+    assert call["models"] == SNOW_DEPTH_MODEL
+    assert call["hourly"] == "snow_depth"
+    assert call["timezone"] == "Asia/Yakutsk"
+    assert (call["start_date"], call["end_date"]) == ("2025-01-04", "2025-02-01")
+    assert (stats.rows_missing, stats.rows_filled, stats.rows_with_cover, stats.rows_no_data) == (3, 2, 2, 1)
+    assert stats.weighted_calls == 1
+
+    db_session.expire_all()
+    got = {r.obs_date: r for r in db_session.query(StartWeather).filter(StartWeather.location_id == location.id).all()}
+    assert got[date(2025, 1, 4)].snow_depth_cm == Decimal("9.0")
+    assert got[date(2025, 1, 11)].snow_depth_cm == Decimal("8.0")
+    assert got[date(2025, 1, 18)].snow_depth_cm == Decimal("5.0")
+    assert got[date(2025, 1, 25)].snow_depth_cm is None
+    assert got[date(2025, 2, 1)].snow_depth_cm is None
+    # Остальное в строке не меняется: по fetched_at выбирается порог дождя.
+    assert got[date(2025, 1, 4)].fetched_at == old_fetch
+    assert got[date(2025, 1, 4)].temperature_c == Decimal("-30.0")

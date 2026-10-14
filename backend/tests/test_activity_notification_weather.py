@@ -73,3 +73,52 @@ def test_old_milestones_are_not_announced() -> None:
     assert fresh == [today]
     # Первый снимок по-прежнему молчит.
     assert new_milestones(None, [milestone_key(today)], [today], since=date(2026, 9, 12)) == []
+
+
+def test_quiet_snapshot_refresh_hides_only_backfilled_challenge(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Дозаливка покрова не приходит новостью, а настоящий прогресс — приходит.
+
+    Решение Дмитрия 14.10.2026: вернувшиеся клетки «По снегу» за прошлые зимы
+    двигаем в снимке молча, остальные челленджи ждут своего сообщения.
+    """
+    from app.models import User, UserNotificationPrefs
+    from app.services import activity_notification_service as ans
+
+    payload = {
+        "challenges": [
+            {"code": "all_weather", "current": 6, "tiers": [{"tier": "solo", "level": "silver"}]},
+            {"code": "rain_runner", "current": 4, "tiers": [{"tier": "solo", "level": "bronze"}]},
+        ]
+    }
+    monkeypatch.setattr(ans, "compute_challenges", lambda db, user_id: payload)
+    user = User(display_name=f"Снежный {uuid4().hex[:6]}")
+    fresh = User(display_name=f"Без снимка {uuid4().hex[:6]}")
+    db_session.add_all([user, fresh])
+    db_session.flush()
+    db_session.add_all(
+        [
+            UserNotificationPrefs(
+                user_id=user.id,
+                challenge_levels={"all_weather": {"solo": "bronze"}, "rain_runner": {"solo": None}},
+                challenge_counts={"all_weather": 3, "rain_runner": 2},
+            ),
+            UserNotificationPrefs(user_id=fresh.id),
+        ]
+    )
+    db_session.flush()
+
+    assert ans.refresh_challenge_snapshots_quietly(db_session, user.id, {"all_weather"})
+    prefs = db_session.get(UserNotificationPrefs, user.id)
+    assert prefs.challenge_levels == {"all_weather": {"solo": "silver"}, "rain_runner": {"solo": None}}
+    assert prefs.challenge_counts == {"all_weather": 6, "rain_runner": 2}
+    # Ближайшее сообщение: «Всепогодного» в нём нет, «Под дождём» — есть.
+    current_levels = ans.challenge_levels_snapshot(payload)
+    assert [u.code for u in ans.level_ups(prefs.challenge_levels, current_levels, payload)] == ["rain_runner"]
+    progress = ans.challenge_progress(
+        prefs.challenge_counts, ans.challenge_counts_snapshot(payload), payload, exclude=set()
+    )
+    assert [p.code for p in progress] == ["rain_runner"]
+
+    # Снимка ещё нет — первый скан и так молчит, трогать нечего.
+    assert not ans.refresh_challenge_snapshots_quietly(db_session, fresh.id, {"all_weather"})
+    assert db_session.get(UserNotificationPrefs, fresh.id).challenge_levels is None
