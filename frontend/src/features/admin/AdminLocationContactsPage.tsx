@@ -7,11 +7,13 @@ import {
   createAdminLocationContactLink,
   deleteAdminLocationContactLink,
   getAdminLocationContacts,
+  setAdminLocationStatusOverride,
   updateAdminLocationAnnounceSettings,
   updateAdminLocationContactLink,
   type LocationContactItem,
   type LocationContactLink,
   type LocationContactList,
+  type LocationStatusOverride,
 } from "../../lib/api";
 import { AdminSubnav } from "./AdminSubnav";
 
@@ -311,6 +313,38 @@ function AdminLocationContactsContent() {
     }
   };
 
+  // Ручной статус строки локации: «авто» — статус считают реестр и правило
+  // 100 дней, иначе — как поставил админ (Томск Сосновый Бор переехал, а
+  // реестр 5 вёрст этого не отмечает).
+  const handleStatusChange = async (groupKey: string, locationId: string, value: string) => {
+    const statusOverride = value === "" ? null : (value as LocationStatusOverride);
+    setError(null);
+    try {
+      const saved = await setAdminLocationStatusOverride(locationId, statusOverride);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((row) =>
+                row.group_key === groupKey
+                  ? {
+                      ...row,
+                      platforms: row.platforms.map((platform) =>
+                        platform.location_id === locationId
+                          ? { ...platform, status_override: saved.status_override, is_paused: saved.is_paused }
+                          : platform,
+                      ),
+                    }
+                  : row,
+              ),
+            }
+          : prev,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сменить статус");
+    }
+  };
+
   const handleContactsChanged = (groupKey: string, contacts: LocationContactLink[]) => {
     setData((prev) =>
       prev
@@ -409,6 +443,19 @@ function AdminLocationContactsContent() {
                                   {platform.is_paused ? " пауза" : ""}
                                 </span>
                               )}
+                              <select
+                                className="contact-status-select"
+                                aria-label={`Статус: ${platform.location_name}`}
+                                title="Ручной статус сильнее реестра системы и правила 100 дней. «Не действует» снимется само, если локация проведёт старт"
+                                value={platform.status_override ?? ""}
+                                onChange={(event) =>
+                                  void handleStatusChange(item.group_key, platform.location_id, event.target.value)
+                                }
+                              >
+                                <option value="">статус: авто</option>
+                                <option value="inactive">не действует</option>
+                                <option value="active">действует</option>
+                              </select>
                             </span>
                           ))}
                         </div>

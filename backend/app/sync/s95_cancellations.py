@@ -135,7 +135,7 @@ def watch_s95_cancellations(db: Session, *, notify: bool = True) -> S95Cancellat
             continue
         _, _, cancel_changed = apply_location_registry_flags(
             row,
-            is_paused=row.is_paused,
+            is_paused=None,
             is_cancelled=True,
             is_upcoming=row.is_upcoming,
             cancel_reason=reason,
@@ -162,7 +162,7 @@ def watch_s95_cancellations(db: Session, *, notify: bool = True) -> S95Cancellat
             continue
         _, _, cancel_changed = apply_location_registry_flags(
             row,
-            is_paused=row.is_paused,
+            is_paused=None,
             is_cancelled=False,
             is_upcoming=row.is_upcoming,
         )

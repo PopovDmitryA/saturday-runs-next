@@ -617,3 +617,137 @@ def test_unique_participants_skips_unknown_protocol_rows(db_session: Any) -> Non
     assert stats["unique_participants"] == 1
     # Число финишей не трогаем: оно считается по протоколу и сходится с 5 вёрст.
     assert stats["finishers_total"] == 4
+
+
+def test_gender_from_profile_and_linked_person_counted_once(db_session: Any) -> None:
+    """Тимирязевский, репорт 15.10.2026: М + Ж ≠ «финишей с временем», уникальных > людей в топах.
+
+    Узел из двух систем. У RunPark протокол без возрастных групп (весна 2022) —
+    пол берём из профиля участника. Один человек привязан к сайту в обеих
+    системах — в «уникальных участниках» он один, как и в топах.
+    """
+    from uuid import uuid4
+
+    from app.models import (
+        Event,
+        Location,
+        LocationCatalog,
+        LocationCatalogLink,
+        Participant,
+        Platform,
+        PlatformLink,
+        RunResult,
+        User,
+    )
+
+    suffix = uuid4().hex[:8]
+    platforms = {}
+    for code, name in (("five_verst", "5 вёрст"), ("runpark", "RunPark")):
+        row = db_session.query(Platform).filter(Platform.code == code).one_or_none()
+        if row is None:
+            row = Platform(code=code, name=name)
+            db_session.add(row)
+            db_session.flush()
+        platforms[code] = row
+
+    catalog = LocationCatalog(canonical_name=f"Пол {suffix}", active_platform="five_verst")
+    db_session.add(catalog)
+    db_session.flush()
+    locations = {}
+    for code in platforms:
+        location = Location(
+            platform_id=platforms[code].id,
+            external_key=f"gender-{code}-{suffix}",
+            name=f"Пол {code} {suffix}",
+            country="Россия",
+        )
+        db_session.add(location)
+        db_session.flush()
+        db_session.add(
+            LocationCatalogLink(
+                catalog_id=catalog.id,
+                platform_id=platforms[code].id,
+                external_key=location.external_key,
+                location_id=location.id,
+            )
+        )
+        locations[code] = location
+    db_session.flush()
+
+    def event(code: str, day: date) -> Event:
+        row = Event(
+            platform_id=platforms[code].id,
+            location_id=locations[code].id,
+            external_event_key=f"{locations[code].external_key}:{day}",
+            event_date=day,
+            event_number=1,
+            title="Старт",
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row
+
+    five_event = event("five_verst", date(2026, 8, 1))
+    runpark_event = event("runpark", date(2022, 5, 7))
+
+    def person(code: str, external_user_id: str, name: str, gender: str | None) -> Participant:
+        row = Participant(
+            platform_id=platforms[code].id,
+            external_user_id=external_user_id,
+            display_name=name,
+            gender=gender,
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row
+
+    # Один человек, привязанный в обеих системах.
+    user = User(display_name=f"Двойной {suffix}")
+    db_session.add(user)
+    db_session.flush()
+    twin_five = person("five_verst", f"{suffix}-twin-5v", "Иван ДВОЙНОЙ", "male")
+    twin_runpark = person("runpark", f"barcode:{suffix}-twin", "Иван ДВОЙНОЙ", "male")
+    for participant in (twin_five, twin_runpark):
+        db_session.add(
+            PlatformLink(
+                user_id=user.id,
+                platform_id=participant.platform_id,
+                external_user_id=participant.external_user_id,
+                participant_id=participant.id,
+                external_url=f"https://example.test/{participant.external_user_id}",
+            )
+        )
+    # Женщина в RunPark: протокол без категории, пол — только в профиле.
+    runner = person("runpark", f"barcode:{suffix}-anna", "Анна ПРОФИЛЬНАЯ", "female")
+    rows = (
+        (five_event, twin_five, 1, 1500, "М30-34"),
+        (runpark_event, twin_runpark, 1, 1400, None),
+        (runpark_event, runner, 2, 1600, None),
+    )
+    for ev, participant, place, finish_time, category in rows:
+        db_session.add(
+            RunResult(
+                event_id=ev.id,
+                participant_id=participant.id,
+                external_result_key=f"{suffix}-{participant.external_user_id}-{place}",
+                position=place,
+                finish_time_sec=finish_time,
+                age_category=category,
+            )
+        )
+    db_session.flush()
+
+    slug = locations["five_verst"].external_key
+    payload = location_page_service.build_location_page(db_session, slug, use_cache=False)
+    assert payload is not None
+    assert payload["stats"]["unique_participants"] == 2
+
+    by_gender: dict[str | None, int] = {}
+    for row in payload["histogram"]["rows"]:
+        by_gender[row["gender"]] = by_gender.get(row["gender"], 0) + row["count"]
+    assert by_gender == {"male": 2, "female": 1}
+
+    tops = location_page_service._compute_location_tops(db_session, slug)
+    assert tops is not None
+    assert len(tops["fastest_male"]) == 1
+    assert len(tops["fastest_female"]) == 1

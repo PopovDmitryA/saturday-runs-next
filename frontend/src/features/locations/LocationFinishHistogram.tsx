@@ -102,6 +102,10 @@ export function LocationFinishHistogram({ rows, binSizeSec }: LocationFinishHist
       total,
       male,
       female,
+      // Без пола: безымянные финиши RunPark (у них есть время) и участники,
+      // о поле которых не знают ни протокол, ни профиль. Без этой строки
+      // «Мужчины + Женщины» не сходились с «N финишей» (репорт 15.10.2026).
+      unknown: total - male - female,
       mean: total > 0 ? Math.round(weightedSum / total) : null,
       median: median !== null ? Math.round(median) : null,
     };
@@ -222,6 +226,12 @@ export function LocationFinishHistogram({ rows, binSizeSec }: LocationFinishHist
               <span className="analytics-legend-swatch loc-hist-swatch-female" />
               Женщины {formatInt(totals.female)}
             </span>
+            {totals.unknown > 0 && (
+              <span className="analytics-legend-item">
+                <span className="analytics-legend-swatch loc-hist-swatch-unknown" />
+                Пол не указан {formatInt(totals.unknown)}
+              </span>
+            )}
             {totals.median !== null && (
               <span className="analytics-legend-item">Медиана ~{formatMinSec(totals.median)}</span>
             )}

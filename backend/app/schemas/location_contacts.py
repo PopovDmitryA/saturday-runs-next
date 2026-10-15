@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -19,6 +20,8 @@ class LocationContactPlatform(BaseModel):
     platform_name: str
     is_cancelled: bool
     is_paused: bool
+    # Ручной статус админа: 'inactive' / 'active', None — статус считается сам.
+    status_override: Literal["inactive", "active"] | None = None
 
 
 class LocationContactItem(BaseModel):
@@ -62,3 +65,13 @@ class LocationContactLinkCreateRequest(BaseModel):
 class LocationContactLinkUpdateRequest(BaseModel):
     telegram_url: str = Field(min_length=1, max_length=512)
     label: str | None = Field(default=None, max_length=128)
+
+
+class LocationStatusOverrideRequest(BaseModel):
+    status_override: Literal["inactive", "active"] | None = None
+
+
+class LocationStatusOverrideResponse(BaseModel):
+    location_id: UUID
+    status_override: Literal["inactive", "active"] | None = None
+    is_paused: bool

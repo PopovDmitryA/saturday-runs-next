@@ -34,6 +34,25 @@ from datetime import date, timedelta
 INACTIVE_AFTER_DAYS = 100
 
 
+# Ручной статус админа (locations.status_override, миграция 110). Сильнее и
+# реестра системы, и правила молчания: бывает, что обоим нечего сказать —
+# 5 вёрст перенесли Томск Сосновый Бор в Михайловскую рощу, реестр паузы не
+# ставит, а до ста тихих дней ещё три месяца (репорт 15.10.2026).
+STATUS_OVERRIDE_INACTIVE = "inactive"
+STATUS_OVERRIDE_ACTIVE = "active"
+STATUS_OVERRIDES = (STATUS_OVERRIDE_INACTIVE, STATUS_OVERRIDE_ACTIVE)
+
+
+def status_override_paused(status_override: str | None) -> bool | None:
+    """Что ручной статус велит записать в is_paused; None — ручного статуса нет."""
+
+    if status_override == STATUS_OVERRIDE_INACTIVE:
+        return True
+    if status_override == STATUS_OVERRIDE_ACTIVE:
+        return False
+    return None
+
+
 class LocationActivity(str, enum.Enum):
     """Что показываем про площадку в целом."""
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -177,6 +178,7 @@ def list_location_contacts(
                         "platform_name": platform.name,
                         "is_cancelled": location.is_cancelled,
                         "is_paused": location.is_paused,
+                        "status_override": location.status_override,
                     }
                     for location, platform, _settings in members
                 ],
@@ -303,6 +305,35 @@ def update_location_announce_settings(
         "do_not_disturb": settings.do_not_disturb,
         "comment": settings.comment,
         "updated_at": settings.updated_at,
+    }
+
+
+def set_location_status_override(db: Session, location_id: UUID, status_override: str | None) -> dict[str, Any]:
+    """Ручной статус строки локации: 'inactive' / 'active' или None — «считать самому».
+
+    Статус пересчитывается сразу, тем же правилом, что ночью: с ручным
+    статусом — по нему, без него — по реестру и датам. Витрины гасятся сразу,
+    иначе «не действует» доехало бы до каталога только к TTL.
+    """
+    from app.services.location_activity_status import STATUS_OVERRIDES
+    from app.services.location_catalog_cache import flush_location_catalog_caches, flush_location_page_caches
+    from app.sync.mark_inactive_locations_paused import mark_inactive_locations_paused
+
+    if status_override is not None and status_override not in STATUS_OVERRIDES:
+        raise LocationContactError("Неизвестный статус")
+    location = _get_location_for_contacts(db, location_id)
+    location.status_override = status_override
+    location.status_override_at = datetime.now(UTC) if status_override is not None else None
+    db.flush()
+    mark_inactive_locations_paused(db, location_ids=[location.id])
+    db.commit()
+    db.refresh(location)
+    flush_location_catalog_caches("ручной статус локации")
+    flush_location_page_caches(db, [location.external_key], "ручной статус локации")
+    return {
+        "location_id": location.id,
+        "status_override": location.status_override,
+        "is_paused": location.is_paused,
     }
 
 

@@ -159,6 +159,16 @@ class Location(Base):
     # Площадка объявлена, но ещё не стартовала. Отдельно от is_paused: там
     # старты кончились, здесь их ещё не было (см. миграцию 064).
     is_upcoming: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # Ручной статус админа: 'inactive' / 'active' сильнее реестра системы и
+    # правила молчания, NULL — статус считается сам (миграция 110, см.
+    # location_activity_status.status_override_paused).
+    status_override: Mapped[str | None] = mapped_column(String(16))
+    # Когда поставлен ручной статус: «не действует» снимается само, если
+    # после этого площадка провела старт (решение Дмитрия 16.10.2026).
+    status_override_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Пауза по мнению реестра системы — отдельно от итогового is_paused, куда
+    # ещё складываются правило молчания и ручной статус (миграция 110).
+    registry_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_official_map: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     # Серия стартов, а не площадка: «Старты сообществ» 5 вёрст, «С95 и друзья»,
     # «S95 & Friends». Нет ни координат, ни расписания, ни повторяющейся

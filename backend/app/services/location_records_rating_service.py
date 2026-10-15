@@ -173,7 +173,11 @@ def _fill_absolute_records(
     if not location_ids:
         return
     gender_expr = _gender_expression(
-        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
     )
     rows = (
         db.query(

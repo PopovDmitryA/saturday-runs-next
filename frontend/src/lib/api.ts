@@ -1870,7 +1870,11 @@ export type LocationContactPlatform = {
   platform_name: string;
   is_cancelled: boolean;
   is_paused: boolean;
+  // Ручной статус админа: сильнее реестра системы и правила 100 дней.
+  status_override: LocationStatusOverride | null;
 };
+
+export type LocationStatusOverride = "inactive" | "active";
 
 export type LocationContactItem = {
   group_key: string;
@@ -1917,6 +1921,13 @@ export function updateAdminLocationAnnounceSettings(
   return apiFetch<{ location_id: string; do_not_disturb: boolean; comment: string | null; updated_at: string }>(
     `/admin/location-contacts/${locationId}/settings`,
     { method: "PUT", body: JSON.stringify(body) },
+  );
+}
+
+export function setAdminLocationStatusOverride(locationId: string, statusOverride: LocationStatusOverride | null) {
+  return apiFetch<{ location_id: string; status_override: LocationStatusOverride | null; is_paused: boolean }>(
+    `/admin/location-contacts/${locationId}/status`,
+    { method: "PUT", body: JSON.stringify({ status_override: statusOverride }) },
   );
 }
 

@@ -11396,6 +11396,10 @@ a.admin-system-chip:hover {
   background: #ec4899;
 }
 
+.loc-hist-swatch-unknown {
+  background: #cbd5e1;
+}
+
 /* Индекс локаций */
 
 .loc-index-toolbar {
@@ -12033,6 +12037,16 @@ a.admin-system-chip:hover {
   flex-wrap: wrap;
   gap: 0.35rem;
   margin-top: 0.35rem;
+}
+
+.contact-status-select {
+  margin-left: 0.3rem;
+  font-size: 0.75rem;
+  padding: 0.05rem 0.2rem;
+  border: 1px solid var(--border, #d0d7de);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: inherit;
 }
 
 .contact-platform-badge {

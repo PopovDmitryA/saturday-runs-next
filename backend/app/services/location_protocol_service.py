@@ -776,7 +776,11 @@ def _attach_history_ranks(db: Session, location_ids: list[UUID], results: list[d
         return
 
     gender_expr = _gender_expression(
-        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
     )
     history_query = (
         db.query(

@@ -461,6 +461,7 @@ def _gender_expression(
     participant_extra_col: Any,
     age_category_col: Any,
     participant_age_category_col: Any,
+    participant_gender_col: Any,
 ) -> Any:
     """SQL-выражение пола финишёра.
 
@@ -469,8 +470,14 @@ def _gender_expression(
     категория) — пол берётся из participants.age_category («SM30-34» —
     вторая буква; ~99.9% строк после бэкфилла профилей). s95 — из
     participants.profile_extra (см. gender_position_service).
+
+    Если сам результат пола не дал — берём пол из профиля участника
+    (participants.gender). Ранние протоколы RunPark (весна 2022) пришли без
+    возрастных групп, и на Тимирязевском 196 финишей со временем не попадали
+    ни к мужчинам, ни к женщинам, а 64 человека выпадали из топов (репорт
+    15.10.2026). Своя категория результата по-прежнему главнее профиля.
     """
-    return case(
+    by_result = case(
         (
             platform_code_col == "five_verst",
             case(
@@ -501,6 +508,7 @@ def _gender_expression(
         ),
         else_=None,
     )
+    return func.coalesce(by_result, participant_gender_col)
 
 
 def _dedupe_crosslinked_events(db: Session, event_ids: list[UUID]) -> set[UUID]:
@@ -525,7 +533,11 @@ def _course_record(
     gender: str,
 ) -> dict[str, object] | None:
     gender_expr = _gender_expression(
-        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
     )
     row = (
         db.query(
@@ -571,7 +583,11 @@ def _histogram_rows(db: Session, event_ids: list[UUID]) -> list[dict[str, object
     три часа TTL уйдёт сам — бамп означал бы пересчёт всех трёх тысяч страниц.
     """
     gender_expr = _gender_expression(
-        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
     )
     bin_expr = (RunResult.finish_time_sec // HISTOGRAM_BIN_SEC) * HISTOGRAM_BIN_SEC
     rows = (
@@ -686,7 +702,11 @@ def _leaders_result_rows(db: Session, event_ids: list[UUID], *, gender: str | No
     ранжирования.
     """
     gender_expr = _gender_expression(
-        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
     )
     query = (
         db.query(
@@ -1880,7 +1900,11 @@ def _last_event_winners(db: Session, event_id: UUID) -> dict[str, str | None]:
     САЙФУЛИН»), поэтому имя нужно рядом со временем.
     """
     gender_expr = _gender_expression(
-        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
     )
     winners: dict[str, str | None] = {"male": None, "female": None}
     for gender in ("male", "female"):
@@ -1977,7 +2001,11 @@ def _last_event_stats(
     )
 
     gender_expr = _gender_expression(
-        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
     )
     time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
     row = (
@@ -2341,7 +2369,11 @@ def _age_group_records(db: Session, event_ids: list[UUID]) -> list[dict[str, obj
     if not event_ids:
         return []
     gender_expr = _gender_expression(
-        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
     )
     time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
     rows = (
@@ -2592,9 +2624,15 @@ def _compute_location_page(
             db.query(func.count()).select_from(VolunteerResult).filter(VolunteerResult.event_id.in_(event_ids)).scalar()
             or 0
         )
+        # Ключ «один человек» — тот же, что у топов бегунов: привязанные
+        # аккаунты разных систем — один профиль сайта. По participant_id
+        # человек из 5 вёрст и parkrun считался дважды, и на Тимирязевском
+        # уникальных выходило на 53 больше, чем людей в топах (репорт 15.10.2026).
         unique_participants = (
-            db.query(func.count(func.distinct(RunResult.participant_id)))
+            db.query(func.count(func.distinct(func.coalesce(PlatformLink.user_id, RunResult.participant_id))))
+            .select_from(RunResult)
             .join(Participant, Participant.id == RunResult.participant_id)
+            .outerjoin(PlatformLink, _platform_link_join())
             .filter(
                 RunResult.event_id.in_(event_ids),
                 RunResult.participant_id.isnot(None),
@@ -2917,7 +2955,11 @@ def _compute_location_events(db: Session, slug: str) -> dict[str, object] | None
     event_ids = [event.id for event, _code in events]
 
     gender_expr = _gender_expression(
-        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
     )
     time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
     protocol_stats: dict[UUID, dict[str, object]] = {}
@@ -3274,7 +3316,11 @@ def _bulk_identity_stats(
     # идентичности. Кросслинки тут не мешают: вторичное событие — тот же
     # физический старт с теми же временами, на минимум оно не влияет.
     gender_expr = _gender_expression(
-        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
     )
     record_rows = (
         db.query(
@@ -3768,7 +3814,11 @@ def _compute_last_results(db: Session) -> dict[str, object]:
     }
 
     gender_expr = _gender_expression(
-        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
     )
     time_ok = RunResult.finish_time_sec.isnot(None) & (RunResult.finish_time_sec > 0)
     protocol_stats: dict[UUID, dict[str, int | None]] = {}

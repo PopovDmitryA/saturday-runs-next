@@ -32,6 +32,7 @@ def refresh_location_activity_status() -> dict[str, object]:
             "paused": result.locations_paused,
             "revived": result.locations_revived,
             "skipped_no_coords": result.locations_skipped_no_coords,
+            "overrides_dropped": result.overrides_dropped,
         }
         logger.info("Статусы активности пересчитаны: %s", payload)
         return payload

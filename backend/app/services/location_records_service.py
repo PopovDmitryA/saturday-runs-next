@@ -194,7 +194,11 @@ def _batch_course_progressions(
         return out
     scope_events = _scope_events(event_id_lists)
     gender_expr = _gender_expression(
-        Platform.code, Participant.profile_extra, RunResult.age_category, Participant.age_category
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
     )
     base = (
         db.query(

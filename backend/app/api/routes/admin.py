@@ -76,6 +76,8 @@ from app.schemas.location_contacts import (
     LocationContactLinkCreateRequest,
     LocationContactLinkUpdateRequest,
     LocationContactListResponse,
+    LocationStatusOverrideRequest,
+    LocationStatusOverrideResponse,
 )
 from app.schemas.location_openings import (
     LocationOpeningListResponse,
@@ -150,6 +152,7 @@ from app.services.location_contacts_service import (
     create_location_contact_link,
     delete_location_contact_link,
     list_location_contacts,
+    set_location_status_override,
     update_location_announce_settings,
     update_location_contact_link,
 )
@@ -813,6 +816,21 @@ def admin_update_location_announce_settings(
     except LocationContactError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return LocationAnnounceSettingsResponse.model_validate(payload)
+
+
+@router.put("/location-contacts/{location_id}/status", response_model=LocationStatusOverrideResponse)
+def admin_set_location_status_override(
+    location_id: UUID,
+    body: LocationStatusOverrideRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> LocationStatusOverrideResponse:
+    """Ручной статус строки локации: «не действует», «действует» или «авто»."""
+    try:
+        payload = set_location_status_override(db, location_id, body.status_override)
+    except LocationContactError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return LocationStatusOverrideResponse.model_validate(payload)
 
 
 @router.post(
