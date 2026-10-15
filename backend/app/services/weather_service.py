@@ -375,7 +375,20 @@ def fetch_archive(
             delay *= 2
             continue
         if response.status_code == 200:
-            return response.json()
+            try:
+                return response.json()
+            except ValueError as exc:
+                # 200 с пустым телом (15.10.2026 посреди дозаливки покрова):
+                # сбой сервиса, а не данных — повторяем, как 5xx. Без этого
+                # JSONDecodeError обрывал прогон на всех оставшихся локациях.
+                attempt += 1
+                if attempt >= retries:
+                    raise RuntimeError(
+                        f"Open-Meteo 200 without JSON after {retries} attempts: {response.text[:300]!r}"
+                    ) from exc
+                _time.sleep(delay)
+                delay *= 2
+                continue
         if response.status_code == 429:
             reason = response.text.lower()
             if "daily" in reason:

@@ -165,6 +165,38 @@ def test_fetch_archive_retries_transport_errors(monkeypatch) -> None:  # type: i
     assert calls["n"] == 3
 
 
+def test_fetch_archive_retries_empty_200(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """200 с пустым телом — сбой сервиса: повторяем, а не роняем прогон.
+
+    15.10.2026 такой ответ уронил дозаливку покрова на 130-й локации из 423.
+    """
+    import httpx
+    import pytest
+
+    from app.services import weather_service
+
+    bodies = [b"", b"", b'{"hourly": {"time": []}}']
+    calls = {"n": 0}
+
+    class FakeClient:
+        def get(self, url, params, timeout):  # type: ignore[no-untyped-def]
+            body = bodies[min(calls["n"], len(bodies) - 1)]
+            calls["n"] += 1
+            return httpx.Response(200, content=body, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(weather_service._time, "sleep", lambda s: None)
+    payload = weather_service.fetch_archive(FakeClient(), 55.7, 37.6, date(2025, 1, 4), date(2025, 1, 4))  # type: ignore[arg-type]
+    assert payload == {"hourly": {"time": []}}
+    assert calls["n"] == 3
+
+    # Пустое тело раз за разом — внятная ошибка, а не JSONDecodeError.
+    bodies[:] = [b""]
+    calls["n"] = 0
+    with pytest.raises(RuntimeError, match="without JSON after 2 attempts"):
+        weather_service.fetch_archive(FakeClient(), 55.7, 37.6, date(2025, 1, 4), date(2025, 1, 4), retries=2)  # type: ignore[arg-type]
+    assert calls["n"] == 2
+
+
 def test_observation_dates_upper_override_and_dates_to_fetch() -> None:
     events = [date(2026, 9, 5), date(2026, 9, 12)]
     # Предварительный прогон в субботу: граница — сегодня, суббота 12.09 входит.
