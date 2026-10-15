@@ -3043,7 +3043,7 @@ export type LocationFastestRunner = {
   /** Сколько раз человек финишировал здесь — контекст к лучшему времени. */
   finishes_count: number;
   /** Те же числа по каждой системе — для фильтра «Система» на витрине топов. */
-  by_platform?: Record<
+  by_platform?: null | Record<
     string,
     {
       best_time_sec: number;
@@ -3065,7 +3065,7 @@ export type LocationTopWinner = {
   /** Системы, в которых зафиксированы победы. Обычно одна. */
   platform_codes: string[];
   /** Победы по каждой системе — для фильтра «Система» на витрине топов. */
-  by_platform?: Record<
+  by_platform?: null | Record<
     string,
     { wins_count: number; first_win_date: string | null; last_win_date: string | null }
   >;

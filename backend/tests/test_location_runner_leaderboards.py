@@ -20,6 +20,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User
+from app.schemas.locations import LocationTopsResponse
 from app.services.location_page_service import (
     _compute_location_leaders,
     _fastest_runners,
@@ -530,6 +531,14 @@ def test_tops_split_linked_profile_by_system(
             "last_win_date": FIRST_DATE - timedelta(days=7),
         },
     }
+
+    # Разбивка доезжает до ответа API: response_model без этих полей молча
+    # вырезал её, и фильтр на проде работал по-старому.
+    response = LocationTopsResponse.model_validate(
+        {"slug": "x", "name": "x", "fastest_female": fastest, "winners_female": wins}
+    ).model_dump()
+    assert response["fastest_female"][0]["by_platform"]["parkrun"]["best_time_sec"] == 1320
+    assert response["winners_female"][0]["by_platform"]["five_verst"]["wins_count"] == 2
 
     # Страница локации разбивку не тянет — там фильтра нет.
     assert "by_platform" not in _top_winners(db_session, event_ids, gender="female", limit=5)[0]

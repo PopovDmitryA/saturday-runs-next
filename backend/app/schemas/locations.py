@@ -378,6 +378,23 @@ class LocationLeaderVolunteerResponse(BaseModel):
     count: int
 
 
+class LocationFastestPlatformSplit(BaseModel):
+    """Лучшее время человека в одной системе — для фильтра «Система» витрины топов."""
+
+    best_time_sec: int
+    best_time_display: str | None = None
+    event_date: date | None = None
+    finishes_count: int = 0
+
+
+class LocationWinsPlatformSplit(BaseModel):
+    """Победы человека в одной системе — для фильтра «Система» витрины топов."""
+
+    wins_count: int
+    first_win_date: date | None = None
+    last_win_date: date | None = None
+
+
 class LocationFastestRunnerResponse(BaseModel):
     """Строка топа по времени: лучший результат человека на этой локации."""
 
@@ -394,6 +411,9 @@ class LocationFastestRunnerResponse(BaseModel):
     # Финишей человека здесь — контекст к лучшему времени: одно дело рекорд
     # заезжего туриста с единственного старта, другое — местного завсегдатая.
     finishes_count: int = 0
+    # Те же числа по каждой системе. Есть только у витрины «Топы бегунов»:
+    # при выбранной системе она пересчитывает строки по ней одной.
+    by_platform: dict[str, LocationFastestPlatformSplit] | None = None
 
 
 class LocationTopWinnerResponse(BaseModel):
@@ -409,6 +429,8 @@ class LocationTopWinnerResponse(BaseModel):
     # аккаунт живёт внутри платформы. У профиля сайта со связанными аккаунтами
     # площадка могла успеть побывать и parkrun, и 5 вёрст — тогда их две.
     platform_codes: list[str] = Field(default_factory=list)
+    # Победы по каждой системе — только у витрины «Топы бегунов».
+    by_platform: dict[str, LocationWinsPlatformSplit] | None = None
 
 
 class LocationLeadersResponse(BaseModel):
