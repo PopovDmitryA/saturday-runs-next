@@ -126,7 +126,7 @@ LOCATION_PARTICIPANTS_CACHE_PREFIX = "locations:participants:v4"
 
 def location_tops_cache_key(slug: str) -> str:
     """Полные топы бегунов: витрина /locations/{slug}/tops."""
-    return f"locations:tops:v1:{slug.strip().lower()}"
+    return f"locations:tops:v2:{slug.strip().lower()}"
 
 
 def location_participants_cache_key(slug: str, roles_key: str = "") -> str:
@@ -731,13 +731,21 @@ def _sporting_places(values: list[int]) -> list[int]:
 
 
 def _fastest_runners(
-    db: Session, event_ids: list[UUID], gender: str, *, limit: int | None
+    db: Session,
+    event_ids: list[UUID],
+    gender: str,
+    *,
+    limit: int | None,
+    by_platform: bool = False,
 ) -> list[dict[str, object]]:
     """Топ по времени: одна строка на человека, его лучший результат здесь.
 
     limit=None — весь зачёт: так его берёт витрина «Топы бегунов», где список
     живёт с фильтрами и пагинацией. У самой страницы локации лимит есть, там
     от топа видна только пятёрка.
+
+    by_platform=True добавляет к строке разбивку по системам — для фильтра
+    «Система» на витрине (см. _fastest_by_platform).
     """
     if not event_ids:
         return []
@@ -783,6 +791,7 @@ def _fastest_runners(
     rows = (query.limit(limit) if limit is not None else query).all()
     names = _participant_display_names(db, [row.participant_id for row in rows if row.participant_id])
     places = _sporting_places([int(row.finish_time_sec) for row in rows])
+    split = _fastest_by_platform(db, base) if by_platform else None
     return [
         {
             "place": place,
@@ -793,18 +802,69 @@ def _fastest_runners(
             "event_date": row.event_date,
             "platform_codes": [code for code in PLATFORM_ORDER if getattr(row, f"has_{code}")],
             "finishes_count": int(row.finishes),
+            **({"by_platform": split.get(row.group_key, {})} if split is not None else {}),
         }
         for place, row in zip(places, rows, strict=True)
     ]
 
 
+def _fastest_by_platform(db: Session, base: Any) -> dict[Any, dict[str, dict[str, object]]]:
+    """Лучшее время человека отдельно в каждой системе площадки.
+
+    Строка топа у профиля со связанными аккаунтами сводит обе системы: время —
+    лучшее из всех, финиши — сумма. Фильтр «Система» обязан показывать цифры
+    только выбранной системы, иначе при фильтре parkrun у человека осталось бы
+    время, показанное на 5 вёрст (жалоба 15.10.2026, Йошкар-Ола).
+    """
+    partition = (base.c.group_key, base.c.platform_code)
+    best_here = func.row_number().over(
+        partition_by=partition,
+        order_by=(base.c.finish_time_sec.asc(), base.c.event_date.asc()),
+    )
+    finishes = func.count().over(partition_by=partition)
+    ranked = (
+        db.query(base, best_here.label("runner_row"), finishes.label("finishes"))
+        .select_from(base)
+        .subquery()
+    )
+    rows = (
+        db.query(
+            ranked.c.group_key,
+            ranked.c.platform_code,
+            ranked.c.finish_time_sec,
+            ranked.c.event_date,
+            ranked.c.finishes,
+        )
+        .filter(ranked.c.runner_row == 1, _identified_name_clause(ranked.c.protocol_name))
+        .all()
+    )
+    split: dict[Any, dict[str, dict[str, object]]] = {}
+    for row in rows:
+        split.setdefault(row.group_key, {})[row.platform_code] = {
+            "best_time_sec": int(row.finish_time_sec),
+            "best_time_display": format_finish_time_display(int(row.finish_time_sec)),
+            "event_date": row.event_date,
+            "finishes_count": int(row.finishes),
+        }
+    return split
+
+
 def _top_winners(
-    db: Session, event_ids: list[UUID], *, gender: str | None, limit: int | None
+    db: Session,
+    event_ids: list[UUID],
+    *,
+    gender: str | None,
+    limit: int | None,
+    by_platform: bool = False,
 ) -> list[dict[str, object]]:
     """Топ по победам: сколько раз человек был здесь первым на финише.
 
     Победа — лучшее время старта (в абсолюте или среди женщин). Ровное время у
     двоих — победа у обоих, как это и засчитывают сами площадки.
+
+    by_platform=True добавляет к строке победы по каждой системе отдельно — для
+    фильтра «Система» на витрине: при фильтре parkrun у профиля со связанными
+    аккаунтами должны остаться только победы на parkrun.
     """
     if not event_ids:
         return []
@@ -818,6 +878,7 @@ def _top_winners(
     first_win = func.min(ranked.c.event_date)
     query = (
         db.query(
+            ranked.c.group_key,
             # min(uuid) в PostgreSQL нет — представителя группы берём по
             # текстовой форме идентификатора, имя у всех строк группы одно.
             func.min(func.cast(ranked.c.participant_id, String)).label("participant_id"),
@@ -840,6 +901,27 @@ def _top_winners(
     participant_ids = {UUID(row.participant_id) for row in rows if row.participant_id}
     names = _participant_display_names(db, participant_ids)
     places = _sporting_places([int(row.wins_count) for row in rows])
+    split: dict[Any, dict[str, dict[str, object]]] | None = None
+    if by_platform:
+        split = {}
+        per_platform = (
+            db.query(
+                ranked.c.group_key,
+                ranked.c.platform_code,
+                func.count(func.distinct(ranked.c.event_id)).label("wins_count"),
+                func.min(ranked.c.event_date).label("first_win_date"),
+                func.max(ranked.c.event_date).label("last_win_date"),
+            )
+            .filter(ranked.c.event_place == 1, _identified_name_clause(ranked.c.protocol_name))
+            .group_by(ranked.c.group_key, ranked.c.platform_code)
+            .all()
+        )
+        for item in per_platform:
+            split.setdefault(item.group_key, {})[item.platform_code] = {
+                "wins_count": int(item.wins_count),
+                "first_win_date": item.first_win_date,
+                "last_win_date": item.last_win_date,
+            }
     result: list[dict[str, object]] = []
     for place, row in zip(places, rows, strict=True):
         key = UUID(row.participant_id) if row.participant_id else None
@@ -855,6 +937,7 @@ def _top_winners(
                 "platform_codes": sorted(
                     (code for code in row.platform_codes if code), key=_platform_order_index
                 ),
+                **({"by_platform": split.get(row.group_key, {})} if split is not None else {}),
             }
         )
     return result
@@ -901,10 +984,14 @@ def _compute_location_tops(db: Session, slug: str) -> dict[str, object] | None:
         "platform_codes": sorted(
             {code for _location, code in ranked_locations}, key=_platform_order_index
         ),
-        "fastest_male": _fastest_runners(db, event_ids, "male", limit=None),
-        "fastest_female": _fastest_runners(db, event_ids, "female", limit=None),
-        "winners_overall": _top_winners(db, event_ids, gender=None, limit=None),
-        "winners_female": _top_winners(db, event_ids, gender="female", limit=None),
+        # by_platform — для фильтра «Система»: при выбранной системе витрина
+        # пересчитывает числа и места по ней одной, а не прячет строки.
+        "fastest_male": _fastest_runners(db, event_ids, "male", limit=None, by_platform=True),
+        "fastest_female": _fastest_runners(db, event_ids, "female", limit=None, by_platform=True),
+        "winners_overall": _top_winners(db, event_ids, gender=None, limit=None, by_platform=True),
+        "winners_female": _top_winners(
+            db, event_ids, gender="female", limit=None, by_platform=True
+        ),
     }
 
 

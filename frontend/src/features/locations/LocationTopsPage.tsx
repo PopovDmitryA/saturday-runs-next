@@ -73,8 +73,15 @@ type TopRow = {
   extra: number | null;
 };
 
-function fastestRow(row: LocationFastestRunner): TopRow {
-  return {
+/**
+ * Строка зачёта в разрезе системы. platform=null — все системы, как отдал
+ * сервер. С выбранной системой числа и даты берутся из её разбивки
+ * (by_platform): у профиля со связанными аккаунтами строка сводит 5 вёрст и
+ * parkrun, и без разбивки фильтр parkrun показывал бы победы на 5 вёрст.
+ * Нет результатов в этой системе — строки в зачёте нет.
+ */
+function fastestRow(row: LocationFastestRunner, platform: string | null): TopRow | null {
+  const base: TopRow = {
     place: row.place,
     name: row.name,
     handle: row.handle,
@@ -85,10 +92,28 @@ function fastestRow(row: LocationFastestRunner): TopRow {
     lastDate: row.event_date,
     extra: row.finishes_count,
   };
+  if (platform === null) {
+    return base;
+  }
+  if (!row.by_platform) {
+    return row.platform_codes.includes(platform) ? base : null;
+  }
+  const split = row.by_platform[platform];
+  if (!split) {
+    return null;
+  }
+  return {
+    ...base,
+    value: split.best_time_sec,
+    valueDisplay: stripLeadingHours(split.best_time_display),
+    systems: [platform],
+    lastDate: split.event_date,
+    extra: split.finishes_count,
+  };
 }
 
-function winnerRow(row: LocationTopWinner): TopRow {
-  return {
+function winnerRow(row: LocationTopWinner, platform: string | null): TopRow | null {
+  const base: TopRow = {
     place: row.place,
     name: row.name,
     handle: row.handle,
@@ -99,6 +124,52 @@ function winnerRow(row: LocationTopWinner): TopRow {
     lastDate: row.last_win_date,
     extra: null,
   };
+  if (platform === null) {
+    return base;
+  }
+  if (!row.by_platform) {
+    return row.platform_codes.includes(platform) ? base : null;
+  }
+  const split = row.by_platform[platform];
+  if (!split) {
+    return null;
+  }
+  return {
+    ...base,
+    value: split.wins_count,
+    valueDisplay: formatInt(split.wins_count),
+    systems: [platform],
+    firstDate: split.first_win_date,
+    lastDate: split.last_win_date,
+  };
+}
+
+/**
+ * Места заново — внутри выбранной системы. Порядок тот же, что у сервера:
+ * время по возрастанию (раньше показанное выше), победы по убыванию (недавняя
+ * последняя победа выше). Равный показатель — одно место, следующее пропускается.
+ */
+function rerank(rows: TopRow[], board: Board): TopRow[] {
+  const ordered = [...rows].sort((a, b) => {
+    if (a.value !== b.value) {
+      return board === "time" ? a.value - b.value : b.value - a.value;
+    }
+    const left = a.lastDate ?? "";
+    const right = b.lastDate ?? "";
+    if (left !== right) {
+      return (board === "time" ? left < right : left > right) ? -1 : 1;
+    }
+    return a.place - b.place;
+  });
+  let place = 0;
+  let previous: number | null = null;
+  return ordered.map((row, index) => {
+    if (row.value !== previous) {
+      place = index + 1;
+      previous = row.value;
+    }
+    return { ...row, place };
+  });
 }
 
 const BOARD_WORDS: Record<Board, { label: string; divisions: Record<Division, string> }> = {
@@ -221,18 +292,30 @@ function LocationTopsContent({ slug }: { slug: string }) {
     }
     if (board === "time") {
       const source = division === "female" ? data.fastest_female : data.fastest_male;
-      return source.map(fastestRow);
+      return source.map((row) => fastestRow(row, null) as TopRow);
     }
     const source = division === "female" ? data.winners_female : data.winners_overall;
-    return source.map(winnerRow);
+    return source.map((row) => winnerRow(row, null) as TopRow);
   }, [data, board, division]);
 
-  const platformRows = useMemo(() => {
-    if (platform === "all") {
+  // Выбранная система — свой зачёт: числа, даты и места только по ней.
+  const platformRows = useMemo<TopRow[]>(() => {
+    if (!data || platform === "all") {
       return boardRows;
     }
-    return boardRows.filter((row) => row.systems.includes(platform));
-  }, [boardRows, platform]);
+    const picked =
+      board === "time"
+        ? (division === "female" ? data.fastest_female : data.fastest_male).map((row) =>
+            fastestRow(row, platform),
+          )
+        : (division === "female" ? data.winners_female : data.winners_overall).map((row) =>
+            winnerRow(row, platform),
+          );
+    return rerank(
+      picked.filter((row): row is TopRow => row !== null),
+      board,
+    );
+  }, [data, board, division, boardRows, platform]);
 
   const sortedRows = useMemo(() => {
     const sorted = [...platformRows];

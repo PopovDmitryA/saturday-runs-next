@@ -445,3 +445,91 @@ def test_linked_profile_shows_every_system_it_ran_in(
     assert rows[0]["best_time_sec"] == 1290
     assert rows[0]["finishes_count"] == 2
     assert rows[0]["platform_codes"] == ["five_verst", "parkrun"]
+
+
+def test_tops_split_linked_profile_by_system(
+    db_session: Session, location: Location, events: list[Event]
+) -> None:
+    """Фильтр «Система» на витрине топов считает только выбранную систему.
+
+    Жалоба 15.10.2026 (Йошкар-Ола): у профиля со связанными аккаунтами при
+    фильтре parkrun оставались 14 побед — сумма parkrun и 5 вёрст. Разбивка
+    by_platform даёт витрине числа и даты каждой системы отдельно.
+    """
+    parkrun = db_session.query(Platform).filter(Platform.code == "parkrun").one()
+    five_verst_account = _runner(db_session, "Надежда СВЯЗАННАЯ")
+    parkrun_account = Participant(
+        platform_id=parkrun.id,
+        external_user_id=str(uuid4().int % 10**7),
+        display_name="Надежда СВЯЗАННАЯ",
+        age_category="SW30-34",
+    )
+    db_session.add(parkrun_account)
+    db_session.flush()
+    user = User(telegram_id=uuid4().int % 10**9, display_name="Надежда Связанная")
+    db_session.add(user)
+    db_session.flush()
+    for account in (five_verst_account, parkrun_account):
+        db_session.add(
+            PlatformLink(
+                user_id=user.id,
+                platform_id=account.platform_id,
+                participant_id=account.id,
+                external_user_id=account.external_user_id,
+                external_url=f"https://example.test/{account.external_user_id}",
+            )
+        )
+    parkrun_event = Event(
+        platform_id=parkrun.id,
+        location_id=location.id,
+        external_event_key=f"leaders-parkrun-{uuid4().hex[:8]}",
+        event_date=FIRST_DATE - timedelta(days=7),
+    )
+    db_session.add(parkrun_event)
+    db_session.flush()
+    db_session.add(
+        RunResult(
+            event_id=parkrun_event.id,
+            participant_id=parkrun_account.id,
+            external_result_key=f"{parkrun_event.external_event_key}:1",
+            finish_time_sec=1320,
+        )
+    )
+    for event in events:
+        _finish(db_session, event, five_verst_account, seconds=1290, age_category="Ж30-34")
+    event_ids = [event.id for event in (*events, parkrun_event)]
+
+    fastest = _fastest_runners(db_session, event_ids, "female", limit=None, by_platform=True)
+    assert fastest[0]["best_time_sec"] == 1290
+    assert fastest[0]["by_platform"] == {
+        "five_verst": {
+            "best_time_sec": 1290,
+            "best_time_display": "00:21:30",
+            "event_date": FIRST_DATE,
+            "finishes_count": 2,
+        },
+        "parkrun": {
+            "best_time_sec": 1320,
+            "best_time_display": "00:22:00",
+            "event_date": FIRST_DATE - timedelta(days=7),
+            "finishes_count": 1,
+        },
+    }
+
+    wins = _top_winners(db_session, event_ids, gender="female", limit=None, by_platform=True)
+    assert wins[0]["wins_count"] == 3
+    assert wins[0]["by_platform"] == {
+        "five_verst": {
+            "wins_count": 2,
+            "first_win_date": FIRST_DATE,
+            "last_win_date": FIRST_DATE + timedelta(days=7),
+        },
+        "parkrun": {
+            "wins_count": 1,
+            "first_win_date": FIRST_DATE - timedelta(days=7),
+            "last_win_date": FIRST_DATE - timedelta(days=7),
+        },
+    }
+
+    # Страница локации разбивку не тянет — там фильтра нет.
+    assert "by_platform" not in _top_winners(db_session, event_ids, gender="female", limit=5)[0]
