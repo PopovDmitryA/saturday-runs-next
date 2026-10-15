@@ -30,6 +30,7 @@
 | `backfill_s95_event_numbers.py` | Номера забегов S95 |
 | `backfill_s95_location_country.py` | Страна локаций S95 по домену реестра |
 | `backfill_schedule_parsed.py` | Разбор расписания из описаний локаций |
+| `backfill_snow_depth.py` | Снежный покров ERA5-Land в окончательную погоду стартов после переписи на ERA5 (15.10.2026) |
 | `backfill_truncated_age_categories.py` | Обрезанные группы 5 вёрст («М11» ← «М110-114») |
 | `dedupe_five_verst_runs.py` | Дубли результатов 5 вёрст |
 | `dedupe_volunteer_results.py` | Дубли волонтёрских строк |

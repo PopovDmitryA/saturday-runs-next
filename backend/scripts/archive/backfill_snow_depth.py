@@ -18,9 +18,13 @@ ERA5 покров не отдаёт, и после переписи истори
 повторный запуск доливает остаток; на суточном лимите или своём потолке —
 выход с кодом 3.
 
-    python scripts/backfill_snow_depth.py --dry-run
-    CONFIRM_PROD=1 python scripts/backfill_snow_depth.py
-    CONFIRM_PROD=1 python scripts/backfill_snow_depth.py --location Якутск
+    python scripts/archive/backfill_snow_depth.py --dry-run
+    CONFIRM_PROD=1 python scripts/archive/backfill_snow_depth.py
+    CONFIRM_PROD=1 python scripts/archive/backfill_snow_depth.py --location Якутск
+
+Прогнан на проде 15.10.2026: пустой покров был у 66 006 строк era5, после
+прогона — ни у одной; покров от 1 см у 25 618, снимки тихо сдвинуты у 76
+подписчиков.
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
