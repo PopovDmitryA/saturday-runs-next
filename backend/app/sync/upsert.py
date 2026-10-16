@@ -27,6 +27,7 @@ from app.models import (
     VolunteerResult,
 )
 from app.pace import resolve_run_pace
+from app.parkrun.event_slugs import CatalogEvent, catalog_event
 from app.parkrun.protocol_gaps import release_placeholder
 from app.platform_adapters.canonical import (
     CanonicalEventSummary,
@@ -1416,6 +1417,93 @@ def upsert_event_for_profile(
     return row
 
 
+def _existing_parkrun_key(
+    db: Session,
+    platform: Platform,
+    slug: str,
+    name: str | None,
+    cache: dict[str, str],
+) -> str:
+    """Ключ уже заведённой parkrun-локации для слага из профиля.
+
+    Слаг из профиля и ключ в базе расходятся разделителями (`angarskie-prudy`
+    против `angarskieprudy`) или транслитерацией названия, если у площадки
+    не-ASCII буквы (снимок знает `historickopubridge`, а в базе с прежних
+    времён `historic-k-p-bridge`). Раньше при таком расхождении импорт заводил
+    вторую локацию и перетаскивал к ней события по имени — так появились 56 пар
+    двойников (55 российских, слиты 16.10.2026). Нет строки с точным ключом —
+    берём единственного двойника: по ключу без разделителей, затем по
+    транслитерации названия.
+
+    Кэшируется только точное совпадение: двойника могут переименовать
+    (scripts/unify_parkrun_location_keys.py) посреди импорта, и запомненный
+    старый ключ завёл бы его заново.
+    """
+    if slug in cache:
+        return cache[slug]
+    exact = (
+        db.query(Location.id)
+        .filter(Location.platform_id == platform.id, Location.external_key == slug)
+        .first()
+    )
+    if exact is not None or slug == "unknown":
+        cache[slug] = slug
+        return slug
+    twins = (
+        db.query(Location.external_key)
+        .filter(
+            Location.platform_id == platform.id,
+            func.regexp_replace(func.lower(Location.external_key), "[^0-9a-z]", "", "g")
+            == re.sub(r"[^0-9a-z]", "", slug.lower()),
+        )
+        .limit(2)
+        .all()
+    )
+    if len(twins) == 1:
+        return twins[0][0]
+    transliterated = re.sub(r"[^a-z0-9]+", "-", (name or "").lower().strip()).strip("-")
+    if transliterated and transliterated != slug:
+        legacy = (
+            db.query(Location.external_key)
+            .filter(Location.platform_id == platform.id, Location.external_key == transliterated)
+            .first()
+        )
+        if legacy is not None:
+            return legacy[0]
+    return slug
+
+
+def _fill_parkrun_location_gaps(location: Location, slug: str, event: CatalogEvent | None) -> None:
+    """Пробелы parkrun-локации из снимка каталога — прямо в импорте профиля.
+
+    Профиль parkrun знает о площадке только название. Раньше новая площадка
+    рождалась без координат и страны и ждала ручной сверки с каталогом, а
+    челлендж «Страны» её финиш тем временем не засчитывал (Okura kaigan koen,
+    10.10.2026). Заполняем только пустое: координаты российских площадок
+    выверены руками. Страну и город даёт обратный геокод по точке, как у всех
+    систем (_resolve_geo); в сеть идём один раз — пока точки не было. Регион не
+    берём: у зарубежных площадок его нет, а Nominatim по Японии отвечает кодом
+    «JP-28», и «Путешественник» засчитал бы его новым регионом.
+    """
+    if not location.source_url and slug != "unknown":
+        location.source_url = f"https://www.parkrun.org.uk/{slug}/"
+    if event is None or location.latitude is not None or location.longitude is not None:
+        return
+    location.latitude = event.latitude
+    location.longitude = event.longitude
+    country, _region, city = _resolve_geo(
+        CanonicalLocation(
+            external_key=location.external_key,
+            name=location.name,
+            latitude=event.latitude,
+            longitude=event.longitude,
+        ),
+        location,
+    )
+    location.country = location.country or country
+    location.city = location.city or city
+
+
 def import_profile_run_results(
     db: Session,
     platform: Platform,
@@ -1426,25 +1514,33 @@ def import_profile_run_results(
     # external_user_id → Participant.id (или None). В профильном импорте ключ
     # всегда один, но код общий для всех платформ — держим словарь.
     participant_id_cache: dict[str, UUID | None] = {}
+    parkrun_key_cache: dict[str, str] = {}
     for item in results:
         slug = _normalize_location_slug(item.location_external_key, item.location_name)
+        if platform.code == "parkrun":
+            slug = _existing_parkrun_key(db, platform, slug, item.location_name, parkrun_key_cache)
         display_name = item.location_name or slug
         community = (
             _five_verst_community_target(slug, display_name, item.event_date)
             if item.is_community_event and platform.code == "five_verst"
             else None
         )
+        parkrun_event: CatalogEvent | None = None
         if platform.code == "s95":
             location_source_url = f"https://s95.ru/events/{slug}" if slug != "unknown" else None
             country = "Россия"
         elif platform.code == "parkrun":
-            location_source_url = (
-                f"https://www.parkrun.org.uk/{slug}/" if slug != "unknown" else None
-            )
+            parkrun_event = catalog_event(slug)
+            # Ссылку на площадку знает только каталог: домен страны плюс
+            # официальный слаг. Догадку parkrun.org.uk/<слаг>/ получает лишь
+            # новая строка (_fill_parkrun_location_gaps) — у известной она
+            # затирала ссылку, выверенную сверкой с каталогом: к 14.10.2026 так
+            # вернулись на parkrun.org.uk больше двухсот зарубежных площадок.
+            location_source_url = parkrun_event.page_url if parkrun_event else None
             # Профиль не говорит, где площадка: parkrun.org.uk — общий вход в
             # мировой каталог, а не признак Британии. Прежняя заглушка «United
             # Kingdom» помечала ею Якутск и Йошкар-Олу. Пусто честнее — страну
-            # добирает бэкфилл по координатам (scripts/backfill_location_country.py).
+            # даёт геокод по точке из снимка каталога (_fill_parkrun_location_gaps).
             country = None
         else:
             location_source_url = f"https://5verst.ru/{slug}/" if slug != "unknown" else None
@@ -1463,6 +1559,8 @@ def import_profile_run_results(
         )
         if community is not None and not location.is_series:
             location.is_series = True
+        if platform.code == "parkrun":
+            _fill_parkrun_location_gaps(location, slug, parkrun_event)
         if platform.code == "parkrun" and location.city is None:
             backfill_city_from_catalog(db, location)
         if platform.code == "parkrun" and location.region is None:
@@ -1475,11 +1573,12 @@ def import_profile_run_results(
                 else ""
             )
         elif platform.code == "parkrun":
-            source_url = (
-                f"https://www.parkrun.org.uk/{slug}/results/{item.event_number or ''}/"
-                if slug != "unknown"
-                else ""
-            )
+            if parkrun_event is not None and parkrun_event.domain:
+                source_url = parkrun_event.results_url(item.event_number) or ""
+            elif slug != "unknown":
+                source_url = f"https://www.parkrun.org.uk/{slug}/results/{item.event_number or ''}/"
+            else:
+                source_url = ""
         else:
             source_url = (
                 f"https://5verst.ru/{slug}/results/{item.event_date.strftime('%d.%m.%Y')}/"

@@ -25,13 +25,13 @@
     "parkrun_location": "Babushkinsky na Yauze",
     "canonical_name": "Бабушкинский на Яузе",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "babushkinsky-na-yauze",
+    "legacy_parkrun_slug": "babushkinskynayauze",
     "is_closed": false,
     "notes": "Сопоставлено по slug parkrun → 5verst (babushkinsky-na-yauze → babushkinskynayauze). Источник: run5k general_link.",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "babushkinsky-na-yauze"
+        "external_key": "babushkinskynayauze"
       },
       {
         "platform": "five_verst",
@@ -43,13 +43,13 @@
     "parkrun_location": "Balashikha Zarechnaya",
     "canonical_name": "Балашиха Заречная",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "balashikha-zarechnaya",
+    "legacy_parkrun_slug": "balashikhazarechnaya",
     "is_closed": false,
     "notes": "Сопоставлено по slug parkrun → 5verst (balashikha-zarechnaya → balashikhazarechnaya). Источник: run5k general_link.",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "balashikha-zarechnaya"
+        "external_key": "balashikhazarechnaya"
       },
       {
         "platform": "five_verst",
@@ -351,13 +351,13 @@
     "parkrun_location": "Gatchina Prioratsky",
     "canonical_name": "Гатчина Приоратский",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "gatchina-prioratsky",
+    "legacy_parkrun_slug": "gatchinaprioratsky",
     "is_closed": false,
     "notes": "Сопоставлено по slug parkrun → 5verst (gatchina-prioratsky → gatchinaprioratsky). Источник: run5k general_link.",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "gatchina-prioratsky"
+        "external_key": "gatchinaprioratsky"
       },
       {
         "platform": "five_verst",
@@ -369,13 +369,13 @@
     "parkrun_location": "Gorky Park",
     "canonical_name": "Парк Горького",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "gorky-park",
+    "legacy_parkrun_slug": "gorkypark",
     "is_closed": false,
     "notes": "Сопоставлено по slug parkrun → 5verst (gorky-park → gorkypark). Источник: run5k general_link. Добавлен runpark runpark-gorkypark",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "gorky-park"
+        "external_key": "gorkypark"
       },
       {
         "platform": "five_verst",
@@ -427,13 +427,13 @@
     "parkrun_location": "Gubernsky Park",
     "canonical_name": "Калуга",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "gubernsky-park",
+    "legacy_parkrun_slug": "gubernskypark",
     "is_closed": false,
     "notes": "Сопоставлено по slug parkrun → 5verst (gubernsky-park → gubernskypark). Источник: run5k general_link.",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "gubernsky-park"
+        "external_key": "gubernskypark"
       },
       {
         "platform": "five_verst",
@@ -735,13 +735,13 @@
     "parkrun_location": "Lesopark Severny",
     "canonical_name": "Лесопарк Северный",
     "active_platform": "runpark",
-    "legacy_parkrun_slug": "lesopark-severny",
+    "legacy_parkrun_slug": "lesoparkseverny",
     "is_closed": false,
     "notes": "Parkrun → RunPark: lesopark-severny → PushKino",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "lesopark-severny"
+        "external_key": "lesoparkseverny"
       },
       {
         "platform": "runpark",
@@ -753,13 +753,13 @@
     "parkrun_location": "Lobnya Gorodskoy Park",
     "canonical_name": "Лобня Городской парк",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "lobnya-gorodskoy-park",
+    "legacy_parkrun_slug": "lobnyagorodskoypark",
     "is_closed": false,
     "notes": "Сопоставлено по slug parkrun → 5verst (lobnya-gorodskoy-park → lobnyagorodskoypark). Источник: run5k general_link.",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "lobnya-gorodskoy-park"
+        "external_key": "lobnyagorodskoypark"
       },
       {
         "platform": "five_verst",
@@ -901,13 +901,13 @@
     "parkrun_location": "Moskovsky Park Pobedy",
     "canonical_name": "Московский парк Победы",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "moskovsky-park-pobedy",
+    "legacy_parkrun_slug": "moskovskyparkpobedy",
     "is_closed": false,
     "notes": "Сопоставлено по slug parkrun → 5verst (moskovsky-park-pobedy → moskovskyparkpobedy). Источник: run5k general_link.",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "moskovsky-park-pobedy"
+        "external_key": "moskovskyparkpobedy"
       },
       {
         "platform": "five_verst",
@@ -1071,13 +1071,13 @@
     "parkrun_location": "Olimpiyskaya Derevnya",
     "canonical_name": "Олимпийская Деревня",
     "active_platform": "s95",
-    "legacy_parkrun_slug": "olimpiyskaya-derevnya",
+    "legacy_parkrun_slug": "olimpiyskayaderevnya",
     "is_closed": false,
     "notes": "В каталоге 5verst (run5k) нет — вероятно перешло на С95 (olimpiyskayaderevnya). Полное название: Парк Олимпийской деревни (Москва).",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "olimpiyskaya-derevnya"
+        "external_key": "olimpiyskayaderevnya"
       },
       {
         "platform": "s95",
@@ -1111,13 +1111,13 @@
     "parkrun_location": "park 30-letiya Oktyabrya",
     "canonical_name": "Боровичи",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "park-30-letiya-oktyabrya",
+    "legacy_parkrun_slug": "park30letiyaoktyabrya",
     "is_closed": false,
     "notes": "Боровичи, парк 30-летия Октября: parkrun 28.08.2021–12.02.2022, с 28.05.2022 продолжается как 5 вёрст «Боровичи». Сопоставлено вручную.",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "park-30-letiya-oktyabrya"
+        "external_key": "park30letiyaoktyabrya"
       },
       {
         "platform": "five_verst",
@@ -1129,13 +1129,13 @@
     "parkrun_location": "park 850-letiya Moskvy",
     "canonical_name": "Марьино",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "park-850-letiya-moskvy",
+    "legacy_parkrun_slug": "park850letiyamoskvy",
     "is_closed": false,
     "notes": "Сопоставлено по slug parkrun → 5verst (park-850-letiya-moskvy → park850letiyamoskvy). Источник: run5k general_link. Добавлена связка RunPark (runpark-park850letiyamoskvy) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "park-850-letiya-moskvy"
+        "external_key": "park850letiyamoskvy"
       },
       {
         "platform": "five_verst",
@@ -1201,13 +1201,13 @@
     "parkrun_location": "Pavlovsky Posad",
     "canonical_name": "Павловский Посад",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "pavlovsky-posad",
+    "legacy_parkrun_slug": "pavlovskyposad",
     "is_closed": false,
     "notes": "Сопоставлено по slug parkrun → 5verst (pavlovsky-posad → pavlovskyposad). Источник: run5k general_link.",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "pavlovsky-posad"
+        "external_key": "pavlovskyposad"
       },
       {
         "platform": "five_verst",
@@ -1291,13 +1291,13 @@
     "parkrun_location": "Pokrovskoe-Streshnevo",
     "canonical_name": "Покровское-Стрешнево",
     "active_platform": "runpark",
-    "legacy_parkrun_slug": "pokrovskoe-streshnevo",
+    "legacy_parkrun_slug": "pokrovskoestreshnevo",
     "is_closed": false,
     "notes": "Parkrun → RunPark: pokrovskoe-streshnevo → pokrovskostreshnevo",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "pokrovskoe-streshnevo"
+        "external_key": "pokrovskoestreshnevo"
       },
       {
         "platform": "runpark",
@@ -1351,15 +1351,11 @@
     "active_platform": "s95",
     "legacy_parkrun_slug": "ramenskoegorodskoypark",
     "is_closed": false,
-    "notes": "Сопоставлено по slug parkrun → 5verst (ramenskoegorodskoypark → ramenskoegorodskoypark). Источник: run5k general_link. Добавлена связка RunPark (runpark-ramenskoegorodskoypark) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026. 26.09.2026: локация перешла из 5 вёрст в S95 (s95.ru/events/ramenskoe), основная система — S95; добавлена вторая parkrun-связка ramenskoe-gorodskoy-park (42 протокола 2021–2022, слаг из официального каталога parkrun).",
+    "notes": "Сопоставлено по slug parkrun → 5verst (ramenskoegorodskoypark → ramenskoegorodskoypark). Источник: run5k general_link. Добавлена связка RunPark (runpark-ramenskoegorodskoypark) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026. 26.09.2026: локация перешла из 5 вёрст в S95 (s95.ru/events/ramenskoe), основная система — S95; добавлялась вторая parkrun-связка ramenskoe-gorodskoy-park (42 протокола 2021–2022) — это была транслитерация, а не слаг parkrun; 16.10.2026 протоколы слиты в ramenskoegorodskoypark, связка убрана.",
     "links": [
       {
         "platform": "parkrun",
         "external_key": "ramenskoegorodskoypark"
-      },
-      {
-        "platform": "parkrun",
-        "external_key": "ramenskoe-gorodskoy-park"
       },
       {
         "platform": "five_verst",
@@ -1483,13 +1479,13 @@
     "parkrun_location": "Serpukhov Gorodskoy Bor",
     "canonical_name": "Серпухов Городской бор",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "serpukhov-gorodskoy-bor",
+    "legacy_parkrun_slug": "serpukhovgorodskoybor",
     "is_closed": false,
     "notes": "Сопоставлено по slug parkrun → 5verst (serpukhov-gorodskoy-bor → serpukhovgorodskoybor). Источник: run5k general_link. Добавлена связка RunPark (runpark-serpukhovgorodskoybor) — тот же slug, что и у основной платформы; найдено при аудите дублей 20.07.2026.",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "serpukhov-gorodskoy-bor"
+        "external_key": "serpukhovgorodskoybor"
       },
       {
         "platform": "five_verst",
@@ -1505,13 +1501,13 @@
     "parkrun_location": "Severnoe Tushino",
     "canonical_name": "Северное Тушино",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "severnoe-tushino",
+    "legacy_parkrun_slug": "severnoetushino",
     "is_closed": false,
     "notes": "Сопоставлено по slug parkrun → 5verst (severnoe-tushino → severnoetushino). Источник: run5k general_link.",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "severnoe-tushino"
+        "external_key": "severnoetushino"
       },
       {
         "platform": "five_verst",
@@ -1779,13 +1775,13 @@
     "parkrun_location": "Tula Central",
     "canonical_name": "Тула Центральный парк",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "tula-central",
+    "legacy_parkrun_slug": "tulacentral",
     "is_closed": false,
     "notes": "Сопоставлено по slug parkrun → 5verst (tula-central → tulacentral). Источник: run5k general_link.",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "tula-central"
+        "external_key": "tulacentral"
       },
       {
         "platform": "five_verst",
@@ -1797,13 +1793,13 @@
     "parkrun_location": "Tver Rechnoy Vokzal",
     "canonical_name": "Тверь",
     "active_platform": "s95",
-    "legacy_parkrun_slug": "tver-rechnoy-vokzal",
+    "legacy_parkrun_slug": "tverrechnoyvokzal",
     "is_closed": false,
     "notes": "В каталоге 5verst (run5k) нет — вероятно перешло на С95 (parkzhrun). Полное название: Речной вокзал (Тверь).",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "tver-rechnoy-vokzal"
+        "external_key": "tverrechnoyvokzal"
       },
       {
         "platform": "s95",
@@ -2129,13 +2125,13 @@
     "parkrun_location": "Vorkuta Gorodskoy Park",
     "canonical_name": "Воркута Городской парк",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "vorkuta-gorodskoy-park",
+    "legacy_parkrun_slug": "vorkutagorodskoypark",
     "is_closed": false,
     "notes": "Воркута, Республика Коми: parkrun 04.12.2021–26.02.2022, мост RunPark 19.03–21.05.2022, с 21.05.2022 продолжается как 5 вёрст «Воркута Городской парк». Сопоставлено вручную (найдено при аудите дублей five_verst/runpark 20.07.2026).",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "vorkuta-gorodskoy-park"
+        "external_key": "vorkutagorodskoypark"
       },
       {
         "platform": "runpark",
@@ -2259,13 +2255,13 @@
     "parkrun_location": "Ostrov Yunost",
     "canonical_name": "Иркутск остров Юность",
     "active_platform": "five_verst",
-    "legacy_parkrun_slug": "ostrov-yunost",
+    "legacy_parkrun_slug": "ostrovyunost",
     "is_closed": false,
     "notes": "Иркутск. parkrun Ostrov Yunost (04.09.2021–26.02.2022, 26 протоколов) → 5 вёрст ostrovyunost (с 21.05.2022). Единственная русская parkrun-локация, которой не было в каталоге: slug parkrun с дефисом (ostrov-yunost) не совпадал с 5verst (ostrovyunost), связка не завелась ни импортом, ни аудитом RunPark. Найдено по репорту 01.08.2026 («потерялись забеги серии parkrun»).",
     "links": [
       {
         "platform": "parkrun",
-        "external_key": "ostrov-yunost"
+        "external_key": "ostrovyunost"
       },
       {
         "platform": "five_verst",

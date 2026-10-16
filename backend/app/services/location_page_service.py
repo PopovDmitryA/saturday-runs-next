@@ -32,7 +32,7 @@ from app.core.age_groups import (  # noqa: F401 — реэкспорт: по э�
     normalize_age_group,
 )
 from app.core.redis_client import get_redis_client
-from app.location_page_url import PLATFORM_ORDER, location_page_url
+from app.location_page_url import LOCATION_SLUG_RENAMES, PLATFORM_ORDER, location_page_url
 from app.models import (
     Event,
     EventCrosslink,
@@ -403,6 +403,9 @@ def resolve_location_identity(db: Session, slug: str) -> LocationIdentity | None
     requested = (slug or "").strip().lower()
     if not requested:
         return None
+    # Площадка сменила слаг (parkrun переименовал её, 5 вёрст — реестр): старый
+    # адрес ведёт на новую, а не в 404. Роботу тот же словарь отдаёт 301.
+    requested = LOCATION_SLUG_RENAMES.get(requested, requested)
     requested_normalized = normalize_location_slug(requested)
 
     rows = db.query(Location, Platform.code).join(Platform, Location.platform_id == Platform.id).all()

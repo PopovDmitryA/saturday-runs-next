@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.display_name import strip_email
+from app.location_page_url import LOCATION_SLUG_RENAMES
 from app.services.location_page_service import (
     build_last_results,
     build_location_page,
@@ -2174,15 +2175,7 @@ class Prerendered:
 # обратился в неудачную минуту.
 RETRY_AFTER_SECONDS = 600
 
-# Бывшие адреса локаций, которые больше ни во что не резолвятся: однодневки
-# вошли в серию, у площадок сменился слаг в реестре системы. Робот находит их
-# по старым ссылкам и копит в «Исключённых» как 404 (выгрузка 03.10.2026).
-LOCATION_SLUG_RENAMES: dict[str, str] = {
-    "kurskboevadacha": "boevadacha",
-    "denfizkulturnikatula": "starti-soobshchestv",
-    "zelenye5km": "starti-soobshchestv",
-    "obninsk5": "obninsk",
-}
+# Бывшие адреса локаций — app/location_page_url.py (LOCATION_SLUG_RENAMES).
 
 _LOCATION_SUBPAGES: tuple[tuple[re.Pattern[str], str], ...] = (
     (_LOCATION_EVENTS_RE, "/events"),

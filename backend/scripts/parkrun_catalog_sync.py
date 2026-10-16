@@ -23,7 +23,8 @@ Küchenholz): слаг parkrun-локации мы выводим из назв�
 * source_url — на реальную страницу площадки (домен страны + официальный слаг);
 * external_key — по флагу --rename-keys: наш ключ становится официальным слагом,
   чтобы парсер профилей и каталог сошлись на одном значении. Ключ переносится
-  вместе со ссылками в location_catalog_links. Если официальный слаг уже занят
+  вместе со ссылками в location_catalog_links, ключами протоколов и результатов
+  (app/parkrun/location_keys.py). Если официальный слаг уже занят
   другой строкой (такое есть: «Angarskie Prudy» лежит и как `angarskie-prudy`,
   и как `angarskieprudy`), строку пропускаем — это случай для слияния руками.
 
@@ -37,14 +38,22 @@ Küchenholz): слаг parkrun-локации мы выводим из назв�
     make prod-run ARGS="scripts/parkrun_catalog_sync.py --dry-run --pretty"
     CONFIRM_PROD=1 make prod-run ARGS="scripts/parkrun_catalog_sync.py --rename-keys"
 
-Дамп каталога для парсера профилей (лежит в пакете, чтобы ездил с образом):
+С `--no-fetch` сверка идёт по снимкам, которые едут с образом (их обновляет
+`--dump-catalog` вместе с `backfill_parkrun_from_archive.py --rebuild-index`),
+и в parkrun не ходит вовсе — так её можно гонять в контейнере на проде.
 
-    python backend/scripts/parkrun_catalog_sync.py --dump-catalog
+Дамп каталога для парсера профилей (лежит в пакете, чтобы ездил с образом;
+дополняет прежний снимок — закрытые площадки из него не пропадают):
+
+    python backend/scripts/parkrun_catalog_sync.py --events-json events.json --dump-catalog
+
+Когда и как обновлять снимки — в app/parkrun/event_slugs.py.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 import urllib.request
@@ -55,7 +64,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.models import Location, LocationCatalogLink, Platform  # noqa: E402
+from app.models import Location, Platform  # noqa: E402
+from app.parkrun.event_slugs import ARCHIVE_PATH, COUNTRY_DOMAINS  # noqa: E402
+from app.parkrun.location_keys import rename_parkrun_location  # noqa: E402
 
 EVENTS_URL = "https://images.parkrun.com/events.json"
 # Каталог для парсера профилей: только имя → слаг, без координат и стран.
@@ -120,6 +131,83 @@ def parse_catalog(payload: dict[str, Any]) -> list[CatalogEvent]:
     return events
 
 
+def snapshot_catalog() -> list[CatalogEvent]:
+    """Каталог из снимков, что едут с образом: сверка на проде без похода в сеть.
+
+    Слаг берётся из снимка имён (events_slugs.json), точка и домен страны — из
+    слепка events_archive.json. Площадки, закрытые после снимка, в нём остаются;
+    населённого пункта снимки не хранят — он скрипту и не нужен.
+    """
+    names: dict[str, str] = json.loads(CATALOG_DUMP.read_text(encoding="utf-8"))
+    geo = json.loads(ARCHIVE_PATH.read_text(encoding="utf-8")).get("events") or {}
+    events: list[CatalogEvent] = []
+    for name, slug in names.items():
+        row = geo.get(normalize_name(slug))
+        if not row:
+            continue
+        code, latitude, longitude = row[:3]
+        events.append(
+            CatalogEvent(
+                slug=slug,
+                name=name,
+                latitude=float(latitude),
+                longitude=float(longitude),
+                domain=COUNTRY_DOMAINS.get(int(code), ""),
+                place="",
+            )
+        )
+    return events
+
+
+def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi, dlmb = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlmb / 2) ** 2
+    return 2 * 6371.0 * math.asin(math.sqrt(a))
+
+
+# Переименованная площадка стоит в той же точке: у Ludlow → Mortimer Forest и
+# Colby → Colby Woodland Garden расстояние 0 м. Соседние живые и закрытые
+# площадки бывают в 130 м друг от друга (Parys / Egweni River Lodge), поэтому порог
+# узкий, а кандидат должен быть единственным.
+RENAME_MAX_KM = 0.1
+
+
+def renamed_slugs(previous: dict[str, str], events: list[CatalogEvent]) -> dict[str, str]:
+    """Старый слаг → новый для площадок, которые parkrun переименовал вместе со слагом.
+
+    Профиль атлета показывает площадку под новым именем за всю историю, а в
+    снимке старые имена вели к старому слагу. Без перевода импорт заводил
+    рядом со старой локацией новую (так было бы с ludlow → mortimerforest).
+    Старый слаг ищем среди пропавших из каталога, новый — среди появившихся;
+    точку старого берём из архивного слепка events_archive.json.
+    """
+    fresh_slugs = {event.slug for event in events}
+    old_slugs = set(previous.values()) - fresh_slugs
+    new_events = [event for event in events if event.slug not in set(previous.values())]
+    if not old_slugs or not new_events:
+        return {}
+    try:
+        archive = json.loads(ARCHIVE_PATH.read_text(encoding="utf-8")).get("events") or {}
+    except (OSError, ValueError):
+        return {}
+    renamed: dict[str, str] = {}
+    for old_slug in old_slugs:
+        row = archive.get(normalize_name(old_slug))
+        if not row or len(row) < 3:
+            continue
+        juniors = old_slug.endswith("-juniors")
+        candidates = [
+            event.slug
+            for event in new_events
+            if event.slug.endswith("-juniors") == juniors
+            and _distance_km(float(row[1]), float(row[2]), event.latitude, event.longitude) <= RENAME_MAX_KM
+        ]
+        if len(candidates) == 1:
+            renamed[old_slug] = candidates[0]
+    return renamed
+
+
 def build_index(events: list[CatalogEvent]) -> tuple[dict[str, CatalogEvent], dict[str, CatalogEvent]]:
     """Индексы «по слагу» и «по имени». Неоднозначные имена выкидываем."""
     by_slug: dict[str, CatalogEvent] = {}
@@ -144,6 +232,11 @@ def parse_city_overrides(values: list[str]) -> dict[str, str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sync parkrun locations with the official catalog")
     parser.add_argument("--events-json", type=Path, default=None, help="Локальная копия events.json")
+    parser.add_argument(
+        "--no-fetch",
+        action="store_true",
+        help="Сверять по снимкам из образа (events_slugs.json + events_archive.json), в сеть не ходить",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Ничего не писать, только посчитать")
     parser.add_argument("--rename-keys", action="store_true", help="Переименовать external_key в официальный слаг")
     parser.add_argument(
@@ -158,8 +251,12 @@ def main() -> int:
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()
 
-    payload = fetch_catalog(args.events_json)
-    events = parse_catalog(payload)
+    if args.no_fetch:
+        if args.dump_catalog:
+            raise SystemExit("--dump-catalog строит снимок из events.json, с --no-fetch он не сочетается")
+        events = snapshot_catalog()
+    else:
+        events = parse_catalog(fetch_catalog(args.events_json))
     if not events:
         print(json.dumps({"error": "каталог пуст"}, ensure_ascii=False), file=sys.stderr)
         return 1
@@ -167,12 +264,35 @@ def main() -> int:
 
     if args.dump_catalog:
         CATALOG_DUMP.parent.mkdir(parents=True, exist_ok=True)
-        dump = {normalize_name(event.name): event.slug for event in events}
+        # Снимок только дополняем. Закрытая площадка из живого каталога уходит,
+        # а её строка в базе уже живёт под официальным слагом: забудь его
+        # снимок — парсер вернётся к транслитерации («Grüner Weg» → `gr-ner-weg`
+        # вместо `gruenerweg`) и заведёт локации дубль. Свежий каталог при
+        # этом главнее: переименованная площадка получает новый слаг.
+        previous: dict[str, str] = {}
+        if CATALOG_DUMP.exists():
+            previous = json.loads(CATALOG_DUMP.read_text(encoding="utf-8"))
+        fresh = {normalize_name(event.name): event.slug for event in events}
+        renamed = renamed_slugs(previous, events)
+        for old_slug, new_slug in sorted(renamed.items()):
+            print(f"площадка переименована: {old_slug} → {new_slug}", file=sys.stderr)
+        dump = {**{name: renamed.get(slug, slug) for name, slug in previous.items()}, **fresh}
         CATALOG_DUMP.write_text(
             json.dumps(dump, ensure_ascii=False, sort_keys=True, indent=0) + "\n",
             encoding="utf-8",
         )
-        print(json.dumps({"catalog_dump": str(CATALOG_DUMP), "events": len(dump)}, ensure_ascii=False))
+        print(
+            json.dumps(
+                {
+                    "catalog_dump": str(CATALOG_DUMP),
+                    "events": len(dump),
+                    "added": len(fresh.keys() - previous.keys()),
+                    "kept_closed": len(previous.keys() - fresh.keys()),
+                    "renamed": len(renamed),
+                },
+                ensure_ascii=False,
+            )
+        )
         return 0
 
     from app.db.session import get_session_factory
@@ -243,13 +363,11 @@ def main() -> int:
                     old_key = location.external_key
                     taken_keys.discard(old_key)
                     taken_keys.add(event.slug)
-                    location.external_key = event.slug
-                    # Каталог локаций ссылается на площадку тем же ключом —
-                    # без этого связка распадётся и площадка выпадет с карты.
-                    db.query(LocationCatalogLink).filter(
-                        LocationCatalogLink.platform_id == location.platform_id,
-                        LocationCatalogLink.external_key == old_key,
-                    ).update({"external_key": event.slug}, synchronize_session=False)
+                    # Вместе с ключом — связки каталога локаций, ключи и ссылки
+                    # протоколов и ключи результатов. До 16.10.2026 менялись
+                    # только локация и связка, и у 58 тыс. протоколов остался
+                    # старый слаг.
+                    rename_parkrun_location(db, location, event.slug)
                     stats["keys_renamed"] += 1
                     changes.append(f"ключ {old_key} → {event.slug}")
 

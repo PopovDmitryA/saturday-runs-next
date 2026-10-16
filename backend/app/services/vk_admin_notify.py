@@ -91,10 +91,13 @@ def format_daily_summary(
     *,
     problems: list[dict[str, Any]] | None = None,
     admin_url: str | None = None,
+    parkrun_catalog_gaps: list[str] | None = None,
 ) -> str:
     """Одна сводка в сутки: сколько раз запускали и что обновилось.
 
     Детали по локациям сознательно не выводим — за ними админка «Автообновление».
+    Исключение — новые parkrun-локации, которых нет в снимке каталога: сами они
+    не починятся, нужен новый снимок (см. app/parkrun/event_slugs.py).
     """
     lines = [f"📊 Автообновление за {day_label}"]
 
@@ -124,6 +127,16 @@ def format_daily_summary(
         lines.append("Что болит:")
         for line in _problem_lines(problems):
             lines.append(f"• {line}")
+
+    if parkrun_catalog_gaps:
+        lines.append("")
+        lines.append("🗺 parkrun: новые локации не нашлись в снимке каталога (нет страны и координат):")
+        for name in parkrun_catalog_gaps[:SUMMARY_PROBLEM_LIMIT]:
+            lines.append(f"• {name}")
+        hidden = len(parkrun_catalog_gaps) - SUMMARY_PROBLEM_LIMIT
+        if hidden > 0:
+            lines.append(f"• … и ещё {hidden}")
+        lines.append("Обновить снимок — app/parkrun/event_slugs.py")
 
     if admin_url:
         lines.append("")

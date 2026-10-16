@@ -31,7 +31,7 @@ MANUAL_MATCHES: dict[str, tuple[str, str]] = {
 LEGACY_PARKRUN_SLUGS: dict[str, str] = {
     "mytishchicentralpark": "mytishchicentralpark",
     "zhukovsky": "zhukovsky",
-    "PushKino": "lesopark-severny",
+    "PushKino": "lesoparkseverny",
 }
 
 

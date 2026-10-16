@@ -244,7 +244,7 @@
     "country": null,
     "matched_platform": null,
     "matched_external_key": null,
-    "legacy_parkrun_slug": "lesopark-severny",
+    "legacy_parkrun_slug": "lesoparkseverny",
     "public_url": "https://runpark.ru/Places/PushKino",
     "duplicate_match_text": null,
     "decision_raw": "Название локации фиксируем \"Лесопарк Северный\" и мэтчим с локацией parkrun под названием Lesopark Severny",

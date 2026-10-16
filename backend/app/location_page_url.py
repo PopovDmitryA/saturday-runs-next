@@ -2,6 +2,25 @@ from __future__ import annotations
 
 PLATFORM_ORDER = ("five_verst", "s95", "runpark", "parkrun")
 
+# Бывшие адреса локаций, которые больше ни во что не резолвятся: однодневки
+# вошли в серию, у площадок сменился слаг в реестре системы. Робот находит их
+# по старым ссылкам и копит в «Исключённых» как 404 (выгрузка 03.10.2026).
+# Робот получает 301 (seo_service), человеку страница находится по новому
+# адресу (location_page_service.resolve_location_identity).
+LOCATION_SLUG_RENAMES: dict[str, str] = {
+    "kurskboevadacha": "boevadacha",
+    "denfizkulturnikatula": "starti-soobshchestv",
+    "zelenye5km": "starti-soobshchestv",
+    "obninsk5": "obninsk",
+    # parkrun переименовал площадки вместе со слагом, 16.10.2026 ключи у нас
+    # приведены к новым (scripts/unify_parkrun_location_keys.py). Остальные
+    # прежние ключи parkrun отличаются только дефисами и находятся и так.
+    "colby": "colbywoodlandgarden",
+    "ludlow": "mortimerforest",
+    "launceston": "invereskprecinct",
+    "markshall-estate": "markshall",
+}
+
 
 def location_page_url(
     platform_code: str,
