@@ -455,7 +455,7 @@ def is_foreign_location(location: Location, platform_code: str, catalog_index: L
     parkrun.org.uk) и не отражает реальную страну — вместо него смотрим, есть
     ли связь с каталогом локаций (площадка когда-то была/стала 5 вёрст/S95)
     либо явное исключение. Для остальных платформ country достоверна (для
-    s95.rs/s95.by это реальная зарубежная страна)."""
+    s95.rs/s95.by/s95.kz это реальная зарубежная страна)."""
     if platform_code == "parkrun":
         if location.external_key in RUSSIAN_PARKRUN_SLUGS_OUTSIDE_CATALOG:
             return False

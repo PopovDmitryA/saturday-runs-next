@@ -19,7 +19,7 @@ MAP_LINK_TITLE_RE = re.compile(r"Карта и схема проезда|Map and
 
 # Карточки страницы локации S95: «Общая информация» (текст про трассу) и
 # «Наши контакты» (место проведения + ссылки на карту и парковку). Домены
-# s95.by/s95.rs отдают те же карточки, но заголовки могут быть переведены.
+# s95.by/s95.rs/s95.kz отдают те же карточки, но заголовки могут быть переведены.
 INFO_CARD_RE = re.compile(r"Общая информация|General information|Opšte informacije", re.I)
 CONTACTS_CARD_RE = re.compile(r"Наши контакты|Our contacts|Kontakti", re.I)
 # Сербский домен пишет «Mesto događaja» — без этого варианта подпись оставалась
@@ -143,7 +143,7 @@ def parse_event_location_page(
 
     city = None
     # Страну s95 на странице не пишет, зато её однозначно задаёт домен:
-    # s95.rs — Сербия, s95.by — Беларусь, s95.ru — Россия.
+    # s95.rs — Сербия, s95.by — Беларусь, s95.kz — Казахстан, s95.ru — Россия.
     country = s95_country_from_url(page_url)
     for node in soup.find_all(string=re.compile(r"Место проведения", re.I)):
         parent = node.parent

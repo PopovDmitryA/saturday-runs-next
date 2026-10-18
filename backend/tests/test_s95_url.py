@@ -33,6 +33,10 @@ def test_parse_profile_input_keeps_regional_domain() -> None:
     assert parsed.domain == "s95.rs"
     assert parsed.canonical_url == "https://s95.rs/athletes/42/"
 
+    parsed = parse_profile_input("https://s95.kz/athletes/11234/")
+    assert parsed.domain == "s95.kz"
+    assert parsed.canonical_url == "https://s95.kz/athletes/11234/"
+
 
 def test_parse_profile_input_rejects_barcode_with_hint() -> None:
     # Штрихкод в профиле С95 — parkrun-код, по нему атлета на s95.ru не найти.

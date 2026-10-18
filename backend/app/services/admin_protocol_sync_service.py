@@ -10,6 +10,7 @@ from app.models import EventSummary, Location, Platform
 from app.platform_adapters.canonical import CanonicalEventSummary, CanonicalLocation
 from app.platform_adapters.five_verst import bulk_parser
 from app.platform_adapters.five_verst.http import fetch_html
+from app.platform_adapters.s95.url import S95_DOMAINS
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
 from app.sync.s95_protocol_api import fetch_and_upsert_activity_protocol_api
@@ -185,6 +186,8 @@ def sync_protocol_from_url(db: Session, url: str) -> dict[str, object]:
     lowered = normalized.lower()
     if "5verst.ru" in lowered:
         return _sync_five_verst_protocol_url(db, normalized)
-    if "s95.ru" in lowered:
+    # Протоколы всех стран С95 лежат в одной базе, и номер активности общий:
+    # s95.kz/activities/4923 и s95.ru/activities/4923 — один и тот же забег.
+    if any(domain in lowered for domain in S95_DOMAINS):
         return _sync_s95_protocol_url(db, normalized)
-    raise ValueError("Поддерживаются только ссылки 5verst.ru и s95.ru")
+    raise ValueError("Поддерживаются только ссылки 5verst.ru и s95.ru / s95.rs / s95.by / s95.kz")

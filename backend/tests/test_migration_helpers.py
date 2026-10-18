@@ -26,6 +26,7 @@ def test_slug_from_s95_url() -> None:
     assert slug_from_s95_url("https://s95.ru/events/izmailovo") == "izmailovo"
     assert slug_from_s95_url("https://s95.by/events/parkzhrun/") == "parkzhrun"
     assert slug_from_s95_url("https://s95.rs/events/belgrade") == "belgrade"
+    assert slug_from_s95_url("https://s95.kz/events/almaty") == "almaty"
 
 
 def test_s95_country_from_url() -> None:
@@ -35,6 +36,8 @@ def test_s95_country_from_url() -> None:
     # Голый домен без пути — именно он приходит из реестра как entry.domain.
     assert s95_country_from_url("https://s95.rs") == "Сербия"
     assert s95_country_from_url("s95.by") == "Беларусь"
+    assert s95_country_from_url("https://s95.kz/events/almaty") == "Казахстан"
+    assert s95_country_from_url("https://s95.kz") == "Казахстан"
     assert s95_country_from_url("https://www.s95.rs/events/novisad") == "Сербия"
     # Неизвестный или пустой источник — Россия как было, s95 родом оттуда.
     assert s95_country_from_url(None) == "Россия"

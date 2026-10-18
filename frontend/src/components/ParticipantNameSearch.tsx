@@ -49,7 +49,7 @@ function detectUrlPlatform(value: string): UrlPlatformCode | null {
   if (lower.includes("5verst.ru")) {
     return "five_verst";
   }
-  if (lower.includes("s95.ru")) {
+  if (/s95\.(ru|rs|by|kz)\b/.test(lower)) {
     return "s95";
   }
   if (lower.includes("parkrun.")) {

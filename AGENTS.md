@@ -28,7 +28,7 @@
 Платформы:
 
 - **5 вёрst** (`five_verst`) — 5verst.ru
-- **S95** (`s95`) — s95.ru / s95.by
+- **S95** (`s95`) — s95.ru / s95.by / s95.rs / s95.kz (одна база, страна — по домену)
 - **parkrun** — parkrun.org.uk (fetch не из prod API: очередь профилей разбирает домашний сервер)
 - **RunPark** (`runpark`) — внешняя БД, см. [docs/runpark/README.md](docs/runpark/README.md)
 

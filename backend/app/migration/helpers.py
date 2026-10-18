@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from app.time_format import format_finish_time_display, parse_finish_time
 
 FIVE_VERST_SLUG_RE = re.compile(r"5verst\.ru/([^/\"'\s?#]+)", re.I)
-S95_SLUG_RE = re.compile(r"s95\.(?:ru|by|rs)/events/([^/\"'\s?#]+)", re.I)
+S95_SLUG_RE = re.compile(r"s95\.(?:ru|by|rs|kz)/events/([^/\"'\s?#]+)", re.I)
 PARKRUN_SLUG_RE = re.compile(r"parkrun\.(?:org\.uk|ru|com)/([^/\"'\s?#]+)", re.I)
 
 RESERVED_SLUGS = frozenset(
@@ -50,13 +50,15 @@ def slug_from_s95_url(url: str | None) -> str | None:
 S95_DOMAIN_COUNTRY = {
     "s95.rs": "Сербия",
     "s95.by": "Беларусь",
+    "s95.kz": "Казахстан",
     "s95.ru": "Россия",
 }
 
 
 def s95_country_from_url(url: str | None) -> str:
     """Страна локации s95 по домену: страну сама система нигде не отдаёт, а домен
-    её задаёт однозначно — s95.rs это Сербия, s95.by Беларусь, s95.ru Россия.
+    её задаёт однозначно — s95.rs это Сербия, s95.by Беларусь, s95.kz Казахстан,
+    s95.ru Россия.
 
     Раньше сверка шла по подстроке «s95.by/» — голый домен без пути (а именно он
     приходит из реестра как `entry.domain`) в неё не попадал и молча становился

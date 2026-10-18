@@ -9,6 +9,7 @@ S95_DOMAINS = [
     "https://s95.ru",
     "https://s95.by",
     "https://s95.rs",
+    "https://s95.kz",
 ]
 
 
@@ -99,7 +100,7 @@ def fetch_events(domain: str) -> list[dict]:
 
 
 def fetch_all_locations(*, errors: list[str] | None = None) -> list[S95ApiLocation]:
-    """Локации всех трёх доменов: `pages.json` + `events.json`, без дублей.
+    """Локации всех доменов: `pages.json` + `events.json`, без дублей.
 
     Два источника нужны потому, что каждый по отдельности неполон:
 

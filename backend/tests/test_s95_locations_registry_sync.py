@@ -309,6 +309,36 @@ def test_s95_sync_registry_fixes_wrong_country(db_session: Session, s95_platform
     assert result.locations_updated == 1
 
 
+
+def test_s95_sync_registry_moves_kazakhstan_off_s95_ru(db_session: Session, s95_platform: Platform) -> None:
+    """Алматы приходит в базу раньше реестра — синком профиля с s95.ru.
+
+    Ссылки на старты в профиле относительные, и до реестра локация живёт как
+    s95.ru и «Россия». Реестр s95.kz переводит её на свой домен и страну.
+    """
+    slug = f"almaty-{uuid4().hex[:8]}"
+    location = Location(
+        platform_id=s95_platform.id,
+        external_key=slug,
+        name="Алматы",
+        country="Россия",
+        source_url=f"https://s95.ru/events/{slug}",
+    )
+    db_session.add(location)
+    db_session.commit()
+
+    entries = [
+        _api_location(slug, "Алматы", active=True, lat=43.295873, lon=76.947706, domain="https://s95.kz")
+    ]
+
+    with patch("app.sync.s95_locations_registry.fetch_all_locations", return_value=entries):
+        sync_s95_locations_registry(db_session, S95LocationRegistrySyncOptions())
+
+    db_session.refresh(location)
+    assert location.country == "Казахстан"
+    assert location.source_url == f"https://s95.kz/events/{slug}"
+
+
 def test_s95_protocol_discovery_marks_official_map(db_session: Session, s95_platform: Platform) -> None:
     """Локация, найденная через протокол, сразу попадает на карту.
 

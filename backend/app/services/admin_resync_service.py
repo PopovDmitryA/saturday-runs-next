@@ -155,7 +155,7 @@ def parse_resync_input(raw: str) -> ResyncTarget:
         return _parse_five_verst(value, parsed.path)
     if any(host == domain or host.endswith(f".{domain}") for domain in S95_DOMAINS):
         return _parse_s95(host, parsed.path)
-    raise ResyncInputError("Поддерживаются ссылки на 5verst.ru и s95.ru / s95.rs / s95.by")
+    raise ResyncInputError("Поддерживаются ссылки на 5verst.ru и s95.ru / s95.rs / s95.by / s95.kz")
 
 
 def _parse_five_verst(value: str, path: str) -> ResyncTarget:

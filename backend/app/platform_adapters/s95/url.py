@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-S95_DOMAINS = ("s95.ru", "s95.rs", "s95.by")
+S95_DOMAINS = ("s95.ru", "s95.rs", "s95.by", "s95.kz")
 ATHLETE_PATH_RE = re.compile(r"/athletes/(\d+)/?", re.IGNORECASE)
 # ID участника из ссылки: https://s95.ru/athletes/5207/ → 5207
 ATHLETE_ID_RE = re.compile(r"^\d{1,9}$")
@@ -72,7 +72,7 @@ def parse_athlete_url(url: str) -> ParsedAthleteUrl:
 
     host = parsed.netloc.lower().removeprefix("www.")
     if not any(host == domain or host.endswith(f".{domain}") for domain in S95_DOMAINS):
-        raise InvalidProfileUrlError("Поддерживаются только домены s95.ru, s95.rs и s95.by")
+        raise InvalidProfileUrlError("Поддерживаются только домены s95.ru, s95.rs, s95.by и s95.kz")
 
     match = ATHLETE_PATH_RE.search(parsed.path)
     if not match:

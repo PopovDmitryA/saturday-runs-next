@@ -383,7 +383,7 @@ celery_app.conf.update(
             "schedule": crontab(hour="*/3", minute=45),
             "options": {"queue": FIVE_VERST_BATCH_QUEUE, "expires": 3 * 3600},
         },
-        # S95 location registry — every 3 days at 20:30 MSK via JSON API (s95.ru/by/rs).
+        # S95 location registry — every 3 days at 20:30 MSK via JSON API (s95.ru/by/rs/kz).
         "s95-registry-3days": {
             "task": "s95_sync.sync_locations_registry",
             "schedule": crontab(hour=20, minute=30, day_of_month="*/3"),
