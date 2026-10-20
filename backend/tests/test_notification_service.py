@@ -681,8 +681,10 @@ def _fake_sources(
     ranks: dict[str, int],
     milestones: list[dict[str, object]],
     counts: dict[str, int] | None = None,
+    totals: dict[str, int] | None = None,
 ) -> None:
     counts = counts or {}
+    totals = totals or {}
     payload = {
         "challenges": [
             {
@@ -704,7 +706,11 @@ def _fake_sources(
     monkeypatch.setattr(
         activity,
         "get_my_leaderboard_row",
-        lambda db, metric, user: {"rank_overall": ranks.get(metric), "rank": ranks.get(metric)},
+        lambda db, metric, user: {
+            "rank_overall": ranks.get(metric),
+            "rank": ranks.get(metric),
+            "total": totals.get(metric),
+        },
     )
     monkeypatch.setattr(
         activity, "get_my_history", lambda db, user_id: {"milestones": milestones, "total": len(milestones)}
@@ -788,17 +794,34 @@ def test_weekly_ratings_message_reports_moves_both_ways(
     db_session: Session, monkeypatch: pytest.MonkeyPatch, _no_broker: list[UUID]
 ) -> None:
     user = _make_user(db_session, chat_id=100)
-    _fake_sources(monkeypatch, levels={}, ranks={"runs": 48, "locations": 120}, milestones=[])
+    _fake_sources(
+        monkeypatch,
+        levels={},
+        ranks={"runs": 48, "locations": 120},
+        totals={"runs": 100, "locations": 30},
+        milestones=[],
+    )
     _on(db_session, user)
     prefs = notify.get_prefs(db_session, user.id)
-    assert prefs is not None and prefs.ratings_snapshot == {"runs": 48, "locations": 120}  # снимок при включении
+    assert prefs is not None and prefs.ratings_snapshot == {  # снимок при включении
+        "runs": {"rank": 48, "total": 100},
+        "locations": {"rank": 120, "total": 30},
+    }
 
-    _fake_sources(monkeypatch, levels={}, ranks={"runs": 45, "locations": 122, "wins": 7}, milestones=[])
+    _fake_sources(
+        monkeypatch,
+        levels={},
+        ranks={"runs": 45, "locations": 122, "wins": 7},
+        totals={"runs": 101, "locations": 30, "wins": 1},
+        milestones=[],
+    )
     assert activity.weekly_ratings_message(db_session, user.id) == {"rating_moves": 2, "queued": True}
     delivery = db_session.query(NotificationDelivery).filter_by(user_id=user.id, kind="ratings").one()
     assert delivery.payload["title"] == "📊 Рейтинги за неделю"
+    # Рядом с местом — прирост самого значения; рейтинга, которого не было в
+    # прошлом снимке («Первые места»), нет — сравнивать не с чем.
     assert delivery.payload["text"] == (
-        "«Количество пробежек» — **45-е место** (▲3)\n«Уникальные локации» — **122-е место** (▼2)"
+        "«Количество пробежек» — **45-е место** (▲3) · +1 пробежка\n«Уникальные локации» — **122-е место** (▼2)"
     )
     assert delivery.payload["url"].endswith("/ratings")
 
@@ -807,6 +830,87 @@ def test_weekly_ratings_message_reports_moves_both_ways(
     notify.update_prefs(db_session, user.id, kinds={"ratings": False})
     _fake_sources(monkeypatch, levels={}, ranks={"runs": 1}, milestones=[])
     assert activity.weekly_ratings_message(db_session, user.id) == {"skipped": "kind off"}
+
+
+def test_weekly_ratings_message_lists_unchanged_ratings_too(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, _no_broker: list[UUID]
+) -> None:
+    """Репорт Дмитрия 20.10.2026: «Уникальные локации» месяцами стояли на месте
+    и в сводку не попадали — казалось, что за ними не следят."""
+    user = _make_user(db_session, chat_id=100)
+    _fake_sources(
+        monkeypatch,
+        levels={},
+        ranks={"runs": 259, "locations": 16, "volunteer_locations": 58, "wins": 851},
+        totals={"runs": 199, "locations": 146, "volunteer_locations": 40, "wins": 3},
+        milestones=[],
+    )
+    _on(db_session, user)
+
+    _fake_sources(
+        monkeypatch,
+        levels={},
+        ranks={"runs": 266, "locations": 16, "volunteer_locations": 58, "wins": 849},
+        totals={"runs": 200, "locations": 147, "volunteer_locations": 40, "wins": 5},
+        milestones=[],
+    )
+    assert activity.weekly_ratings_message(db_session, user.id) == {"rating_moves": 2, "queued": True}
+    delivery = db_session.query(NotificationDelivery).filter_by(user_id=user.id, kind="ratings").one()
+    assert delivery.payload["title"] == "📊 Рейтинги за неделю"
+    assert delivery.payload["text"] == (
+        "«Количество пробежек» — **266-е место** (▼7) · +1 пробежка\n"
+        "«Уникальные локации» — **16-е место** (=) · +1 локация\n"
+        "«Волонтёрство на разных локациях» — **58-е место** (=)\n"
+        "«Первые места» — **849-е место** (▲2) · +2 первых места"
+    )
+
+
+def test_weekly_ratings_message_reads_legacy_rank_only_snapshot(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, _no_broker: list[UUID]
+) -> None:
+    """Снимки до 20.10.2026 хранили одно место числом: первая сводка после
+    выката сравнивает места, а прирост значения покажет со следующей недели."""
+    user = _make_user(db_session, chat_id=100)
+    _enable_with_seeds(db_session, user, levels={}, ranks={"runs": 48, "locations": 120}, keys=[])
+    _fake_sources(
+        monkeypatch,
+        levels={},
+        ranks={"runs": 45, "locations": 120},
+        totals={"runs": 101, "locations": 30},
+        milestones=[],
+    )
+    assert activity.weekly_ratings_message(db_session, user.id) == {"rating_moves": 1, "queued": True}
+    delivery = db_session.query(NotificationDelivery).filter_by(user_id=user.id, kind="ratings").one()
+    assert delivery.payload["title"] == "📈 Рейтинги за неделю: вы поднялись"
+    assert delivery.payload["text"] == (
+        "«Количество пробежек» — **45-е место** (▲3)\n«Уникальные локации» — **120-е место** (=)"
+    )
+    prefs = notify.get_prefs(db_session, user.id)
+    assert prefs is not None and prefs.ratings_snapshot == {
+        "runs": {"rank": 45, "total": 101},
+        "locations": {"rank": 120, "total": 30},
+    }
+
+
+@pytest.mark.parametrize(
+    ("unit", "current", "expected"),
+    [
+        ("дат", 191, "191 дата"),
+        ("дат", 192, "192 даты"),
+        ("дат", 190, "190 дат"),
+        ("дат", 111, "111 дат"),
+        ("номеров", 64, "64 номера"),
+        ("пробежек за год", 33, "33 пробежки за год"),
+        ("минутных корзин", 2, "2 минутные корзины"),
+        ("сек", 18, "18 сек"),  # подписи без форм остаются как есть
+    ],
+)
+def test_progress_line_agrees_unit_with_number(unit: str, current: int, expected: str) -> None:
+    """Репорт Дмитрия 20.10.2026: «Круглый год: +1 → 191 дат»."""
+    item = activity.ChallengeProgress(
+        code="c", title="Круглый год", icon="🗓️", current=current, delta=1, unit=unit, to_next=8, next_level="bronze"
+    )
+    assert activity.progress_line(item) == f"🗓️ Круглый год: +1 → {expected}, до бронзы 8"
 
 
 def test_scan_first_snapshots_are_silent_and_old_runs_ignored(

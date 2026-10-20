@@ -47,10 +47,11 @@ from app.db.session import get_session_factory
 from app.models import Event, Location, Participant, Platform, PlatformLink, RunResult, User, VolunteerResult
 from app.notification_kinds import kind_enabled
 from app.notification_markup import bold, link
+from app.ru_plural import unit_form
 from app.services import notification_channels_service as channels
 from app.services import notification_service as notifications
 from app.services.achievements_service import TIER_LABELS, compute_challenges
-from app.services.leaderboard_service import get_my_leaderboard_row, metric_title
+from app.services.leaderboard_service import get_my_leaderboard_row, metric_title, metric_unit
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.my_history_service import get_my_history
 from app.services.platform_titles import PLATFORM_TITLES
@@ -159,10 +160,17 @@ class ChallengeProgress:
 
 @dataclass(frozen=True)
 class RatingMove:
+    """Место в рейтинге против снимка недельной давности; gained=0 — не сдвинулось."""
+
     metric: str
     label: str
     rank: int
     gained: int
+    #: Насколько за неделю выросло само значение (пробежки, локации…); None —
+    #: в прошлом снимке значения нет (снимки до 20.10.2026 хранили только место).
+    value_gained: int | None = None
+    #: Единица значения из METRIC_META («пробежек», «локаций»).
+    unit: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -463,9 +471,15 @@ def refresh_challenge_snapshots_quietly(db: Session, user_id: UUID, codes: set[s
     return True
 
 
-def ratings_snapshot(db: Session, user: User) -> dict[str, int]:
-    """Текущее место в каждом из рейтингов; нет в рейтинге — метрики нет в снимке."""
-    snapshot: dict[str, int] = {}
+def ratings_snapshot(db: Session, user: User) -> dict[str, dict[str, int]]:
+    """Место и значение в каждом из рейтингов: {"runs": {"rank": 266, "total": 200}}.
+
+    Нет в рейтинге — метрики нет в снимке. Значение хранится, чтобы сводка
+    могла сказать «+1 пробежка» рядом с местом: без него «▼7» после
+    засчитанной пробежки читалось как «пробежку не учли» (20.10.2026 — место
+    съехало из-за пересчёта parkrun у других, своя пробежка была в зачёте).
+    """
+    snapshot: dict[str, dict[str, int]] = {}
     for metric, _label in RATING_METRICS:
         try:
             row = get_my_leaderboard_row(db, metric, user)  # type: ignore[arg-type]
@@ -474,20 +488,51 @@ def ratings_snapshot(db: Session, user: User) -> dict[str, int]:
             continue
         rank = row.get("rank_overall")
         if isinstance(rank, int) and rank > 0:
-            snapshot[metric] = rank
+            entry = {"rank": rank}
+            total = row.get("total")
+            if isinstance(total, int):
+                entry["total"] = total
+            snapshot[metric] = entry
     return snapshot
 
 
-def rating_moves(previous: dict[str, Any] | None, current: dict[str, int]) -> list[RatingMove]:
-    """Изменения места за неделю: вверх (gained > 0) и вниз (gained < 0)."""
+def _snapshot_entry(value: Any) -> tuple[int | None, int | None]:
+    """(место, значение) из снимка. До 20.10.2026 в снимке лежало одно место числом."""
+    if isinstance(value, int):
+        return value, None
+    if isinstance(value, dict):
+        rank, total = value.get("rank"), value.get("total")
+        return (rank if isinstance(rank, int) else None), (total if isinstance(total, int) else None)
+    return None, None
+
+
+def rating_moves(previous: dict[str, Any] | None, current: dict[str, Any]) -> list[RatingMove]:
+    """Место в каждом рейтинге против прошлого снимка — и где сдвинулось, и где нет.
+
+    Неподвижные места тоже в списке (gained=0): иначе «Уникальные локации»
+    месяцами не появлялись в сводке, и казалось, что за ними не следят
+    (репорт Дмитрия 20.10.2026). Рейтинг, которого не было в прошлом снимке,
+    пропускаем — сравнивать не с чем.
+    """
     if previous is None:
         return []
     labels = dict(RATING_METRICS)
     moves: list[RatingMove] = []
-    for metric, rank in current.items():
-        before = previous.get(metric)
-        if isinstance(before, int) and rank != before:
-            moves.append(RatingMove(metric=metric, label=labels.get(metric, metric), rank=rank, gained=before - rank))
+    for metric, value in current.items():
+        rank, total = _snapshot_entry(value)
+        before_rank, before_total = _snapshot_entry(previous.get(metric))
+        if rank is None or before_rank is None:
+            continue
+        moves.append(
+            RatingMove(
+                metric=metric,
+                label=labels.get(metric, metric),
+                rank=rank,
+                gained=before_rank - rank,
+                value_gained=total - before_total if total is not None and before_total is not None else None,
+                unit=metric_unit(metric) if metric in labels else "",
+            )
+        )
     return moves
 
 
@@ -644,8 +689,8 @@ def level_line(up: LevelUp) -> str:
 
 
 def progress_line(item: ChallengeProgress) -> str:
-    """«⏱ Секундомер: +1 → 18 сек, до золота 7»."""
-    value = f"{item.current} {item.unit}" if item.unit else str(item.current)
+    """«⏱ Секундомер: +1 → 18 сек, до золота 7»; подпись согласуется с числом — «191 дата»."""
+    value = f"{item.current} {unit_form(item.current, item.unit)}" if item.unit else str(item.current)
     line = f"{item.icon} {item.title}: +{item.delta} → {value}"
     if item.to_next and item.next_level:
         line += f", до {_LEVEL_LABELS_GENITIVE.get(item.next_level, item.next_level)} {item.to_next}"
@@ -653,8 +698,17 @@ def progress_line(item: ChallengeProgress) -> str:
 
 
 def rating_line(move: RatingMove) -> str:
-    arrow = f"▲{move.gained}" if move.gained > 0 else f"▼{-move.gained}"
-    return f"«{move.label}» — {bold(_ordinal(move.rank) + ' место')} ({arrow})"
+    """«Количество пробежек» — **266-е место** (▼7) · +1 пробежка.
+
+    Прирост значения стоит рядом с местом: место считается против всех
+    остальных, и без него «▼7» после своей пробежки выглядит как «не учли».
+    """
+    arrow = f"▲{move.gained}" if move.gained > 0 else f"▼{-move.gained}" if move.gained < 0 else "="
+    line = f"«{move.label}» — {bold(_ordinal(move.rank) + ' место')} ({arrow})"
+    if move.value_gained and move.unit:
+        sign = "+" if move.value_gained > 0 else "−"
+        line += f" · {sign}{abs(move.value_gained)} {unit_form(move.value_gained, move.unit)}"
+    return line
 
 
 def milestone_line(item: dict[str, Any]) -> str:
@@ -794,8 +848,10 @@ def compose_message(
 
 def compose_ratings_message(moves: list[RatingMove]) -> tuple[str, str]:
     lines = [rating_line(m) for m in moves]
-    ups = sum(1 for m in moves if m.gained > 0)
-    title = "📈 Рейтинги за неделю: вы поднялись" if ups == len(moves) else "📊 Рейтинги за неделю"
+    moved = [m for m in moves if m.gained]
+    title = (
+        "📈 Рейтинги за неделю: вы поднялись" if moved and all(m.gained > 0 for m in moved) else "📊 Рейтинги за неделю"
+    )
     return title, "\n".join(lines)
 
 
@@ -911,7 +967,8 @@ def weekly_ratings_message(db: Session, user_id: UUID) -> dict[str, Any]:
     """Воскресный проход: место в рейтингах против снимка недельной давности.
 
     Первый снимок молчит; дальше — одно сообщение в неделю, только если место
-    в каком-то из рейтингов изменилось. Снимок обновляется здесь же, поэтому
+    в каком-то из рейтингов изменилось. В сообщении — все рейтинги, где
+    человек есть, и неподвижные тоже. Снимок обновляется здесь же, поэтому
     дельта всегда «за неделю», а не «с последней пробежки».
     """
     if not channels.is_enabled(db, user_id):
@@ -924,10 +981,11 @@ def weekly_ratings_message(db: Session, user_id: UUID) -> dict[str, Any]:
         return {"skipped": "no user"}
     current = ratings_snapshot(db, user)
     moves = rating_moves(prefs.ratings_snapshot, current)
+    moved = [m for m in moves if m.gained]
     prefs.ratings_snapshot = current
     db.flush()
     delivery = None
-    if moves:
+    if moved:
         title, text = compose_ratings_message(moves)
         base = get_settings().app_base_url.rstrip("/")
         delivery = notifications.notify_user(
@@ -936,7 +994,7 @@ def weekly_ratings_message(db: Session, user_id: UUID) -> dict[str, Any]:
             KIND_RATINGS,
             title=title,
             text=text,
-            dedupe_key="ratings:" + _digest([f"{m.metric}:{m.rank}:{m.gained}" for m in moves]),
+            dedupe_key="ratings:" + _digest([f"{m.metric}:{m.rank}:{m.gained}" for m in moved]),
             url=f"{base}/ratings",
             url_label="Рейтинги",
             commit=False,
@@ -944,7 +1002,7 @@ def weekly_ratings_message(db: Session, user_id: UUID) -> dict[str, Any]:
     db.commit()
     if delivery is not None:
         notifications.enqueue_delivery(delivery.id)
-    return {"rating_moves": len(moves), "queued": delivery is not None}
+    return {"rating_moves": len(moved), "queued": delivery is not None}
 
 
 def seed_ratings_snapshot(db: Session, user: User) -> None:
