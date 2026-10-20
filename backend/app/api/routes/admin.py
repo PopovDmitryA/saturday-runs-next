@@ -25,6 +25,8 @@ from app.schemas.admin import (
     AdminLoginEventsResponse,
     AdminOrganizerAccessResponse,
     AdminOrganizerGrantCreate,
+    AdminUserAwardCreate,
+    AdminUserAwardsResponse,
     AdminUserListResponse,
     AdminUserVisitsResponse,
     AdminVisitItem,
@@ -192,6 +194,7 @@ from app.services.scheduled_run_log_service import resolve_period as resolve_run
 from app.services.scheduled_run_log_service import summarize as summarize_scheduled_runs
 from app.services.search_log_service import get_search_log_report
 from app.services.sync_enqueue_service import enqueue_manual_platform_sync, enqueue_sync_for_all_platforms
+from app.services.user_award_service import AwardGrantError, admin_user_awards, grant_award, revoke_award
 from app.services.user_visits_service import get_user_visits
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -396,6 +399,57 @@ def admin_delete_organizer_grant(
     if not delete_organizer_grant(db, user_id, grant_id):
         raise HTTPException(status_code=404, detail="Grant not found")
     return AdminOrganizerAccessResponse.model_validate(list_user_organizer_access(db, user_id))
+
+
+@router.get("/users/{user_id}/awards", response_model=AdminUserAwardsResponse)
+def admin_user_awards_list(
+    user_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AdminUserAwardsResponse:
+    """Особые награды человека + каталог видов для формы выдачи."""
+    if get_admin_user(db, user_id) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return AdminUserAwardsResponse.model_validate(admin_user_awards(db, user_id))
+
+
+@router.post(
+    "/users/{user_id}/awards",
+    response_model=AdminUserAwardsResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def admin_grant_user_award(
+    user_id: UUID,
+    body: AdminUserAwardCreate,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AdminUserAwardsResponse:
+    if get_admin_user(db, user_id) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        grant_award(
+            db,
+            user_id,
+            code=body.code,
+            awarded_on=body.awarded_on,
+            note=body.note,
+            granted_by_user_id=admin.id,
+        )
+    except AwardGrantError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from None
+    return AdminUserAwardsResponse.model_validate(admin_user_awards(db, user_id))
+
+
+@router.delete("/users/{user_id}/awards/{award_id}", response_model=AdminUserAwardsResponse)
+def admin_revoke_user_award(
+    user_id: UUID,
+    award_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> AdminUserAwardsResponse:
+    if not revoke_award(db, user_id, award_id):
+        raise HTTPException(status_code=404, detail="Award not found")
+    return AdminUserAwardsResponse.model_validate(admin_user_awards(db, user_id))
 
 
 @router.get("/abuse/blocks", response_model=AbuseBlockListResponse)

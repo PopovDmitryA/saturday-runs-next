@@ -105,11 +105,29 @@ class ClubsResponse(BaseModel):
     platforms: list[ClubPlatformResponse]
 
 
+class UserAwardResponse(BaseModel):
+    """Особая награда, выданная руками (app/award_kinds.py)."""
+
+    code: str
+    title: str
+    icon: str
+    # Номер на марке вместо icon (число юбилейной награды)
+    emblem: str | None = None
+    # Подпись внизу марки и цвет её поля (app/award_kinds.py)
+    caption: str | None = None
+    tone: str = "carmine"
+    description: str
+    # Дата самого события (ISO), а не нажатия кнопки в админке
+    awarded_on: str
+
+
 class AchievementsResponse(BaseModel):
     challenges: list[ChallengeResponse]
     badges: list[BadgeResponse]
     summary: AchievementsSummaryResponse
     clubs: ClubsResponse
+    # Особые награды — первыми в витрине; фильтр систем на них не действует
+    awards: list[UserAwardResponse] = Field(default_factory=list)
 
 
 class GoalPresetResponse(BaseModel):

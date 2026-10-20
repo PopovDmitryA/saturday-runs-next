@@ -22,6 +22,7 @@ from app.services.achievements_service import (
     get_goals_payload,
     save_goals,
 )
+from app.services.user_award_service import list_user_awards
 
 router = APIRouter(prefix="/achievements", tags=["achievements"])
 
@@ -32,7 +33,9 @@ def get_achievements(
     user: Annotated[User, Depends(get_current_user)],
     platform: Annotated[str | None, Query(description="Сузить челленджи до одной системы")] = None,
 ) -> AchievementsResponse:
-    return AchievementsResponse.model_validate(compute_challenges(db, user.id, platform_code=platform))
+    payload = compute_challenges(db, user.id, platform_code=platform)
+    payload["awards"] = list_user_awards(db, user.id)
+    return AchievementsResponse.model_validate(payload)
 
 
 @router.get("/start-numbers-plan", response_model=StartNumberPlanResponse)

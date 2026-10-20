@@ -1441,11 +1441,28 @@ export type AchievementBadge = {
   achieved_at: string | null;
 };
 
+/** Особая награда, выданная руками (backend app/award_kinds.py). */
+export type UserAward = {
+  code: string;
+  title: string;
+  icon: string;
+  // Номер на марке вместо icon (число юбилейной награды: «1000»)
+  emblem?: string | null;
+  // Подпись внизу марки и цвет её поля: carmine | ultramarine | emerald
+  caption?: string | null;
+  tone?: string;
+  description: string;
+  // Дата самого события, ISO
+  awarded_on: string;
+};
+
 export type AchievementsResponse = {
   challenges: Challenge[];
   badges: AchievementBadge[];
   summary: { gold: number; silver: number; bronze: number; total: number };
   clubs: Clubs;
+  // Необязательное: ответ из кэша вкладки, записанный до появления наград
+  awards?: UserAward[];
 };
 
 export function getAchievements(platform?: string) {
@@ -4253,6 +4270,51 @@ export function deleteAdminOrganizerGrant(userId: string, grantId: string) {
     `/admin/users/${userId}/organizer-access/${grantId}`,
     { method: "DELETE" },
   );
+}
+
+// ===== Особые награды (админка) =====
+
+export type AdminUserAwardItem = {
+  id: string;
+  code: string;
+  title: string;
+  icon: string;
+  awarded_on: string;
+  note: string | null;
+  created_at: string;
+  known: boolean;
+};
+
+export type AdminAwardKindItem = {
+  code: string;
+  title: string;
+  icon: string;
+  description: string;
+  single_holder: boolean;
+  holder: string | null;
+};
+
+export type AdminUserAwardsResponse = {
+  awards: AdminUserAwardItem[];
+  kinds: AdminAwardKindItem[];
+};
+
+export function getAdminUserAwards(userId: string) {
+  return apiFetch<AdminUserAwardsResponse>(`/admin/users/${userId}/awards`);
+}
+
+export function grantAdminUserAward(userId: string, code: string, awardedOn: string, note?: string) {
+  return apiFetch<AdminUserAwardsResponse>(`/admin/users/${userId}/awards`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, awarded_on: awardedOn, note: note || null }),
+  });
+}
+
+export function revokeAdminUserAward(userId: string, awardId: string) {
+  return apiFetch<AdminUserAwardsResponse>(`/admin/users/${userId}/awards/${awardId}`, {
+    method: "DELETE",
+  });
 }
 
 // ===== Кабинет организатора =====

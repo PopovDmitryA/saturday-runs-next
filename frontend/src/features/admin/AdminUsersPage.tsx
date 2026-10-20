@@ -7,14 +7,18 @@ import { AdminSubnav } from "./AdminSubnav";
 import {
   createAdminOrganizerGrant,
   deleteAdminOrganizerGrant,
+  getAdminUserAwards,
   getAdminUserLoginEvents,
   getAdminUserOrganizerAccess,
   getAdminUserVisits,
   getLocationsIndex,
+  grantAdminUserAward,
   listAdminUsers,
+  revokeAdminUserAward,
   triggerAdminUserSyncPlatform,
   type AdminLoginEventsResponse,
   type AdminOrganizerAccessResponse,
+  type AdminUserAwardsResponse,
   type AdminPlatformLinkBrief,
   type AdminUserHomeLocation,
   type AdminUserListItem,
@@ -23,7 +27,7 @@ import {
   type AdminUsersSortDirection,
   type LocationIndexItem,
 } from "../../lib/api";
-import { formatDateTime, formatInt, formatRelativeTime, platformCodeLabel } from "../../lib/format";
+import { formatDate, formatDateTime, formatInt, formatRelativeTime, platformCodeLabel } from "../../lib/format";
 import { platformProfileUrl } from "../../lib/platformProfileUrl";
 import { authLoginUrl, authProviderLabel, userLoginLines } from "./adminUserDisplay";
 import { pageTypeLabel } from "./pageTypeLabels";
@@ -342,6 +346,131 @@ function OrganizerAccessPanel({
   );
 }
 
+// Сегодняшняя дата по Москве в формате <input type="date">.
+function todayMoscowIso(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
+}
+
+// Инлайн-панель «Награды»: особые награды человека (выдать / отозвать). Видов
+// немного, они в коде бэкенда (app/award_kinds.py); дата — когда случилось
+// событие, а не сегодняшняя, если выдаём задним числом.
+function AwardsPanel({
+  userId,
+  data,
+  onChanged,
+  onError,
+}: {
+  userId: string;
+  data: AdminUserAwardsResponse;
+  onChanged: (next: AdminUserAwardsResponse) => void;
+  onError: (message: string) => void;
+}) {
+  const [code, setCode] = useState("");
+  const [awardedOn, setAwardedOn] = useState(todayMoscowIso);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const grantedCodes = useMemo(() => new Set(data.awards.map((item) => item.code)), [data.awards]);
+  const selectedKind = data.kinds.find((kind) => kind.code === code) ?? null;
+
+  const handleGrant = async () => {
+    if (!code || !awardedOn) {
+      return;
+    }
+    setBusy(true);
+    try {
+      onChanged(await grantAdminUserAward(userId, code, awardedOn, note.trim() || undefined));
+      setCode("");
+      setNote("");
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Не удалось выдать награду");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRevoke = async (awardId: string, title: string) => {
+    if (!window.confirm(`Отозвать награду «${title}»?`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      onChanged(await revokeAdminUserAward(userId, awardId));
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Не удалось отозвать награду");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="admin-organizer-access">
+      <p className="admin-organizer-access-title">
+        <strong>Особые награды</strong> — первыми в витрине «Мои достижения», в кабинете и в публичном профиле.
+      </p>
+      <p>
+        Выдано:{" "}
+        {data.awards.length === 0 ? (
+          <span className="muted">нет</span>
+        ) : (
+          data.awards.map((item, index) => (
+            <Fragment key={item.id}>
+              {index > 0 && ", "}
+              <span title={item.note ?? undefined}>
+                {item.icon} {item.title} · {formatDate(item.awarded_on)}
+                {!item.known && <span className="muted"> (вид убран из кода — не показывается)</span>}{" "}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={busy}
+                  title="Отозвать награду"
+                  onClick={() => void handleRevoke(item.id, item.title)}
+                >
+                  ✕
+                </button>
+              </span>
+            </Fragment>
+          ))
+        )}
+      </p>
+      <div className="admin-organizer-access-form">
+        <select className="input" value={code} onChange={(event) => setCode(event.target.value)}>
+          <option value="">Награда для выдачи…</option>
+          {data.kinds.map((kind) => (
+            <option key={kind.code} value={kind.code} disabled={grantedCodes.has(kind.code) || Boolean(kind.holder)}>
+              {kind.icon} {kind.title}
+              {kind.holder ? ` — уже у ${kind.holder}` : ""}
+            </option>
+          ))}
+        </select>
+        <input
+          className="input"
+          type="date"
+          value={awardedOn}
+          title="Дата события, которое отмечает награда"
+          onChange={(event) => setAwardedOn(event.target.value)}
+        />
+        <input
+          className="input"
+          type="text"
+          placeholder="Заметка для админа (необязательно)"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+        />
+        <button
+          type="button"
+          className="btn secondary btn-sm"
+          disabled={busy || !code || !awardedOn}
+          onClick={() => void handleGrant()}
+        >
+          Выдать награду
+        </button>
+      </div>
+      {selectedKind && <p className="muted">Человек увидит: «{selectedKind.description}»</p>}
+    </div>
+  );
+}
+
 function platformCell(
   user: AdminUserListItem,
   code: string,
@@ -560,6 +689,10 @@ function AdminUsersContent() {
   const [accessError, setAccessError] = useState<string | null>(null);
   // Индекс локаций для селекта выдачи — грузим один раз при первом открытии панели.
   const [accessLocations, setAccessLocations] = useState<LocationIndexItem[] | null>(null);
+  const [awardsUserId, setAwardsUserId] = useState<string | null>(null);
+  const [awards, setAwards] = useState<AdminUserAwardsResponse | null>(null);
+  const [awardsLoading, setAwardsLoading] = useState(false);
+  const [awardsError, setAwardsError] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     title: string;
@@ -668,6 +801,27 @@ function AdminUsersContent() {
       }
     },
     [accessUserId, accessLocations],
+  );
+
+  const handleToggleAwards = useCallback(
+    async (userId: string) => {
+      if (awardsUserId === userId) {
+        setAwardsUserId(null);
+        return;
+      }
+      setAwardsUserId(userId);
+      setAwards(null);
+      setAwardsError(null);
+      setAwardsLoading(true);
+      try {
+        setAwards(await getAdminUserAwards(userId));
+      } catch (err) {
+        setAwardsError(err instanceof Error ? err.message : "Не удалось загрузить награды");
+      } finally {
+        setAwardsLoading(false);
+      }
+    },
+    [awardsUserId],
   );
 
   const handleSort = (key: AdminUsersSort) => {
@@ -961,6 +1115,12 @@ function AdminUsersContent() {
                               label: accessUserId === user.id ? "Скрыть оргдоступ" : "Оргдоступ",
                               onSelect: () => void handleToggleAccess(user.id),
                             },
+                            {
+                              key: "awards",
+                              label: awardsUserId === user.id ? "Скрыть награды" : "Награды",
+                              title: "Особые награды в витрине достижений",
+                              onSelect: () => void handleToggleAwards(user.id),
+                            },
                           ]}
                         />
                       </td>
@@ -998,6 +1158,29 @@ function AdminUsersContent() {
                                 setSnackbar({
                                   open: true,
                                   title: "Оргдоступ",
+                                  message,
+                                  variant: "error",
+                                })
+                              }
+                            />
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    {awardsUserId === user.id && (
+                      <tr className="admin-login-journal-row">
+                        <td colSpan={columnCount}>
+                          {awardsLoading && <p className="muted">Загружаем награды…</p>}
+                          {awardsError && <p className="form-error">{awardsError}</p>}
+                          {!awardsLoading && !awardsError && awards && (
+                            <AwardsPanel
+                              userId={user.id}
+                              data={awards}
+                              onChanged={setAwards}
+                              onError={(message) =>
+                                setSnackbar({
+                                  open: true,
+                                  title: "Награды",
                                   message,
                                   variant: "error",
                                 })

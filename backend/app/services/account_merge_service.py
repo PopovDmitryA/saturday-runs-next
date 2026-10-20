@@ -19,6 +19,7 @@ from app.models import (
     PlatformLink,
     SyncJob,
     User,
+    UserAward,
     UserGoal,
 )
 from app.services.auth_identity_service import (
@@ -131,7 +132,13 @@ def delete_user_with_dependencies(
 
     Список таблиц — BLOCKING_USER_REFERENCES; забытая означает
     ForeignKeyViolation на DELETE FROM users прямо в лицо пользователю.
+
+    Написанное человеком (отзывы, цели, гранты организатора, особые награды)
+    переезжает здесь же, а не только в merge_users: профиль поглощает и
+    привязка VK/Яндекса в настройках (oauth_service, «сирота» с одним
+    способом входа), и до 21.10.2026 этот путь молча терял всё это каскадом.
     """
+    _reassign_user_content(db, merged.id, reassign_to)
     db.query(DashboardCache).filter(DashboardCache.user_id == merged.id).delete()
     # Одноразовые токены магической ссылки при использовании не удаляются, а
     # только помечаются used_at. У любого, кто хоть раз входил через бота,
@@ -179,9 +186,10 @@ def _reassign_user_content(db: Session, merged_id: UUID, survivor_id: UUID) -> N
     """Написанное человеком переезжает к выжившему профилю.
 
     Эти таблицы висят на users с ON DELETE CASCADE, то есть удаление
-    поглощаемого профиля молча унесло бы отзывы, цели и права организатора.
-    Уникальные ключи есть у целей (user+год+тип) и у доступа (user+локация):
-    там, где у выжившего уже своя строка, чужую не тащим.
+    поглощаемого профиля молча унесло бы отзывы, цели, права организатора и
+    особые награды. Уникальные ключи есть у целей (user+год+тип), у доступа
+    (user+локация) и у наград (user+код): там, где у выжившего уже своя
+    строка, чужую не тащим.
     """
     # Отзыв уникален по (человек, локация, дата, тип участия) — с миграции 091
     # ключ естественный, а не по строке результата (её синк пересобирает). Один
@@ -225,6 +233,15 @@ def _reassign_user_content(db: Session, merged_id: UUID, survivor_id: UUID) -> N
             db.delete(access)
         else:
             access.user_id = survivor_id
+
+    # Особая награда («Тысячный участник») — о человеке, а не об аккаунте: она
+    # обязана пережить объединение, в какую бы сторону оно ни прошло.
+    survivor_awards = {row[0] for row in db.query(UserAward.code).filter(UserAward.user_id == survivor_id).all()}
+    for award in db.query(UserAward).filter(UserAward.user_id == merged_id).all():
+        if award.code in survivor_awards:
+            db.delete(award)
+        else:
+            award.user_id = survivor_id
     db.flush()
 
 
@@ -346,7 +363,6 @@ def merge_users(
     if merged.news_subscribed and survivor.telegram_chat_id:
         survivor.news_subscribed = True
 
-    _reassign_user_content(db, merged.id, survivor.id)
     delete_user_with_dependencies(db, merged, reassign_to=survivor.id)
     db.commit()
     db.refresh(survivor)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -189,4 +189,38 @@ class AdminOrganizerAccessResponse(BaseModel):
 
 class AdminOrganizerGrantCreate(BaseModel):
     location_key: str = Field(min_length=1, max_length=255)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class AdminUserAwardItem(BaseModel):
+    id: str
+    code: str
+    title: str
+    icon: str
+    awarded_on: str
+    note: str | None = None
+    created_at: datetime
+    # False — вид убран из app/award_kinds.py: в витрине награда не видна
+    known: bool = True
+
+
+class AdminAwardKindItem(BaseModel):
+    code: str
+    title: str
+    icon: str
+    description: str
+    single_holder: bool = False
+    # У награды в одном экземпляре — кто её уже носит (если не этот человек)
+    holder: str | None = None
+
+
+class AdminUserAwardsResponse(BaseModel):
+    awards: list[AdminUserAwardItem] = Field(default_factory=list)
+    kinds: list[AdminAwardKindItem] = Field(default_factory=list)
+
+
+class AdminUserAwardCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+    # Дата события («привязал профиль 16.10»), а не выдачи
+    awarded_on: date
     note: str | None = Field(default=None, max_length=500)

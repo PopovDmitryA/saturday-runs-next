@@ -1616,6 +1616,30 @@ class UserGoal(Base):
     )
 
 
+class UserAward(Base):
+    """Особая награда, выданная админом руками («Тысячный участник»).
+
+    code — вид из app/award_kinds.py (свободного текста нет: название и значок
+    общие для всех обладателей). awarded_on — дата самого события, её видит
+    человек; created_at — когда выдали. Награда личная: уходит вместе с
+    профилем (CASCADE), при объединении аккаунтов переезжает к выжившему.
+    """
+
+    __tablename__ = "user_awards"
+    __table_args__ = (
+        UniqueConstraint("user_id", "code", name="uq_user_awards_user_code"),
+        Index("ix_user_awards_code", "code"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    awarded_on: Mapped[date] = mapped_column(Date, nullable=False)
+    granted_by_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class PageViewEvent(Base):
     """Сырое событие просмотра страницы (собственная аналитика сайта).
 

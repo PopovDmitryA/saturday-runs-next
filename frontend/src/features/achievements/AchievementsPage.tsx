@@ -15,9 +15,11 @@ import {
   type ClubEntry,
   type Clubs,
   type GoalsResponse,
+  type UserAward,
 } from "../../lib/api";
 import { formatDate, parseIsoDate, platformCodeLabel, pluralizeRu } from "../../lib/format";
 import { useOptionalUser } from "../../lib/useOptionalUser";
+import { AwardStamp } from "./AwardStamp";
 import { GoalCard } from "./GoalCard";
 import { GoalsEditModal } from "./GoalsEditModal";
 import { StartNumbersPlanModal } from "./StartNumbersPlanModal";
@@ -917,6 +919,26 @@ function ClubsSection({ clubs }: { clubs: Clubs }) {
   );
 }
 
+/** Особая награда, выданная руками («Тысячный участник»). Клетка та же, что у
+ * медалей, и стоит первой: размер, подпись и дата как у всех (решение Дмитрия
+ * 20.10.2026 — отдельная плашка выбивалась из витрины). Отличается значок:
+ * почтовая марка вместо металлического круга (AwardStamp). Описание — в
+ * подсказке: наведение на компьютере (TitleTooltipZone), тап на телефоне
+ * (глобальный слой тап-подсказок читает тот же title). Вкладки сложности и
+ * фильтр систем на награду не действуют. */
+function AwardTile({ award }: { award: UserAward }) {
+  return (
+    <TitleTooltipZone className="achv-badge-zone">
+      <div className="achv-badge achv-badge-award" title={award.description}>
+        <AwardStamp award={award} />
+        <span className="achv-badge-title">{award.title}</span>
+        <span className="achv-badge-level achv-badge-level-award">Награда</span>
+        <span className="achv-badge-date">{formatDate(award.awarded_on)}</span>
+      </div>
+    </TitleTooltipZone>
+  );
+}
+
 function BadgesShowcase({
   data,
   onJump,
@@ -966,6 +988,9 @@ function BadgesShowcase({
   };
 
   const dimmed = fading || recalculating;
+  // Особые награды от уровня сложности и фильтра систем не зависят: они не
+  // гаснут при пересчёте и не входят в счётчик «N из M».
+  const awards = data.awards ?? [];
 
   const view = useMemo(() => {
     const rows: Array<{
@@ -1035,17 +1060,15 @@ function BadgesShowcase({
           </span>
         </div>
       </div>
-      {view.rows.length === 0 ? (
-        <p className={`muted achv-recalc${dimmed ? " is-busy" : ""}`}>
-          На уровне «{TIER_LABELS[tierTab]}» медалей пока нет. Загляни в челленджи ниже: на лёгком уровне бронза у
-          многих начинается с одного-двух результатов.
-        </p>
-      ) : (
-        <div className={`achv-badges achv-recalc${dimmed ? " is-busy" : ""}`}>
+      {(awards.length > 0 || view.rows.length > 0) && (
+        <div className="achv-badges">
+          {awards.map((award) => (
+            <AwardTile key={award.code} award={award} />
+          ))}
           {view.rows.map((row) => (
             <a
               key={row.code}
-              className="achv-badge"
+              className={`achv-badge achv-recalc${dimmed ? " is-busy" : ""}`}
               href={`#challenge-${row.code}`}
               title={row.achievedAt ? `Получено ${formatDate(row.achievedAt)}` : undefined}
               onClick={(event) => {
@@ -1064,6 +1087,12 @@ function BadgesShowcase({
             </a>
           ))}
         </div>
+      )}
+      {view.rows.length === 0 && (
+        <p className={`muted achv-recalc${dimmed ? " is-busy" : ""}`}>
+          На уровне «{TIER_LABELS[tierTab]}» медалей пока нет. Загляни в челленджи ниже: на лёгком уровне бронза у
+          многих начинается с одного-двух результатов.
+        </p>
       )}
     </div>
   );

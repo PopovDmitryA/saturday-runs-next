@@ -47,6 +47,7 @@ from app.services.location_map_service import list_user_visited_map_locations
 from app.services.my_history_service import get_my_history
 from app.services.profile_compare_service import build_location_comparison
 from app.services.profile_slug_service import resolve_profile_handle
+from app.services.user_award_service import list_user_awards
 from app.services.user_unique_locations_detail import build_user_unique_location_details
 
 router = APIRouter(prefix="/users", tags=["public-profiles"])
@@ -346,4 +347,6 @@ def public_profile_achievements(
     """Челленджи и клубы участника — без личных целей на год (те остаются
     приватными, задать их можно только себе)."""
     user_id = _get_user_uuid(serial_id, db, requester, settings)
-    return AchievementsResponse.model_validate(compute_challenges(db, user_id, platform_code=platform))
+    payload = compute_challenges(db, user_id, platform_code=platform)
+    payload["awards"] = list_user_awards(db, user_id)
+    return AchievementsResponse.model_validate(payload)
