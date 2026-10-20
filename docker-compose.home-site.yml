@@ -18,6 +18,18 @@
 #     (docker-compose.home.yml), после переезда базы они переезжают в этот файл
 #     и ходят к ней по локальной docker-сети, без tailnet.
 
+# Логи контейнеров — в journald, а не в json-файлы Docker: json-лог удаляется
+# вместе с контейнером, а каждый выкат пересоздаёт его (up -d --build). Так
+# 13.10.2026 разбирать пропавшие прогоны было не по чему — логи начинались с
+# последнего деплоя. Журнал переживает пересоздание; читать —
+# `docker compose logs <сервис>` (пока контейнер жив) или
+# `journalctl -t <имя контейнера> --since …` (и после). Объём ничтожный:
+# воркеры сбора пишут ~250 КБ в сутки на всех, потолок журнала — 4 ГБ.
+x-journald: &journald
+  driver: journald
+  options:
+    tag: "{{.Name}}"
+
 x-home-env: &home-env
   DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-saturday_runs}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-saturday_runs_lk}
   REDIS_URL: redis://redis:6379/0
@@ -73,9 +85,11 @@ services:
       # Каталог с дампами для переезда и восстановления (см. scripts/cutover_to_home.sh).
       - ${HOME_DUMP_DIR:-/home/dmitry/srs-prod-db}:/dump
     shm_size: "1g"
+    logging: *journald
 
   redis:
     ports: !override []
+    logging: *journald
 
   api:
     environment:
@@ -91,10 +105,12 @@ services:
       - ./backend:/app
       - ./data:/data
       - ./.env:/app/.env:ro
+    logging: *journald
 
   nginx:
     # Наружу не смотрит: перед ним стоит edge с сертификатами.
     ports: !override []
+    logging: *journald
 
   edge:
     image: nginx:1.27-alpine
@@ -118,13 +134,7 @@ services:
     depends_on:
       - nginx
     restart: unless-stopped
-    # Якорь x-logging из базового файла сюда не дотягивается (якоря живут в
-    # пределах одного YAML), поэтому те же 3 × 20 МБ прописаны явно.
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "3"
+    logging: *journald
 
   # Продление сертификатов: раз в сутки пробуем. Край подхватывает новый файл
   # своим reload раз в 6 часов (см. edge.command). Ходит через тот же
@@ -139,27 +149,37 @@ services:
     entrypoint: /bin/sh
     command: -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 24h; done"
     restart: unless-stopped
+    logging: *journald
 
   worker:
     environment: *home-env
+    logging: *journald
   worker-warm:
     environment: *home-env
+    logging: *journald
   worker-s95:
     environment: *home-env
+    logging: *journald
   worker-five-verst:
     environment: *home-env
+    logging: *journald
   # Свежесть 5 вёрст отдельным воркером: приоритет очередей внутри одного
   # воркера оказался случайным (разобрано другой сессией 20.09.2026).
   worker-five-verst-fresh:
     environment: *home-env
+    logging: *journald
   worker-five-verst-user:
     environment: *home-env
+    logging: *journald
   worker-parkrun:
     environment: *home-env
+    logging: *journald
   worker-runpark:
     environment: *home-env
+    logging: *journald
   beat:
     environment: *home-env
+    logging: *journald
 
   bot:
     environment:
@@ -169,6 +189,10 @@ services:
       TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
       REDIS_URL: redis://redis:6379/0
       TELEGRAM_PROXY_URL: ${TELEGRAM_PROXY_URL}
+    logging: *journald
+
+  tg-proxy:
+    logging: *journald
 
 volumes:
   home_pgdata:

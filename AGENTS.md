@@ -120,6 +120,13 @@ scripts/deploy_prod.sh` — флаг доезжает до сервера с 25.
 | `worker-s95` | `-Q s95_user,s95 --concurrency=1 --prefetch-multiplier=1 -O fair` |
 | `worker-runpark` | `-Q runpark --concurrency=1 --max-tasks-per-child=1` |
 
+Логи домашних контейнеров (и воркеров сбора, и боевого стека после переезда)
+пишутся в journald и переживают пересоздание контейнера при выкате:
+`journalctl -t srs-prod-worker-s95-1 --since '2 days ago' -o cat` (тег — имя контейнера;
+после переезда — `srs_home-worker-s95-1`). Строки длиннее 16 КБ лежат в журнале кусками,
+`docker compose logs` склеивает их обратно, пока контейнер жив.
+До 21.10.2026 json-лог умирал с каждым деплоем, и сбой 13.10 разобрать было нечем.
+
 ### Деплой
 
 ```bash

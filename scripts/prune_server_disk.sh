@@ -37,9 +37,12 @@ if [[ -d "$ROOT/frontend/node_modules" && -f "$ROOT/frontend/dist/index.html" ]]
   rm -rf "$ROOT/frontend/node_modules"
 fi
 
-echo "=== journald vacuum (100M cap) ==="
+# По сроку, а не до 100 МБ: дома в журнале живут логи контейнеров сайта
+# (journald с 21.10.2026), и 100 МБ — это двое суток, меньше, чем нужно для
+# разбора субботы.
+echo "=== journald vacuum (older than 30 days) ==="
 if command -v journalctl >/dev/null 2>&1; then
-  journalctl --vacuum-size=100M || sudo journalctl --vacuum-size=100M
+  journalctl --vacuum-time=30d || sudo journalctl --vacuum-time=30d
 fi
 
 echo "=== disk after ==="

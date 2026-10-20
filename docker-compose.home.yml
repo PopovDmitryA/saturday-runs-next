@@ -15,6 +15,18 @@
 # висят задачи og_render, а они пишут картинки в ./data, которые раздаёт
 # прод-nginx.
 
+# Логи контейнеров — в journald, а не в json-файлы Docker: json-лог удаляется
+# вместе с контейнером, а каждый выкат пересоздаёт его (up -d --build). Так
+# 13.10.2026 разбирать пропавшие прогоны было не по чему — логи начинались с
+# последнего деплоя. Журнал переживает пересоздание; читать —
+# `docker compose logs <сервис>` (пока контейнер жив) или
+# `journalctl -t <имя контейнера> --since …` (и после). Объём ничтожный:
+# воркеры сбора пишут ~250 КБ в сутки на всех, потолок журнала — 4 ГБ.
+x-journald: &journald
+  driver: journald
+  options:
+    tag: "{{.Name}}"
+
 x-home-worker: &home-worker
   environment:
     DATABASE_URL: ${DATABASE_URL}
@@ -25,6 +37,7 @@ x-home-worker: &home-worker
     PYTHONDONTWRITEBYTECODE: "1"
   depends_on: !reset []
   restart: unless-stopped
+  logging: *journald
 
 services:
   # Локальные postgres/redis тут не отключены профилем намеренно: на них ссылаются
@@ -54,3 +67,4 @@ services:
   # (второй long-poll) мы по-прежнему не поднимаем.
   tg-proxy:
     profiles: !reset []
+    logging: *journald
