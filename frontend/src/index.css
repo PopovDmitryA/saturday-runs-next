@@ -17831,6 +17831,9 @@ input.participant-name-search-input:focus {
   margin: 0;
   padding: 0;
   display: grid;
+  /* Колонка не шире панели: auto-трек растягивался по самому широкому
+     содержимому, и на телефоне карточки уезжали за правый край. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.5rem;
 }
 
@@ -18448,14 +18451,30 @@ input.participant-name-search-input:focus {
 /* «О чём присылать»: список видов — не диалог с вопросом, а форма, поэтому
    панель шире обычной модалки и текст выровнен по левому краю (общий
    ConfirmModal центрирует и сужает — здесь это делало из списка столбик). */
+/* Видов и выбор мест набирается больше экрана: панель не выше окна,
+   заголовок и «Готово» на месте, прокручивается середина. */
 .modal-panel:has(.notify-kind-list) {
   width: min(100%, 34rem);
+  max-height: calc(100vh - 2.5rem);
+  max-height: calc(100dvh - 2.5rem);
+  display: flex;
+  flex-direction: column;
   text-align: left;
 }
 
 .modal-panel:has(.notify-kind-list) .modal-title,
 .modal-panel:has(.notify-kind-list) .modal-body {
   text-align: left;
+}
+
+.modal-panel:has(.notify-kind-list) .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Место под overlay-полосу прокрутки macOS, как у .modal-body-scroll. */
+  margin-right: -0.6rem;
+  padding-right: 0.6rem;
 }
 
 /* Кнопок две только у вопроса «да/нет»; здесь настройки применяются сразу,
@@ -18475,6 +18494,8 @@ input.participant-name-search-input:focus {
 
 .notify-kind-extra {
   flex-basis: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   margin-top: 0.5rem;
   padding-top: 0.5rem;
   border-top: 1px dashed var(--border);
@@ -18527,6 +18548,7 @@ input.participant-name-search-input:focus {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
+  min-width: 0;
   max-width: 100%;
   padding: 0.15rem 0.2rem 0.15rem 0.5rem;
   border-radius: 999px;
@@ -18536,6 +18558,7 @@ input.participant-name-search-input:focus {
 }
 
 .notify-place-chip-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -18562,7 +18585,7 @@ input.participant-name-search-input:focus {
 
 .notify-places-input {
   flex: 1 1 8rem;
-  min-width: 8rem;
+  min-width: 6rem;
   border: 0;
   outline: none;
   background: transparent;
