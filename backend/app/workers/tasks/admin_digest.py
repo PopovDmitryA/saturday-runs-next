@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -28,6 +28,8 @@ DIGEST_TIMEZONE = ZoneInfo("Europe/Moscow")
 PROBLEMS_IN_SUMMARY = 5
 # Сколько дней напоминать о новой parkrun-локации, которой нет в снимке каталога.
 PARKRUN_CATALOG_GAP_DAYS = 7
+# С какого дня без успешной сверки каталога parkrun напоминать в сводке.
+PARKRUN_CATALOG_STALE_DAYS = 3
 
 
 def _day_bounds(day: datetime) -> tuple[datetime, datetime]:
@@ -53,7 +55,24 @@ def parkrun_catalog_gaps(db: Session, *, now: datetime, days: int = PARKRUN_CATA
         )
         .order_by(Location.created_at)
     ).all()
-    return [f"{name} ({created_at.astimezone(DIGEST_TIMEZONE):%d.%m})" for name, created_at in rows]
+    return [f"{name} ({created_at.astimezone(DIGEST_TIMEZONE):%d.%m}) — нет точки старта" for name, created_at in rows]
+
+
+def parkrun_catalog_stale_days(db: Session, *, now: datetime) -> int | None:
+    """Сколько дней каталог parkrun не сверялся успешно. None — всё в порядке.
+
+    Сверка (parkrun_catalog.sync) идёт раз в сутки; сбой она сама сообщает один
+    раз. Если сбой тянется, сводка напоминает каждый день, начиная с трёх суток.
+    """
+    if not get_settings().parkrun_catalog_sync_enabled:
+        return None
+    last = db.execute(
+        text("select max(started_at) from parkrun_catalog_runs where status in ('ok', 'unchanged', 'seed')")
+    ).scalar()
+    if last is None:
+        return None
+    days = (now - last).days
+    return days if days >= PARKRUN_CATALOG_STALE_DAYS else None
 
 
 @celery_app.task(name="admin_digest.daily_sync_summary", **LIMITS_MEDIUM)
@@ -75,6 +94,9 @@ def daily_sync_summary_task() -> dict[str, object]:
         problems = recent_problem_runs(db, start=start, end=end, limit=PROBLEMS_IN_SUMMARY)
         deleted = cleanup_old_runs(db, retention_days=DEFAULT_RETENTION_DAYS)
         catalog_gaps = parkrun_catalog_gaps(db, now=now)
+        stale_days = parkrun_catalog_stale_days(db, now=now)
+        if stale_days is not None:
+            catalog_gaps = [f"⚠️ каталог parkrun не сверялся {stale_days} дн.", *catalog_gaps]
     finally:
         db.close()
 

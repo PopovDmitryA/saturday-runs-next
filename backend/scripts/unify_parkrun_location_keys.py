@@ -55,10 +55,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
-import re
 import sys
-from collections import defaultdict
 from pathlib import Path
 from uuid import UUID
 
@@ -66,57 +63,16 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import text  # noqa: E402
-from sqlalchemy.exc import SQLAlchemyError  # noqa: E402
 
 from app.db.session import get_session_factory  # noqa: E402
-from app.models import Location, LocationCatalogLink, Platform  # noqa: E402
+from app.models import Location, Platform  # noqa: E402
+from app.parkrun import key_plan  # noqa: E402
 from app.parkrun.event_slugs import _catalog, catalog_event, official_event_slug  # noqa: E402
 from app.parkrun.location_keys import (  # noqa: E402
-    ParkrunKeyConflict,
     merge_parkrun_locations,
     rename_parkrun_location,
     rewrite_event_keys,
 )
-
-SUMMARY_KEY = "parkrun-summary"
-# Название ведёт к слагу, только если точка старта рядом: тёзки бывают.
-NAME_MATCH_MAX_KM = 1.0
-
-
-def norm(value: str | None) -> str:
-    return re.sub(r"[^0-9a-z]+", "", (value or "").lower())
-
-
-def distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    radius = 6371.0
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi, dlmb = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlmb / 2) ** 2
-    return 2 * radius * math.asin(math.sqrt(a))
-
-
-def official_slug_for(location: Location, official: set[str], by_norm: dict[str, set[str]]) -> tuple[str | None, str]:
-    key = location.external_key
-    if key in official:
-        return key, "key"
-    candidates = by_norm.get(norm(key)) or set()
-    if len(candidates) == 1:
-        return next(iter(candidates)), "key-without-separators"
-    by_name = official_event_slug(location.name or "")
-    if by_name:
-        event = catalog_event(by_name)
-        if (
-            event is not None
-            and location.latitude is not None
-            and location.longitude is not None
-            and distance_km(float(location.latitude), float(location.longitude), event.latitude, event.longitude)
-            <= NAME_MATCH_MAX_KM
-        ):
-            return by_name, "name+point"
-        return None, f"name-only:{by_name}"
-    return None, "unknown"
-
 
 # Площадки, которые parkrun переименовал вместе со слагом: новое имя — как в каталоге.
 RENAMED_NAMES = {
@@ -128,74 +84,13 @@ RENAMED_NAMES = {
 
 
 def build_plan(db, platform: Platform) -> dict:
-    official = set(_catalog().values())
-    by_norm: dict[str, set[str]] = defaultdict(set)
-    for slug in official:
-        by_norm[norm(slug)].add(slug)
-    locations = (
-        db.query(Location)
-        .filter(Location.platform_id == platform.id, Location.external_key != SUMMARY_KEY)
-        .order_by(Location.created_at)
-        .all()
-    )
-    linked = {
-        row[0]
-        for row in db.query(LocationCatalogLink.location_id)
-        .filter(LocationCatalogLink.location_id.isnot(None))
-        .all()
-    }
-    groups: dict[str, list[Location]] = defaultdict(list)
-    unknown: list[dict] = []
-    name_only: list[dict] = []
-    for location in locations:
-        slug, how = official_slug_for(location, official, by_norm)
-        if slug is None:
-            entry = {"key": location.external_key, "name": location.name}
-            (name_only if how.startswith("name-only") else unknown).append({**entry, "why": how})
-            continue
-        groups[slug].append(location)
-
-    merges: list[tuple[Location, Location, str]] = []
-    renames: list[tuple[Location, str]] = []
-    for slug, members in groups.items():
-        if len(members) == 1:
-            if members[0].external_key != slug:
-                renames.append((members[0], slug))
-            continue
-        keep = next((m for m in members if m.external_key == slug), None)
-        if keep is None:
-            keep = next((m for m in members if m.id in linked), members[0])
-        for member in members:
-            if member.id != keep.id:
-                merges.append((keep, member, slug))
-        if keep.external_key != slug:
-            renames.append((keep, slug))
-    return {
-        "locations": locations,
-        "merges": merges,
-        "renames": renames,
-        "unknown": unknown,
-        "name_only": name_only,
-    }
+    """План по снимку каталога в репо (имена берутся в момент вызова — их подменяют тесты)."""
+    view = key_plan.snapshot_view(_catalog, official_event_slug, catalog_event, RENAMED_NAMES)
+    return key_plan.build_plan(db, platform, view)
 
 
 def run_group(session_factory, apply: bool, label: str, action) -> dict:
-    """Одна группа — одна транзакция; при холостом прогоне она откатывается."""
-    db = session_factory()
-    try:
-        db.execute(text("set local lock_timeout = '5s'"))
-        db.execute(text("set local statement_timeout = '120s'"))
-        result = action(db)
-        if apply:
-            db.commit()
-        else:
-            db.rollback()
-        return {"ok": True, **(result or {})}
-    except (ParkrunKeyConflict, SQLAlchemyError) as exc:
-        db.rollback()
-        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"}
-    finally:
-        db.close()
+    return key_plan.run_group(session_factory, apply, action)
 
 
 def _plan_summary(plan: dict) -> dict:
@@ -381,75 +276,16 @@ def main() -> int:
 
 
 def finish(session_factory, participants: set, touched: set, reshaped: set, report: dict) -> None:
-    """После записи: флаги первого старта и рекордов локации, кэши витрин.
-
-    Флаги «первый старт» чинятся от состояния базы (repair_first_run_flags сам
-    находит расхождения), поэтому повторный прогон доделает их и после обрыва.
-    Рекорды локации и кабинеты — по журналу групп (--state) или по этому прогону.
-    Каждый шаг сам по себе: сбой одного не отменяет остальные.
-    """
-    from app.services.dashboard_service import invalidate_dashboard_cache_for_users
-    from app.services.location_freshness import mark_location_results_changed
-    from app.services.location_page_service import invalidate_locations_index_cache
-    from app.services.personal_record_service import (
-        recalculate_participants_cross_platform_personal_records,
-        repair_first_run_flags,
+    """После записи: флаги первого старта и рекордов локации, кэши витрин (key_plan)."""
+    report.update(
+        key_plan.finish_location_changes(
+            session_factory,
+            participants=participants,
+            touched=touched,
+            reshaped=reshaped,
+            reason="parkrun: ключи приведены к слагам parkrun",
+        )
     )
-
-    failures: list[str] = []
-
-    def step(name: str, action) -> None:
-        db = session_factory()
-        try:
-            result = action(db)
-            db.commit()
-            if result is not None:
-                report[name] = result
-        except Exception as exc:  # noqa: BLE001 — остальные шаги важнее
-            db.rollback()
-            failures.append(f"{name}: {type(exc).__name__}: {str(exc).splitlines()[0][:200]}")
-        finally:
-            db.close()
-
-    step("first_run_repair", lambda db: repair_first_run_flags(db, "parkrun"))
-
-    # Рекорд локации считается по физической локации у человека в целом —
-    # у бегавших на двойнике он мог поменяться.
-    ids = sorted({p for p in participants if p is not None}, key=str)
-    for start in range(0, len(ids), 200):
-        batch = ids[start : start + 200]
-        step("records_batch", lambda db, batch=batch: recalculate_participants_cross_platform_personal_records(db, batch))
-    report["records_participants"] = len(ids)
-
-    def reset_dashboards(db):
-        # Кабинет хранит страну и слаг локации каждой пробежки (dashboard_cache).
-        if not reshaped:
-            return 0
-        users = {
-            row[0]
-            for row in db.execute(
-                text(
-                    """
-                    select distinct pl.user_id
-                      from platform_links pl
-                      join run_results rr on rr.participant_id = pl.participant_id
-                      join events e on e.id = rr.event_id
-                     where e.location_id = any(cast(:ids as uuid[])) and pl.user_id is not null
-                    """
-                ),
-                {"ids": [str(i) for i in reshaped]},
-            ).all()
-        }
-        return invalidate_dashboard_cache_for_users(db, users)
-
-    step("dashboards_reset", reset_dashboards)
-    step(
-        "caches",
-        lambda db: mark_location_results_changed(db, touched, reason="parkrun: ключи приведены к слагам parkrun"),
-    )
-    invalidate_locations_index_cache()
-    if failures:
-        report["finish_failed"] = failures
 
 
 if __name__ == "__main__":

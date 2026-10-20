@@ -13,6 +13,7 @@ PIPELINE_LABELS: dict[str, str] = {
     "s95 reconcile protocols": "s95: сверка протоколов",
     "s95 athletes registry": "s95: реестр атлетов",
     "runpark latest": "RunPark: свежие события",
+    "parkrun catalog": "parkrun: каталог площадок",
     # «Обновить по ссылке» в админке (admin_resync_service) — приоритетные заявки.
     "5v resync profile": "5verst: по ссылке — профиль",
     "5v resync protocol": "5verst: по ссылке — протокол",
@@ -29,6 +30,17 @@ PIPELINE_PREFIX_LABELS: tuple[tuple[str, str], ...] = (
 )
 
 FIELD_LABELS: dict[str, str] = {
+    # Сверка с каталогом parkrun (services/parkrun_catalog_service.py).
+    "run_id": "номер прогона",
+    "active_total": "действующих площадок",
+    "catalog_added": "новых площадок",
+    "catalog_returned": "вернулось площадок",
+    "catalog_closed": "закрылось площадок",
+    "catalog_renamed": "переименовано площадок",
+    "catalog_moved": "перенесён старт",
+    "catalog_changed": "поправлено имён и полей",
+    "forced": "принят вопреки проверке",
+    "reasons": "причин не доверять каталогу",
     "entries_total": "записей в реестре",
     "locations_updated": "локаций обновлено",
     "locations_created": "локаций создано",

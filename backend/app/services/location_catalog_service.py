@@ -120,6 +120,7 @@ def resolve_location_display_name(
 
 class LocationCatalogIndex:
     def __init__(self, db: Session) -> None:
+        self.db = db
         self._by_location_id: dict[UUID, LocationCatalog] = {}
         self._by_platform_slug: dict[tuple[str, str], LocationCatalog] = {}
         self._catalogs: dict[UUID, LocationCatalog] = {}

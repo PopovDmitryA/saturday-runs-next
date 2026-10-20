@@ -5,7 +5,7 @@ import json
 import logging
 import re
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timezone
 from uuid import UUID
 
@@ -27,7 +27,14 @@ from app.models import (
     VolunteerResult,
 )
 from app.pace import resolve_run_pace
-from app.parkrun.event_slugs import CatalogEvent, catalog_event
+from app.parkrun.catalog_store import (
+    is_catalog_slug,
+    official_slug_by_name,
+    prefetch_catalog_events,
+    resolve_catalog_event,
+)
+from app.parkrun.event_slugs import CatalogEvent
+from app.parkrun.location_keys import result_key_with_slug
 from app.parkrun.protocol_gaps import release_placeholder
 from app.platform_adapters.canonical import (
     CanonicalEventSummary,
@@ -1417,6 +1424,39 @@ def upsert_event_for_profile(
     return row
 
 
+def _catalog_parkrun_slug(
+    db: Session,
+    platform: Platform,
+    slug: str,
+    name: str | None,
+    cache: dict[tuple[str, str], str],
+) -> str:
+    """Слаг parkrun из каталога в базе, если парсер профиля его не знает.
+
+    Парсер берёт слаг из снимка в репо, а снимок отстаёт: площадка, открывшаяся
+    после него, приходит транслитерацией (`okura-kaigan-koen`). Каталог в базе
+    свежий (сверка раз в сутки) — переспрашиваем его по названию площадки.
+
+    Локация с ключом от парсера уже есть — остаёмся на ней: parkrun мог сменить
+    слаг, не меняя имени, и до переименования локации лечением (после той же
+    сверки) имя вело бы на новый слаг, а импорт завёл бы вторую локацию.
+    """
+    key = (slug, name or "")
+    if key in cache:
+        return cache[key]
+    resolved = slug
+    if slug != "unknown" and not is_catalog_slug(db, slug):
+        exists = (
+            db.query(Location.id)
+            .filter(Location.platform_id == platform.id, Location.external_key == slug)
+            .first()
+        )
+        if exists is None:
+            resolved = official_slug_by_name(db, name) or slug
+    cache[key] = resolved
+    return resolved
+
+
 def _existing_parkrun_key(
     db: Session,
     platform: Platform,
@@ -1515,10 +1555,21 @@ def import_profile_run_results(
     # всегда один, но код общий для всех платформ — держим словарь.
     participant_id_cache: dict[str, UUID | None] = {}
     parkrun_key_cache: dict[str, str] = {}
+    parkrun_slug_cache: dict[tuple[str, str], str] = {}
+    if platform.code == "parkrun":
+        # Площадки профиля — одним запросом, а не по запросу на каждую пробежку.
+        prefetch_catalog_events(db, {item.location_external_key for item in results if item.location_external_key})
     for item in results:
         slug = _normalize_location_slug(item.location_external_key, item.location_name)
         if platform.code == "parkrun":
+            slug = _catalog_parkrun_slug(db, platform, slug, item.location_name, parkrun_slug_cache)
             slug = _existing_parkrun_key(db, platform, slug, item.location_name, parkrun_key_cache)
+            # Ключ результата парсер собрал со своим слагом — держим в нём слаг
+            # локации (один слаг на площадку), иначе повторный импорт вернул бы
+            # в ключ транслитерацию, которую лечение уже убрало.
+            result_key = result_key_with_slug(item.external_result_key, slug) if slug != "unknown" else None
+            if result_key and result_key != item.external_result_key:
+                item = replace(item, external_result_key=result_key)
         display_name = item.location_name or slug
         community = (
             _five_verst_community_target(slug, display_name, item.event_date)
@@ -1530,7 +1581,7 @@ def import_profile_run_results(
             location_source_url = f"https://s95.ru/events/{slug}" if slug != "unknown" else None
             country = "Россия"
         elif platform.code == "parkrun":
-            parkrun_event = catalog_event(slug)
+            parkrun_event = resolve_catalog_event(db, slug)
             # Ссылку на площадку знает только каталог: домен страны плюс
             # официальный слаг. Догадку parkrun.org.uk/<слаг>/ получает лишь
             # новая строка (_fill_parkrun_location_gaps) — у известной она

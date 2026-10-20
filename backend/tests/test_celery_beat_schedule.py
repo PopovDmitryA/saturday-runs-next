@@ -436,6 +436,9 @@ AGREED_LIMITS_MINUTES: dict[str, tuple[int, int]] = {
     "weather.collect_event": (5, 6),
     "page_stats.rollup": (20, 25),
     "admin_digest.daily_sync_summary": (20, 25),
+    # Сверка с каталогом parkrun (18.10.2026): скачать ~1.3 МБ, сравнить ~3 тыс.
+    # площадок и полечить локации — на копии прода первый прогон шёл ~1.5 мин.
+    "parkrun_catalog.sync": (20, 25),
     "user_names.refresh": (20, 25),
     "locations.refresh_activity_status": (20, 25),
     "sync_runs.close_stale": (5, 6),

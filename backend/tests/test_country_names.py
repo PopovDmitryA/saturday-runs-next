@@ -68,7 +68,9 @@ def test_profile_import_does_not_stamp_parkrun_with_uk(db_session: Session) -> N
                 participant_name="Тестовый Бегун",
                 event_date=date(2026, 7, 25),
                 location_external_key=slug,
-                location_name="Yakutsk Dokhsun",
+                # Имя уникально: импорт находит существующую локацию по
+                # транслитерации названия, а в базе стенда Якутск уже есть.
+                location_name=f"Yakutsk Dokhsun {slug}",
                 position=1,
                 finish_time_sec=1500,
                 finish_time_display="25:00",

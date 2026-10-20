@@ -115,10 +115,13 @@ class CatalogEvent:
     country_code: int
     latitude: float
     longitude: float
+    # Домен из каталога в базе (parkrun_countries); у снимка — из COUNTRY_DOMAINS.
+    country_domain: str | None = None
+    is_active: bool = True
 
     @property
     def domain(self) -> str | None:
-        return COUNTRY_DOMAINS.get(self.country_code)
+        return self.country_domain or COUNTRY_DOMAINS.get(self.country_code)
 
     @property
     def page_url(self) -> str | None:

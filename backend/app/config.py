@@ -434,6 +434,13 @@ class Settings(BaseSettings):
     # VPN-выходы (scripts/home_queue_run.sh). Выключено — запрос профиля уходит
     # в эту очередь, а не в parkrun.
     parkrun_server_fetch_enabled: bool = True
+    # Сверка с каталогом площадок parkrun (events.json, задача parkrun_catalog.sync,
+    # services/parkrun_catalog_service.py). Включается после сида каталога.
+    # Где parkrun_server_fetch_enabled=false (дом), каталог качается только через
+    # parkrun_catalog_proxy_url — напрямую оттуда в parkrun не ходим.
+    parkrun_catalog_sync_enabled: bool = False
+    parkrun_catalog_proxy_url: str = ""
+    parkrun_catalog_url: str = ""
 
     runpark_mssql_server: str = "runpark.ru"
     runpark_mssql_database: str = "ParkrunLive"

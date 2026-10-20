@@ -22,8 +22,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models import Event, Location, Platform
+from app.models import Event, Location, Platform, RunResult
 from app.parkrun.event_slugs import CatalogEvent, catalog_event, official_event_slug
+from app.parkrun.location_keys import result_key_with_slug
 from app.parkrun.parsers.athlete import _slugify_event
 from app.platform_adapters.canonical import CanonicalLocation, CanonicalRunResult
 from app.services.vk_admin_notify import format_daily_summary
@@ -150,7 +151,7 @@ def test_profile_import_puts_new_event_on_the_map(
     # в базе стенда настоящая Okura.
     slug = f"okurakaigankoen{uuid4().hex[:6]}"
     event = CatalogEvent(slug=slug, country_code=46, latitude=34.642379, longitude=135.008025)
-    monkeypatch.setattr(upsert, "catalog_event", lambda value: event if value == slug else None)
+    monkeypatch.setattr(upsert, "resolve_catalog_event", lambda db, value: event if value == slug else None)
     name = f"Okura kaigan koen {slug[-6:]}"
 
     upsert.import_profile_run_results(db_session, platform, [_run(slug, name)])
@@ -227,6 +228,51 @@ def test_digest_lists_new_locations_missing_from_snapshot(db_session: Session) -
     assert not any(line.startswith(placed) or line.startswith(old) for line in gaps)
 
     text = format_daily_summary("10.10.2026", [], parkrun_catalog_gaps=["Okura kaigan koen (10.10)"])
-    assert "не нашлись в снимке каталога" in text
+    assert "сверка с каталогом" in text
     assert "• Okura kaigan koen (10.10)" in text
-    assert "снимке каталога" not in format_daily_summary("10.10.2026", [])
+    assert "сверка с каталогом" not in format_daily_summary("10.10.2026", [])
+
+
+def test_result_key_with_slug() -> None:
+    assert (
+        result_key_with_slug("parkrun:7035519:okura-kaigan-koen:2026-10-10:1", "okurakaigankoen")
+        == "parkrun:7035519:okurakaigankoen:2026-10-10:1"
+    )
+    assert result_key_with_slug("parkrun:a:b:c", "x") == "parkrun:a:b:c"
+    assert result_key_with_slug("five_verst:1:2:3:4", "x") == "five_verst:1:2:3:4"
+
+
+def test_profile_import_writes_location_slug_into_result_key(db_session: Session, geocode) -> None:
+    """Парсер прислал транслитерацию, локация уже под слагом parkrun — ключ результата тоже под ним."""
+    platform = _parkrun(db_session)
+    tag = uuid4().hex[:6]
+    official = f"okurakaigankoen{tag}"
+    db_session.add(Location(platform_id=platform.id, external_key=official, name=f"Okura kaigan koen {tag}"))
+    db_session.flush()
+
+    upsert.import_profile_run_results(db_session, platform, [_run(f"okura-kaigan-koen-{tag}", f"Okura kaigan koen {tag}")])
+
+    row = (
+        db_session.query(RunResult)
+        .join(Event, Event.id == RunResult.event_id)
+        .join(Location, Location.id == Event.location_id)
+        .filter(Location.external_key == official)
+        .one()
+    )
+    assert row.external_result_key == f"parkrun:7035519:{official}:2026-10-10:1"
+
+
+def test_profile_import_stays_on_location_of_parser_slug(db_session: Session, geocode, monkeypatch: pytest.MonkeyPatch) -> None:
+    """parkrun сменил слаг, имя прежнее, лечение ещё не прошло — второй локации не заводим."""
+    platform = _parkrun(db_session)
+    tag = uuid4().hex[:6]
+    old, new, name = f"oldslug{tag}", f"newslug{tag}", f"Renamed Park {tag}"
+    db_session.add(Location(platform_id=platform.id, external_key=old, name=name))
+    db_session.flush()
+    monkeypatch.setattr(upsert, "is_catalog_slug", lambda db, slug: slug == new)
+    monkeypatch.setattr(upsert, "official_slug_by_name", lambda db, value: new)
+
+    upsert.import_profile_run_results(db_session, platform, [_run(old, name)])
+
+    keys = {row[0] for row in db_session.query(Location.external_key).filter(Location.platform_id == platform.id, Location.name == name)}
+    assert keys == {old}

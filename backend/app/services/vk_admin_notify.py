@@ -96,8 +96,8 @@ def format_daily_summary(
     """Одна сводка в сутки: сколько раз запускали и что обновилось.
 
     Детали по локациям сознательно не выводим — за ними админка «Автообновление».
-    Исключение — новые parkrun-локации, которых нет в снимке каталога: сами они
-    не починятся, нужен новый снимок (см. app/parkrun/event_slugs.py).
+    Исключение — parkrun: каталог давно не сверялся или новые parkrun-локации
+    остались без точки старта (каталог о них не знает) — сами они не починятся.
     """
     lines = [f"📊 Автообновление за {day_label}"]
 
@@ -130,13 +130,13 @@ def format_daily_summary(
 
     if parkrun_catalog_gaps:
         lines.append("")
-        lines.append("🗺 parkrun: новые локации не нашлись в снимке каталога (нет страны и координат):")
+        lines.append("🗺 parkrun — сверка с каталогом:")
         for name in parkrun_catalog_gaps[:SUMMARY_PROBLEM_LIMIT]:
             lines.append(f"• {name}")
         hidden = len(parkrun_catalog_gaps) - SUMMARY_PROBLEM_LIMIT
         if hidden > 0:
             lines.append(f"• … и ещё {hidden}")
-        lines.append("Обновить снимок — app/parkrun/event_slugs.py")
+        lines.append("Подробности — scripts/parkrun_catalog_run.py, журнал parkrun_catalog_runs")
 
     if admin_url:
         lines.append("")

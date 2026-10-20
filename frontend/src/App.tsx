@@ -50,7 +50,7 @@ import { PortalRouteFallback } from "./features/portal/PortalRouteFallback";
 
 // Разделы, не нужные на первом экране, грузятся по первому обращению (см.
 // lib/lazyPage): админка, кабинет организатора, локации и протоколы, рейтинги,
-// постеры, /hq, бэклог, онбординг. Главная, вход, кабинет участника и сайдбар
+// постеры, бэклог, онбординг. Главная, вход, кабинет участника и сайдбар
 // остаются в стартовом чанке — их видит каждый.
 const LocationTopsPage = lazyPage(() => import("./features/locations/LocationTopsPage"), (m) => m.LocationTopsPage);
 const LocationWeatherPage = lazyPage(() => import("./features/locations/LocationWeatherPage"), (m) => m.LocationWeatherPage);

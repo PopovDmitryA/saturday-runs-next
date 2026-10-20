@@ -352,17 +352,15 @@ def run_daemon(
     from app.services.parkrun_monitoring_bridge import (
         monitoring_work,
         push_monitoring_to_server,
-        refresh_monitoring_stats,
     )
     from app.services.s95_queue_daemon import run_s95_pending_queue
 
     prepare_parkrun_cdp_fetch()
 
-    # parkrun-monitoring: сперва обновляем каталог + недельную статистику
-    # стран (results-service доступен с Mac, но не с сервера).
-    stats_line = refresh_monitoring_stats()
-    if stats_line:
-        cline(stats_line)
+    # Синк каталога parkrun-monitoring отсюда снят 18.10.2026: каталог ведёт
+    # сам сайт (parkrun_catalog.sync на VPS). Вызов `parkrun-monitoring sync`
+    # из очереди шёл бы к parkrun с адреса, где её запустили, — дома это
+    # запрещено, а сработал бы он, как только там появился бы venv monitoring.
 
     # limit_pending=0 означает «вся очередь parkrun» (длинный ночной прогон).
     # Соседние подсистемы этого не подразумевают: у s95 своя очередь, а сборщик

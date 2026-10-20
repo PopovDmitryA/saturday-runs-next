@@ -23,7 +23,12 @@ logger = logging.getLogger(__name__)
 DEGRADED_FLAG_KEY = "admin:telegram_proxy_degraded"
 
 
-def send_admin_telegram_message(text: str, *, reply_to_message_id: int | None = None) -> int | None:
+def send_admin_telegram_message(
+    text: str,
+    *,
+    reply_to_message_id: int | None = None,
+    html: bool = False,
+) -> int | None:
     """POST в Telegram Bot API через telegram_proxy_url (если задан).
 
     Возвращает `message_id` отправленного сообщения — он нужен диалогам, где админ
@@ -42,6 +47,8 @@ def send_admin_telegram_message(text: str, *, reply_to_message_id: int | None = 
     }
     if reply_to_message_id is not None:
         payload["reply_to_message_id"] = reply_to_message_id
+    if html:
+        payload["parse_mode"] = "HTML"
 
     url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
     proxy = settings.telegram_proxy_url or None
@@ -77,13 +84,22 @@ def _set_degraded(value: bool) -> None:
         redis.delete(DEGRADED_FLAG_KEY)
 
 
-def send_admin_report(text: str) -> bool:
+def send_admin_report(text: str, *, markup: bool = False) -> bool:
     """Точка входа для admin-отчётов и алертов. True — сообщение доставлено.
 
     Результат важен алертам синков: они помечают заявку отправленной только после
     успеха, иначе алерт повторится на следующем запуске.
+
+    `markup=True` — текст в разметке app/notification_markup.py (`**жирный**`,
+    `[подпись](url)`): в Telegram уходит HTML, в запасной ВК — чистый текст.
     """
-    ok = send_admin_telegram_message(text) is not None
+    if markup:
+        from app.notification_markup import to_plain, to_telegram_html
+
+        ok = send_admin_telegram_message(to_telegram_html(text), html=True) is not None
+        text = to_plain(text)
+    else:
+        ok = send_admin_telegram_message(text) is not None
 
     if ok:
         if _is_degraded():

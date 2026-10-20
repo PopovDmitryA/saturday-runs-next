@@ -66,6 +66,7 @@ celery_app.conf.update(
         "app.workers.tasks.weather_collect",
         "app.workers.tasks.weather_forecast",
         "app.workers.tasks.sync_runs_maintenance",
+        "app.workers.tasks.parkrun_catalog",
         "app.workers.tasks.notifications",
         "app.workers.tasks.queue_watch",
     ),
@@ -80,6 +81,9 @@ celery_app.conf.update(
         "s95_sync.run_admin_resync": {"queue": "s95_user"},
         "s95_sync.*": {"queue": "s95"},
         "parkrun_sync.*": {"queue": "parkrun"},
+        # Сверка с каталогом parkrun — общий воркер на VPS (обычный HTTP-запрос
+        # к CDN, Chromium не нужен), а не Chromium-очередь parkrun.
+        "parkrun_catalog.*": {"queue": "celery"},
         "runpark_sync.*": {"queue": "runpark"},
         # Прогревы кэша — своя очередь рядом с базой, см. app/workers/queues.py.
         "leaderboards.warm_cache": {"queue": WARM_QUEUE},
@@ -510,6 +514,14 @@ celery_app.conf.update(
         # сутки (раньше на каждый запуск уходило по два сообщения). 21:50 МСК —
         # после вечернего реестра 5 вёрст (20:00) и реестра s95 (20:30), чтобы
         # они попали в сводку того же дня. Заодно чистит старую историю запусков.
+        # Каталог площадок parkrun (events.json): новые, закрытые, переименованные
+        # площадки и лечение parkrun-локаций сайта. 09:20 МСК — parkrun обновляет
+        # каталог утром по Лондону; задача выключена, пока не задан
+        # PARKRUN_CATALOG_SYNC_ENABLED (services/parkrun_catalog_service.py).
+        "parkrun-catalog-sync": {
+            "task": "parkrun_catalog.sync",
+            "schedule": crontab(hour=9, minute=20),
+        },
         "admin-sync-daily-summary": {
             "task": "admin_digest.daily_sync_summary",
             "schedule": crontab(hour=21, minute=50),

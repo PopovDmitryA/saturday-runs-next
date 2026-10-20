@@ -33,7 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Event, Location, LocationCatalog, LocationCatalogLink
-from app.parkrun.event_slugs import catalog_event
+from app.parkrun.catalog_store import resolve_catalog_event
 from app.services.location_catalog_service import CATALOG_KEY_REFERENCES
 
 logger = logging.getLogger(__name__)
@@ -46,20 +46,20 @@ class ParkrunKeyConflict(RuntimeError):
     """Слияние или переименование нельзя провести автоматически — нужен человек."""
 
 
-def location_page_url(slug: str) -> str | None:
+def location_page_url(slug: str, db: Session | None = None) -> str | None:
     """Ссылка на площадку на домене её страны (для России и Франции — нет)."""
-    event = catalog_event(slug)
+    event = resolve_catalog_event(db, slug)
     return event.page_url if event is not None else None
 
 
-def event_results_url_sql_prefix(slug: str) -> str:
+def event_results_url_sql_prefix(slug: str, db: Session | None = None) -> str:
     """Начало ссылки на протокол: `https://<домен>/<слаг>/results/`.
 
     Домен — страны площадки по каталогу; у ушедших из parkrun стран (Россия,
     Франция) и у площадок вне каталога — www.parkrun.org.uk, как пишет и импорт
     профиля (upsert.import_profile_run_results).
     """
-    event = catalog_event(slug)
+    event = resolve_catalog_event(db, slug)
     domain = event.domain if event is not None and event.domain else FALLBACK_DOMAIN
     return f"https://{domain}/{slug}/results/"
 
@@ -70,6 +70,21 @@ class KeyRewrite:
     results: int = 0
 
 
+def result_key_with_slug(key: str | None, slug: str) -> str | None:
+    """Ключ результата parkrun с другим слагом площадки — как rewrite_event_keys.
+
+    `parkrun:<атлет|unknown>:<слаг>:<дата>:<номер|место>` — меняется только
+    третья часть; ключ другого вида возвращается как есть.
+    """
+    if not key or not key.startswith("parkrun:"):
+        return key
+    parts = key.split(":")
+    if len(parts) != 5 or parts[2] == slug:
+        return key
+    parts[2] = slug
+    return ":".join(parts)
+
+
 def rewrite_event_keys(db: Session, location: Location) -> KeyRewrite:
     """Ключи и ссылки протоколов и ключи результатов — под текущий ключ локации.
 
@@ -77,7 +92,7 @@ def rewrite_event_keys(db: Session, location: Location) -> KeyRewrite:
     новые результаты по created_at и разослал бы людям «новые пробежки».
     """
     slug = location.external_key
-    prefix = event_results_url_sql_prefix(slug)
+    prefix = event_results_url_sql_prefix(slug, db)
     events = db.execute(
         text(
             """
@@ -140,7 +155,7 @@ def rename_parkrun_location(
     location.external_key = new_key
     if new_name:
         location.name = new_name
-    page_url = location_page_url(new_key)
+    page_url = location_page_url(new_key, db)
     if page_url:
         location.source_url = page_url
     elif location.source_url and f"/{old_key}/" in location.source_url:

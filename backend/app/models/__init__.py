@@ -2282,3 +2282,113 @@ class BacklogCardSubscription(Base):
     card_id: Mapped[UUID] = mapped_column(ForeignKey("backlog_cards.id", ondelete="CASCADE"), primary_key=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+# ---------------------------------------------------------------- каталог parkrun
+#
+# Площадки parkrun всего мира — копия официального каталога events.json в
+# боевой базе (этап 2, решение Дмитрия 18.10.2026). Раньше каталог жил в
+# SQLite parkrun-monitoring на VPS, а сайт видел только снимки JSON в репо и
+# отставал от них: так 10.10.2026 Okura kaigan koen завелась без страны.
+# С локациями сайта таблицы связаны слагом (parkrun_events.slug =
+# locations.external_key), а не внешним ключом: этап 3 свёл ключи к слагу
+# parkrun, и слияние/удаление локаций каталог не задевает.
+
+
+class ParkrunCountry(Base):
+    """Страна каталога parkrun: код из events.json, домен её сайта."""
+
+    __tablename__ = "parkrun_countries"
+
+    code: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    # Нет у ушедших из parkrun стран (Россия — 79, Франция — 31): ссылок на
+    # площадку не строим.
+    domain: Mapped[str | None] = mapped_column(String(64))
+    name: Mapped[str | None] = mapped_column(String(64))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ParkrunEvent(Base):
+    """Площадка parkrun. Слаг — eventname из каталога, как пишет сам parkrun."""
+
+    __tablename__ = "parkrun_events"
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_parkrun_events_slug"),
+        Index("uq_parkrun_events_parkrun_id", "parkrun_id", unique=True, postgresql_where=text("parkrun_id IS NOT NULL")),
+        Index("ix_parkrun_events_country_active", "country_code", "is_active"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # id площадки у parkrun: по нему видно переименование (тот же id, новый слаг).
+    parkrun_id: Mapped[int | None] = mapped_column(Integer)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    short_name: Mapped[str | None] = mapped_column(String(256))
+    long_name: Mapped[str | None] = mapped_column(String(256))
+    local_name: Mapped[str | None] = mapped_column(String(256))
+    country_code: Mapped[int | None] = mapped_column(SmallInteger)
+    series_id: Mapped[int | None] = mapped_column(SmallInteger)  # 1 — 5 км, 2 — юниоры
+    place: Mapped[str | None] = mapped_column(String(256))
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    # live — в живом каталоге; closed — была в нём и пропала; archive — знаем
+    # только по архивным снимкам (вся Россия, площадки, закрытые до 07.2026).
+    source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="live")
+    first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ParkrunEventName(Base):
+    """Все имена площадки, по которым её узнаёт импорт профиля.
+
+    Профиль атлета показывает площадку под текущим коротким именем за всю
+    историю, поэтому старые имена переименованных площадок (Ludlow → Mortimer
+    Forest) тоже ведут к ней. Ключ — имя без регистра и разделителей.
+    """
+
+    __tablename__ = "parkrun_event_names"
+    __table_args__ = (Index("ix_parkrun_event_names_event", "event_id"),)
+
+    name_norm: Mapped[str] = mapped_column(String(256), primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("parkrun_events.id", ondelete="CASCADE"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # short | long | local | old
+
+
+class ParkrunCatalogRun(Base):
+    """Прогон сверки с каталогом: когда, чем кончился, что поменял."""
+
+    __tablename__ = "parkrun_catalog_runs"
+    __table_args__ = (Index("ix_parkrun_catalog_runs_started", "started_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # ok | unchanged | suspicious | failed | skipped | seed
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    payload_bytes: Mapped[int | None] = mapped_column(Integer)
+    payload_sha256: Mapped[str | None] = mapped_column(String(64))
+    active_total: Mapped[int | None] = mapped_column(Integer)
+    summary: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    error: Mapped[str | None] = mapped_column(Text)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ParkrunEventChange(Base):
+    """Журнал изменений каталога: что появилось, пропало, переехало, сменило имя."""
+
+    __tablename__ = "parkrun_event_changes"
+    __table_args__ = (
+        Index("ix_parkrun_event_changes_event", "event_id"),
+        Index("ix_parkrun_event_changes_detected", "detected_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("parkrun_catalog_runs.id", ondelete="SET NULL"))
+    event_id: Mapped[int] = mapped_column(ForeignKey("parkrun_events.id", ondelete="CASCADE"), nullable=False)
+    # added | returned | closed | renamed | moved | field
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

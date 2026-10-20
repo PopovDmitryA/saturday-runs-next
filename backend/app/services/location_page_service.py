@@ -344,13 +344,24 @@ def _identity_status(
 ) -> tuple[bool, bool]:
     """(is_paused, is_cancelled) идентичности.
 
-    Идентичность из одних parkrun-локаций — всегда «на паузе»: parkrun ушёл из
-    России в 2022, но флагов паузы/закрытия у таких строк в данных нет (у
-    локаций вне каталога — вообще никаких, у «Улица Голубая» каталог ошибочно
-    активен), поэтому статус выводим из самого факта отсутствия преемника.
+    Идентичность из одних parkrun-локаций «на паузе», если ни одна её площадка
+    не действует по каталогу parkrun (parkrun_events): вся Россия (parkrun ушёл
+    в 2022), закрытые зарубежные. Действующая зарубежная — не на паузе: до
+    18.10.2026 сюда попадали все parkrun-only идентичности, и Bushy Park или
+    Okura kaigan koen показывались «на паузе». Каталог не засеян (стенд,
+    тесты) — как раньше, всегда на паузе.
     """
     parkrun_only = all(code == "parkrun" for _location, code in locations)
-    is_paused = parkrun_only or any(catalog_index.is_paused(location, code) for location, code in locations)
+    if parkrun_only:
+        from app.parkrun.catalog_store import active_parkrun_slugs
+
+        active = active_parkrun_slugs(catalog_index.db)
+        parkrun_paused = active is None or not any(location.external_key in active for location, _code in locations)
+    else:
+        parkrun_paused = False
+    is_paused = parkrun_paused or (
+        not parkrun_only and any(catalog_index.is_paused(location, code) for location, code in locations)
+    )
     is_cancelled = not parkrun_only and all(location.is_cancelled for location, _code in locations)
     return is_paused, is_cancelled
 
@@ -368,11 +379,16 @@ def _identity_cancel_reason(locations: list[tuple[Location, str]]) -> str | None
 
 
 def _identity_country(locations: list[tuple[Location, str]]) -> str | None:
-    """Страна идентичности. У parkrun-строк в БД country — всегда стаб
-    «United Kingdom» (источник parkrun.org.uk); parkrun-only идентичности в
-    выдаче по построению русские (см. is_foreign_location)."""
+    """Страна идентичности.
+
+    У parkrun-строк страна в базе настоящая (заглушку «United Kingdom» стёрли в
+    08.2026, страну ставят сверка с каталогом и импорт профиля). До 18.10.2026
+    parkrun-only идентичности считались русскими по построению — и страница
+    Bushy Park в Лондоне писала «Россия». Пустая страна у parkrun-only — это
+    закрытая до 2019 площадка, её страна неизвестна.
+    """
     if all(code == "parkrun" for _location, code in locations):
-        return "Россия"
+        return next((loc.country for loc, _code in locations if (loc.country or "").strip()), None)
     return cast(str | None, _first_by_platform_order(locations, lambda loc: loc.country))
 
 
