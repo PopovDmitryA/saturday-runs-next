@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import {
   ApiError,
   updateNotificationSettings,
+  type CancellationPlace,
   type NotificationChannelCode,
   type NotificationSettingsState,
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
+import { CancellationPlacesPicker } from "./CancellationPlacesPicker";
 
 // Отмены стартов публикуют только эти две системы: у parkrun и RunPark
 // недельных отмен в источниках нет (см. app/services/location_activity_status).
@@ -28,14 +30,20 @@ export function NotificationPrefsModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const enabledChannels = state.channels.filter((c) => c.enabled);
+  // Чипы мест живут локально: строка меняется сразу, без ожидания сервера,
+  // и поле не теряет фокус на время сохранения. Ответ сервера — истина.
+  const [places, setPlaces] = useState<CancellationPlace[]>(state.cancellation_places);
+  useEffect(() => setPlaces(state.cancellation_places), [state.cancellation_places]);
 
   const apply = async (body: Parameters<typeof updateNotificationSettings>[0]) => {
     setBusy(true);
     setError(null);
     try {
       onChange(await updateNotificationSettings(body));
+      return true;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось сохранить");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -103,6 +111,19 @@ export function NotificationPrefsModal({
                     );
                   })}
                 </div>
+                <span className="muted notify-channel-hint">
+                  Где: локации, города или регионы. Пусто — по всей стране.
+                </span>
+                <CancellationPlacesPicker
+                  places={places}
+                  disabled={false}
+                  onChange={(next) => {
+                    setPlaces(next);
+                    void apply({ cancellation_places: next.map((place) => place.key) }).then((ok) => {
+                      if (!ok) setPlaces(state.cancellation_places);
+                    });
+                  }}
+                />
               </div>
             )}
           </li>

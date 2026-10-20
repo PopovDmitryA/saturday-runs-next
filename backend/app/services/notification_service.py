@@ -165,6 +165,7 @@ def update_prefs(
     primary_channel: str | None | object = ...,
     kinds: dict[str, bool] | None = None,
     cancellation_platforms: list[str] | None = None,
+    cancellation_places: list[str] | None = None,
 ) -> UserNotificationPrefs:
     prefs = touch_settings(db, user_id)
     if primary_channel is not ...:
@@ -178,6 +179,10 @@ def update_prefs(
         # Порядок держим канонический (5 вёрст, S95, parkrun, RunPark), дубли
         # снимаем: список едет в интерфейс как есть.
         prefs.cancellation_platforms = [c for c in PLATFORM_TITLES if c in set(cancellation_platforms)]
+    if cancellation_places is not None:
+        from app.services import cancellation_places_service
+
+        cancellation_places_service.set_user_places(db, user_id, cancellation_places)
     if kinds:
         merged = dict(prefs.kinds or {})
         for code, value in kinds.items():
@@ -205,6 +210,12 @@ def kinds_state(prefs: UserNotificationPrefs | None) -> list[dict[str, Any]]:
     ]
 
 
+def _cancellation_places(db: Session, user: User) -> list[dict[str, str]]:
+    from app.services import cancellation_places_service
+
+    return cancellation_places_service.user_places(db, user.id)
+
+
 def settings_state(db: Session, user: User) -> dict[str, Any]:
     """Всё, что нужно «Способам входа» и модалке «о чём присылать»."""
     prefs = get_prefs(db, user.id)
@@ -212,6 +223,7 @@ def settings_state(db: Session, user: User) -> dict[str, Any]:
         "enabled": channels.is_enabled(db, user.id),
         "primary_channel": prefs.primary_channel if prefs is not None else None,
         "cancellation_platforms": list(prefs.cancellation_platforms or []) if prefs is not None else [],
+        "cancellation_places": _cancellation_places(db, user),
         "channels": channels.channels_state(db, user),
         "kinds": kinds_state(prefs),
     }

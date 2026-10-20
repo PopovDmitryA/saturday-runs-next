@@ -10,6 +10,7 @@ from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.models import AuthProvider, Platform, PlatformLink, User
 from app.schemas.notifications import (
+    CancellationPlaceSuggestions,
     NewsletterSettingsResponse,
     NewsletterSettingsUpdateRequest,
     NotificationChannelToggle,
@@ -39,6 +40,7 @@ from app.schemas.settings import (
     TourismPlatformsResponse,
     TourismPlatformsUpdateRequest,
 )
+from app.services import cancellation_places_service as cancellation_places
 from app.services import notification_channels_service as channels
 from app.services import notification_service as notifications
 from app.services.auth_identity_service import list_user_identities
@@ -196,11 +198,22 @@ def update_notification_settings(
             primary_channel=fields["primary_channel"] if "primary_channel" in fields else ...,
             kinds=fields.get("kinds"),
             cancellation_platforms=fields.get("cancellation_platforms"),
+            cancellation_places=fields.get("cancellation_places"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
     return _notification_state(db, user)
+
+
+@router.get("/notifications/cancellation-places", response_model=CancellationPlaceSuggestions)
+def suggest_cancellation_places(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    q: Annotated[str, Query(max_length=80)] = "",
+) -> CancellationPlaceSuggestions:
+    """Подсказки поля «Где следить за отменами»: города, регионы, страны и локации."""
+    return CancellationPlaceSuggestions.model_validate({"items": cancellation_places.suggest(db, q)})
 
 
 @router.put("/notifications/channels/{channel}", response_model=NotificationSettingsState)

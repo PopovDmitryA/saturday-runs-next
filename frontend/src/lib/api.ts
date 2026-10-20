@@ -3732,11 +3732,22 @@ export type NotificationKindState = {
   available: boolean;
 };
 
+// Место для «Отмен стартов»: локация (ключ каталога) или город, регион,
+// страна целиком (city:/region:/country:).
+export type CancellationPlace = {
+  key: string;
+  kind: "location" | "city" | "region" | "country";
+  label: string;
+  hint?: string | null;
+};
+
 export type NotificationSettingsState = {
   enabled: boolean;
   primary_channel: NotificationChannelCode | null;
   // Системы для «Отмен стартов»; пустой список = все.
   cancellation_platforms: string[];
+  // Места для «Отмен стартов»; пустой список = вся страна.
+  cancellation_places: CancellationPlace[];
   channels: NotificationChannelState[];
   kinds: NotificationKindState[];
 };
@@ -3745,6 +3756,8 @@ export type NotificationSettingsUpdate = {
   primary_channel?: NotificationChannelCode | null;
   kinds?: Record<string, boolean>;
   cancellation_platforms?: string[];
+  // Ключи мест целиком, в порядке чипов.
+  cancellation_places?: string[];
 };
 
 export type NotificationBrokenChannel = {
@@ -3765,6 +3778,13 @@ export type NotificationNudgeState = {
 
 export function getNotificationSettings() {
   return apiFetch<NotificationSettingsState>("/settings/notifications");
+}
+
+export function suggestCancellationPlaces(q: string, signal?: AbortSignal) {
+  return apiFetch<{ items: CancellationPlace[] }>(
+    `/settings/notifications/cancellation-places?q=${encodeURIComponent(q)}`,
+    { signal },
+  );
 }
 
 export function updateNotificationSettings(body: NotificationSettingsUpdate) {

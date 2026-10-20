@@ -755,10 +755,20 @@ Telegram / HTML письма / текст VK), `services/notification_service.py
 - **Отмены стартов** (`kind=cancellations`,
   `services/cancellation_notification_service.py`): рассылаются ВСЕМ
   подписчикам по всей стране, а не только по «своим» площадкам — человек
-  может собираться в другой город (решение Дмитрия 23.09.2026). Единственный
-  фильтр — системы: `user_notification_prefs.cancellation_platforms` (пустой
-  список = все, миграция 101; в интерфейсе только 5 вёрст и S95, у
-  parkrun/RunPark недельных отмен нет). Весь набор изменений одного синка —
+  может собираться в другой город (решение Дмитрия 23.09.2026) — это
+  умолчание. Сузить можно двумя фильтрами, отмена проходит оба: системы —
+  `user_notification_prefs.cancellation_platforms` (пустой список = все,
+  миграция 101; в интерфейсе только 5 вёрст и S95, у parkrun/RunPark
+  недельных отмен нет) — и места: таблица `user_cancellation_places`
+  (миграция 111, `services/cancellation_places_service.py`). Место —
+  локация (ключ каталога `catalog:<id>`, поэтому таблица в
+  `CATALOG_KEY_REFERENCES`) или целиком `city:`/`region:`/`country:` по
+  свёрнутому имени; нет ни одного — вся страна. В настройках это поле с
+  чипами (`CancellationPlacesPicker.tsx`), подсказки
+  `GET /settings/notifications/cancellation-places?q=` — из каталога
+  локаций в Redis, с сокращениями поиска по сайту. Москва и Петербург в
+  каталоге и город, и регион — подсказка одна, `region:`. Пятничная сводка
+  фильтруется так же и пишет «По местам: …». Весь набор изменений одного синка —
   ОДНО сообщение (в зимнюю субботу отмен бывает несколько), список у каждого
   свой по его системам. Зовётся из общего входа
   `location_cancellation_notify.notify_cancellation_changes(changes, db)`, то

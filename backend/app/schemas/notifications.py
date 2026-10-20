@@ -35,11 +35,25 @@ class NotificationKindState(BaseModel):
     available: bool
 
 
+class CancellationPlace(BaseModel):
+    # catalog:<id> / location:<id> — локация; city:/region:/country: — место целиком.
+    key: str
+    kind: str
+    label: str
+    hint: str | None = None
+
+
+class CancellationPlaceSuggestions(BaseModel):
+    items: list[CancellationPlace] = Field(default_factory=list)
+
+
 class NotificationSettingsState(BaseModel):
     enabled: bool
     primary_channel: str | None = None
     # Системы для «Отмен стартов»: пустой список = все.
     cancellation_platforms: list[str] = Field(default_factory=list)
+    # Места для «Отмен стартов»: пустой список = вся страна.
+    cancellation_places: list[CancellationPlace] = Field(default_factory=list)
     channels: list[NotificationChannelState] = Field(default_factory=list)
     kinds: list[NotificationKindState] = Field(default_factory=list)
 
@@ -49,6 +63,8 @@ class NotificationSettingsUpdate(BaseModel):
     primary_channel: str | None = None
     kinds: dict[str, bool] | None = None
     cancellation_platforms: list[str] | None = None
+    # Ключи мест целиком, в порядке чипов; [] — снова вся страна.
+    cancellation_places: list[str] | None = None
     model_config = {"extra": "forbid"}
 
 

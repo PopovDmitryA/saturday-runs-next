@@ -29,6 +29,7 @@ CATALOG_KEY_REFERENCES: tuple[tuple[str, str], ...] = (
     ("user_geo_pings", "nearest_identity_key"),
     ("user_geo_pings", "home_identity_key"),
     ("nearby_query_log", "nearest_identity_key"),
+    ("user_cancellation_places", "place_key"),
 )
 
 

@@ -2,8 +2,11 @@
 
 Отмены рассылаются по всей стране, а не только по «своим» площадкам: человек
 может собираться в другой город, и отмена там важна ему не меньше, чем дома
-(решение Дмитрия 23.09.2026). Единственный фильтр — системы: в настройках
-можно оставить только 5 вёрст, только S95 или обе (пустой список = все).
+(решение Дмитрия 23.09.2026) — это умолчание. Сузить можно двумя фильтрами,
+и отмена должна пройти оба: системы (только 5 вёрст, только S95 или обе;
+пустой список = все) и места — локации, города, регионы, страны
+(cancellation_places_service; ни одного места = вся страна). Места
+появились 21.10.2026: людям надоели отмены в городах, куда они не ездят.
 
 Одно сообщение на весь набор изменений синка, а не письмо на каждую площадку:
 в зимнюю субботу отмен бывает сразу несколько, и десяток сообщений подряд
@@ -33,6 +36,7 @@ from app.models import Location, Platform, User, UserNotificationChannel, UserNo
 from app.notification_kinds import kind_enabled
 from app.notification_markup import bold, link
 from app.saturday_week import week_saturday
+from app.services import cancellation_places_service as places
 from app.services import notification_service as notifications
 from app.services.platform_titles import PLATFORM_ORDER, platform_title
 
@@ -191,11 +195,22 @@ def notify_cancellation_subscribers(
         if not user_ids:
             return 0
         users = db.execute(select(User).where(User.id.in_(user_ids))).scalars().all()
+        chosen_places = places.places_by_user(db, user_ids)
+        change_keys = (
+            places.location_place_keys(db, [(item.platform_code, item.slug) for item in changes])
+            if chosen_places
+            else {}
+        )
         for user in users:
             prefs = notifications.get_prefs(db, user.id)
             if not kind_enabled(prefs.kinds if prefs else None, KIND):
                 continue
-            mine = [item for item in changes if platform_allowed(prefs, item.platform_code)]
+            mine = [
+                item
+                for item in changes
+                if platform_allowed(prefs, item.platform_code)
+                and places.place_allowed(chosen_places.get(user.id), change_keys.get((item.platform_code, item.slug)))
+            ]
             if not mine:
                 continue
             title, text = compose(mine, base_url=base_url, today=today)
@@ -321,14 +336,23 @@ def _locations_word(count: int) -> str:
 
 
 def compose_summary(
-    items: list[CancelledLocation], *, saturday: date, base_url: str, platforms: list[str] | None = None
+    items: list[CancelledLocation],
+    *,
+    saturday: date,
+    base_url: str,
+    platforms: list[str] | None = None,
+    place_labels: list[str] | None = None,
 ) -> tuple[str, str]:
     """(заголовок, тело) пятничной сводки. platforms — выбранные в настройках
-    системы (пусто — все): при фильтре так и пишем, по каким смотрели."""
+    системы (пусто — все), place_labels — выбранные места (пусто — вся
+    страна): при фильтре так и пишем, по чему смотрели, — иначе «отмен нет»
+    читалось бы как «отмен нет нигде»."""
     day = f"{saturday.day:02d}.{saturday.month:02d}"
     scope = ""
     if platforms:
-        scope = "\n\nПо системам: " + ", ".join(platform_title(code) for code in platforms) + "."
+        scope += "\n\nПо системам: " + ", ".join(platform_title(code) for code in platforms) + "."
+    if place_labels:
+        scope += ("\n" if scope else "\n\n") + "По местам: " + ", ".join(place_labels) + "."
     if not items:
         return f"✅ Отмен на завтра, {day}, нет", f"Ни одна локация не сообщила об отмене субботнего старта.{scope}"
 
@@ -363,7 +387,12 @@ def send_friday_summaries(db: Session, *, now: datetime | None = None) -> int:
 
     base_url = get_settings().app_base_url.rstrip("/")
     items = cancelled_locations(db)
-    users = {user.id: user for user in db.execute(select(User).where(User.id.in_([u for u, _ in due]))).scalars()}
+    due_ids = [u for u, _ in due]
+    users = {user.id: user for user in db.execute(select(User).where(User.id.in_(due_ids))).scalars()}
+    chosen_places = places.places_by_user(db, due_ids)
+    item_keys = (
+        places.location_place_keys(db, [(item.platform_code, item.slug) for item in items]) if chosen_places else {}
+    )
     queued: list[UUID] = []
     for user_id, saturday in due:
         user = users.get(user_id)
@@ -372,9 +401,16 @@ def send_friday_summaries(db: Session, *, now: datetime | None = None) -> int:
         prefs = notifications.get_prefs(db, user_id)
         if not kind_enabled(prefs.kinds if prefs else None, KIND):
             continue
-        mine = [item for item in items if platform_allowed(prefs, item.platform_code)]
+        mine_places = chosen_places.get(user_id)
+        mine = [
+            item
+            for item in items
+            if platform_allowed(prefs, item.platform_code)
+            and places.place_allowed(mine_places, item_keys.get((item.platform_code, item.slug)))
+        ]
         chosen = list(prefs.cancellation_platforms or []) if prefs is not None else []
-        title, text = compose_summary(mine, saturday=saturday, base_url=base_url, platforms=chosen)
+        labels = [place["label"] for place in places.user_places(db, user_id)] if mine_places else []
+        title, text = compose_summary(mine, saturday=saturday, base_url=base_url, platforms=chosen, place_labels=labels)
         delivery = notifications.notify_user(
             db,
             user,

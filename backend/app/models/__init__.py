@@ -2272,6 +2272,28 @@ class NotificationDelivery(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class UserCancellationPlace(Base):
+    """Где следить за отменами стартов: локация, город, регион или страна.
+
+    Нет ни одной строки — отмены приходят по всей стране, как до миграции 111.
+    `place_key` по виду:
+      * локация — ключ идентичности каталога (`catalog:<id>` или
+        `location:<id>`), как у домашней локации; поэтому таблица — в
+        CATALOG_KEY_REFERENCES;
+      * `city:<имя>`, `region:<имя>`, `country:<имя>` — имя свёрнуто
+        (`site_search_service._fold`: нижний регистр, «ё» → «е»).
+    `label` — подпись чипа на момент выбора: каталог мог с тех пор
+    переименовать место, а показать выбор человеку нужно всегда.
+    """
+
+    __tablename__ = "user_cancellation_places"
+
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    place_key: Mapped[str] = mapped_column(String(160), primary_key=True)
+    label: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class BacklogCardSubscription(Base):
     """Кто следит за карточкой бэклога: автор и комментаторы — автоматически,
     остальные — колокольчиком на карточке."""
