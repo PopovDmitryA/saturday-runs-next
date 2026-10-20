@@ -68,12 +68,17 @@ def send_telegram_broadcast_message(
     token: str,
     chat_id: int,
     text: str,
+    proxy: str | None = None,
 ) -> tuple[bool, str]:
+    # Через ту же прокси, что бот и уведомления: из домашней сети, как и из РФ
+    # вообще, api.telegram.org напрямую недоступен (проверено 20.10.2026 —
+    # «Network is unreachable»). Без неё рассылка тихо не доходила бы ни до кого.
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
         response = httpx.post(
             url,
             json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
+            proxy=proxy,
             timeout=30.0,
         )
     except httpx.HTTPError as exc:
@@ -112,6 +117,7 @@ def send_news_broadcast(
             token=settings.telegram_bot_token,
             chat_id=recipient.telegram_chat_id,
             text=text,
+            proxy=settings.telegram_proxy_url or None,
         )
         if ok:
             sent += 1

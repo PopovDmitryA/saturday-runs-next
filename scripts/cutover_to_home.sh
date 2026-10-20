@@ -41,7 +41,13 @@ BUILD_STAMP="$HOME_DIR/.frontend-build-sha"
 step="${1:-}"
 say() { echo "$(date '+%H:%M:%S') $*"; }
 die() { echo "СТОП: $*" >&2; exit 1; }
-vps() { ssh -o BatchMode=yes -o ConnectTimeout=20 "$VPS" "$@"; }
+# Одно соединение на весь переезд: шаги ходят на VPS десятком ssh/scp/rsync
+# подряд, а фильтр Timeweb на частые подключения рвёт их секунд на 45 (в том
+# числе Дмитрию). Мастер-соединение живёт 15 минут после последнего шага;
+# умер — следующий вызов просто откроет новое.
+SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4
+  -o ControlMaster=auto -o "ControlPath=$HOME/.ssh/cm-cutover-%C" -o ControlPersist=15m)
+vps() { ssh "${SSH_OPTS[@]}" "$VPS" "$@"; }
 # Ночной бэкап базы дома — scripts/home_pg_backup.sh по таймеру srs-pg-backup.
 # Таймер ставится руками и один раз; до шага mark бэкап молчит (нет маркера),
 # поэтому включать его можно заранее.
@@ -96,11 +102,32 @@ preflight)
   [ "$(cat "$BUILD_STAMP" 2>/dev/null)" = "$head" ] && say "✓ фронт собран под ${head:0:7}" ||
     say "✗ фронт не собран под ${head:0:7} — шаг build (иначе люди получат интерфейс со старой сборки)"
   sudo -n test -d /etc/letsencrypt/live/run5k.run || say "✗ сертификатов нет — шаг certs"
+  # Копия сертификатов дома стареет, а VPS продлевает свои сам: 20.10.2026 дома
+  # лежали сертификаты до 1–9 ноября, на VPS — уже до января. Сам файл есть —
+  # это ещё не повод для ✓: меньше 30 дней — certbot дома начнёт продлевать
+  # сразу, пока DNS смотрит на VPS, и упадёт.
   for n in run5k.run app.run5k.run grafana.run5k.run; do
-    end=$(sudo -n openssl x509 -enddate -noout -in "/etc/letsencrypt/live/$n/fullchain.pem" 2>/dev/null | cut -d= -f2)
-    [ -n "$end" ] && say "✓ сертификат $n до $end" || say "✗ нет сертификата $n — шаг certs"
+    pem="/etc/letsencrypt/live/$n/fullchain.pem"
+    end=$(sudo -n openssl x509 -enddate -noout -in "$pem" 2>/dev/null | cut -d= -f2)
+    if [ -z "$end" ]; then say "✗ нет сертификата $n — шаг certs"
+    elif sudo -n openssl x509 -checkend $((30 * 86400)) -noout -in "$pem" >/dev/null 2>&1; then say "✓ сертификат $n до $end"
+    else say "✗ сертификат $n до $end — меньше 30 дней: копия устарела, шаг certs со свежим архивом с VPS"; fi
   done
-  [ -d "$HOME_DIR/data/og" ] && say "✓ медиа: $(du -sh "$HOME_DIR/data" | cut -f1)" || say "✗ медиа не скопированы — шаг media"
+  # Медиа тоже: каталог есть, но картинки OG могли остаться месячной давности.
+  if [ -d "$HOME_DIR/data/og" ]; then
+    newest=$(find "$HOME_DIR/data/og" -type f -printf '%TY-%Tm-%Td\n' 2>/dev/null | sort | tail -1)
+    say "✓ медиа: $(du -sh "$HOME_DIR/data" | cut -f1), самая свежая картинка OG от ${newest:-?} (шаг media всё равно повторить в день переезда)"
+  else
+    say "✗ медиа не скопированы — шаг media"
+  fi
+  # Ежечасная уборка стендов (~/dash/cleanup.py, таймер pm-cleanup) гасит любой
+  # проект srs_* без живой сессии Claude рядом. 24.09.2026 она так погасила
+  # репетицию — боевой стек она остановила бы через час после переезда.
+  if [ -f "$HOME/dash/cleanup.py" ]; then
+    grep -q "\"${HOME_PROJECT:-srs_home}\"" "$HOME/dash/cleanup.py" &&
+      say "✓ уборка стендов (pm-cleanup) не трогает ${HOME_PROJECT:-srs_home}" ||
+      say "✗ уборка стендов pm-cleanup погасит ${HOME_PROJECT:-srs_home}: добавить его в PROTECTED в ~/dash/cleanup.py или systemctl --user stop pm-cleanup.timer"
+  fi
   backup_timer
   # Край обязан слушать наружу: EDGE_BIND=127.0.0.1 остался бы от репетиции.
   [ "${EDGE_BIND:-0.0.0.0}" = "0.0.0.0" ] && say "✓ край будет слушать 0.0.0.0:80/443" ||
@@ -132,14 +159,25 @@ preflight)
 
 certs)
   say "забираю сертификаты"
-  # На проде sudo у viewer с паролем, поэтому архив собирает Дмитрий одной
-  # командой в своём root-шелле:
-  #   tar -czf /tmp/le.tgz -C /etc letsencrypt && chmod 644 /tmp/le.tgz
+  # Каталог /etc/letsencrypt на VPS читает только root, а у viewer sudo с
+  # паролем. Поэтому архив собирает Дмитрий одной командой в root-шелле НА VPS
+  # (веб-консоль Timeweb, вход root) — не дома: здесь та же команда упрётся
+  # в Permission denied. Владелец — viewer, иначе шаг не смог бы стереть
+  # архив с ключами из /tmp (там sticky-бит), и он остался бы лежать. rm в
+  # начале — для повтора: старый архив тогда принадлежит viewer, а root в /tmp
+  # чужой файл не перезапишет (fs.protected_regular). umask — чтобы ключи ни
+  # секунды не лежали открытыми на чтение, пока tar пишет.
+  le_cmd='rm -f /tmp/le.tgz; (umask 077; tar -czf /tmp/le.tgz -C /etc letsencrypt) && chown viewer:viewer /tmp/le.tgz'
   vps 'test -r /tmp/le.tgz' ||
-    die "нет /tmp/le.tgz на проде — собери его root-ом: tar -czf /tmp/le.tgz -C /etc letsencrypt && chmod 644 /tmp/le.tgz"
-  scp -o BatchMode=yes "$VPS:/tmp/le.tgz" /tmp/le.tgz || die "не скачался"
+    die "нет /tmp/le.tgz на проде — собери его на VPS root-ом (веб-консоль Timeweb): $le_cmd"
+  # Архив старше суток — скорее всего от прошлой репетиции, со старыми сертификатами.
+  vps 'test -n "$(find /tmp/le.tgz -mmin -1440)"' ||
+    die "/tmp/le.tgz на проде старше суток — собери свежий root-ом на VPS: $le_cmd"
+  scp "${SSH_OPTS[@]}" "$VPS:/tmp/le.tgz" /tmp/le.tgz || die "не скачался"
   sudo tar -xzf /tmp/le.tgz -C /etc || die "не распаковался"
-  vps 'rm -f /tmp/le.tgz'; rm -f /tmp/le.tgz
+  rm -f /tmp/le.tgz
+  vps 'rm -f /tmp/le.tgz' ||
+    say "✗ архив с ключами остался на VPS в /tmp/le.tgz — удалить root-ом: rm -f /tmp/le.tgz"
   sudo ls /etc/letsencrypt/live/ | tr '\n' ' '; echo
   ;;
 
@@ -149,7 +187,7 @@ media)
   # контейнера, который ходит root-ом, — тогда rsync не сможет в них писать.
   say "синхронизирую data/ (первый прогон — минуты, повторный — секунды)"
   sudo -n chown -R "$(id -u):$(id -g)" "$HOME_DIR/data" 2>/dev/null
-  rsync -a --no-o --no-g --info=stats2 -e "ssh -o BatchMode=yes" \
+  rsync -a --no-o --no-g --info=stats2 -e "ssh ${SSH_OPTS[*]}" \
     "$VPS:$REMOTE_DIR/data/" "$HOME_DIR/data/" | tail -4
   ;;
 
@@ -221,7 +259,15 @@ db)
   say "дамп: $(du -h "$DUMP_DIR/$dump" | cut -f1) за $(( $(date +%s) - t0 )) с"
 
   "${COMPOSE[@]}" up -d postgres || die "база не поднялась"
-  for _ in $(seq 1 60); do "${COMPOSE[@]}" exec -T postgres pg_isready -U "${POSTGRES_USER:-saturday_runs}" >/dev/null 2>&1 && break; sleep 1; done
+  # Ждём по TCP, а не по сокету: на свежем томе initdb поднимает временный
+  # сервер только на сокете, pg_isready через сокет отвечает «ready», и drop
+  # database мог попасть в его остановку (щель ~0,3 с, проверено 20.10.2026).
+  ready=""
+  for _ in $(seq 1 90); do
+    "${COMPOSE[@]}" exec -T postgres pg_isready -h 127.0.0.1 -d postgres -U "${POSTGRES_USER:-saturday_runs}" >/dev/null 2>&1 && { ready=1; break; }
+    sleep 1
+  done
+  [ -n "$ready" ] || die "база не ответила по TCP за 90 с — ${COMPOSE[*]} logs postgres"
 
   # База пересоздаётся: на репетициях том уже наполнен, и pg_restore поверх
   # существующих строк сыплет конфликтами первичных ключей. Дома в этот момент
@@ -236,7 +282,7 @@ db)
   # миграций остались бы для report_ro закрыты, как на VPS. Права report_ro
   # целиком выдаёт скрипт роли сразу после восстановления.
   # Код возврата pg_restore не годится: он всегда ненулевой из-за двух ожидаемых
-  # ошибок про pg_repack (расширения в postgres:16-alpine нет). Поэтому читаем
+  # ошибок про pg_repack (в образе postgres:16 его нет). Поэтому читаем
   # журнал: любая другая ошибка — стоп.
   say "восстанавливаю"
   rlog="$DUMP_DIR/${dump%.dump}.restore.log"
@@ -327,6 +373,10 @@ mark)
   [ -n "$ver" ] || die "домашняя база пустая или не поднята — сначала db и start"
   touch "$MARKER"
   say "маркер поставлен: $MARKER (база дома на миграции $ver)"
+  # С маркером home_sync.sh сверяет копию кода очереди профилей с домашним
+  # .deployed_sha (его пишет deploy_home.sh). До первого домашнего деплоя файла
+  # нет — точка отсчёта = коммит, с которого переехали.
+  git rev-parse HEAD >"$HOME_DIR/.deployed_sha"
 
   # .env домашнего клона всё ещё указывает на базу VPS (по нему работали
   # воркеры до переезда). Сервисам compose адрес перекрывает, а вот ручной
@@ -362,6 +412,15 @@ print("   .env: DATABASE_URL переключён на локальную баз
 if report_moved:
     print("   .env: REPORT_DATABASE_URL смотрит на сервис postgres")
 PYENV
+  # parkrun-monitoring (таймер pm-event-pages, 10:10) читает список площадок
+  # из базы сайта под report_ro по PM_SITE_DSN. Не переключить — он не упадёт,
+  # а молча уйдёт на старый SQLite-список, и описания новых площадок перестанут
+  # попадать в parkrun_world. Логин, пароль и база те же, меняется адрес.
+  pm_env="${PM_ENV_FILE:-$HOME/parkrun-monitoring/.env}"
+  if [ -f "$pm_env" ] && grep -q '^PM_SITE_DSN=.*@100\.93\.200\.8:5432/' "$pm_env"; then
+    sed -i -E '/^PM_SITE_DSN=/s#@100\.93\.200\.8:5432/#@127.0.0.1:5433/#' "$pm_env" &&
+      say "   parkrun-monitoring: PM_SITE_DSN смотрит на домашнюю базу (127.0.0.1:5433)"
+  fi
   # Настройки api читает один раз при старте — без перезапуска адрес не подхватится.
   if [ "$report_on_vps" != 0 ]; then
     "${COMPOSE[@]}" restart api >/dev/null && say "api перезапущен: отчётный API ходит в домашнюю базу"

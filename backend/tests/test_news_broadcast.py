@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import fakeredis
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -20,7 +21,11 @@ from app.services.broadcast_compose_state import (
     save_broadcast_draft,
     start_broadcast_compose,
 )
-from app.services.news_broadcast_service import send_news_broadcast
+from app.services.news_broadcast_service import (
+    BroadcastRecipient,
+    send_news_broadcast,
+    send_telegram_broadcast_message,
+)
 
 
 @pytest.fixture
@@ -114,6 +119,38 @@ def test_broadcast_api_flow(client: TestClient, db_session: Session, fake_redis:
     finally:
         db_session.delete(user)
         db_session.commit()
+
+
+def test_broadcast_message_goes_through_telegram_proxy() -> None:
+    # Напрямую api.telegram.org из РФ недоступен: рассылка обязана идти через
+    # ту же прокси, что бот и уведомления (до 21.10.2026 шла мимо неё).
+    response = httpx.Response(200, json={"ok": True})
+    with patch("app.services.news_broadcast_service.httpx.post", return_value=response) as post:
+        ok, detail = send_telegram_broadcast_message(
+            token="test-token", chat_id=42, text="Новости", proxy="http://tg-proxy:8118"
+        )
+    assert (ok, detail) == (True, "ok")
+    assert post.call_args.kwargs["proxy"] == "http://tg-proxy:8118"
+
+
+def test_send_news_broadcast_passes_proxy_from_settings() -> None:
+    settings = Settings(
+        app_secret_key="test-secret-key",
+        telegram_bot_token="test-token",
+        telegram_proxy_url="http://tg-proxy:8118",
+        database_url=get_settings().database_url,
+        redis_url="redis://localhost:6379/0",
+    )
+    recipient = BroadcastRecipient(
+        user_id=str(uuid4()), telegram_id=1, telegram_chat_id=1, telegram_username=None, display_name=None, label="1"
+    )
+    with (
+        patch("app.services.news_broadcast_service.list_news_subscribers", return_value=[recipient]),
+        patch("app.services.news_broadcast_service.send_telegram_broadcast_message", return_value=(True, "ok")) as send,
+    ):
+        result = send_news_broadcast(MagicMock(spec=Session), "Новости", settings=settings, delay_seconds=0)
+    assert result.sent == 1
+    assert send.call_args.kwargs["proxy"] == "http://tg-proxy:8118"
 
 
 def test_send_news_broadcast_skips_empty_message(db_session: Session, bot_settings: Settings) -> None:

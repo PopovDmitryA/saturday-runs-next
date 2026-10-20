@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Откат переезда: вернуть сайт на VPS.
 #
-# Работает, пока прод цел — а он остаётся целым до 21 октября. Цена отката
+# Работает, пока прод цел — VPS продлён до ~20 ноября 2026. Цена отката
 # зависит от того, сколько сайт прожил дома: всё, что люди записали дома,
 # на проде отсутствует. Поэтому в первые минуты откат бесплатный, через час
 # он уже означает перенос свежих данных обратно (шаг back-dump).
@@ -28,6 +28,10 @@ set -uo pipefail
 
 VPS="${VPS_HOST:-viewer@195.58.34.112}"
 REMOTE_DIR="${VPS_DIR:-/opt/saturday-runs-next}"
+# Одно соединение на все ssh/scp отката (как в cutover_to_home.sh): фильтр
+# Timeweb рвёт частые подключения, а откат — ровно та минута, когда ждать нельзя.
+SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4
+  -o ControlMaster=auto -o "ControlPath=$HOME/.ssh/cm-cutover-%C" -o ControlPersist=15m)
 HOME_DIR="${HOME_PROD_DIR:-$HOME/srs-prod}"
 DUMP_DIR="${HOME_DUMP_DIR:-$HOME/srs-prod-db}"
 MARKER="${SITE_AT_HOME_MARKER:-$HOME/.srs-site-at-home}"
@@ -60,7 +64,7 @@ now)
   # бы некому. Заглушка снимается последней: пока сервисы не встали, сайт
   # остаётся закрыт.
   say "поднимаю прод (без воркеров сбора — они возвращаются домой)"
-  if ! ssh -o BatchMode=yes "$VPS" bash -s -- "$REMOTE_DIR" <<'VPS_UP'
+  if ! ssh "${SSH_OPTS[@]}" "$VPS" bash -s -- "$REMOTE_DIR" <<'VPS_UP'
 set -e
 cd "$1"
 home=$(sed -n 's/^HOME_SERVICES="\([^"]*\)".*/\1/p' scripts/remote_deploy.sh)
@@ -129,6 +133,13 @@ print("\n".join("   .env: " + n for n in notes) or "   .env: уже смотри
 sys.exit(1 if stuck else 0)
 PYENV
 
+  # parkrun-monitoring (pm-event-pages) mark переключил на домашнюю базу — назад на VPS.
+  pm_env="${PM_ENV_FILE:-$HOME/parkrun-monitoring/.env}"
+  if [ -f "$pm_env" ] && grep -q '^PM_SITE_DSN=.*@127\.0\.0\.1:5433/' "$pm_env"; then
+    sed -i -E '/^PM_SITE_DSN=/s#@127\.0\.0\.1:5433/#@100.93.200.8:5432/#' "$pm_env" &&
+      say "parkrun-monitoring: PM_SITE_DSN снова смотрит на базу VPS"
+  fi
+
   # Маркер решает, куда пишет разбор очереди профилей и с кем сверяются
   # домашние синхронизаторы. Оставленный, он держал бы очередь в брошенной
   # домашней базе, а воркеры сбора — выключенными.
@@ -164,7 +175,7 @@ PYENV
 
   # Дома код мог уйти вперёд VPS (deploy_home.sh после переезда). Тогда воркеры
   # и база VPS расходятся по схеме, пока прод не выкатят заново.
-  vps_sha=$(ssh -o BatchMode=yes "$VPS" "cat $REMOTE_DIR/.deployed_sha 2>/dev/null" | tr -d '\r\n')
+  vps_sha=$(ssh "${SSH_OPTS[@]}" "$VPS" "cat $REMOTE_DIR/.deployed_sha 2>/dev/null" | tr -d '\r\n')
   home_sha=$(git rev-parse HEAD 2>/dev/null)
   if [ -n "$vps_sha" ] && [ "$vps_sha" != "$home_sha" ]; then
     say "! код дома (${home_sha:0:7}) не совпадает с выкаченным на VPS (${vps_sha:0:7}): выкатить прод (deploy_prod.sh),"
@@ -195,7 +206,7 @@ back-dump)
   for _ in $(seq 1 120); do systemctl is-active --quiet pm-site-queue.service || break; sleep 5; done
   systemctl is-active --quiet pm-site-queue.service &&
     { say "✗ разбор очереди профилей ещё идёт — дождаться (journalctl -u pm-site-queue) и повторить back-dump"; exit 1; }
-  if ! ssh -o BatchMode=yes "$VPS" "test -f $REMOTE_DIR/.site-moved-home"; then
+  if ! ssh "${SSH_OPTS[@]}" "$VPS" "test -f $REMOTE_DIR/.site-moved-home"; then
     say "! прод уже поднят (now был раньше back-dump): всё, что он принял с тех пор, заливка сотрёт."
     say "  Команды ниже сначала снова закрывают его заглушкой."
   fi
@@ -208,13 +219,13 @@ back-dump)
   # psql на VPS (14.24, проверено 25.09.2026) его понимает.
   "${COMPOSE[@]}" exec -T postgres pg_dump -U "${POSTGRES_USER:-saturday_runs}" \
     --no-owner --no-acl "${POSTGRES_DB:-saturday_runs_lk}" | gzip > "$DUMP_DIR/$dump" || exit 1
-  scp -q -o BatchMode=yes "$DUMP_DIR/$dump" "$VPS:/tmp/$dump" || exit 1
+  scp -q "${SSH_OPTS[@]}" "$DUMP_DIR/$dump" "$VPS:/tmp/$dump" || exit 1
   # Скрипт роли везём из домашнего клона: его список закрытых таблиц должен
   # совпадать со схемой этой базы, а на проде лежит код последнего деплоя.
-  scp -q -o BatchMode=yes scripts/create_report_ro_role.sql "$VPS:/tmp/$ro_sql" || exit 1
+  scp -q "${SSH_OPTS[@]}" scripts/create_report_ro_role.sql "$VPS:/tmp/$ro_sql" || exit 1
   # Обрезанный файл psql может доиграть без единой ошибки (обрыв на границе
   # строки) и закоммитить полбазы — проверяем до всего остального.
-  ssh -o BatchMode=yes "$VPS" "gzip -t /tmp/$dump" || { say "дамп на проде битый — не восстанавливать"; exit 1; }
+  ssh "${SSH_OPTS[@]}" "$VPS" "gzip -t /tmp/$dump" || { say "дамп на проде битый — не восстанавливать"; exit 1; }
   say "дамп на проде цел: $(du -h "$DUMP_DIR/$dump" | cut -f1)"
 
   # Сессии, дневная статистика, водяной знак рассылки уведомлений — обратно в

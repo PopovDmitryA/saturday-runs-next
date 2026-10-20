@@ -33,9 +33,26 @@ x-home-env: &home-env
 
 services:
   postgres:
+    # Debian, а не alpine из базового файла: на musl en_US.utf8 сортирует по
+    # кодам символов, и списки по имени разъехались бы с продом (en_US.UTF-8 на
+    # glibc) — «Ёлкин» в начало, имена с маленькой буквы в конец. Проверено
+    # 20.10.2026 на обоих образах. Менять можно только до первого initdb тома:
+    # правила сортировки база запоминает при создании.
+    image: postgres:16
+    environment:
+      # Контрольные суммы страниц: память дома без ECC, и тихую порчу страницы
+      # база заметит при чтении, а не через месяц. Действуют только при initdb.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
     # Домашние 26.8 ГиБ против 7.8 на VPS: shared_buffers вчетверо больше
     # (на проде 512 МБ), maintenance_work_mem — чтобы восстановление дампа и
     # автовакуум по таблице в 2.3 млн строк не ползли.
+    # Остальное — как в postgresql.conf прода (сверено 21.10.2026, дампом эти
+    # настройки не переезжают): часовой пояс Москвы — иначе контейнер живёт в
+    # UTC, и date_trunc по дням в админке, CURRENT_DATE в рейтингах и .date()
+    # в коде съехали бы на 3 часа; запасной таймаут «idle in transaction» для
+    # клиентов без своего (очередь профилей его отключает, приложение ставит
+    # 60 с само); журнал запросов дольше 2 с; pg_stat_statements — расширение
+    # приезжает с дампом, но без загрузки его представление не работает.
     command: >
       postgres
       -c shared_buffers=4GB
@@ -44,6 +61,11 @@ services:
       -c effective_cache_size=12GB
       -c max_connections=200
       -c random_page_cost=1.1
+      -c timezone=Europe/Moscow
+      -c log_timezone=Europe/Moscow
+      -c idle_in_transaction_session_timeout=15min
+      -c log_min_duration_statement=2000
+      -c shared_preload_libraries=pg_stat_statements
     ports: !override
       - "127.0.0.1:5433:5432"
     volumes:
@@ -78,7 +100,7 @@ services:
     image: nginx:1.27-alpine
     # nginx читает сертификат только при старте и reload, а certbot ниже кладёт
     # продлённый файл молча. Без перечитывания край отдавал бы старый
-    # сертификат до его истечения (у run5k.run — 09.11.2026), и сайт открылся бы
+    # сертификат до его истечения (у run5k.run — 08.01.2027), и сайт открылся бы
     # у всех с ошибкой, а HSTS не дал бы её обойти. Раз в 6 часов — reload,
     # новые соединения получают свежий сертификат, живые не рвутся.
     command: ["/bin/sh", "-c", "while :; do sleep 6h; nginx -s reload; done & exec nginx -g 'daemon off;'"]
