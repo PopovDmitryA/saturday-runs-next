@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.core.redis_client import get_redis_client
 from app.services.location_page_service import (
     invalidate_last_results_cache,
-    invalidate_last_results_days_cache,
+    invalidate_last_results_weeks_cache,
     invalidate_location_page_cache,
     invalidate_locations_index_cache,
     resolve_location_identity,
@@ -68,9 +68,9 @@ def flush_location_catalog_caches(reason: str) -> None:
     try:
         invalidate_locations_index_cache()
         invalidate_last_results_cache()
-        # Режим «За день» той же страницы: статус локации виден и в строке
-        # дня, а новая локация меняет число стартовавших в списке дней.
-        invalidate_last_results_days_cache()
+        # Режим «За неделю» той же страницы: статус локации виден и в строке
+        # недели, а новая локация меняет число стартовавших в списке недель.
+        invalidate_last_results_weeks_cache()
         # Рейтинг регионов считает те же площадки, что каталог, и держит свой
         # снимок: без сброса новая локация доехала бы до него только к TTL.
         invalidate_regions_rating_cache()

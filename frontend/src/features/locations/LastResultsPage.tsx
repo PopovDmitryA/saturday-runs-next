@@ -28,13 +28,13 @@ import {
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
   getLastResults,
-  getLastResultsDay,
-  getLastResultsDays,
-  type LastResultsDay,
-  type LastResultsDayResponse,
-  type LastResultsDays,
+  getLastResultsWeek,
+  getLastResultsWeeks,
   type LastResultsItem,
   type LastResultsResponse,
+  type LastResultsWeek,
+  type LastResultsWeekResponse,
+  type LastResultsWeeks,
 } from "../../lib/api";
 import {
   COUNT_FORMS,
@@ -46,7 +46,11 @@ import {
   platformCodeLabel,
   pluralizeRu,
 } from "../../lib/format";
-import { locationProtocolHref, unifiedProtocolWeekHref } from "../../lib/protocolHref";
+import {
+  locationProtocolHref,
+  saturdayOfWeek,
+  unifiedProtocolWeekHref,
+} from "../../lib/protocolHref";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { useTableColumns, type TableColumns } from "../../components/tableUx/useTableColumns";
@@ -55,31 +59,35 @@ import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns
 /**
  * Два вида одной таблицы (решение Дмитрия 21.10.2026):
  * - «Последний старт» — строка на локацию, её последний старт (как было);
- * - «За день» — все локации, стартовавшие в один календарный день. Воскресенье
- *   и праздник — отдельные дни: 18.10.2026 стартовал один «Кулибин».
+ * - «За неделю» — все старты одной недели пн–вс, подписанной субботой, как в
+ *   едином протоколе: логика недель на сайте одна. Строка — старт, а не
+ *   локация: воскресенье и праздник в будни стоят своими строками рядом с
+ *   субботой (18.10.2026 стартовал один «Кулибин»).
+ * До второй правки того же дня второй вид был «За день» (?date=, релиз 3.9.0).
  */
-type ResultsMode = "last" | "day";
+type ResultsMode = "last" | "week";
 
 const MODE_TABS = [
   { value: "last", label: "Последний старт" },
-  { value: "day", label: "За день" },
+  { value: "week", label: "За неделю" },
 ] as const;
 
 // parkrun в России нет с 2022 года: в «Последнем старте» это девять локаций на
-// паузе (видны с «неактивными»), а в истории дней он есть с 2014-го. Кнопка
+// паузе (видны с «неактивными»), а в истории недель он есть с 2014-го. Кнопка
 // стоит всегда и гаснет, когда его строк на экране нет: появляйся она по
 // данным, ряд фильтров на части ширин переносился бы и сдвигал таблицу.
 const PLATFORM_FILTERS: readonly string[] = ["five_verst", "s95", "runpark", "parkrun"];
 
-const DATE_PARAM = "date";
+const WEEK_PARAM = "week";
+// Ссылки 3.9.0 на день (?date=) не ломаются: день ведёт в свою неделю.
+const LEGACY_DATE_PARAM = "date";
 
 /**
- * День из адреса (?date=YYYY-MM-DD) или null — тогда открывается «Последний
- * старт». Несуществующую дату (2026-02-31) регулярка пропускает, а Date молча
- * перекатывает в март, поэтому сверяем разобранное обратно с исходником.
+ * Проверенная дата YYYY-MM-DD или null. Несуществующую дату (2026-02-31)
+ * регулярка пропускает, а Date молча перекатывает в март, поэтому сверяем
+ * разобранное обратно с исходником.
  */
-function readDateParam(): string | null {
-  const raw = new URLSearchParams(window.location.search).get(DATE_PARAM);
+function validIsoDate(raw: string | null): string | null {
   if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
     return null;
   }
@@ -96,16 +104,32 @@ function readDateParam(): string | null {
 }
 
 /**
- * День — в адрес, вид и фильтры — нет: replaceState правит текущую запись
- * истории, страница не перемонтируется, и выбранные системы и поиск остаются
- * на месте (тот же приём, что ?view= у журнала локации).
+ * Суббота недели из адреса или null — тогда открывается «Последний старт».
+ * ?week= с любым днём недели и старый ?date= приводятся к субботе: адрес
+ * у недели один, и эффект ниже перепишет его на ?week=<суббота>.
  */
-function writeDateParam(day: string | null): void {
+function readWeekParam(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const day = validIsoDate(params.get(WEEK_PARAM)) ?? validIsoDate(params.get(LEGACY_DATE_PARAM));
+  // Суббота тоже проверяется: из набранного руками адреса (последняя неделя
+  // 9999 года) она уехала бы в 10000-й год, а такую дату сервер не примет, и
+  // «Повторить» слал бы её снова и снова.
+  return day ? validIsoDate(saturdayOfWeek(day)) : null;
+}
+
+/**
+ * Неделя — в адрес, вид и фильтры — нет: replaceState правит текущую запись
+ * истории, страница не перемонтируется, и выбранные системы и поиск остаются
+ * на месте (тот же приём, что ?view= у журнала локации). Старый ?date= при
+ * этом снимается всегда.
+ */
+function writeWeekParam(saturday: string | null): void {
   const url = new URL(window.location.href);
-  if (day) {
-    url.searchParams.set(DATE_PARAM, day);
+  url.searchParams.delete(LEGACY_DATE_PARAM);
+  if (saturday) {
+    url.searchParams.set(WEEK_PARAM, saturday);
   } else {
-    url.searchParams.delete(DATE_PARAM);
+    url.searchParams.delete(WEEK_PARAM);
   }
   const next = `${url.pathname}${url.search}${url.hash}`;
   const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -114,11 +138,11 @@ function writeDateParam(day: string | null): void {
   }
 }
 
-function resultsDayHref(day: string): string {
-  return `/results?${DATE_PARAM}=${day}`;
+function resultsWeekHref(saturday: string): string {
+  return `/results?${WEEK_PARAM}=${saturday}`;
 }
 
-/** «сб 17.10.2026» — подпись дня в стрелках и списке. */
+/** «сб 17.10.2026» — дата старта в колонке «Дата» вида «За неделю». */
 function dayLabel(day: string): string {
   return `${formatWeekdayShort(day)} ${formatDate(day)}`;
 }
@@ -130,10 +154,10 @@ function splitYear(day: string): [string, string] {
 }
 
 const LAST_RESULTS_KEY = "locations:last-results";
-const DAYS_KEY = "locations:last-results:days";
+const WEEKS_KEY = "locations:last-results:weeks";
 
-function dayKey(day: string): string {
-  return `locations:last-results:day:${day}`;
+function weekKey(saturday: string): string {
+  return `locations:last-results:week:${saturday}`;
 }
 
 // Запросы, которые уже в пути: предзагрузка по наведению и загрузка по клику
@@ -151,8 +175,8 @@ function sharedLoad<T>(key: string, load: () => Promise<T>): Promise<T> {
 
 /**
  * Подгрузить ответ заранее — по наведению на панель или стрелку, а не при
- * каждом заходе: день весит ~30 КБ, а в «За день» уходит не каждый. Кэш тот
- * же, что у useCachedResource, поэтому клик рисует таблицу сразу.
+ * каждом заходе: неделя весит ~30 КБ, а в «За неделю» уходит не каждый. Кэш
+ * тот же, что у useCachedResource, поэтому клик рисует таблицу сразу.
  */
 function prefetch<T>(key: string, load: () => Promise<T>): Promise<T | undefined> {
   const cached = readCached<T>(key);
@@ -168,45 +192,45 @@ function prefetch<T>(key: string, load: () => Promise<T>): Promise<T | undefined
   );
 }
 
-function prefetchDay(day: string): void {
-  void prefetch(dayKey(day), () => getLastResultsDay(day));
+function prefetchWeek(saturday: string): void {
+  void prefetch(weekKey(saturday), () => getLastResultsWeek(saturday));
 }
 
-/** Список дней и день, на котором откроется «За день», — последняя суббота. */
-function prefetchDayMode(): void {
-  void prefetch(DAYS_KEY, getLastResultsDays).then((days) => {
-    const target = days?.latest_saturday ?? days?.days.at(-1)?.date;
+/** Список недель и неделя, на которой откроется «За неделю», — последняя. */
+function prefetchWeekMode(): void {
+  void prefetch(WEEKS_KEY, getLastResultsWeeks).then((weeks) => {
+    const target = weeks?.latest_saturday ?? weeks?.weeks.at(-1)?.saturday;
     if (target) {
-      prefetchDay(target);
+      prefetchWeek(target);
     }
   });
 }
 
 /**
- * Ссылка на день: обычный клик переключает вид на месте, а адрес в href
- * настоящий — с Ctrl/Cmd или средней кнопкой день открывается в новой вкладке.
- * Наведение и фокус заранее подгружают день.
+ * Ссылка на неделю: обычный клик переключает вид на месте, а адрес в href
+ * настоящий — с Ctrl/Cmd или средней кнопкой неделя открывается в новой
+ * вкладке. Наведение и фокус заранее подгружают неделю.
  *
- * day = null — ссылка погашена (край истории), но остаётся тем же элементом:
- * подмена на <span> сбрасывала фокус клавиатуры в body, и читалка экрана
- * теряла место.
+ * saturday = null — ссылка погашена (край истории), но остаётся тем же
+ * элементом: подмена на <span> сбрасывала фокус клавиатуры в body, и читалка
+ * экрана теряла место.
  */
-function DayLink({
-  day,
+function WeekLink({
+  saturday,
   onSelect,
   title,
   ariaLabel,
   className,
   children,
 }: {
-  day: string | null;
-  onSelect: (day: string) => void;
+  saturday: string | null;
+  onSelect: (saturday: string) => void;
   title?: string;
   ariaLabel?: string;
   className?: string;
   children: ReactNode;
 }) {
-  if (day === null) {
+  if (saturday === null) {
     return (
       <a
         role="link"
@@ -225,12 +249,12 @@ function DayLink({
       return;
     }
     event.preventDefault();
-    onSelect(day);
+    onSelect(saturday);
   };
-  const warm = () => prefetchDay(day);
+  const warm = () => prefetchWeek(saturday);
   return (
     <a
-      href={resultsDayHref(day)}
+      href={resultsWeekHref(saturday)}
       title={title}
       aria-label={ariaLabel}
       className={className}
@@ -245,80 +269,81 @@ function DayLink({
 }
 
 /**
- * Выбор дня: стрелки к соседним дням со стартами и список посередине. Стоит
- * в панели фильтров на месте «неактивных» и той же ширины (.results-mode-slot):
- * при смене вида ни панель, ни таблица под ней не сдвигаются.
+ * Выбор недели: стрелки к соседним неделям со стартами и список посередине.
+ * Стоит в панели фильтров на месте «неактивных» и той же ширины
+ * (.results-mode-slot): при смене вида ни панель, ни таблица под ней не
+ * сдвигаются.
  *
- * Соседи ищутся и для даты вне списка (ссылка на день без стартов): стрелки
- * ведут к ближайшим дням по обе стороны, а сама дата встаёт в список с нулём,
- * чтобы кнопка не показывала сырое «2026-10-14». На краях стрелка остаётся
- * погашенной, а не пропадает — иначе список прыгал бы на её ширину.
+ * Соседи ищутся и для недели вне списка (ссылка на неделю без стартов):
+ * стрелки ведут к ближайшим неделям по обе стороны, а сама неделя встаёт в
+ * список с нулём, чтобы кнопка не показывала сырое «2026-10-10». На краях
+ * стрелка остаётся погашенной, а не пропадает — иначе список прыгал бы на её
+ * ширину.
  */
-function DayNav({
-  days,
-  day,
+function WeekNav({
+  weeks,
+  week,
   onSelect,
 }: {
-  days: LastResultsDay[];
-  day: string;
-  onSelect: (day: string) => void;
+  weeks: LastResultsWeek[];
+  week: string;
+  onSelect: (saturday: string) => void;
 }) {
   let previous: string | null = null;
   let next: string | null = null;
-  for (const entry of days) {
-    if (entry.date < day) {
-      previous = entry.date;
-    } else if (entry.date > day && next === null) {
-      next = entry.date;
+  for (const entry of weeks) {
+    if (entry.saturday < week) {
+      previous = entry.saturday;
+    } else if (entry.saturday > week && next === null) {
+      next = entry.saturday;
     }
   }
   const options = useMemo(() => {
-    const list = days.some((entry) => entry.date === day) ? [...days] : [...days, { date: day, locations: 0 }];
-    // Свежие сверху: чаще всего нужна одна из последних суббот.
-    list.sort((a, b) => (a.date < b.date ? 1 : -1));
+    const list = weeks.some((entry) => entry.saturday === week)
+      ? [...weeks]
+      : [...weeks, { saturday: week, locations: 0, starts: 0 }];
+    // Свежие сверху: чаще всего нужна одна из последних недель.
+    list.sort((a, b) => (a.saturday < b.saturday ? 1 : -1));
     // Число локаций — отдельным куском: на телефоне кнопке между стрелками
     // тесно, и в ней число прячется (оно же стоит в строке над таблицей), а в
-    // раскрытом списке остаётся у каждого дня.
-    // День недели тоже: на самых узких экранах (320 px) кнопке не хватает
-    // места и на дату целиком.
+    // раскрытом списке остаётся у каждой недели.
     return list.map((entry) => ({
-      value: entry.date,
+      value: entry.saturday,
       label: (
         <>
-          <span className="results-day-weekday">{formatWeekdayShort(entry.date)} </span>
-          {formatDate(entry.date)}
-          <span className="results-day-count"> ({formatInt(entry.locations)})</span>
+          {formatDate(entry.saturday)}
+          <span className="results-week-count"> ({formatInt(entry.locations)})</span>
         </>
       ),
     }));
-  }, [days, day]);
+  }, [weeks, week]);
 
   return (
-    <nav className="results-day-nav" aria-label="Выбор дня">
-      <DayLink
-        day={previous}
+    <nav className="results-week-nav" aria-label="Выбор недели">
+      <WeekLink
+        saturday={previous}
         onSelect={onSelect}
-        className={`results-day-arrow${previous ? "" : " results-day-arrow-off"}`}
-        title={previous ? `Предыдущий день со стартами: ${dayLabel(previous)}` : "Раньше стартов нет"}
-        ariaLabel={previous ? `Предыдущий день со стартами: ${dayLabel(previous)}` : "Раньше стартов нет"}
+        className={`results-week-arrow${previous ? "" : " results-week-arrow-off"}`}
+        title={previous ? `Предыдущая неделя: ${formatDate(previous)}` : "Раньше стартов нет"}
+        ariaLabel={previous ? `Предыдущая неделя: ${formatDate(previous)}` : "Раньше стартов нет"}
       >
         <span aria-hidden="true">←</span>
-      </DayLink>
+      </WeekLink>
       <FilterSelect
-        ariaLabel="День"
-        value={day}
+        ariaLabel="Неделя"
+        value={week}
         onChange={(value) => onSelect(String(value))}
         options={options}
       />
-      <DayLink
-        day={next}
+      <WeekLink
+        saturday={next}
         onSelect={onSelect}
-        className={`results-day-arrow${next ? "" : " results-day-arrow-off"}`}
-        title={next ? `Следующий день со стартами: ${dayLabel(next)}` : "Это последний день со стартами"}
-        ariaLabel={next ? `Следующий день со стартами: ${dayLabel(next)}` : "Это последний день со стартами"}
+        className={`results-week-arrow${next ? "" : " results-week-arrow-off"}`}
+        title={next ? `Следующая неделя: ${formatDate(next)}` : "Это последняя неделя со стартами"}
+        ariaLabel={next ? `Следующая неделя: ${formatDate(next)}` : "Это последняя неделя со стартами"}
       >
         <span aria-hidden="true">→</span>
-      </DayLink>
+      </WeekLink>
     </nav>
   );
 }
@@ -448,22 +473,22 @@ function LastResultsTable({
   emptyText: string;
   tableColumns: TableColumns;
 }) {
-  const isDay = mode === "day";
+  const isWeek = mode === "week";
   // Своя сортировка у каждого вида: в «Последнем старте» по умолчанию свежие
-  // сверху, в «За день» даты одинаковые — многолюдные сверху. Обе живут здесь
-  // же, а таблица при смене вида не перемонтируется: колонки у видов одни и
-  // те же, и меняются только строки (правка Дмитрия 21.10.2026 — смена вида
-  // не должна выглядеть как новая страница).
+  // сверху, в «За неделю» почти все даты — одна суббота, и сверху многолюдные.
+  // Обе живут здесь же, а таблица при смене вида не перемонтируется: колонки у
+  // видов одни и те же, и меняются только строки (правка Дмитрия 21.10.2026 —
+  // смена вида не должна выглядеть как новая страница).
   const [lastSort, setLastSort] = useRestorableState<SortState>("results.sort", {
     key: "event_date",
     asc: false,
   });
-  const [daySort, setDaySort] = useRestorableState<SortState>("results.day.sort", {
+  const [weekSort, setWeekSort] = useRestorableState<SortState>("results.week.sort", {
     key: "finishers",
     asc: false,
   });
-  const sort = isDay ? daySort : lastSort;
-  const setSort = isDay ? setDaySort : setLastSort;
+  const sort = isWeek ? weekSort : lastSort;
+  const setSort = isWeek ? setWeekSort : setLastSort;
   const showFull = tableColumns.showFull;
   const show = tableColumns.show;
 
@@ -473,7 +498,14 @@ function LastResultsTable({
       const left = sortValue(a, sort.key);
       const right = sortValue(b, sort.key);
       if (left === right) {
-        // При равенстве ключа — свежие и многолюдные выше (порядок бэкенда).
+        // При равенстве ключа — порядок бэкенда. Неделя пришла многолюдными
+        // сверху, дальше по алфавиту и дате: сортировка стабильная, его и
+        // оставляем — иначе у одной локации суббота и праздник менялись бы
+        // местами.
+        if (isWeek) {
+          return 0;
+        }
+        // Последний старт — свежие и многолюдные выше.
         if (a.event_date !== b.event_date) {
           return a.event_date < b.event_date ? 1 : -1;
         }
@@ -494,7 +526,7 @@ function LastResultsTable({
       return sort.asc ? compare : -compare;
     });
     return copy;
-  }, [items, sort]);
+  }, [items, sort, isWeek]);
 
   const toggleSort = (key: SortKey) => {
     setSort((current) =>
@@ -546,14 +578,14 @@ function LastResultsTable({
               <ColumnHeader label="Локация" {...sortProps("name")} />
               {show("city") && <ColumnHeader label="Город" {...sortProps("city")} />}
               {show("platform") && <ColumnHeader label="Система" filterable={false} />}
-              {/* В «За день» дата у всех строк одна, но колонка остаётся
-                  (решение Дмитрия 21.10.2026): без неё колонки правее съезжали
-                  бы на её ширину при каждой смене вида, и таблица читалась бы
-                  как новая. */}
+              {/* Колонка одна у обоих видов (решение Дмитрия 21.10.2026): без
+                  неё колонки правее съезжали бы на её ширину при каждой смене
+                  вида. В «За неделю» она к тому же различает старты: суббота,
+                  воскресенье, праздник в будни. */}
               <ColumnHeader
                 label="Дата"
                 hint={
-                  isDay
+                  isWeek
                     ? "Дата старта (клик по дате — протокол)"
                     : "Дата последнего старта локации (клик по дате — протокол)"
                 }
@@ -567,7 +599,7 @@ function LastResultsTable({
                 />
               )}
               {/* Подсказки ниже — без «последнего»: те же колонки стоят и в
-                  «За день», где старт не обязательно последний у локации. */}
+                  «За неделю», где старт не обязательно последний у локации. */}
               <ColumnHeader
                 label="Финишёров"
                 hint="Финишёров на старте"
@@ -634,8 +666,10 @@ function LastResultsTable({
                 </td>
               </tr>
             ) : (
+              // В «За неделю» у локации бывает два старта (суббота и праздник
+              // в будни) — ключ строки по локации и дате.
               sorted.map((item) => (
-                <tr key={item.identity_key}>
+                <tr key={`${item.identity_key}:${item.event_date}`}>
                   <td className="td-compact">
                     {item.event_number != null ? formatInt(item.event_number) : "—"}
                   </td>
@@ -658,8 +692,12 @@ function LastResultsTable({
                       </span>
                     </td>
                   )}
-                  <td className={isDay || item.is_last_saturday ? undefined : "muted"}>
-                    <ProtocolLink item={item}>{formatDate(item.event_date)}</ProtocolLink>
+                  {/* В «За неделю» — с днём недели: «вс 18.10.2026» сразу
+                      видно рядом с субботами. */}
+                  <td className={isWeek || item.is_last_saturday ? undefined : "muted"}>
+                    <ProtocolLink item={item}>
+                      {isWeek ? dayLabel(item.event_date) : formatDate(item.event_date)}
+                    </ProtocolLink>
                   </td>
                   {show("weather") && (
                     <td className="td-compact td-weather">
@@ -699,16 +737,17 @@ function LastResultsTable({
 }
 
 function LastResultsContent() {
-  // Вид — из адреса: ?date= открывает «За день» сразу на этом дне, так днём
-  // можно поделиться, а «назад» на эту запись истории возвращает его же.
-  const [mode, setMode] = useState<ResultsMode>(() => (readDateParam() ? "day" : "last"));
-  const [chosenDate, setChosenDate] = useState<string | null>(readDateParam);
+  // Вид — из адреса: ?week= открывает «За неделю» сразу на этой неделе, так
+  // неделей можно поделиться, а «назад» на эту запись истории возвращает её же.
+  // Старый ?date= из 3.9.0 открывает неделю своего дня.
+  const [mode, setMode] = useState<ResultsMode>(() => (readWeekParam() ? "week" : "last"));
+  const [chosenWeek, setChosenWeek] = useState<string | null>(readWeekParam);
   // Каждый вид грузит свои данные, только когда его открыли, и держит их
-  // дальше: обратное переключение мгновенное, а ссылка на день не тянет за
-  // собой витрину последних стартов (и наоборот — список дней за всю историю).
+  // дальше: обратное переключение мгновенное, а ссылка на неделю не тянет за
+  // собой витрину последних стартов (и наоборот — список недель за всю историю).
   const [lastWanted, setLastWanted] = useState(mode === "last");
-  const [daysWanted, setDaysWanted] = useState(mode === "day");
-  const isDay = mode === "day";
+  const [weeksWanted, setWeeksWanted] = useState(mode === "week");
+  const isWeek = mode === "week";
 
   // Краткий вид набирает колонки по ширине экрана. Состояние живёт здесь, а не
   // в самой таблице: сегмент «Кратко | Полно» стоит в общей панели фильтров
@@ -722,47 +761,47 @@ function LastResultsContent() {
     [lastWanted],
     { errorText: "Не удалось загрузить результаты" },
   );
-  const daysResource = useCachedResource<LastResultsDays | null>(
-    daysWanted ? DAYS_KEY : null,
-    () => (daysWanted ? sharedLoad(DAYS_KEY, getLastResultsDays) : Promise.resolve(null)),
-    [daysWanted],
-    { errorText: "Не удалось загрузить список дней" },
+  const weeksResource = useCachedResource<LastResultsWeeks | null>(
+    weeksWanted ? WEEKS_KEY : null,
+    () => (weeksWanted ? sharedLoad(WEEKS_KEY, getLastResultsWeeks) : Promise.resolve(null)),
+    [weeksWanted],
+    { errorText: "Не удалось загрузить список недель" },
   );
-  const days = daysResource.data;
-  // День не выбран — открываем последнюю субботу, а не последний день: в
-  // воскресенье вечером последний день — это один «Кулибин».
-  const day = chosenDate ?? days?.latest_saturday ?? days?.days.at(-1)?.date ?? null;
-  const dayResource = useCachedResource<LastResultsDayResponse | null>(
-    day ? dayKey(day) : null,
-    () => (day ? sharedLoad(dayKey(day), () => getLastResultsDay(day)) : Promise.resolve(null)),
-    [day],
-    { errorText: "Не удалось загрузить старты дня" },
+  const weeks = weeksResource.data;
+  // Неделя не выбрана — открываем последнюю неделю со стартами.
+  const week = chosenWeek ?? weeks?.latest_saturday ?? weeks?.weeks.at(-1)?.saturday ?? null;
+  const weekResource = useCachedResource<LastResultsWeekResponse | null>(
+    week ? weekKey(week) : null,
+    () => (week ? sharedLoad(weekKey(week), () => getLastResultsWeek(week)) : Promise.resolve(null)),
+    [week],
+    { errorText: "Не удалось загрузить старты недели" },
   );
-  // Пока едет новый день, в data ещё лежит прежний: его строки под новым днём
-  // выдавали бы чужие цифры за этот день. Подгруженный заранее день берём из
-  // кэша в том же кадре: хук скопирует его к себе только эффектом, и на кадр
+  // Пока едет новая неделя, в data ещё лежит прежняя: её строки под новой
+  // неделей выдавали бы чужие цифры за эту. Подгруженную заранее неделю берём
+  // из кэша в том же кадре: хук скопирует её к себе только эффектом, и на кадр
   // мелькнула бы «Загрузка…».
-  const dayData =
-    dayResource.data && dayResource.data.date === day
-      ? dayResource.data
-      : day
-        ? (readCached<LastResultsDayResponse>(dayKey(day)) ?? null)
+  const weekData =
+    weekResource.data && weekResource.data.saturday === week
+      ? weekResource.data
+      : week
+        ? (readCached<LastResultsWeekResponse>(weekKey(week)) ?? null)
         : null;
 
+  // Заодно переписывает старый ?date= и не субботний ?week= на субботу недели.
   useEffect(() => {
-    writeDateParam(isDay ? day : null);
-  }, [isDay, day]);
+    writeWeekParam(isWeek ? week : null);
+  }, [isWeek, week]);
 
-  // Таблица держит место на экране. Перед сменой вида или дня запоминаем, где
-  // стоит её верх, а после отрисовки возвращаем его туда же прокруткой. Шапка
-  // и панель у видов одной высоты, так что обычно двигать нечего; это
+  // Таблица держит место на экране. Перед сменой вида или недели запоминаем,
+  // где стоит её верх, а после отрисовки возвращаем его туда же прокруткой.
+  // Шапка и панель у видов одной высоты, так что обычно двигать нечего; это
   // страховка на остаток. Цель держим, пока не приедут свежие строки: сдвиг
   // может случиться и тогда (ошибка над таблицей, перенос ряда фильтров).
   //
-  // Вторая половина — нижняя опора. День в одну строку делает страницу короче
-  // экрана, браузер сам прокручивает её к началу, и таблица уезжает вниз на
-  // всю прокрутку. Поэтому область таблицы до следующей смены не короче, чем
-  // нужно, чтобы её низ доставал до низа экрана.
+  // Вторая половина — нижняя опора. Неделя в одну-две строки делает страницу
+  // короче экрана, браузер сам прокручивает её к началу, и таблица уезжает
+  // вниз на всю прокрутку. Поэтому область таблицы до следующей смены не
+  // короче, чем нужно, чтобы её низ доставал до низа экрана.
   const tableAreaRef = useRef<HTMLDivElement | null>(null);
   const anchorTop = useRef<number | null>(null);
   const [holdHeight, setHoldHeight] = useState<number | null>(null);
@@ -776,74 +815,83 @@ function LastResultsContent() {
     setHoldHeight(Math.max(0, Math.round(window.innerHeight - box.top)));
   }, []);
 
-  // Повтор после ошибки — тем же жестом, что привёл к ней: снова выбрать этот
-  // день или снова открыть вид. Ключ кэша при этом не меняется, и сам хук
+  // Повтор после ошибки — тем же жестом, что привёл к ней: снова выбрать эту
+  // неделю или снова открыть вид. Ключ кэша при этом не меняется, и сам хук
   // второй раз не спросил бы.
-  const reloadDay = dayResource.reload;
-  const dayFailed = dayResource.error !== null;
-  const daysFailed = daysResource.error !== null;
-  const reloadDays = daysResource.reload;
-  const showDay = useCallback(
+  // 404 хук отдаёт флагом notFound, а не текстом ошибки. Здесь это та же
+  // ошибка: ручки нет (выкат на полпути — фронт уже новый, api ещё старый), и
+  // без неё страница так и осталась бы приглушённой с «Загрузкой…» без повтора.
+  const lastError =
+    lastResults.error ?? (lastResults.notFound ? "Не удалось загрузить результаты" : null);
+  const weeksError =
+    weeksResource.error ?? (weeksResource.notFound ? "Не удалось загрузить список недель" : null);
+  const weekError =
+    weekResource.error ?? (weekResource.notFound ? "Не удалось загрузить старты недели" : null);
+  const reloadWeek = weekResource.reload;
+  const weekFailed = weekError !== null;
+  const weeksFailed = weeksError !== null;
+  const reloadWeeks = weeksResource.reload;
+  const showWeek = useCallback(
     (next: string | null) => {
       rememberTablePosition();
-      if (next) {
-        setChosenDate(next);
+      // Суббота — единственный адрес недели: любой другой её день ведёт туда же.
+      const target = next ? saturdayOfWeek(next) : null;
+      if (target) {
+        setChosenWeek(target);
       }
-      if ((next === null || next === day) && dayFailed) {
-        reloadDay();
+      if ((target === null || target === week) && weekFailed) {
+        reloadWeek();
       }
-      if (daysFailed) {
-        reloadDays();
+      if (weeksFailed) {
+        reloadWeeks();
       }
-      setMode("day");
-      setDaysWanted(true);
+      setMode("week");
+      setWeeksWanted(true);
     },
-    [rememberTablePosition, day, dayFailed, reloadDay, daysFailed, reloadDays],
+    [rememberTablePosition, week, weekFailed, reloadWeek, weeksFailed, reloadWeeks],
   );
   const switchMode = (next: ResultsMode) => {
     if (next === mode) {
       return;
     }
-    if (next === "day") {
-      showDay(null);
+    if (next === "week") {
+      showWeek(null);
       return;
     }
     rememberTablePosition();
-    if (lastResults.error) {
+    if (lastError) {
       lastResults.reload();
     }
     setMode("last");
     setLastWanted(true);
   };
   const retry = () => {
-    if (isDay) {
-      if (dayFailed) {
-        reloadDay();
+    if (isWeek) {
+      if (weekFailed) {
+        reloadWeek();
       }
-      if (daysFailed) {
-        reloadDays();
+      if (weeksFailed) {
+        reloadWeeks();
       }
     } else {
       lastResults.reload();
     }
   };
 
-  // Пока едут строки нового вида или дня, на экране остаются прежние —
+  // Пока едут строки нового вида или недели, на экране остаются прежние —
   // приглушённые. Пустое место с «Загрузка…» на полсекунды схлопывало
   // страницу и раскрывало её снова, и смена вида выглядела как новая страница.
-  const fresh = isDay ? (dayData?.items ?? null) : (lastResults.data?.items ?? null);
-  const freshKey = isDay ? `day:${day ?? ""}` : "last";
+  const fresh = isWeek ? (weekData?.items ?? null) : (lastResults.data?.items ?? null);
+  const freshKey = isWeek ? `week:${week ?? ""}` : "last";
   const shownRef = useRef<{ items: LastResultsItem[]; key: string } | null>(null);
   useEffect(() => {
     if (fresh) {
       shownRef.current = { items: fresh, key: freshKey };
     }
   }, [fresh, freshKey]);
-  // Без выбранного дня он берётся из списка дней — не загрузился список, не
-  // загрузится и день, и это та же ошибка.
-  const error = isDay
-    ? (dayResource.error ?? (day ? null : daysResource.error))
-    : lastResults.error;
+  // Без выбранной недели она берётся из списка недель — не загрузился список,
+  // не загрузится и неделя, и это та же ошибка.
+  const error = isWeek ? (weekError ?? (week ? null : weeksError)) : lastError;
   // Ошибка — не ожидание: чужие строки под ней остались бы приглушёнными
   // навсегда с «Загрузкой…» над ними.
   const shown = fresh ? { items: fresh, key: freshKey } : error ? null : shownRef.current;
@@ -851,7 +899,7 @@ function LastResultsContent() {
   const items = shown?.items ?? null;
   // Фильтр «неактивных» — по виду тех строк, что на экране: приглушённые строки
   // прежнего вида не должны на миг разрастись на скрытые локации.
-  const shownIsDay = shown ? shown.key.startsWith("day:") : isDay;
+  const shownIsWeek = shown ? shown.key.startsWith("week:") : isWeek;
 
   useLayoutEffect(() => {
     const before = anchorTop.current;
@@ -866,8 +914,11 @@ function LastResultsContent() {
     if (!stale) {
       anchorTop.current = null;
     }
-  }, [mode, day, stale, shown?.key, error]);
+  }, [mode, week, stale, shown?.key, error]);
   const saturdayDate = lastResults.data?.saturday_date ?? null;
+  // Витрина подписана последней субботой, а без суббот — последним днём:
+  // ссылка всё равно ведёт в его неделю.
+  const latestWeek = saturdayDate ? saturdayOfWeek(saturdayDate) : null;
 
   const [query, setQuery] = useRestorableState("results.query", "");
   // Мультивыбор: систем можно отметить сколько угодно, пустое множество —
@@ -877,12 +928,12 @@ function LastResultsContent() {
   const [showPaused, setShowPaused] = useRestorableState("results.paused", false);
   // Кнопка parkrun горит, только когда его строки есть на экране (с учётом
   // «неактивных» в «Последнем старте»). Отметка parkrun переживает переход на
-  // день без него, но фильтрует только при горящей кнопке: иначе таблица
+  // неделю без него, но фильтрует только при горящей кнопке: иначе таблица
   // опустела бы без видимой причины, а «Все» при этом горело бы.
   const parkrunShown = (items ?? []).some(
     (item) =>
       item.event_platform_codes.includes("parkrun") &&
-      (shownIsDay || showPaused || !(item.is_paused || item.is_cancelled)),
+      (shownIsWeek || showPaused || !(item.is_paused || item.is_cancelled)),
   );
   const platforms = useMemo(
     () => new Set(platformList.filter((code) => code !== "parkrun" || parkrunShown)),
@@ -905,46 +956,67 @@ function LastResultsContent() {
       if (platforms.size > 0 && !item.event_platform_codes.some((code) => platforms.has(code))) {
         return false;
       }
-      // В «За день» — все, кто в тот день стартовал: локация, с тех пор
-      // ушедшая на паузу, в тот день всё равно бежала (метка в строке остаётся).
-      if (!shownIsDay && !showPaused && (item.is_paused || item.is_cancelled)) {
+      // В «За неделю» — все, кто на той неделе стартовал: локация, с тех пор
+      // ушедшая на паузу, тогда всё равно бежала (метка в строке остаётся).
+      if (!shownIsWeek && !showPaused && (item.is_paused || item.is_cancelled)) {
         return false;
       }
       return true;
     });
-  }, [items, query, platforms, showPaused, shownIsDay]);
+  }, [items, query, platforms, showPaused, shownIsWeek]);
 
   const filteredFinishers = useMemo(
     () => filtered.reduce((sum, item) => sum + (item.finishers ?? 0), 0),
     [filtered],
   );
-  const dayIsEmpty = isDay && dayData !== null && dayData.total === 0;
+  // В «За неделю» строка — старт, и локаций бывает меньше строк: суббота и
+  // праздник в будни у одной локации.
+  const filteredLocations = useMemo(
+    () => new Set(filtered.map((item) => item.identity_key)).size,
+    [filtered],
+  );
+  const weekIsEmpty = isWeek && weekData !== null && weekData.total === 0;
 
   // Строка над таблицей — единственное, что в шапке таблицы зависит от вида,
   // и она всегда в одну строку: высота блока над таблицей не меняется.
   let countLine: ReactNode;
   if (stale) {
     countLine = "Загрузка…";
-  } else if (isDay) {
-    countLine = dayIsEmpty
-      ? "В этот день стартов не было"
-      : `${pluralizeRu(filtered.length, COUNT_FORMS.locations)}, ${pluralizeRu(
-          filteredFinishers,
-          COUNT_FORMS.finishers,
-        )}`;
+  } else if (isWeek) {
+    countLine = weekIsEmpty ? (
+      "На этой неделе стартов не было"
+    ) : (
+      <>
+        {pluralizeRu(filteredLocations, COUNT_FORMS.locations)},{" "}
+        {pluralizeRu(filteredFinishers, COUNT_FORMS.finishers)}
+        {/* Стартов больше, чем локаций, — значит, кто-то бежал и в будни.
+            На телефоне хвост прячется (CSS): в одну строку он не влезает, а
+            многоточие оставило бы «· 302 ст…». Сами строки видны в таблице. */}
+        {filtered.length > filteredLocations && (
+          <span className="results-count-starts">
+            {" · "}
+            {pluralizeRu(filtered.length, COUNT_FORMS.events)}
+          </span>
+        )}
+      </>
+    );
   } else {
     countLine = (
       <>
         {pluralizeRu(filtered.length, COUNT_FORMS.locations)}
-        {saturdayDate && (
+        {latestWeek && (
           <>
             {" · "}
-            <DayLink day={saturdayDate} onSelect={showDay} title="Все локации, стартовавшие в этот день">
-              {/* На узком экране — «старты 29.08 →»: строка не переносится,
+            <WeekLink
+              saturday={latestWeek}
+              onSelect={showWeek}
+              title="Все старты этой недели"
+            >
+              {/* На узком экране — «неделя 29.08 →»: строка не переносится,
                   и многоточие иначе съедало бы дату. */}
-              <span className="results-count-wide">все </span>старты {splitYear(saturdayDate)[0]}
-              <span className="results-count-wide">{splitYear(saturdayDate)[1]}</span> →
-            </DayLink>
+              <span className="results-count-wide">старты недели {formatDate(latestWeek)} →</span>
+              <span className="results-count-narrow">неделя {splitYear(latestWeek)[0]} →</span>
+            </WeekLink>
           </>
         )}
       </>
@@ -962,14 +1034,13 @@ function LastResultsContent() {
         </div>
         <p className="muted loc-header-place">
           Финишёры, волонтёры, лучшие времена и новички 5 вёрст, С95 и RunPark: последний старт
-          каждой локации или все старты выбранного дня.
+          каждой локации или все старты выбранной недели.
         </p>
         {/* Соседний срез тех же данных: не «сколько на каждой локации»,
             а «кто и с каким временем» — вся страна одним протоколом. Неделя
-            протокола начинается с понедельника, поэтому воскресенье ведёт в
-            протокол вчерашней субботы. */}
+            у протокола та же, что здесь: пн–вс, подписана субботой. */}
         <p className="loc-header-place">
-          <a href={isDay && day ? unifiedProtocolWeekHref(day) : "/protocol"}>
+          <a href={isWeek && week ? unifiedProtocolWeekHref(week) : "/protocol"}>
             Единый протокол недели — все финишёры страны по времени →
           </a>
         </p>
@@ -978,14 +1049,14 @@ function LastResultsContent() {
       <section className="card loc-section loc-wide-page">
         <FilterPanel>
           <FilterRow>
-            {/* Наведение на переключатель заранее подгружает «За день»:
-                к клику таблица дня уже в кэше. display: contents — обёртка
+            {/* Наведение на переключатель заранее подгружает «За неделю»:
+                к клику таблица недели уже в кэше. display: contents — обёртка
                 только ловит события, в раскладке ряда её нет. */}
             <div
               className="results-mode-intent"
-              onPointerEnter={isDay ? undefined : prefetchDayMode}
-              onFocus={isDay ? undefined : prefetchDayMode}
-              onTouchStart={isDay ? undefined : prefetchDayMode}
+              onPointerEnter={isWeek ? undefined : prefetchWeekMode}
+              onFocus={isWeek ? undefined : prefetchWeekMode}
+              onTouchStart={isWeek ? undefined : prefetchWeekMode}
             >
               <FilterGroup label="Вид">
                 <FilterTabs
@@ -998,18 +1069,18 @@ function LastResultsContent() {
               </FilterGroup>
             </div>
             {/* Одно место на двоих: «неактивные» в «Последнем старте», выбор
-                дня — в «За день». Ширина у места постоянная, поэтому ряд
+                недели — в «За неделю». Ширина у места постоянная, поэтому ряд
                 фильтров переносится одинаково в обоих видах. «Только суббота»
-                ушла: её заменил вид «За день». */}
-            <FilterGroup label={isDay ? "День" : "Показывать"} className="results-mode-slot">
-              {isDay ? (
-                days && day ? (
-                  <DayNav days={days.days} day={day} onSelect={showDay} />
+                ушла: её заменил второй вид. */}
+            <FilterGroup label={isWeek ? "Неделя" : "Показывать"} className="results-mode-slot">
+              {isWeek ? (
+                weeks && week ? (
+                  <WeekNav weeks={weeks.weeks} week={week} onSelect={showWeek} />
                 ) : (
-                  <div className="results-day-nav">
-                    {daysFailed ? (
-                      <button type="button" className="results-retry" onClick={reloadDays}>
-                        Список дней не загрузился — повторить
+                  <div className="results-week-nav">
+                    {weeksFailed ? (
+                      <button type="button" className="results-retry" onClick={reloadWeeks}>
+                        Список недель не загрузился — повторить
                       </button>
                     ) : (
                       <span className="muted">Загрузка…</span>
@@ -1039,8 +1110,8 @@ function LastResultsContent() {
                       code,
                       label: platformCodeLabel(code),
                       disabled: true,
-                      title: isDay
-                        ? "В этот день стартов parkrun нет"
+                      title: isWeek
+                        ? "На этой неделе стартов parkrun нет"
                         : "parkrun в России не проводится с 2022 года — его локации видны с «неактивными»",
                     }
                   : { code, label: platformCodeLabel(code) },
@@ -1084,12 +1155,12 @@ function LastResultsContent() {
                 mode={mode}
                 items={filtered}
                 rowsKey={shown.key}
-                emptyText={dayIsEmpty ? "В этот день стартов не было" : "Нет локаций по фильтрам"}
+                emptyText={weekIsEmpty ? "На этой неделе стартов не было" : "Нет локаций по фильтрам"}
                 tableColumns={tableColumns}
               />
             </>
           ) : (
-            !error && <p className="muted">{isDay && days && !day ? "Стартов пока нет" : "Загрузка…"}</p>
+            !error && <p className="muted">{isWeek && weeks && !week ? "Стартов пока нет" : "Загрузка…"}</p>
           )}
         </div>
       </section>

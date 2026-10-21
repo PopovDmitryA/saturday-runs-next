@@ -629,26 +629,33 @@ class LastResultsResponse(BaseModel):
     total: int = 0
 
 
-class LastResultsDayRefResponse(BaseModel):
-    """День со стартами для выбора дня на «Результатах стартов»."""
+class LastResultsWeekRefResponse(BaseModel):
+    """Неделя со стартами для выбора недели на «Результатах стартов».
 
-    date: date
-    # Сколько локаций стартовало в этот день — ровно столько строк будет в
-    # таблице дня (две системы одной локации — одна строка).
+    Неделя — понедельник–воскресенье, подписана субботой, как в едином
+    протоколе (решение Дмитрия 21.10.2026).
+    """
+
+    saturday: date
+    # Сколько разных локаций стартовало за неделю — число в скобках у недели.
     locations: int = 0
+    # Сколько стартов: ровно столько строк будет в таблице недели (две системы
+    # одной локации в один день — одна строка, четверг и суббота — две).
+    starts: int = 0
 
 
-class LastResultsDaysResponse(BaseModel):
-    days: list[LastResultsDayRefResponse] = Field(default_factory=list)
-    # День, на котором открывается режим «За день»: последняя суббота, а не
-    # последний день — воскресным вечером тот был бы одним «Кулибиным».
+class LastResultsWeeksResponse(BaseModel):
+    weeks: list[LastResultsWeekRefResponse] = Field(default_factory=list)
+    # Неделя, на которой открывается режим «За неделю»: последняя со стартами.
     latest_saturday: date | None = None
 
 
-class LastResultsDayResponse(BaseModel):
-    """Режим «За день»: все локации, стартовавшие в выбранный день."""
+class LastResultsWeekResponse(BaseModel):
+    """Режим «За неделю»: все старты выбранной недели, строка на старт."""
 
-    date: date
+    saturday: date
+    week_start: date
+    week_end: date
     items: list[LastResultsItemResponse] = Field(default_factory=list)
     total: int = 0
 

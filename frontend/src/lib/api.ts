@@ -3666,34 +3666,46 @@ export function getLastResults() {
   return apiFetch<LastResultsResponse>("/locations/last-results");
 }
 
-/** День со стартами для вида «За день»: сколько локаций в тот день стартовало. */
-export type LastResultsDay = {
-  date: string;
+/**
+ * Неделя со стартами для вида «За неделю»: пн–вс, подписана субботой — как
+ * недели единого протокола (решение Дмитрия 21.10.2026).
+ */
+export type LastResultsWeek = {
+  saturday: string;
+  /** Сколько разных локаций стартовало за неделю — число в списке недель. */
   locations: number;
+  /** Сколько стартов (строк таблицы): локация с праздником в будни — две строки. */
+  starts: number;
 };
 
-export type LastResultsDays = {
-  /** По возрастанию даты, только дни хотя бы с одним стартом. */
-  days: LastResultsDay[];
-  /** Последняя суббота среди дней (нет суббот — последний день); null — данных нет. */
+export type LastResultsWeeks = {
+  /** По возрастанию субботы, только недели хотя бы с одним стартом. */
+  weeks: LastResultsWeek[];
+  /** Последняя неделя со стартами; null — данных нет. */
   latest_saturday: string | null;
 };
 
-/** Все старты одного календарного дня — те же строки, что у «Последнего старта». */
-export type LastResultsDayResponse = {
-  date: string;
+/**
+ * Все старты одной недели — те же строки, что у «Последнего старта», но строка
+ * на старт, а не на локацию: суббота и праздник в будни — две строки.
+ */
+export type LastResultsWeekResponse = {
+  saturday: string;
+  week_start: string;
+  week_end: string;
   items: LastResultsItem[];
   total: number;
 };
 
-export function getLastResultsDays() {
+export function getLastResultsWeeks() {
   // Холодный список проходит всю историю стартов с 2014 года — как и недели
   // единого протокола, штатного таймаута ему может не хватить.
-  return apiFetch<LastResultsDays>("/locations/last-results/days", undefined, { timeoutMs: 60_000 });
+  return apiFetch<LastResultsWeeks>("/locations/last-results/weeks", undefined, { timeoutMs: 60_000 });
 }
 
-export function getLastResultsDay(day: string) {
-  return apiFetch<LastResultsDayResponse>(`/locations/last-results/day/${encodeURIComponent(day)}`);
+/** Любой день недели: бэкенд сам приводит его к субботе. */
+export function getLastResultsWeek(day: string) {
+  return apiFetch<LastResultsWeekResponse>(`/locations/last-results/week/${encodeURIComponent(day)}`);
 }
 
 export type AutoSyncPlatformPreference = {

@@ -15,9 +15,9 @@ from app.models import User
 from app.schemas.dashboard import HomeDistanceDetailResponse
 from app.schemas.locations import (
     CatalogLocationsTableResponse,
-    LastResultsDayResponse,
-    LastResultsDaysResponse,
     LastResultsResponse,
+    LastResultsWeekResponse,
+    LastResultsWeeksResponse,
     LocationAttendanceResponse,
     LocationEventsResponse,
     LocationLeadersResponse,
@@ -39,9 +39,8 @@ from app.services.location_map_service import list_catalog_map_locations, list_u
 from app.services.location_page_service import (
     LOCATION_ATTENDANCE_MAX_LIMIT,
     LOCATION_ATTENDANCE_PAGE_LIMIT,
-    build_day_results,
     build_last_results,
-    build_last_results_days,
+    build_last_results_weeks,
     build_location_attendance,
     build_location_events,
     build_location_leaders,
@@ -50,6 +49,7 @@ from app.services.location_page_service import (
     build_location_personal_stats,
     build_location_tops,
     build_locations_index,
+    build_week_results,
 )
 from app.services.location_protocol_service import build_location_protocol
 from app.services.map_point_context_service import build_map_point_context
@@ -85,27 +85,35 @@ def locations_last_results(
     return LastResultsResponse.model_validate(payload)
 
 
-@router.get("/last-results/days", response_model=LastResultsDaysResponse)
-def locations_last_results_days(
+@router.get("/last-results/weeks", response_model=LastResultsWeeksResponse)
+def locations_last_results_weeks(
     db: Annotated[Session, Depends(get_db)],
-) -> LastResultsDaysResponse:
-    """Дни со стартами и число стартовавших локаций — для выбора дня в режиме «За день»."""
-    payload = build_last_results_days(db)
-    return LastResultsDaysResponse.model_validate(payload)
+) -> LastResultsWeeksResponse:
+    """Недели со стартами: число локаций и стартов — для выбора недели в режиме «За неделю»."""
+    payload = build_last_results_weeks(db)
+    return LastResultsWeeksResponse.model_validate(payload)
 
 
-@router.get("/last-results/day/{day}", response_model=LastResultsDayResponse)
-def locations_last_results_day(
+@router.get("/last-results/week/{day}", response_model=LastResultsWeekResponse)
+def locations_last_results_week(
     day: date,
     db: Annotated[Session, Depends(get_db)],
-) -> LastResultsDayResponse:
-    """«Результаты стартов» за один день: все локации, стартовавшие в этот день.
+) -> LastResultsWeekResponse:
+    """«Результаты стартов» за неделю: строка на каждый старт понедельник–воскресенье.
 
-    День без стартов — пустой список, а не 404: в адрес /results?date=… можно
-    вписать любую дату, и странице проще показать «стартов не было».
+    День — любой день недели, неделя подписывается субботой (как в едином
+    протоколе). Неделя без стартов — пустой список, а не 404: в адрес
+    /results?week=… можно вписать любую дату, и странице проще показать
+    «стартов не было».
     """
-    payload = build_day_results(db, day)
-    return LastResultsDayResponse.model_validate(payload)
+    try:
+        payload = build_week_results(db, day)
+    except OverflowError:
+        # Последние дни 9999 года: суббота их недели уже за пределом date.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Неделя вне допустимых дат"
+        ) from None
+    return LastResultsWeekResponse.model_validate(payload)
 
 
 @router.get("/page/{slug}/weather", response_model=LocationWeatherResponse)

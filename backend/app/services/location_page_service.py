@@ -14,7 +14,7 @@ import json
 import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, cast
 from uuid import UUID
 
@@ -3742,22 +3742,32 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
 # v3 — в строках появилась погода в час старта (weather).
 LAST_RESULTS_CACHE_KEY = "locations:last-results:v3"
 
-# Режим «За день» той же страницы (/results?date=…): список дней со стартами и
-# строки одного дня. Строки дня — те же, что у «последнего старта», поэтому
-# при смене формы строки бампать версию нужно у всех трёх ключей сразу.
-LAST_RESULTS_DAYS_CACHE_KEY = "locations:last-results:days:v1"
-LAST_RESULTS_DAY_CACHE_PREFIX = "locations:last-results:day:v1:"
-# TTL снимка дня — как у каталога, и у старых дней тоже. Сутки для архива
+# Режим «За неделю» той же страницы (/results?week=…): список недель со
+# стартами и строки одной недели. Неделя — как в едином протоколе:
+# понедельник–воскресенье, подписана своей субботой (week_start_of /
+# saturday_of из unified_protocol_service). До 21.10.2026 режим был «За день»,
+# и логика выбора даты у двух страниц раздела «Итоги» расходилась — решение
+# Дмитрия 21.10.2026: одна логика на обе. Строки недели — те же, что у
+# «последнего старта», поэтому при смене формы строки бампать версию нужно у
+# всех трёх ключей сразу.
+LAST_RESULTS_WEEKS_CACHE_KEY = "locations:last-results:weeks:v1"
+LAST_RESULTS_WEEK_CACHE_PREFIX = "locations:last-results:week:v1:"
+# TTL снимка недели — как у каталога, и у старых недель тоже. Сутки для архива
 # не окупаются: историю правят и мимо mark_location_results_changed (сверка
 # S95 удаляет фантомы и перенумеровывает старты, бэкфилл кросслинков RunPark,
-# слияния parkrun), и список дней пересчитался бы раньше снимка — число в
-# скобках разошлось бы со строками таблицы. Холодный день стоит меньше
-# секунды, и платит за него только тот, кто его открыл. Так же живут недели
+# слияния parkrun), и список недель пересчитался бы раньше снимка — число в
+# скобках разошлось бы со строками таблицы. Холодная неделя стоит около
+# секунды, и платит за неё только тот, кто её открыл. Так же живут недели
 # единого протокола.
 
 
-def last_results_day_cache_key(day: date) -> str:
-    return f"{LAST_RESULTS_DAY_CACHE_PREFIX}{day.isoformat()}"
+def last_results_week_cache_key(day: date) -> str:
+    """Ключ снимка недели. Любой день приводится к субботе своей недели:
+    ключа «на среду» не бывает, и подрезка свежести по дате старта не может
+    промахнуться мимо снимка, который читает страница."""
+    from app.services.unified_protocol_service import saturday_of
+
+    return f"{LAST_RESULTS_WEEK_CACHE_PREFIX}{saturday_of(day).isoformat()}"
 
 
 def invalidate_last_results_cache() -> None:
@@ -3767,11 +3777,11 @@ def invalidate_last_results_cache() -> None:
         pass
 
 
-def invalidate_last_results_days_cache() -> None:
-    """Снести список дней и снимки всех дней режима «За день».
+def invalidate_last_results_weeks_cache() -> None:
+    """Снести список недель и снимки всех недель режима «За неделю».
 
-    Ключи дней перечислить заранее нельзя (любой день истории, который кто-то
-    открыл), поэтому — scan по узкой маске, как у срезов состава в
+    Ключи недель перечислить заранее нельзя (любая неделя истории, которую
+    кто-то открыл), поэтому — scan по узкой маске, как у срезов состава в
     invalidate_location_page_cache. Зовут его только при смене состава
     локаций (flush_location_catalog_caches), а не на каждый протокол: там TTL
     подрезает mark_location_results_changed, и scan по всей базе Redis на
@@ -3780,9 +3790,9 @@ def invalidate_last_results_days_cache() -> None:
     """
     try:
         client = get_redis_client()
-        client.delete(LAST_RESULTS_DAYS_CACHE_KEY)
+        client.delete(LAST_RESULTS_WEEKS_CACHE_KEY)
         batch: list[str] = []
-        for key in client.scan_iter(match=f"{LAST_RESULTS_DAY_CACHE_PREFIX}*", count=1000):
+        for key in client.scan_iter(match=f"{LAST_RESULTS_WEEK_CACHE_PREFIX}*", count=1000):
             batch.append(key)
             if len(batch) >= 500:
                 client.delete(*batch)
@@ -3811,40 +3821,56 @@ def build_last_results(db: Session, *, use_cache: bool = True, refresh: bool = F
     return payload
 
 
-def build_last_results_days(db: Session, *, use_cache: bool = True, refresh: bool = False) -> dict[str, object]:
-    """Дни со стартами для выбора дня в режиме «За день». Флаги — как у build_last_results."""
+def build_last_results_weeks(db: Session, *, use_cache: bool = True, refresh: bool = False) -> dict[str, object]:
+    """Недели со стартами для выбора недели в режиме «За неделю». Флаги — как у build_last_results."""
     if use_cache and not refresh:
-        cached = _read_json_cache(LAST_RESULTS_DAYS_CACHE_KEY)
+        cached = _read_json_cache(LAST_RESULTS_WEEKS_CACHE_KEY)
         if cached is not None:
             return cached
 
-    payload = _compute_last_results_days(db)
+    payload = _compute_last_results_weeks(db)
 
     if use_cache:
-        _write_json_cache(LAST_RESULTS_DAYS_CACHE_KEY, payload, LOCATIONS_INDEX_CACHE_TTL_SECONDS)
+        _write_json_cache(LAST_RESULTS_WEEKS_CACHE_KEY, payload, LOCATIONS_INDEX_CACHE_TTL_SECONDS)
     return payload
 
 
-def build_day_results(db: Session, day: date, *, use_cache: bool = True, refresh: bool = False) -> dict[str, object]:
-    """Все локации, стартовавшие в один день. Флаги — как у build_last_results."""
-    key = last_results_day_cache_key(day)
+def build_week_results(db: Session, day: date, *, use_cache: bool = True, refresh: bool = False) -> dict[str, object]:
+    """Все старты недели, в которую попадает day. Флаги — как у build_last_results.
+
+    День в адресе может быть любым днём недели (старая ссылка ?date=… из
+    3.9.0, ручной ввод) — неделя всегда одна и подписана субботой, как в
+    едином протоколе.
+    """
+    from app.services.unified_protocol_service import saturday_of, week_start_of
+
+    saturday = saturday_of(day)
+    key = last_results_week_cache_key(saturday)
     if use_cache and not refresh:
         cached = _read_json_cache(key)
         if cached is not None:
             return cached
 
-    # Дешёвая отсечка до сборки каталога: день без единого события (будний,
-    # будущий или просто случайная дата в адресе) не стоит идентичностей всех
-    # локаций и списка кросслинков. И в кэш такой день не пишем: адрес
-    # принимает любую дату от 0001 до 9999, и обход по датам копил бы
-    # миллионы пустых ключей в Redis, общем с сессиями и брокером.
+    # Дешёвая отсечка до сборки каталога: неделя без единого события (будущая
+    # или просто случайная дата в адресе) не стоит идентичностей всех локаций
+    # и списка кросслинков. И в кэш такую неделю не пишем: адрес принимает
+    # любую дату от 0001 до 9999, и обход по датам копил бы сотни тысяч
+    # пустых ключей в Redis, общем с сессиями и брокером.
+    week_start = week_start_of(saturday)
+    week_end = week_start + timedelta(days=6)
     has_events = db.query(
-        select(Event.id).where(Event.event_date == day, Event.is_test_event.is_(False)).exists()
+        select(Event.id)
+        .where(
+            Event.event_date >= week_start,
+            Event.event_date <= week_end,
+            Event.is_test_event.is_(False),
+        )
+        .exists()
     ).scalar()
     if not has_events:
-        return {"date": day, "items": [], "total": 0}
+        return {"saturday": saturday, "week_start": week_start, "week_end": week_end, "items": [], "total": 0}
 
-    payload = _compute_day_results(db, day)
+    payload = _compute_week_results(db, saturday)
 
     if use_cache:
         _write_json_cache(key, payload, LOCATIONS_INDEX_CACHE_TTL_SECONDS)
@@ -3855,9 +3881,9 @@ def build_day_results(db: Session, day: date, *, use_cache: bool = True, refresh
 class _LastResultsScope:
     """Что считается стартом для витрины «Результаты стартов» — общее для обоих режимов.
 
-    Оба режима («последний старт» и «за день») обязаны видеть одни и те же
-    события: иначе число локаций в списке дней разошлось бы со строками дня,
-    а строка дня — со строкой последнего старта той же локации.
+    Оба режима («последний старт» и «за неделю») обязаны видеть одни и те же
+    события: иначе число локаций в списке недель разошлось бы со строками
+    недели, а строка недели — со строкой последнего старта той же локации.
     """
 
     catalog_index: LocationCatalogIndex
@@ -3885,9 +3911,9 @@ def _last_results_scope(db: Session) -> _LastResultsScope | None:
     # Кросслинков немного, поэтому их проще привезти списком, чем гонять
     # коррелированный NOT EXISTS по каждому событию каталога (на dev такой
     # план стоил больше двух минут).
-    # Список глобальный, а не по дню: у кросслинка первичное и вторичное
-    # события могут стоять в разные дни, и дедуп дня по одному дню пропустил
-    # бы дубль, который «последний старт» отсекает.
+    # Список глобальный, а не по неделе: у кросслинка первичное и вторичное
+    # события могут стоять в разные дни (и даже недели), и дедуп в пределах
+    # одной недели пропустил бы дубль, который «последний старт» отсекает.
     crosslink_rows = (
         db.query(EventCrosslink.primary_event_id, EventCrosslink.secondary_event_id)
         .join(Event, EventCrosslink.secondary_event_id == Event.id)
@@ -3940,11 +3966,17 @@ def _chosen_events_query(db: Session, kept_events: ColumnElement[bool]) -> Any:
 
 def _group_chosen_events(
     event_rows: Iterable[Any], location_id_to_identity: dict[UUID, str]
-) -> dict[str, list[tuple[Any, str]]]:
-    chosen: dict[str, list[tuple[Any, str]]] = {}
+) -> dict[tuple[str, date], list[tuple[Any, str]]]:
+    """Выбранные события по стартам: {(identity_key, дата): [(событие, система), …]}.
+
+    Старт — идентичность в конкретный день. Две системы одной локации в один
+    день — один старт (одна строка), та же локация в четверг-праздник и в
+    субботу одной недели — два старта.
+    """
+    chosen: dict[tuple[str, date], list[tuple[Any, str]]] = {}
     for event_row in event_rows:
         identity_key = location_id_to_identity[event_row.location_id]
-        chosen.setdefault(identity_key, []).append((event_row, event_row.platform_code))
+        chosen.setdefault((identity_key, event_row.event_date), []).append((event_row, event_row.platform_code))
     return chosen
 
 
@@ -3987,7 +4019,9 @@ def _compute_last_results(db: Session) -> dict[str, object]:
         if identity_key not in latest_date or loc_latest > latest_date[identity_key]:
             latest_date[identity_key] = loc_latest
 
-    chosen: dict[str, list[tuple[Any, str]]] = {}
+    # Ключ — (идентичность, дата), но дата у идентичности здесь одна: в отбор
+    # попадает только её последний день, поэтому и строка на идентичность одна.
+    chosen: dict[tuple[str, date], list[tuple[Any, str]]] = {}
     latest_pairs = [
         (loc_id, latest_date[location_id_to_identity[loc_id]]) for loc_id in latest_by_location
     ]
@@ -4028,42 +4062,66 @@ def _compute_last_results(db: Session) -> dict[str, object]:
     return {"saturday_date": saturday_date, "items": items, "total": len(items)}
 
 
-def _compute_day_results(db: Session, day: date) -> dict[str, object]:
-    """Режим «За день»: строка на каждую идентичность, стартовавшую в этот день.
+def _compute_week_results(db: Session, saturday: date) -> dict[str, object]:
+    """Режим «За неделю»: строка на каждый старт недели понедельник–воскресенье.
 
-    Строка — та же, что у «последнего старта» (тот же сборщик), только событие
-    выбрано не «последнее у локации», а «в этот день». Поэтому parkrun-эпоха
-    тоже видна: её событие попадает в строку сегодняшней идентичности.
+    Старт — идентичность в конкретный день: две системы одной локации в один
+    день склеиваются в одну строку (как у «последнего старта»), а та же
+    локация в четверг-праздник и в субботу — две строки, у каждой свой
+    протокол. Строка — та же, что у «последнего старта» (тот же сборщик),
+    только события выбраны не «последние у локации», а «в эту неделю».
+    Поэтому parkrun-эпоха тоже видна: её событие попадает в строку
+    сегодняшней идентичности.
     """
+    from app.services.unified_protocol_service import saturday_of, week_start_of
+
+    # Подпись недели — всегда суббота, даже если позвали с другим днём.
+    saturday = saturday_of(saturday)
+    week_start = week_start_of(saturday)
+    week_end = week_start + timedelta(days=6)
+    payload: dict[str, object] = {"saturday": saturday, "week_start": week_start, "week_end": week_end}
     scope = _last_results_scope(db)
     if scope is None:
-        return {"date": day, "items": [], "total": 0}
+        return {**payload, "items": [], "total": 0}
 
-    chosen_rows = _chosen_events_query(db, scope.kept_events).filter(Event.event_date == day).all()
+    chosen_rows = (
+        _chosen_events_query(db, scope.kept_events)
+        .filter(Event.event_date >= week_start, Event.event_date <= week_end)
+        .all()
+    )
     chosen = _group_chosen_events(chosen_rows, scope.location_id_to_identity)
-    # Дата у всех строк одна — «последняя суббота» строке дня не нужна,
-    # is_last_saturday остаётся False.
+    # Дат в неделе несколько, но «последняя суббота» строке недели не нужна:
+    # is_last_saturday остаётся False, дату показывает колонка «Дата».
     items = _build_last_results_rows(db, scope, chosen, saturday_date=None)
 
-    # По явке, внутри равной явки — по имени (стабильная двухпроходная
-    # сортировка, как у «последнего старта»).
-    items.sort(key=lambda item: str(item["name"]).lower())
-    items.sort(key=lambda item: cast("int | None", item["finishers"]) or 0, reverse=True)
-    return {"date": day, "items": items, "total": len(items)}
+    # По явке, внутри равной явки — по имени, у одной локации — по дате
+    # (четверговый праздник выше субботы при равной явке).
+    items.sort(
+        key=lambda item: (
+            -(cast("int | None", item["finishers"]) or 0),
+            str(item["name"]).lower(),
+            cast(date, item["event_date"]).toordinal(),
+        )
+    )
+    return {**payload, "items": items, "total": len(items)}
 
 
-def _compute_last_results_days(db: Session) -> dict[str, object]:
-    """Дни со стартами и число локаций в каждом — для выбора дня.
+def _compute_last_results_weeks(db: Session) -> dict[str, object]:
+    """Недели со стартами — для выбора недели: сколько локаций и сколько стартов.
 
-    Число локаций дня обязано совпасть с числом строк _compute_day_results:
-    то же условие «событие в счёт» и та же склейка в идентичности (две
-    системы одной локации в один день — одна строка). Склейку делаем в SQL
-    через VALUES-маппинг location_id → identity_key: в Python приезжает по
-    строке на день, а не по строке на каждое событие истории.
+    Обе цифры обязаны совпасть с таблицей _compute_week_results: starts —
+    число её строк, locations — число разных идентичностей в них. То же
+    условие «событие в счёт» и та же склейка в старт (идентичность + день).
+    Склейку делаем в SQL через VALUES-маппинг location_id → identity_key: в
+    Python приезжает по строке на неделю, а не по строке на каждое событие
+    истории. Неделя — date_trunc('week'), как в списке недель единого
+    протокола: понедельник, подпись — суббота (saturday_of).
     """
+    from app.services.unified_protocol_service import saturday_of
+
     scope = _last_results_scope(db)
     if scope is None:
-        return {"days": [], "latest_saturday": None}
+        return {"weeks": [], "latest_saturday": None}
 
     # В маппинг попадают только идентичности, у которых есть строка
     # (_collect_catalog_identities кладёт туда лишь ключи identity_locations),
@@ -4074,47 +4132,68 @@ def _compute_last_results_days(db: Session) -> dict[str, object]:
         if identity_key in scope.identity_locations
     ]
     if not identity_pairs:
-        return {"days": [], "latest_saturday": None}
+        return {"weeks": [], "latest_saturday": None}
     identity_source = values(
         column("location_id", PG_UUID(as_uuid=True)),
         column("identity_key", String),
         name="last_results_identity_map",
     ).data(identity_pairs)
-    day_rows = (
-        db.query(Event.event_date, func.count(func.distinct(identity_source.c.identity_key)))
+    # Сначала старты (неделя, идентичность, день) без повторов — две системы
+    # одной локации в один день схлопываются здесь, — потом по неделям.
+    starts = (
+        db.query(
+            func.date_trunc("week", Event.event_date).label("week_start"),
+            identity_source.c.identity_key.label("identity_key"),
+            Event.event_date.label("event_date"),
+        )
         .join(identity_source, Event.location_id == identity_source.c.location_id)
         .filter(scope.kept_events)
-        .group_by(Event.event_date)
-        .order_by(Event.event_date)
+        .distinct()
+        .subquery()
+    )
+    week_rows = (
+        db.query(
+            starts.c.week_start,
+            func.count(func.distinct(starts.c.identity_key)).label("locations"),
+            func.count().label("starts"),
+        )
+        .group_by(starts.c.week_start)
+        .order_by(starts.c.week_start)
         .all()
     )
-    days = [{"date": event_date, "locations": int(count)} for event_date, count in day_rows if count]
+    weeks = [
+        {
+            # date_trunc отдаёт отметку времени — день берём из неё и
+            # подписываем неделю субботой той же функцией, что протокол.
+            "saturday": saturday_of(week_start.date()),
+            "locations": int(locations),
+            "starts": int(starts_count),
+        }
+        for week_start, locations, starts_count in week_rows
+        if starts_count
+    ]
 
-    # По умолчанию режим открывается на последней субботе, а не на последнем
-    # дне: воскресным вечером последний день — один «Кулибин» RunPark.
-    saturdays = [cast(date, day["date"]) for day in days if cast(date, day["date"]).weekday() == 5]
-    latest_saturday: date | None
-    if saturdays:
-        latest_saturday = max(saturdays)
-    elif days:
-        latest_saturday = cast(date, days[-1]["date"])
-    else:
-        latest_saturday = None
-    return {"days": days, "latest_saturday": latest_saturday}
+    # Режим открывается на последней неделе со стартами — как единый протокол
+    # без даты (latest_protocol_saturday): неделя, в которую попал последний
+    # старт.
+    latest_saturday = cast(date, weeks[-1]["saturday"]) if weeks else None
+    return {"weeks": weeks, "latest_saturday": latest_saturday}
 
 
 def _build_last_results_rows(
     db: Session,
     scope: _LastResultsScope,
-    chosen: dict[str, list[tuple[Any, str]]],
+    chosen: dict[tuple[str, date], list[tuple[Any, str]]],
     *,
     saturday_date: date | None,
 ) -> list[dict[str, object]]:
-    """Строки витрины по выбранным событиям: {identity_key: [(событие, система), …]}.
+    """Строки витрины по выбранным событиям: {(identity_key, дата): [(событие, система), …]}.
 
     Общий сборщик обоих режимов: цифры протокола, волонтёры, сводки, погода и
     гости считаются одинаково, а какие события выбраны и как строки
-    отсортированы — решает вызывающий. Порядок строк на выходе не определён.
+    отсортированы — решает вызывающий. Строка — на каждый ключ: «последний
+    старт» даёт по одной дате на идентичность, неделя — сколько дней локация
+    стартовала. Порядок строк на выходе не определён.
     """
     catalog_index = scope.catalog_index
     chosen_event_ids = [event.id for pairs in chosen.values() for event, _code in pairs]
@@ -4185,108 +4264,118 @@ def _build_last_results_rows(
     def fmt(value: int | None) -> str | None:
         return format_finish_time_display(value) if value is not None else None
 
+    dates_by_identity: dict[str, list[date]] = {}
+    for identity_key, start_date in chosen:
+        dates_by_identity.setdefault(identity_key, []).append(start_date)
+
     items: list[dict[str, object]] = []
     for identity_key, members in scope.identity_locations.items():
-        events_for_key = chosen.get(identity_key)
-        if not events_for_key:
+        start_dates = dates_by_identity.get(identity_key)
+        if not start_dates:
             continue  # локация без единого старта — показывать нечего
         catalog = catalog_index.get_for_identity_key(identity_key)
         ordered = _sort_identity_locations(catalog, members)
         primary_location, _primary_code = ordered[0]
         is_paused, is_cancelled = _identity_status(catalog_index, ordered)
-
-        events_for_key.sort(key=lambda pair: _platform_order_index(pair[1]))
-        primary_event, primary_event_code = events_for_key[0]
-        finishers: int | None = None
-        volunteers: int | None = None
-        debutants: int | None = None
-        first_here: int | None = None
         # Гости — единственное число страницы, которое нельзя посчитать на
         # лету для всех 250 локаций сразу: берём готовое из кэша площадки,
         # его наполняет прогрев. Холодный кэш = прочерк, а не задержка.
         guests_cache = cached_guests_by_event(identity_key)
-        guests: int | None = None
-        prs: int | None = None
-        best_male: int | None = None
-        best_female: int | None = None
-        avg_time: int | None = None
-        has_protocol = False
-        for event, _code in events_for_key:
-            stats = protocol_stats.get(event.id)
-            summary = summaries.get(event.id)
-            has_protocol = has_protocol or stats is not None
-            event_finishers = (
-                stats["finishers"]
-                if stats is not None
-                else (event.finishers_count or (summary.finishers_count if summary else None))
-            )
-            if event_finishers is not None:
-                finishers = (finishers or 0) + event_finishers
-            event_volunteers = volunteer_counts.get(event.id) or (summary.volunteers_count if summary else None)
-            if event_volunteers is not None:
-                volunteers = (volunteers or 0) + event_volunteers
-            if stats is not None:
-                debutants = (debutants or 0) + (stats["debutants"] or 0)
-                first_here = (first_here or 0) + (stats["first_here"] or 0)
-                prs = (prs or 0) + (stats["prs"] or 0)
-            if guests_cache is not None and event.id in guests_cache:
-                guests = (guests or 0) + guests_cache[event.id]
-            event_best_male = stats["best_male"] if stats else (summary.best_male_time_sec if summary else None)
-            if event_best_male is not None and (best_male is None or event_best_male < best_male):
-                best_male = event_best_male
-            event_best_female = stats["best_female"] if stats else (summary.best_female_time_sec if summary else None)
-            if event_best_female is not None and (best_female is None or event_best_female < best_female):
-                best_female = event_best_female
-            if avg_time is None:
-                avg_time = (stats["avg_time"] if stats else None) or (summary.avg_time_sec if summary else None)
 
-        primary_summary = summaries.get(primary_event.id)
-        items.append(
-            {
-                "slug": identity_primary_slug(ordered),
-                "identity_key": identity_key,
-                "name": _identity_display_name(catalog, ordered, catalog_index),
-                "city": _first_by_platform_order(ordered, lambda loc: loc.city),
-                "region": _first_by_platform_order(ordered, lambda loc: loc.region),
-                "country": _identity_country(ordered),
-                "platform_codes": sorted({code for _loc, code in ordered}, key=_platform_order_index),
-                "is_paused": is_paused,
-                "is_cancelled": is_cancelled,
-                "event_date": primary_event.event_date,
-                "event_platform_codes": sorted({code for _event, code in events_for_key}, key=_platform_order_index),
-                "event_number": primary_event.event_number,
-                # Система первичного протокола — из неё складывается адрес
-                # нашей страницы протокола (/locations/{slug}/protocol/...).
-                "event_platform_code": primary_event_code,
-                "is_last_saturday": saturday_date is not None and primary_event.event_date == saturday_date,
-                "weather": last_results_weather.get((primary_event.location_id, primary_event.event_date)),
-                "finishers": finishers,
-                "volunteers": volunteers,
-                "debutants": debutants,
-                "first_at_location": first_here,
-                "guests": guests,
-                "prs": prs,
-                "best_male_time_sec": best_male,
-                "best_male_time_display": fmt(best_male),
-                "best_female_time_sec": best_female,
-                "best_female_time_display": fmt(best_female),
-                "avg_time_sec": avg_time,
-                "avg_time_display": fmt(avg_time),
-                "has_protocol": has_protocol,
-                "protocol_url": resolve_activity_url(
-                    platform_code=primary_event_code,
-                    event_date=primary_event.event_date,
-                    event_number=primary_event.event_number,
-                    event_source_url=primary_event.source_url,
-                    location_external_key=(
-                        location_by_id[primary_event.location_id].external_key
-                        if primary_event.location_id in location_by_id
-                        else primary_location.external_key
+        for start_date in sorted(start_dates):
+            events_for_key = chosen[(identity_key, start_date)]
+            events_for_key.sort(key=lambda pair: _platform_order_index(pair[1]))
+            primary_event, primary_event_code = events_for_key[0]
+            finishers: int | None = None
+            volunteers: int | None = None
+            debutants: int | None = None
+            first_here: int | None = None
+            guests: int | None = None
+            prs: int | None = None
+            best_male: int | None = None
+            best_female: int | None = None
+            avg_time: int | None = None
+            has_protocol = False
+            for event, _code in events_for_key:
+                stats = protocol_stats.get(event.id)
+                summary = summaries.get(event.id)
+                has_protocol = has_protocol or stats is not None
+                event_finishers = (
+                    stats["finishers"]
+                    if stats is not None
+                    else (event.finishers_count or (summary.finishers_count if summary else None))
+                )
+                if event_finishers is not None:
+                    finishers = (finishers or 0) + event_finishers
+                event_volunteers = volunteer_counts.get(event.id) or (summary.volunteers_count if summary else None)
+                if event_volunteers is not None:
+                    volunteers = (volunteers or 0) + event_volunteers
+                if stats is not None:
+                    debutants = (debutants or 0) + (stats["debutants"] or 0)
+                    first_here = (first_here or 0) + (stats["first_here"] or 0)
+                    prs = (prs or 0) + (stats["prs"] or 0)
+                if guests_cache is not None and event.id in guests_cache:
+                    guests = (guests or 0) + guests_cache[event.id]
+                event_best_male = stats["best_male"] if stats else (summary.best_male_time_sec if summary else None)
+                if event_best_male is not None and (best_male is None or event_best_male < best_male):
+                    best_male = event_best_male
+                event_best_female = (
+                    stats["best_female"] if stats else (summary.best_female_time_sec if summary else None)
+                )
+                if event_best_female is not None and (best_female is None or event_best_female < best_female):
+                    best_female = event_best_female
+                if avg_time is None:
+                    avg_time = (stats["avg_time"] if stats else None) or (summary.avg_time_sec if summary else None)
+
+            primary_summary = summaries.get(primary_event.id)
+            items.append(
+                {
+                    "slug": identity_primary_slug(ordered),
+                    "identity_key": identity_key,
+                    "name": _identity_display_name(catalog, ordered, catalog_index),
+                    "city": _first_by_platform_order(ordered, lambda loc: loc.city),
+                    "region": _first_by_platform_order(ordered, lambda loc: loc.region),
+                    "country": _identity_country(ordered),
+                    "platform_codes": sorted({code for _loc, code in ordered}, key=_platform_order_index),
+                    "is_paused": is_paused,
+                    "is_cancelled": is_cancelled,
+                    "event_date": primary_event.event_date,
+                    "event_platform_codes": sorted(
+                        {code for _event, code in events_for_key}, key=_platform_order_index
                     ),
-                    summary_source_url=primary_summary.source_url if primary_summary else None,
-                ),
-            }
-        )
+                    "event_number": primary_event.event_number,
+                    # Система первичного протокола — из неё складывается адрес
+                    # нашей страницы протокола (/locations/{slug}/protocol/...).
+                    "event_platform_code": primary_event_code,
+                    "is_last_saturday": saturday_date is not None and primary_event.event_date == saturday_date,
+                    "weather": last_results_weather.get((primary_event.location_id, primary_event.event_date)),
+                    "finishers": finishers,
+                    "volunteers": volunteers,
+                    "debutants": debutants,
+                    "first_at_location": first_here,
+                    "guests": guests,
+                    "prs": prs,
+                    "best_male_time_sec": best_male,
+                    "best_male_time_display": fmt(best_male),
+                    "best_female_time_sec": best_female,
+                    "best_female_time_display": fmt(best_female),
+                    "avg_time_sec": avg_time,
+                    "avg_time_display": fmt(avg_time),
+                    "has_protocol": has_protocol,
+                    "protocol_url": resolve_activity_url(
+                        platform_code=primary_event_code,
+                        event_date=primary_event.event_date,
+                        event_number=primary_event.event_number,
+                        event_source_url=primary_event.source_url,
+                        location_external_key=(
+                            location_by_id[primary_event.location_id].external_key
+                            if primary_event.location_id in location_by_id
+                            else primary_location.external_key
+                        ),
+                        summary_source_url=primary_summary.source_url if primary_summary else None,
+                    ),
+                }
+            )
     return items
 
 

@@ -835,8 +835,9 @@ def collect_event_weather(
     rows, _skipped = build_rows(payload, location, [event_date], fetched_at=datetime.now(UTC), source=SOURCE_FORECAST)
     written = upsert_rows(db, rows)
     if written:
-        # Дата — ради снимка дня в «Результатах стартов»: протоколов погода
-        # не трогает, а день без неё подрезал бы только протокол.
+        # Дата — ради снимка недели этого старта в «Результатах стартов»:
+        # протоколов погода не трогает, а без даты подрезался бы только
+        # «последний старт», и неделя показывала бы старт без погоды.
         mark_location_results_changed(db, [location.id], reason="погода старта", days=[event_date])
     db.commit()
     return written

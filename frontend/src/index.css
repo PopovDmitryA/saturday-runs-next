@@ -11716,24 +11716,25 @@ a.admin-system-chip:hover {
 /* «Результаты стартов»: смена вида не должна выглядеть как новая страница
    (правка Дмитрия 21.10.2026). Всё, что зависит от вида, стоит в одном месте
    панели фильтров постоянной ширины: «неактивные» в «Последнем старте» и
-   выбор дня в «За день». Ряд фильтров поэтому переносится одинаково в обоих
-   видах, и таблица под ним не сдвигается. Ширина — по выбору дня: стрелка,
-   «сб 29.08.2026 (248)», стрелка. */
+   выбор недели в «За неделю». Ряд фильтров поэтому переносится одинаково в
+   обоих видах, и таблица под ним не сдвигается. Ширина — по выбору недели:
+   стрелка, «29.08.2026 (248)», стрелка, с запасом (ширина та же, что была у
+   выбора дня в 3.9.0, — перенос ряда фильтров на всех ширинах не изменился). */
 .fp-group.results-mode-slot {
   flex: 0 0 18.5rem;
 }
 
-/* Обёртка переключателя вида только ловит наведение (предзагрузка дня),
+/* Обёртка переключателя вида только ловит наведение (предзагрузка недели),
    в раскладке ряда её нет. */
 .results-mode-intent {
   display: contents;
 }
 
-.fp-group > .results-day-nav {
+.fp-group > .results-week-nav {
   min-height: 2.25rem;
 }
 
-.results-day-nav {
+.results-week-nav {
   display: flex;
   align-items: center;
   gap: 0.3rem;
@@ -11742,20 +11743,20 @@ a.admin-system-chip:hover {
 
 /* Список растягивается на всё место между стрелками: от длины подписи
    («(248)» против «(1)») стрелки не ездят. */
-.results-day-nav .fp-select {
+.results-week-nav .fp-select {
   flex: 1 1 auto;
   min-width: 0;
 }
 
 /* Отступы у́же, чем у обычного списка: на телефоне между стрелками остаётся
-   ~180px, и «сб 29.08.2026 (248)» с прежними отступами обрезался. */
-.results-day-nav .fp-select-button {
+   ~180px, и подпись с прежними отступами обрезалась. */
+.results-week-nav .fp-select-button {
   width: 100%;
   justify-content: space-between;
   padding-inline: 0.7rem;
 }
 
-.results-day-arrow {
+.results-week-arrow {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -11769,12 +11770,12 @@ a.admin-system-chip:hover {
   text-decoration: none;
 }
 
-a.results-day-arrow:hover {
+a.results-week-arrow:hover {
   background: var(--tint-indigo-bg, rgba(79, 70, 229, 0.12));
 }
 
 /* На краях истории стрелка гаснет, но место держит. */
-.results-day-arrow-off {
+.results-week-arrow-off {
   opacity: 0.35;
   cursor: default;
 }
@@ -11784,22 +11785,32 @@ a.results-day-arrow:hover {
     flex-basis: 100%;
   }
 
-  .results-day-nav .fp-select-button .results-day-count {
+  .results-week-nav .fp-select-button .results-week-count {
     display: none;
   }
 }
 
-/* Самые узкие экраны (320–360 px): в кнопке дня остаётся только дата, а в
-   строке над таблицей — «старты 29.08 →». */
+/* «243 локации, 15 683 финишёра · 302 старта» в одну строку — от 440 px
+   (замер на самых длинных числах); уже — без хвоста про старты. */
+@media (max-width: 440px) {
+  .results-count-starts {
+    display: none;
+  }
+}
+
+/* Ссылка на неделю в строке над таблицей: «старты недели 29.08.2026 →», а на
+   самых узких экранах (320–400 px) — «неделя 29.08 →». */
+.results-count-narrow {
+  display: none;
+}
+
 @media (max-width: 400px) {
   .results-count-wide {
     display: none;
   }
-}
 
-@media (max-width: 360px) {
-  .results-day-nav .fp-select-button .results-day-weekday {
-    display: none;
+  .results-count-narrow {
+    display: inline;
   }
 }
 
@@ -11829,7 +11840,7 @@ a.results-day-arrow:hover {
   cursor: pointer;
 }
 
-/* Пока едут строки нового вида или дня, прежние остаются на месте
+/* Пока едут строки нового вида или недели, прежние остаются на месте
    приглушёнными, а новые проявляются, а не выскакивают. */
 .results-table-area {
   transition: opacity 0.15s ease;
