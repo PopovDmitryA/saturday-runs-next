@@ -154,6 +154,15 @@ def test_places_are_saved_in_order_and_replaced(db_session: Session, catalog: li
     assert places.user_places(db_session, user.id) == []
 
 
+def test_federal_city_chip_without_catalog(db_session: Session, catalog: list[dict], monkeypatch) -> None:
+    """Каталог протух — Москва в строке всё равно город, а не регион."""
+    user = _user(db_session, 9104)
+    notify.update_prefs(db_session, user.id, cancellation_places=["region:москва", "region:московская"])
+    db_session.commit()
+    monkeypatch.setattr(search, "_location_docs", lambda db: [])
+    assert [p["kind"] for p in places.user_places(db_session, user.id)] == ["city", "region"]
+
+
 def test_unknown_place_is_rejected(db_session: Session, catalog: list[dict]) -> None:
     user = _user(db_session, 9102)
     with pytest.raises(ValueError):

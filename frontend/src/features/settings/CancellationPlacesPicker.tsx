@@ -5,6 +5,12 @@ import { ApiError, suggestCancellationPlaces, type CancellationPlace } from "../
 // она встаёт в строку чипом, как адресат в почте. Места — локации и целиком
 // города, регионы, страны (бэкенд: cancellation_places_service). Пустая
 // строка — вся страна, как было до выбора мест.
+//
+// Клавиатура как у адресатов в почте: фокус всё время в поле ввода, а чип
+// «выбирается» подсветкой. Backspace в пустом поле сначала выделяет
+// последний чип и только вторым нажатием убирает его — случайно стереть
+// город одним лишним нажатием нельзя. ←/→ ходят по чипам, Delete убирает
+// выделенный, Esc и любой набранный символ снимают выделение.
 const KIND_ICONS: Record<CancellationPlace["kind"], string> = {
   location: "📍",
   city: "🏙",
@@ -31,10 +37,13 @@ export function CancellationPlacesPicker({
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Индекс выделенного чипа; null — курсор в поле ввода.
+  const [picked, setPicked] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
   const chosen = new Set(places.map((place) => place.key));
   const visible = items.filter((item) => !chosen.has(item.key));
+  const pickedPlace = picked !== null ? places[picked] ?? null : null;
 
   useEffect(() => {
     const text = query.trim();
@@ -76,10 +85,51 @@ export function CancellationPlacesPicker({
 
   const remove = (key: string) => {
     onChange(places.filter((place) => place.key !== key));
+    setPicked(null);
     inputRef.current?.focus();
   };
 
+  // Курсор в самом начале поля и ничего не выделено в тексте: отсюда
+  // стрелка влево уходит на чипы.
+  const caretAtStart = (input: HTMLInputElement) => input.selectionStart === 0 && input.selectionEnd === 0;
+
+  const onChipKey = (event: KeyboardEvent<HTMLInputElement>): boolean => {
+    const last = places.length - 1;
+    if (pickedPlace && picked !== null) {
+      if (event.key === "Backspace" || event.key === "Delete") {
+        remove(pickedPlace.key);
+      } else if (event.key === "ArrowLeft") {
+        setPicked(Math.max(0, picked - 1));
+      } else if (event.key === "ArrowRight") {
+        setPicked(picked >= last ? null : picked + 1);
+      } else if (event.key === "Home") {
+        setPicked(0);
+      } else if (event.key === "End") {
+        setPicked(null);
+      } else if (event.key === "Escape") {
+        // Esc снимает выделение, модалку закроет уже следующий.
+        event.stopPropagation();
+        setPicked(null);
+      } else {
+        // Любая другая клавиша — снова печатаем в поле.
+        setPicked(null);
+        return false;
+      }
+      event.preventDefault();
+      return true;
+    }
+    if (last < 0 || !caretAtStart(event.currentTarget)) return false;
+    if ((event.key === "Backspace" && query === "") || event.key === "ArrowLeft") {
+      event.preventDefault();
+      setOpen(false);
+      setPicked(last);
+      return true;
+    }
+    return false;
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (onChipKey(event)) return;
     if (event.key === "ArrowDown" && visible.length > 0) {
       event.preventDefault();
       setOpen(true);
@@ -96,8 +146,6 @@ export function CancellationPlacesPicker({
       // Первый Esc закрывает подсказки, второй — уже модалку.
       event.stopPropagation();
       setOpen(false);
-    } else if (event.key === "Backspace" && query === "" && places.length > 0) {
-      remove(places[places.length - 1].key);
     }
   };
 
@@ -109,8 +157,18 @@ export function CancellationPlacesPicker({
         className={`notify-places-box ${disabled ? "is-disabled" : ""}`}
         onClick={() => inputRef.current?.focus()}
       >
-        {places.map((place) => (
-          <span className="notify-place-chip" key={place.key} title={place.label}>
+        {places.map((place, index) => (
+          <span
+            className={`notify-place-chip ${index === picked ? "is-picked" : ""}`}
+            key={place.key}
+            title={place.label}
+            onClick={(event) => {
+              event.stopPropagation();
+              setPicked(index);
+              setOpen(false);
+              inputRef.current?.focus();
+            }}
+          >
             <span aria-hidden="true">{KIND_ICONS[place.kind]}</span>
             <span className="notify-place-chip-label">{place.label}</span>
             <button
@@ -142,14 +200,21 @@ export function CancellationPlacesPicker({
           disabled={disabled}
           onChange={(event) => {
             setQuery(event.target.value);
+            setPicked(null);
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
           // Клик по подсказке срабатывает раньше blur за счёт onMouseDown.
-          onBlur={() => setOpen(false)}
+          onBlur={() => {
+            setOpen(false);
+            setPicked(null);
+          }}
           onKeyDown={onKeyDown}
         />
       </div>
+      <span className="visually-hidden" aria-live="polite">
+        {pickedPlace ? `Выбрано: ${pickedPlace.label}. Backspace — убрать.` : ""}
+      </span>
       {showList && (
         <ul className="notify-places-list" id={listId} role="listbox">
           {visible.map((item, index) => (

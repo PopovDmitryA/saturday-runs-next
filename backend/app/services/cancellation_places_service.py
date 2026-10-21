@@ -33,6 +33,9 @@ from app.services.platform_titles import platform_title
 PLACE_KINDS = ("city", "region", "country")
 MAX_PLACES = 30
 SUGGEST_PLACE_LIMIT = 4
+# Города, которые в каталоге записаны регионом. Чип показывается городом и
+# тогда, когда каталога в Redis нет (протух, прогревается).
+FEDERAL_CITY_KEYS = frozenset({"region:москва", "region:санкт-петербург", "region:севастополь"})
 SUGGEST_LOCATION_LIMIT = 6
 MIN_QUERY_LENGTH = 2
 
@@ -239,7 +242,9 @@ def user_places(db: Session, user_id: UUID) -> list[dict[str, str]]:
         .where(UserCancellationPlace.user_id == user_id)
         .order_by(UserCancellationPlace.created_at, UserCancellationPlace.label)
     ).all()
-    city_like = {place.key for place in _places(search._location_docs(db)) if place.city_like} if rows else set()
+    city_like = set(FEDERAL_CITY_KEYS)
+    if rows:
+        city_like |= {place.key for place in _places(search._location_docs(db)) if place.city_like}
     return [
         {"key": key, "kind": "city" if key in city_like else place_kind(key), "label": label} for key, label in rows
     ]
