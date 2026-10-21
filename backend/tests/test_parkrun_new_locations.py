@@ -276,3 +276,10 @@ def test_profile_import_stays_on_location_of_parser_slug(db_session: Session, ge
 
     keys = {row[0] for row in db_session.query(Location.external_key).filter(Location.platform_id == platform.id, Location.name == name)}
     assert keys == {old}
+
+
+def test_diacritic_slug_renames_resolve() -> None:
+    from app.location_page_url import LOCATION_SLUG_RENAMES
+
+    assert LOCATION_SLUG_RENAMES["kungs-ngen"] == "kungsangen"
+    assert LOCATION_SLUG_RENAMES["traumschleife-b-renbachpfad"] == "traumschleifebaerenbachpfad"

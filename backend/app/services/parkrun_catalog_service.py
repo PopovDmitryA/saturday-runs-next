@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.core.runtime_env import is_test_run
 from app.models import ParkrunCatalogRun, ParkrunCountry, ParkrunEvent, ParkrunEventChange
-from app.parkrun.event_slugs import normalize_event_name
+from app.parkrun.event_slugs import normalize_event_name, real_point
 
 logger = logging.getLogger(__name__)
 
@@ -213,16 +213,11 @@ def _text(value: Any, limit: int) -> str | None:
 
 
 def _point(value: Any) -> tuple[float, float] | None:
-    """[долгота, широта] — только два настоящих числа в своих пределах."""
+    """[долгота, широта] — только настоящая точка (см. event_slugs.real_point)."""
     if not isinstance(value, (list, tuple)) or len(value) < 2:
         return None
-    try:
-        longitude, latitude = float(value[0]), float(value[1])
-    except (TypeError, ValueError):
-        return None
-    if not (math.isfinite(latitude) and math.isfinite(longitude)) or abs(latitude) > 90 or abs(longitude) > 180:
-        return None
-    return longitude, latitude
+    point = real_point(value[1], value[0])
+    return (point[1], point[0]) if point else None
 
 
 def check_feed(db: Session, feed: Feed) -> list[str]:
@@ -263,11 +258,19 @@ def check_feed(db: Session, feed: Feed) -> list[str]:
 # ---------------------------------------------------------------- применение
 
 
+# Имена, которые ничего не различают (как в scripts/export_parkrun_catalog_bundle.py):
+# у японских местных имён «秩父ミューズパークparkrun» нормализация оставляет одно
+# «parkrun», у «Łódź» — «d».
+NOISE_NAMES = {"parkrun", "juniors", "parkrunjuniors", "juniorparkrun"}
+
+
 def _names_for(event: FeedEvent) -> dict[str, str]:
     names: dict[str, str] = {}
     for kind, value in (("short", event.short_name), ("long", bare_name(event.long_name)), ("local", bare_name(event.local_name))):
         key = normalize_event_name(value or "")
-        if key and key not in names:
+        if len(key) < 3 or key in NOISE_NAMES:
+            continue
+        if key not in names:
             names[key] = kind
     return names
 
@@ -362,7 +365,7 @@ def apply_feed(db: Session, feed: Feed, run: ParkrunCatalogRun, now: datetime) -
                 db.flush()
                 # Старые имена остаются при площадке: профиль атлета может прислать их.
                 old_key = normalize_event_name(old_name or "")
-                if old_key and old_key != normalize_event_name(item.short_name):
+                if len(old_key) >= 3 and old_key not in NOISE_NAMES and old_key != normalize_event_name(item.short_name):
                     _upsert_names(db, row.id, {old_key: "old"})
                 change(row, "renamed", {"old_slug": old_slug, "new_slug": item.slug, "old_name": old_name, "new_name": item.short_name})
                 result.renamed += 1

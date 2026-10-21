@@ -18,7 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.parkrun.event_slugs import CatalogEvent, catalog_event, normalize_event_name
+from app.parkrun.event_slugs import CatalogEvent, catalog_event, normalize_event_name, real_point
 
 logger = logging.getLogger(__name__)
 
@@ -91,13 +91,14 @@ _EVENT_SQL = """
 
 def _event_from_row(row) -> CatalogEvent | None:
     event_slug, code, latitude, longitude, is_active, domain = row
-    if code is None or latitude is None or longitude is None:
+    if code is None:
         return None
+    point = real_point(latitude, longitude)
     return CatalogEvent(
         slug=event_slug,
         country_code=int(code),
-        latitude=float(latitude),
-        longitude=float(longitude),
+        latitude=point[0] if point else None,
+        longitude=point[1] if point else None,
         country_domain=domain,
         is_active=bool(is_active),
     )

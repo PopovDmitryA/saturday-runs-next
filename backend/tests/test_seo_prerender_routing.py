@@ -36,11 +36,31 @@ from app.services.seo_service import (
 
 
 class _FakeDb:
-    def __init__(self) -> None:
+    """Без базы. Локаций с ключами из LOCATION_SLUG_RENAMES «нет», если не задано."""
+
+    def __init__(self, existing_keys: set[str] | None = None) -> None:
         self.rolled_back = False
+        self.existing_keys = existing_keys or set()
 
     def rollback(self) -> None:
         self.rolled_back = True
+
+    def query(self, *_columns: Any) -> _FakeQuery:
+        return _FakeQuery(self.existing_keys)
+
+
+class _FakeQuery:
+    def __init__(self, existing_keys: set[str]) -> None:
+        self.existing_keys = existing_keys
+        self.hit = False
+
+    def filter(self, criterion: Any) -> _FakeQuery:
+        value = getattr(getattr(criterion, "right", None), "value", None)
+        self.hit = value in self.existing_keys
+        return self
+
+    def first(self) -> Any:
+        return (1,) if self.hit else None
 
 
 def _payload(**overrides: Any) -> dict[str, Any]:
@@ -120,6 +140,16 @@ def test_renamed_location_redirects_without_lookup(location_page: dict[str, Any]
     assert page.status == 301
     assert page.location is not None and page.location.endswith("/locations/boevadacha")
     assert location_page["calls"] == []
+
+
+def test_renamed_slug_is_served_while_old_key_still_exists(location_page: dict[str, Any]) -> None:
+    """До лечения локация живёт под старым ключом — 301 на новый адрес вёл бы в 404."""
+    location_page["payload"] = _payload(slug="kungs-ngen", name="Kungsängen")
+    page = _render("/locations/kungs-ngen", _FakeDb(existing_keys={"kungs-ngen"}))
+    assert (page.status, page.location) == (200, None)
+    assert location_page["calls"] == ["kungs-ngen"]
+    renamed = _render("/locations/kungs-ngen")
+    assert renamed.status == 301 and renamed.location.endswith("/locations/kungsangen")
 
 
 def test_unified_protocol_friday_redirects_to_saturday() -> None:

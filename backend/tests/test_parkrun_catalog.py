@@ -375,3 +375,242 @@ def test_run_lock_lives_on_its_own_connection() -> None:
             other.execute(text("select pg_advisory_unlock(:key)"), {"key": service.LOCK_KEY})
     finally:
         db.close()
+
+
+# --- проверка предпросмотра на проде 21.10.2026: что лечение не должно сделать
+
+
+def _catalog_row(db: Session, slug: str, *, code: int, lat: float | None, lon: float | None, short: str, extra_names=()):
+    from app.parkrun.event_slugs import normalize_event_name
+
+    event = ParkrunEvent(
+        slug=slug, short_name=short, long_name=short, country_code=code, latitude=lat, longitude=lon,
+        is_active=False, source="archive",
+    )
+    db.add(event)
+    db.flush()
+    for name, kind in ((short, "short"), *extra_names):
+        db.execute(
+            text("insert into parkrun_event_names (name_norm, event_id, kind) values (:n, :e, :k) on conflict do nothing"),
+            {"n": normalize_event_name(name), "e": event.id, "k": kind},
+        )
+    db.flush()
+    return event
+
+
+def _parkrun_location(db: Session, key: str, name: str, **fields) -> Location:
+    platform = db.query(Platform).filter(Platform.code == "parkrun").one()
+    location = Location(platform_id=platform.id, external_key=key, name=name, **fields)
+    db.add(location)
+    db.flush()
+    return location
+
+
+def test_heal_keeps_display_name_when_catalog_short_is_page_title(db_session: Session, factory, sent) -> None:
+    """Архивная строка: короткое имя — заголовок страницы. Переименование ключа имя не трогает."""
+    from app.services.parkrun_catalog_heal import heal_parkrun_locations
+
+    tag = uuid4().hex[:6]
+    _catalog_row(
+        db_session, f"navalhill{tag}", code=85, lat=-29.1, lon=26.2,
+        short=f"Naval Hill {tag} parkrun, Bloemfontein", extra_names=[(f"Naval Hill {tag}", "short")],
+    )
+    location = _parkrun_location(db_session, f"naval-hill-{tag}", f"Naval Hill {tag}")
+
+    report = heal_parkrun_locations(factory, geocode=False)
+
+    db_session.expire_all()
+    healed = db_session.get(Location, location.id)
+    assert healed.external_key == f"navalhill{tag}"
+    assert healed.name == f"Naval Hill {tag}"
+    assert report.renamed == [f"naval-hill-{tag} → navalhill{tag}"]
+
+
+def test_heal_ignores_zero_point_and_fixes_event_without_point(db_session: Session, factory, sent) -> None:
+    from app.services.parkrun_catalog_heal import heal_parkrun_locations
+
+    tag = uuid4().hex[:6]
+    _catalog_row(db_session, f"theglen{tag}", code=42, lat=0.0, lon=0.0, short=f"The Glen {tag}")
+    _catalog_row(db_session, f"woodford{tag}", code=3, lat=None, lon=None, short=f"Woodford {tag}")
+    glen = _parkrun_location(db_session, f"the-glen-{tag}", f"The Glen {tag}")
+    woodford = _parkrun_location(
+        db_session, f"woodford{tag}", f"Woodford {tag}", source_url=f"https://www.parkrun.org.uk/woodford{tag}/"
+    )
+
+    heal_parkrun_locations(factory)
+
+    db_session.expire_all()
+    glen, woodford = db_session.get(Location, glen.id), db_session.get(Location, woodford.id)
+    assert glen.external_key == f"theglen{tag}"
+    assert (glen.latitude, glen.longitude) == (None, None)  # не Гвинейский залив
+    assert glen.country == "Ирландия"
+    assert (woodford.latitude, woodford.country) == (None, "Австралия")
+    assert woodford.source_url == f"https://www.parkrun.com.au/woodford{tag}/"
+    assert service.parse_feed(payload([feature(1, "zero", "Zero", lat=0.0, lon=0.0)] + _base(tag)[:1])).events[0].slug != "zero"
+
+
+def test_heal_preview_shows_gaps_of_planned_renames(db_session: Session, factory, sent) -> None:
+    from app.services.parkrun_catalog_heal import heal_parkrun_locations
+
+    tag = uuid4().hex[:6]
+    _catalog_row(db_session, f"frittonlake{tag}", code=97, lat=52.55, lon=1.65, short=f"Fritton Lake {tag}")
+    location = _parkrun_location(
+        db_session, f"fritton-lake-{tag}", f"Fritton Lake {tag}", source_url=f"https://www.parkrun.org.uk/fritton-lake-{tag}/"
+    )
+
+    report = heal_parkrun_locations(factory, apply=False, geocode=False, limits=False)
+
+    assert report.renamed == [f"fritton-lake-{tag} → frittonlake{tag}"]
+    assert report.links_fixed == 0  # ссылку переименуемой локации ставит само переименование
+    assert report.points_set == [f"Fritton Lake {tag}"]
+    assert report.countries_set == [f"Fritton Lake {tag}: Великобритания"]
+    db_session.expire_all()
+    untouched = db_session.get(Location, location.id)
+    assert (untouched.external_key, untouched.latitude, untouched.country) == (f"fritton-lake-{tag}", None, None)
+
+
+def test_heal_country_by_geography_and_reports_geocode(db_session: Session, factory, sent, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Код parkrun — Великобритания, а база на Кипре: страна по географии, город по точке — в отчёте."""
+    from app.services.parkrun_catalog_heal import heal_parkrun_locations
+
+    monkeypatch.setattr(
+        "app.geo.reverse_geocode.lookup_address",
+        lambda lat, lon: {"country": "Акротири и Декелия", "region": None, "city": "Акротири"},
+    )
+    _catalog_row(db_session, "akrotiri", code=97, lat=34.5808, lon=32.98671, short="Akrotiri")
+    location = _parkrun_location(db_session, "akrotiri", "Akrotiri")
+
+    report = heal_parkrun_locations(factory)
+
+    db_session.expire_all()
+    healed = db_session.get(Location, location.id)
+    # Страна — по таблице географии, геокод для неё не нужен; город лечение не ставит.
+    assert (healed.country, healed.city) == ("Кипр", None)
+    assert report.countries_set == ["Akrotiri: Кипр"]
+
+
+def test_heal_failure_of_one_location_keeps_the_others(db_session: Session, factory, sent, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import parkrun_catalog_heal as heal
+
+    tag = uuid4().hex[:6]
+    for name in ("alpha", "beta"):
+        _catalog_row(db_session, f"{name}{tag}", code=3, lat=-33.0, lon=151.0, short=f"{name} {tag}")
+        _parkrun_location(
+            db_session, f"{name}{tag}", f"{name} {tag}", latitude=-33.0, longitude=151.0, country="Австралия",
+            source_url=f"https://www.parkrun.org.uk/{name}{tag}/",
+        )
+    original = heal.rewrite_event_keys
+
+    def flaky(db, location):
+        if location.external_key.startswith("alpha"):
+            raise RuntimeError("lock timeout")
+        return original(db, location)
+
+    monkeypatch.setattr(heal, "rewrite_event_keys", flaky)
+    report = heal.heal_parkrun_locations(factory, geocode=False)
+
+    assert report.links_fixed == 1
+    assert any(item.startswith(f"пробелы alpha{tag}") for item in report.conflicts)
+    db_session.expire_all()
+    urls = dict(
+        db_session.query(Location.external_key, Location.source_url).filter(Location.external_key.in_([f"alpha{tag}", f"beta{tag}"]))
+    )
+    assert urls == {
+        f"alpha{tag}": f"https://www.parkrun.org.uk/alpha{tag}/",
+        f"beta{tag}": f"https://www.parkrun.com.au/beta{tag}/",
+    }
+
+
+def test_export_cleans_archive_page_titles() -> None:
+    from scripts.export_parkrun_catalog_bundle import clean_title, point_or_none
+
+    assert clean_title("Naval Hill parkrun, Bloemfontein") == ("Naval Hill", "Naval Hill parkrun")
+    assert clean_title("Kungsängen parkrun eventhistorik") == ("Kungsängen", "Kungsängen parkrun")
+    assert clean_title("Ballina junior parkrun") == ("Ballina juniors", "Ballina junior parkrun")
+    assert clean_title("Bushy Park") == ("Bushy Park", "Bushy Park")
+    assert clean_title("  ") == (None, None)
+    assert point_or_none(0.0, 0.0) == (None, None)
+    assert point_or_none(34.6, 135.0) == (34.6, 135.0)
+
+
+def test_heal_sets_geocoded_country_but_not_city(db_session: Session, factory, sent, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.parkrun_catalog_heal import heal_parkrun_locations
+
+    monkeypatch.setattr(
+        "app.geo.reverse_geocode.lookup_address",
+        lambda lat, lon: {"country": "Южная Африка", "region": None, "city": "Lesedi Local Municipality"},
+    )
+    tag = uuid4().hex[:6]
+    _catalog_row(db_session, f"bluevalley{tag}", code=85, lat=-26.4, lon=28.4, short=f"Blue Valley {tag}")
+    location = _parkrun_location(db_session, f"bluevalley{tag}", f"Blue Valley {tag}")
+
+    report = heal_parkrun_locations(factory)
+
+    db_session.expire_all()
+    healed = db_session.get(Location, location.id)
+    assert (healed.country, healed.city) == ("ЮАР", None)
+    assert report.countries_set == [f"Blue Valley {tag}: ЮАР (по точке)"]
+
+
+def test_heal_relinks_protocols_left_on_foreign_domain(db_session: Session, factory, sent) -> None:
+    """Флоренция: ссылка локации на parkrun.it, а 31 протокол остался на parkrun.org.uk."""
+    from app.services.parkrun_catalog_heal import heal_parkrun_locations
+
+    tag = uuid4().hex[:6]
+    platform = db_session.query(Platform).filter(Platform.code == "parkrun").one()
+    _catalog_row(db_session, f"firenze{tag}", code=44, lat=43.78, lon=11.22, short=f"Firenze {tag}")
+    location = _parkrun_location(
+        db_session, f"firenze{tag}", f"Firenze {tag}", latitude=43.78, longitude=11.22, country="Италия",
+        source_url=f"https://www.parkrun.it/firenze{tag}/",
+    )
+    db_session.add(
+        Event(
+            platform_id=platform.id, location_id=location.id, external_event_key=f"2026-10-10:firenze{tag}",
+            event_date=date(2026, 10, 10), event_number=7, source_url=f"https://www.parkrun.org.uk/firenze{tag}/results/7/",
+        )
+    )
+    db_session.flush()
+
+    report = heal_parkrun_locations(factory, geocode=False)
+
+    db_session.expire_all()
+    event = db_session.query(Event).filter(Event.location_id == location.id).one()
+    assert event.source_url == f"https://www.parkrun.it/firenze{tag}/results/7/"
+    assert report.links_fixed == 1
+    assert heal_parkrun_locations(factory, geocode=False).links_fixed == 0  # повтор ничего не делает
+
+
+def test_heal_stops_geocoding_after_first_failure(db_session: Session, factory, sent, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.parkrun_catalog_heal import heal_parkrun_locations
+
+    calls: list[tuple[float, float]] = []
+
+    def down(lat, lon):
+        calls.append((lat, lon))
+        raise TimeoutError("nominatim")
+
+    monkeypatch.setattr("app.geo.reverse_geocode.lookup_address", down)
+    tag = uuid4().hex[:6]
+    for index in range(3):
+        _catalog_row(db_session, f"spot{index}{tag}", code=97, lat=51.0 + index, lon=-1.0, short=f"Spot {index} {tag}")
+        _parkrun_location(db_session, f"spot{index}{tag}", f"Spot {index} {tag}")
+
+    report = heal_parkrun_locations(factory)
+
+    assert len(calls) == 1
+    assert sorted(report.countries_set) == [f"Spot {i} {tag}: Великобритания" for i in range(3)]
+
+
+def test_old_address_finds_location_until_heal_renames_it(db_session: Session, factory) -> None:
+    from app.services.location_page_service import resolve_location_identity
+    from app.services.seo_service import _renamed_location_slug
+
+    location = _parkrun_location(db_session, "kungs-ngen", "Kungsängen")
+    identity = resolve_location_identity(db_session, "kungs-ngen")
+    assert identity is not None
+    assert _renamed_location_slug(db_session, "kungs-ngen") is None  # 301 вёл бы в 404
+
+    location.external_key = "kungsangen"
+    db_session.flush()
+    assert resolve_location_identity(db_session, "kungs-ngen") is not None
+    assert _renamed_location_slug(db_session, "kungs-ngen") == "kungsangen"

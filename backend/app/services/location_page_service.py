@@ -421,23 +421,29 @@ def resolve_location_identity(db: Session, slug: str) -> LocationIdentity | None
         return None
     # Площадка сменила слаг (parkrun переименовал её, 5 вёрст — реестр): старый
     # адрес ведёт на новую, а не в 404. Роботу тот же словарь отдаёт 301.
-    requested = LOCATION_SLUG_RENAMES.get(requested, requested)
-    requested_normalized = normalize_location_slug(requested)
+    # Пока локация живёт под старым ключом (лечение ещё не прошло), адрес
+    # находит её саму — словарь нужен, только если старого ключа больше нет.
+    candidates = [requested]
+    renamed = LOCATION_SLUG_RENAMES.get(requested)
+    if renamed and renamed != requested:
+        candidates.append(renamed)
+    normalized = [normalize_location_slug(item) for item in candidates]
 
     rows = db.query(Location, Platform.code).join(Platform, Location.platform_id == Platform.id).all()
     catalog_index = LocationCatalogIndex(db)
 
     identity_locations: dict[str, list[tuple[Location, str]]] = {}
-    matched_keys: list[str] = []
+    matched_by_candidate: list[list[str]] = [[] for _ in candidates]
     for location, platform_code in rows:
         identity_key = catalog_index.canonical_identity_key(location, platform_code)
         identity_locations.setdefault(identity_key, []).append((location, platform_code))
         external = location.external_key.strip().lower()
-        if external == requested or (
-            requested_normalized and normalize_location_slug(external) == requested_normalized
-        ):
-            matched_keys.append(identity_key)
+        external_normalized = normalize_location_slug(external)
+        for index, candidate in enumerate(candidates):
+            if external == candidate or (normalized[index] and external_normalized == normalized[index]):
+                matched_by_candidate[index].append(identity_key)
 
+    matched_keys = next((keys for keys in matched_by_candidate if keys), [])
     if not matched_keys:
         return None
 

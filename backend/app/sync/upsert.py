@@ -34,7 +34,7 @@ from app.parkrun.catalog_store import (
     prefetch_catalog_events,
     resolve_catalog_event,
 )
-from app.parkrun.event_slugs import CatalogEvent
+from app.parkrun.event_slugs import COUNTRY_BY_SLUG, CatalogEvent
 from app.parkrun.location_keys import result_key_with_slug
 from app.parkrun.protocol_gaps import release_placeholder
 from app.platform_adapters.canonical import (
@@ -1603,7 +1603,9 @@ def _fill_parkrun_location_gaps(location: Location, slug: str, event: CatalogEve
     """
     if not location.source_url and slug != "unknown":
         location.source_url = f"https://www.parkrun.org.uk/{slug}/"
-    if event is None or location.latitude is not None or location.longitude is not None:
+    if event is None or event.latitude is None or event.longitude is None:
+        return
+    if location.latitude is not None or location.longitude is not None:
         return
     location.latitude = event.latitude
     location.longitude = event.longitude
@@ -1616,7 +1618,8 @@ def _fill_parkrun_location_gaps(location: Location, slug: str, event: CatalogEve
         ),
         location,
     )
-    location.country = location.country or country
+    # Страна по географии, а не по коду parkrun (военные базы, Намибия) — как в лечении.
+    location.country = location.country or COUNTRY_BY_SLUG.get(slug) or country
     location.city = location.city or city
 
 

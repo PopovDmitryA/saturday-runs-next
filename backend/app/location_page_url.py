@@ -13,12 +13,19 @@ LOCATION_SLUG_RENAMES: dict[str, str] = {
     "zelenye5km": "starti-soobshchestv",
     "obninsk5": "obninsk",
     # parkrun переименовал площадки вместе со слагом, 16.10.2026 ключи у нас
-    # приведены к новым (scripts/unify_parkrun_location_keys.py). Остальные
-    # прежние ключи parkrun отличаются только дефисами и находятся и так.
+    # приведены к новым (scripts/unify_parkrun_location_keys.py). Прежние
+    # ключи, которые отличаются только дефисами, находятся и так.
     "colby": "colbywoodlandgarden",
     "ludlow": "mortimerforest",
     "launceston": "invereskprecinct",
     "markshall-estate": "markshall",
+    # Сверка с каталогом 21.10.2026: прежние ключи — транслитерация с
+    # выброшенными буквами (ä, ø, á, ë), без дефисов они со слагом не сходятся.
+    "kungs-ngen": "kungsangen",
+    "d-mmesmoen": "dommesmoen",
+    "an-bonn-n-bu": "anbonnanbui",
+    "ho-rskool-ben-viljoen": "hoerskoolbenviljoen",
+    "traumschleife-b-renbachpfad": "traumschleifebaerenbachpfad",
 }
 
 

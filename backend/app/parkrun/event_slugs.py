@@ -48,6 +48,7 @@ https://images.parkrun.com/events.json`, либо из копии, котору�
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -107,14 +108,53 @@ def official_event_slug(name: str) -> str | None:
     return _catalog().get(normalize_event_name(name))
 
 
+# Страна по географии, а не по коду parkrun: код страны у parkrun —
+# подчинение (Намибия числится за ЮАР, военные базы — за Великобританией).
+# Сайт пишет страну, где площадка стоит (решение Дмитрия 21.10.2026; так же
+# раньше решены Фолкленды, Эсватини и Намибия — scripts/backfill_parkrun_from_archive.py).
+COUNTRY_BY_SLUG: dict[str, str] = {
+    "capepembrokelighthouse": "Фолклендские острова",
+    "mountpleasant": "Фолклендские острова",
+    "manzini": "Эсватини",
+    "mbabane": "Эсватини",
+    "swakopmund": "Намибия",
+    "walvisbay": "Намибия",
+    "akrotiri": "Кипр",
+    "esba": "Кипр",
+    "happyvalley": "Кипр",
+    "campbastion": "Афганистан",
+    "jfcnaples": "Италия",
+}
+
+
+def real_point(latitude, longitude) -> tuple[float, float] | None:
+    """Точка старта или None. Нули — не точка: у архивной The Glen в каталоге
+    стояло (0, 0), и лечение поставило бы её в Гвинейский залив."""
+    if latitude is None or longitude is None:
+        return None
+    try:
+        lat, lon = float(latitude), float(longitude)
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(lat) and math.isfinite(lon)) or abs(lat) > 90 or abs(lon) > 180:
+        return None
+    if abs(lat) < 1e-6 and abs(lon) < 1e-6:
+        return None
+    return lat, lon
+
+
 @dataclass(frozen=True)
 class CatalogEvent:
-    """Площадка из снимка каталога: официальный слаг, страна и точка старта."""
+    """Площадка каталога: официальный слаг, страна и точка старта.
+
+    Точки может не быть (у шести закрытых австралийских площадок её нет в
+    каталоге): ссылку и страну это не отменяет, точку тогда не ставим.
+    """
 
     slug: str
     country_code: int
-    latitude: float
-    longitude: float
+    latitude: float | None
+    longitude: float | None
     # Домен из каталога в базе (parkrun_countries); у снимка — из COUNTRY_DOMAINS.
     country_domain: str | None = None
     is_active: bool = True

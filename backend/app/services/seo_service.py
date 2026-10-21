@@ -31,11 +31,13 @@ from typing import Any, cast
 from urllib.parse import parse_qs
 from xml.sax.saxutils import escape as xml_escape
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.display_name import strip_email
 from app.location_page_url import LOCATION_SLUG_RENAMES
+from app.models import Location
 from app.services.location_page_service import (
     build_last_results,
     build_location_page,
@@ -2175,6 +2177,19 @@ class Prerendered:
 # обратился в неудачную минуту.
 RETRY_AFTER_SECONDS = 600
 
+def _renamed_location_slug(db: Session, requested: str) -> str | None:
+    """Новый адрес бывшей локации — если под старым ключом её уже нет.
+
+    Пока лечение не переименовало локацию (ключ с транслитерацией ещё в
+    базе), старый адрес — её настоящий, и 301 на новый вёл бы в 404.
+    """
+    renamed = LOCATION_SLUG_RENAMES.get(requested)
+    if not renamed:
+        return None
+    still_there = db.query(Location.id).filter(func.lower(Location.external_key) == requested).first()
+    return None if still_there is not None else renamed
+
+
 # Бывшие адреса локаций — app/location_page_url.py (LOCATION_SLUG_RENAMES).
 
 _LOCATION_SUBPAGES: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -2229,7 +2244,7 @@ def _render_location_family(db: Session, path: str) -> Prerendered | None:
     match, suffix = found
 
     requested = match.group(1).strip().lower()
-    renamed = LOCATION_SLUG_RENAMES.get(requested)
+    renamed = _renamed_location_slug(db, requested)
     if renamed:
         return _redirect(f"/locations/{renamed}{suffix}")
 
@@ -2297,7 +2312,7 @@ def _render_location_protocol(db: Session, path: str) -> Prerendered | None:
     from app.services.location_protocol_service import build_location_protocol
 
     requested, platform_code, day = match.group(1).strip().lower(), match.group(2), match.group(3)
-    renamed = LOCATION_SLUG_RENAMES.get(requested)
+    renamed = _renamed_location_slug(db, requested)
     if renamed:
         return _redirect(f"/locations/{renamed}/protocol/{platform_code}/{day}")
 

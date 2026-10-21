@@ -53,6 +53,41 @@ def norm(value: str | None) -> str:
     return re.sub(r"[^0-9a-zа-яё]+", "", (value or "").strip().lower())
 
 
+TITLE_TAIL = re.compile(r"\s+(junior\s+)?parkrun\b.*$", re.IGNORECASE)
+
+
+def clean_title(value: str | None) -> tuple[str | None, str | None]:
+    """Короткое и длинное имя из заголовка страницы закрытой площадки.
+
+    Заголовок — «Naval Hill parkrun, Bloemfontein», «Kungsängen parkrun
+    eventhistorik», «Ballina junior parkrun»: короткое имя — до «parkrun»
+    (у юниоров — «… juniors», как в каталоге), длинное — «… parkrun».
+    """
+    title = (value or "").strip()
+    if not title:
+        return None, None
+    match = TITLE_TAIL.search(title)
+    if not match or not title[: match.start()].strip():
+        short = bare(title) or None
+        return short, title
+    head = title[: match.start()].strip()
+    if match.group(1):
+        return f"{head} juniors", f"{head} junior parkrun"
+    return head, f"{head} parkrun"
+
+
+def text_or_none(value) -> str | None:
+    cleaned = (value or "").strip() if isinstance(value, str) else value
+    return cleaned or None
+
+
+def point_or_none(lat, lon) -> tuple[float | None, float | None]:
+    """Нули — не точка (у архивной theglen стояло (0, 0))."""
+    if lat is None or lon is None or (abs(float(lat)) < 1e-6 and abs(float(lon)) < 1e-6):
+        return None, None
+    return float(lat), float(lon)
+
+
 def bare(name: str | None) -> str:
     value = (name or "").strip()
     value = re.sub(r"^parkrun\s+", "", value, flags=re.IGNORECASE)
@@ -112,17 +147,20 @@ def main() -> int:
         slug = row["eventname"]
         wayback = (row["catalogue_source"] or "") == "wayback"
         active = bool(row["is_active"])
+        lat, lon = point_or_none(row["latitude"], row["longitude"])
         events[slug] = {
             "slug": slug,
             "parkrun_id": None if wayback else row["id"],
-            "short_name": row["short_name"],
-            "long_name": row["long_name"],
-            "local_name": row["localised_long_name"],
+            "short_name": text_or_none(row["short_name"]),
+            "long_name": text_or_none(row["long_name"]),
+            "local_name": text_or_none(row["localised_long_name"]),
             "country_code": row["country_code"],
             "series_id": row["series_id"],
-            "place": row["location"] or None,
-            "latitude": row["latitude"],
-            "longitude": row["longitude"],
+            # Живой каталог сверка разбирает со strip — сид тоже, иначе первая
+            # сверка запишет «поменялось место» у Gateshead из-за пробела.
+            "place": text_or_none(row["location"]),
+            "latitude": lat,
+            "longitude": lon,
             "is_active": active,
             "source": "live" if active else ("archive" if wayback else "closed"),
             "first_seen_at": iso(row["first_seen"]),
@@ -170,15 +208,18 @@ def main() -> int:
             continue
         lat = lon = None
         if row["geo"] and ";" in row["geo"]:
-            lat, lon = (float(part) for part in row["geo"].split(";", 1))
+            lat, lon = point_or_none(*(float(part) for part in row["geo"].split(";", 1)))
+        # Заголовок страницы — не имя: «Naval Hill parkrun, Bloemfontein» →
+        # «Naval Hill». Имя из протоколов (ниже) ещё точнее и его заменит.
+        short, long_name = clean_title(row["page_name"])
         events[slug] = {
-            "slug": slug, "parkrun_id": None, "short_name": bare(row["page_name"]) or None, "long_name": row["page_name"] or None,
+            "slug": slug, "parkrun_id": None, "short_name": short, "long_name": long_name,
             "local_name": None, "country_code": int(row["country_code"]) if row["country_code"] else None,
             "series_id": int(row["series_id"]) if row["series_id"] else None, "place": None,
             "latitude": lat, "longitude": lon, "is_active": False, "source": "archive",
             "first_seen_at": None, "last_seen_at": None, "closed_at": iso(row["last_run"]),
         }
-        add_name(slug, bare(row["page_name"]), "short")
+        add_name(slug, short, "short")
     protocol_rows = psql_csv(
         "select slug, event_name, long_name, local_name, country_code, series_id from protocol_events where not in_catalog"
     )
@@ -186,15 +227,21 @@ def main() -> int:
         slug = row["slug"]
         if not PARKRUN_SLUG.fullmatch(slug or ""):
             continue
+        event_name = text_or_none(row["event_name"])
         if slug not in events:
             point = archive.get(norm(slug))
+            lat, lon = point_or_none(point[1], point[2]) if point else (None, None)
+            _, long_name = clean_title(row["long_name"])
             events[slug] = {
-                "slug": slug, "parkrun_id": None, "short_name": row["event_name"] or None, "long_name": row["long_name"] or None,
-                "local_name": row["local_name"] or None, "country_code": int(row["country_code"]) if row["country_code"] else None,
+                "slug": slug, "parkrun_id": None, "short_name": event_name, "long_name": long_name,
+                "local_name": text_or_none(row["local_name"]), "country_code": int(row["country_code"]) if row["country_code"] else None,
                 "series_id": int(row["series_id"]) if row["series_id"] else None, "place": None,
-                "latitude": point[1] if point else None, "longitude": point[2] if point else None,
+                "latitude": lat, "longitude": lon,
                 "is_active": False, "source": "archive", "first_seen_at": None, "last_seen_at": None, "closed_at": None,
             }
+        elif events[slug]["source"] == "archive" and event_name:
+            # Имя из протоколов parkrun точнее разобранного заголовка страницы.
+            events[slug]["short_name"] = event_name
         # long_name у protocol_events — заголовок страницы, бывает мусор
         # («Kungsängen parkrun eventhistorik»); берём только короткое имя.
         add_name(slug, row["event_name"], "short")

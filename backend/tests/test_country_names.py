@@ -84,3 +84,12 @@ def test_profile_import_does_not_stamp_parkrun_with_uk(db_session: Session) -> N
         .one()
     )
     assert row.country is None
+
+
+def test_russian_long_forms_from_nominatim() -> None:
+    from app.geo.country_names import normalize_country_name
+
+    assert normalize_country_name("Южно-Африканская Республика") == "ЮАР"
+    assert normalize_country_name("Южная Африка") == "ЮАР"  # так отвечает Nominatim (репетиция 21.10.2026)
+    assert normalize_country_name("Соединённые Штаты Америки") == "США"
+    assert normalize_country_name("Соединенное Королевство") == "Великобритания"

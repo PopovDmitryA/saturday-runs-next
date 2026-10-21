@@ -26,7 +26,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models import Location, LocationCatalogLink, Platform
-from app.parkrun.location_keys import ParkrunKeyConflict
 
 SUMMARY_KEY = "parkrun-summary"
 NAME_MATCH_MAX_KM = 1.0
@@ -131,9 +130,9 @@ def run_group(session_factory, apply: bool, action) -> dict:
         else:
             db.rollback()
         return {"ok": True, **(result or {})}
-    except (ParkrunKeyConflict, SQLAlchemyError) as exc:
+    except Exception as exc:  # noqa: BLE001 — сбой одной группы не обрывает остальные
         db.rollback()
-        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"}
+        return {"ok": False, "error": f"{type(exc).__name__}: {(str(exc).splitlines() or [''])[0][:300]}"}
     finally:
         db.close()
 
@@ -228,7 +227,9 @@ def snapshot_view(
 ) -> CatalogView:
     def point(slug: str) -> tuple[float, float] | None:
         event = catalog_event(slug)
-        return (event.latitude, event.longitude) if event is not None else None  # type: ignore[attr-defined]
+        if event is None or event.latitude is None:  # type: ignore[attr-defined]
+            return None
+        return (event.latitude, event.longitude)  # type: ignore[attr-defined]
 
     return CatalogView(
         official=set(catalog().values()),
@@ -255,21 +256,22 @@ def database_view(db: Session) -> CatalogView | None:
         return None
     if not rows:
         return None
-    points = {slug: (lat, lon) for slug, lat, lon, _ in rows if lat is not None and lon is not None}
+    from app.parkrun.event_slugs import normalize_event_name, real_point
+
+    points = {slug: point for slug, lat, lon, _ in rows if (point := real_point(lat, lon)) is not None}
     short_names = {slug: short for slug, _, _, short in rows}
     by_name: dict[str, set[str]] = defaultdict(set)
     active_by_name: dict[str, set[str]] = defaultdict(set)
-    from app.parkrun.event_slugs import normalize_event_name
-
-    current_short = {slug: normalize_event_name(short or "") for slug, short in short_names.items()}
     old_names: set[tuple[str, str]] = set()
     for name_norm, slug, kind, is_active in names:
         by_name[name_norm].add(slug)
         if is_active:
             active_by_name[name_norm].add(slug)
-        # Старое имя — помеченное так сверкой или короткое имя, которое уже не
-        # совпадает с нынешним (строки до 21.10.2026 переименование не помечало).
-        if kind == "old" or (kind == "short" and name_norm != current_short.get(slug)):
+        # Старое имя — только помеченное так (сверкой при переименовании или
+        # сидом). Выводить его из «второго короткого имени» нельзя: у архивных
+        # строк лишнее короткое имя — заголовок страницы («… parkrun
+        # eventhistorik»), и переименование записало бы его локации (21.10.2026).
+        if kind == "old":
             old_names.add((name_norm, slug))
 
     def slug_by_name(name: str) -> str | None:

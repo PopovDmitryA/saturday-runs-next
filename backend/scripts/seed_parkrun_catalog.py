@@ -46,6 +46,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bundle", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--prune-names",
+        action="store_true",
+        help="Убрать у площадок сида имена, которых нет в сиде (пересев до первой живой сверки: "
+        "21.10.2026 так убраны заголовки архивных страниц)",
+    )
     args = parser.parse_args()
     bundle = args.bundle
     now = datetime.now(timezone.utc)
@@ -87,10 +93,12 @@ def main() -> int:
             )
 
         names = 0
+        wanted: set[tuple[str, int]] = set()
         for item in _lines(bundle / "names.jsonl"):
             event_id = ids.get(item["slug"])
             if event_id is None:
                 continue
+            wanted.add((item["name_norm"], event_id))
             db.execute(
                 text(
                     "insert into parkrun_event_names (name_norm, event_id, kind) values (:name, :event, :kind) "
@@ -100,6 +108,23 @@ def main() -> int:
             )
             names += 1
         stats["names"] = names
+        if args.prune_names:
+            live_runs = db.execute(
+                text("select count(*) from parkrun_catalog_runs where status in ('ok', 'unchanged')")
+            ).scalar_one()
+            if live_runs:
+                # После живой сверки в таблице есть имена из events.json — их сид
+                # не знает и удалил бы.
+                raise SystemExit(f"--prune-names только до первой живой сверки, а их уже {live_runs}")
+            seeded = {ids[event["slug"]] for event in events if event["slug"] in ids}
+            existing = db.execute(
+                text("select name_norm, event_id from parkrun_event_names where event_id = any(:ids)"),
+                {"ids": sorted(seeded)},
+            ).all()
+            stale = [{"name": name, "event": event_id} for name, event_id in existing if (name, event_id) not in wanted]
+            if stale:
+                db.execute(text("delete from parkrun_event_names where name_norm = :name and event_id = :event"), stale)
+            stats["names_pruned"] = len(stale)
 
         db.execute(text("delete from parkrun_event_changes where run_id in (select id from parkrun_catalog_runs where status = 'seed')"))
         db.execute(text("delete from parkrun_catalog_runs where status = 'seed'"))
