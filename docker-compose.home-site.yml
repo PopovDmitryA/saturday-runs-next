@@ -42,6 +42,11 @@ x-home-env: &home-env
   # ходил в parkrun с адреса датацентра и ловил капчу.
   PARKRUN_SERVER_FETCH_ENABLED: "false"
   PARKRUN_SERVER_QUEUE_ENABLED: "false"
+  # Ежедневная сверка каталога (parkrun_catalog.sync, 09:20) без прокси при
+  # выключенном прямом доступе падает сразу. tg-proxy выводит весь трафик через
+  # зарубежные выходы, не с домашнего адреса: events.json через неё скачан
+  # 21.10.2026 — 940 КБ, 3002 площадки. Один запрос в сутки.
+  PARKRUN_CATALOG_PROXY_URL: ${PARKRUN_CATALOG_PROXY_URL:-http://tg-proxy:8118}
 
 services:
   postgres:

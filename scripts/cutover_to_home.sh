@@ -77,6 +77,17 @@ case "$step" in
 preflight)
   say "== готовность =="
   [ -f "$HOME_DIR/.env" ] && say "✓ .env на месте" || say "✗ нет .env"
+  # .env дома — копия от 19.09.2026, а на проде с тех пор включали новое
+  # (PARKRUN_CATALOG_SYNC_ENABLED 21.10): без ключа дома фича молча выключится.
+  # Сверяем только имена, значения не печатаем.
+  vps_keys=$(vps "grep -oE '^[A-Z_0-9]+=' $REMOTE_DIR/.env" 2>/dev/null | tr -d '=' | sort -u)
+  if [ -n "$vps_keys" ]; then
+    only_vps=$(comm -23 <(echo "$vps_keys") <(grep -oE '^[A-Z_0-9]+=' "$HOME_DIR/.env" | tr -d '=' | sort -u) | tr '\n' ' ')
+    [ -z "$only_vps" ] && say "✓ в .env дома есть все ключи .env VPS" ||
+      say "✗ в .env дома нет ключей с VPS: $only_vps— перенести (значения не печатать)"
+  else
+    say "✗ не прочитал ключи .env на VPS (ssh)"
+  fi
   # Конфиг прокси к Telegram в git не хранится (секреты) и едет отдельно.
   # Без него бот дома молчит: api.telegram.org из домашней сети недоступен.
   [ -f "$HOME_DIR/deploy/tg-proxy/config.json" ] && say "✓ конфиг tg-proxy на месте" ||
@@ -154,6 +165,15 @@ preflight)
   done
   say "  AAAA у run5k.run удаляется в момент переключения (дома IPv6 нет); www Timeweb повторяет за run5k.run сам"
   [ -f "$MARKER" ] && say "! маркер «сайт дома» уже стоит" || say "✓ маркера «сайт дома» нет"
+  # Сверка каталога parkrun дома ходит только через прокси (прямой доступ выключен).
+  "${COMPOSE[@]}" config --format json 2>/dev/null | python3 -c '
+import json, sys
+env = json.load(sys.stdin)["services"]["worker"].get("environment") or {}
+direct = str(env.get("PARKRUN_SERVER_FETCH_ENABLED", "true")).lower() not in ("false", "0", "no")
+proxy = (env.get("PARKRUN_CATALOG_PROXY_URL") or "").strip()
+print("✓ сверка каталога parkrun пойдёт через прокси" if direct or proxy else
+      "✗ сверка каталога parkrun упадёт: прямой доступ выключен, PARKRUN_CATALOG_PROXY_URL пуст")
+' | sed "s/^/$(date +%H:%M:%S) /"
   "${COMPOSE[@]}" config --quiet && say "✓ compose валиден"
   ;;
 
