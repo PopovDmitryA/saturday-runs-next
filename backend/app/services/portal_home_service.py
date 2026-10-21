@@ -44,7 +44,7 @@ from app.services.unified_protocol_service import saturday_of, week_start_of
 
 logger = logging.getLogger(__name__)
 
-PORTAL_HOME_CACHE_KEY = "portal:home:v23"
+PORTAL_HOME_CACHE_KEY = "portal:home:v24"
 # TTL сильно больше периода прогрева (раз в час): пересчёт занимает ~2 мин и идёт
 # синхронно в запросе пользователя, поэтому пустой кэш — это минута ожидания на
 # главной. Запас в 24 часа переживает и пропущенные прогревы, и рестарт воркера:
@@ -117,7 +117,7 @@ def _counted_events(query: Any) -> Any:
 
     Вторичная сторона кросслинка — дубль, но только пока её первичное событие
     само считается: так же решает протокол (_dedupe_crosslinked_events). Если
-    первичное — тест 5 вёрст, вторичное RunPark остаётся (Белгород, весна 2022:
+    первичное — тест 5 вёрст, вторичное RunPark остаётся (Михалково, весна 2022:
     иначе 47 финишей RunPark пропали бы с главной, а в протоколе остались).
 
     NOT EXISTS, а не LEFT JOIN + `IS NULL`: планировщик распознаёт эту форму как
@@ -253,7 +253,7 @@ def _load_events(db: Session) -> list[_EventRow]:
     return events
 
 
-def _participants_total(db: Session) -> int:
+def _participants_total(db: Session, excluded_location_ids: list[UUID]) -> int:
     """Участники: профили систем; связанные на сайте профили одного
     человека (platform_links одного user) считаются одним участником.
 
@@ -261,19 +261,33 @@ def _participants_total(db: Session) -> int:
     заводится одноразовая личность, и в счётчике уникальных они выглядели бы
     сотней тысяч человек. Финиши при этом считаются со всеми — безымянный
     бежал так же, как остальные (решение Дмитрия 20.09.2026)."""
-    # Тестовые старты не в счёт: 458 человек бежали только их (на 20.10.2026).
-    runners = (
-        select(RunResult.participant_id)
-        .join(Event, Event.id == RunResult.event_id)
-        .where(RunResult.participant_id.isnot(None), Event.is_test_event.is_(False))
+    # Старты — те же, что везде на главной (_counted_events): без тестов (458
+    # человек бежали только их, на 20.10.2026) и без дублей кросслинков. Дубль —
+    # тот же забег в протоколе второй системы: участники RunPark, бежавшие
+    # только такие старты, — это люди из протокола 5 вёрст / S95 того же дня, и
+    # без отсечки они шли в «Участников» второй раз (~12,8 тыс. на 21.10.2026).
+    # Зарубежный parkrun — как во всех блоках главной и в «участниках за год»
+    # (_participants_in_window): иностранцы из одного протокола с нашими
+    # бегунами (40 человек на 21.10.2026) в «участников» не идут.
+    runners = _exclude_locations(
+        _counted_events(
+            select(RunResult.participant_id)
+            .join(Event, Event.id == RunResult.event_id)
+            .where(RunResult.participant_id.isnot(None))
+        ),
+        excluded_location_ids,
     )
     total = int(
-        db.query(func.count(func.distinct(RunResult.participant_id)))
-        .join(Participant, Participant.id == RunResult.participant_id)
-        .join(Event, Event.id == RunResult.event_id)
+        _exclude_locations(
+            _counted_events(
+                db.query(func.count(func.distinct(RunResult.participant_id)))
+                .join(Participant, Participant.id == RunResult.participant_id)
+                .join(Event, Event.id == RunResult.event_id)
+            ),
+            excluded_location_ids,
+        )
         .filter(
             RunResult.participant_id.isnot(None),
-            Event.is_test_event.is_(False),
             identified_participant_clause(Participant.external_user_id, Participant.display_name),
         )
         .scalar()
@@ -1067,7 +1081,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
     identity_keys = {identity_of(row.location_id) for row in place_events}
     hero = {
         "finishes_total": finishes_total,
-        "participants_total": _participants_total(db),
+        "participants_total": _participants_total(db, excluded_location_ids),
         "locations_total": len(identity_keys),
         "starts_total": starts_total,
     }

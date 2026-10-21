@@ -346,24 +346,14 @@ def _import_s95_activity(db: Session, platform: Platform, external_user_id: str)
     return participant.external_user_id
 
 
-def _import_five_verst_activity(db: Session, platform: Platform, profile_input: str) -> str:
-    from app.platform_adapters.five_verst.parser import fetch_athlete_activity
-    from app.sync import upsert
+class UnsupportedQueueOperation(ValueError):
+    """Заявку этого вида очередь не разбирает и не разберёт — повторять незачем.
 
-    identity = resolve_profile_identity(platform.code, profile_input)
-    # Сеть вне транзакции — см. _persist_profile_preview.
-    release_before_fetch(db)
-    profile, runs, volunteering = fetch_athlete_activity(identity.external_user_id)
-    participant = upsert.upsert_participant(
-        db,
-        platform,
-        external_user_id=profile.external_user_id,
-        display_name=profile.display_name,
-        profile_url=profile.profile_url,
-    )
-    upsert.import_profile_run_results(db, platform, runs)
-    upsert.import_profile_volunteer_results(db, platform, participant.id, volunteering)
-    return participant.external_user_id
+    Загрузку активности очередь умеет только для parkrun и S95. Профили 5 вёрст
+    грузит синк по кнопке (app/sync/user_sync.py): заявок activity_import для
+    них не было ни разу, а прежняя ветка импортировала несуществующую функцию
+    и упала бы ImportError на первой же такой строке (разбор 21.10.2026).
+    """
 
 
 def _is_permanent_profile_error(exc: BaseException) -> bool:
@@ -399,7 +389,7 @@ def _is_permanent_profile_error(exc: BaseException) -> bool:
     for _ in range(10):
         if cursor is None:
             break
-        if isinstance(cursor, (ParkrunProfileNotFound, ParkrunProfileParseError)):
+        if isinstance(cursor, (ParkrunProfileNotFound, ParkrunProfileParseError, UnsupportedQueueOperation)):
             return True
         # httpx.HTTPStatusError (raise_for_status у s95 и five_verst) держит код
         # не на себе, а во вложенном ответе. Без второй проверки 404 у s95 не
@@ -447,10 +437,11 @@ def process_pending_row(db: Session, row: ProfileFetchPending) -> str:
                     row.platform_code, profile_input
                 ).external_user_id
                 external_id = _import_s95_activity(db, platform, external_id)
-            elif row.platform_code == "five_verst":
-                external_id = _import_five_verst_activity(db, platform, profile_input)
             else:
-                raise ValueError(f"Unsupported platform: {row.platform_code}")
+                raise UnsupportedQueueOperation(
+                    f"Очередь не загружает активность {row.platform_code}: "
+                    "только parkrun и S95, профили 5 вёрст грузит синк по кнопке"
+                )
         elif row.user_id is not None:
             external_id = _complete_pending_profile_link(db, row, platform, profile_input)
         else:

@@ -87,6 +87,16 @@ def test_rank_by_runs_counts_everyone_and_skips_unnamed(db_session: Session) -> 
     # Заглушка протокола: у s95 в такой аккаунт сложены все безымянные финиши,
     # и без отсечки он занимал бы верх таблицы.
     unnamed = _participant(db_session, platform, f"unknown-{suffix}", "НЕИЗВЕСТНЫЙ")
+    # Строка протокола с именем, но без ID: одноразовая личность unknown: на
+    # каждую строку. Не человек для знаменателя, как и у «уникальных участников»
+    # (на Тимирязевском такие давали 3 780 «бегунов» против 3 694 — репорт Егора).
+    one_off = Participant(
+        platform_id=platform.id,
+        external_user_id=f"unknown:locrank-{suffix}:2097-03-06:9",
+        display_name="Сергей КЛУБОВ",
+    )
+    db_session.add(one_off)
+    db_session.flush()
 
     def _run(event: Event, participant: Participant) -> None:
         db_session.add(
@@ -106,6 +116,7 @@ def test_rank_by_runs_counts_everyone_and_skips_unnamed(db_session: Session) -> 
     _run(events[0], rare)
     for event in events:
         _run(event, unnamed)
+    _run(events[0], one_off)
     db_session.commit()
 
     stats = build_location_personal_stats(db_session, user, location.external_key)

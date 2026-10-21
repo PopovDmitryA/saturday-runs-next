@@ -1128,7 +1128,10 @@ def _compute_location_leaders(db: Session, slug: str, *, limit: int = 20) -> dic
             .join(Participant, RunResult.participant_id == Participant.id)
             .outerjoin(PlatformLink, _platform_link_join())
             .outerjoin(User, PlatformLink.user_id == User.id)
-            .filter(RunResult.event_id.in_(event_ids))
+            # Одноразовая личность (unknown:/anon:) — не человек, даже с именем
+            # из протокола: у каждой строки своя, и один бегун без ID стал бы
+            # здесь несколькими. Правило то же, что у «уникальных участников».
+            .filter(RunResult.event_id.in_(event_ids), _identified_participant_clause())
             .group_by(runner_group_key)
             .having(_identified_name_clause(display_name))
             .order_by(func.count(func.distinct(RunResult.event_id)).desc(), display_name.asc())
@@ -1156,7 +1159,7 @@ def _compute_location_leaders(db: Session, slug: str, *, limit: int = 20) -> dic
             .join(Participant, VolunteerResult.participant_id == Participant.id)
             .outerjoin(PlatformLink, _platform_link_join())
             .outerjoin(User, PlatformLink.user_id == User.id)
-            .filter(VolunteerResult.event_id.in_(event_ids))
+            .filter(VolunteerResult.event_id.in_(event_ids), _identified_participant_clause())
             .group_by(volunteer_group_key)
             .having(_identified_name_clause(display_name))
             .order_by(func.count(func.distinct(VolunteerResult.event_id)).desc(), display_name.asc())
@@ -1736,7 +1739,7 @@ def _active_participant_rows(
         .join(Participant, model.participant_id == Participant.id)
         .outerjoin(PlatformLink, _platform_link_join())
         .outerjoin(User, PlatformLink.user_id == User.id)
-        .filter(model.event_id.in_(event_ids))
+        .filter(model.event_id.in_(event_ids), _identified_participant_clause())
         .filter(*([] if role_clause is None else [role_clause]))
         .group_by(group_key)
         # Заглушки вместо имени отсекаем здесь, а не в Python: они не люди и не
@@ -4329,13 +4332,17 @@ def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[st
     # аккаунты сливаются по user_id, а заглушки протокола («НЕИЗВЕСТНЫЙ», у s95
     # это к тому же один общий аккаунт на всех) в знаменатель не идут. Иначе
     # плитка и таблица лидеров на одной странице показывали бы разные числа.
+    # Одноразовые личности unknown:/anon: отсекаются по ключу, даже с именем из
+    # протокола: так знаменатель совпадает с «уникальными участниками» страницы
+    # (на Тимирязевском было 3 780 против 3 694 — 86 строк 5 вёрст без ID,
+    # один Сергей КЛУБОВ шёл тремя «бегунами»; репорт Егора 21.10.2026).
     leader_name = func.max(func.coalesce(User.display_name, Participant.display_name))
     runner_runs = (
         db.query(func.count(func.distinct(RunResult.event_id)).label("runs"))
         .join(Participant, RunResult.participant_id == Participant.id)
         .outerjoin(PlatformLink, _platform_link_join())
         .outerjoin(User, PlatformLink.user_id == User.id)
-        .filter(RunResult.event_id.in_(event_ids))
+        .filter(RunResult.event_id.in_(event_ids), _identified_participant_clause())
         .group_by(func.coalesce(PlatformLink.user_id, RunResult.participant_id))
         .having(_identified_name_clause(leader_name))
         .subquery()

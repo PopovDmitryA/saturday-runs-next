@@ -360,7 +360,7 @@ def test_counted_events_skip_test_runs_like_the_protocol(db_session: Session) ->
     10.10.2026 на графике «Локации по системам» у 5 вёрст стояло 216 вместо
     215: тест Чехова (№0, 9 финишёров) — репорт Егора 20.10.2026. Дубль
     кросслинка отсекается, только если его первичное событие само считается:
-    тест 5 вёрст с RunPark-копией (Белгород, весна 2022) оставляет RunPark.
+    тест 5 вёрст с RunPark-копией (Михалково, весна 2022) оставляет RunPark.
     """
     from app.models import EventCrosslink
     from app.services.portal_home_service import _counted_events
@@ -463,3 +463,61 @@ def test_home_counts_places_without_test_runs_and_series(db_session: Session) ->
     assert week["platforms"]["five_verst"] == 1
     assert finishes["platforms"]["five_verst"] == 150
     assert payload["pulse"]["finishes"] == 150
+
+
+def test_participants_total_skips_people_seen_only_in_crosslink_duplicates(db_session: Session) -> None:
+    """Участник RunPark, бежавший только старт-дубль 5 вёрст, — не второй человек.
+
+    Дубль — тот же забег в протоколе второй системы: без отсечки на главной в
+    «Участниках» было ~12,8 тыс. лишних людей (разбор 21.10.2026).
+    """
+    from app.models import EventCrosslink
+    from app.services.portal_home_service import _participants_total
+
+    suffix = uuid4().hex[:8]
+    platforms = {}
+    for code, name in (("five_verst", "5 вёрст"), ("runpark", "RunPark")):
+        row = db_session.query(Platform).filter(Platform.code == code).one_or_none()
+        if row is None:
+            row = Platform(code=code, name=name)
+            db_session.add(row)
+            db_session.flush()
+        platforms[code] = row
+    before = _participants_total(db_session, [])
+
+    events = {}
+    for code in platforms:
+        location = Location(platform_id=platforms[code].id, external_key=f"pt-{code}-{suffix}", name=f"Парк {code}")
+        db_session.add(location)
+        db_session.flush()
+        event = Event(
+            platform_id=platforms[code].id,
+            location_id=location.id,
+            external_event_key=f"pt-{code}-{suffix}:1",
+            event_date=date(2026, 10, 10),
+            event_number=1,
+            title=location.name,
+        )
+        db_session.add(event)
+        db_session.flush()
+        events[code] = event
+    db_session.add(EventCrosslink(primary_event_id=events["five_verst"].id, secondary_event_id=events["runpark"].id))
+    for code, external_user_id in (("five_verst", f"5v-{suffix}"), ("runpark", f"barcode:A{suffix}")):
+        participant = Participant(
+            platform_id=platforms[code].id, external_user_id=external_user_id, display_name="Анна БЕГУНОВА"
+        )
+        db_session.add(participant)
+        db_session.flush()
+        db_session.add(
+            RunResult(
+                event_id=events[code].id,
+                participant_id=participant.id,
+                external_result_key=f"pt-{code}-{suffix}",
+                finish_time_sec=1500,
+            )
+        )
+    db_session.flush()
+
+    assert _participants_total(db_session, []) - before == 1
+    # Зарубежный parkrun исключается так же, как во всех блоках главной.
+    assert _participants_total(db_session, [events["five_verst"].location_id]) - before == 0

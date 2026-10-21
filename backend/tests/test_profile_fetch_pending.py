@@ -447,3 +447,25 @@ def test_database_failure_rolls_back_before_marking_row(
     assert fresh.attempts == 1
     # Соединение живое: следующий профиль в том же прогоне уже не падает.
     assert db_session.execute(text("select 1")).scalar() == 1
+
+
+def test_five_verst_activity_import_is_closed_for_good(db_session: Session) -> None:
+    """Активность 5 вёрст очередь не загружает: заявка закрывается сразу и навсегда.
+
+    Прежняя ветка импортировала несуществующую функцию парсера и падала бы
+    ImportError; а простая «неподдерживаемая платформа» воскрешалась бы
+    сбросом каждые 20 минут (разбор 21.10.2026).
+    """
+    row = ProfileFetchPending(
+        platform_code="five_verst",
+        profile_input="https://5verst.ru/userstats/790000001/",
+        operation=ProfileFetchPendingOperation.activity_import,
+        reason=ProfileFetchPendingReason.error,
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    process_pending_row(db_session, row)
+    assert row.status == ProfileFetchPendingStatus.failed
+    assert row.last_error.startswith(PERMANENT_ERROR_PREFIX)
+    assert "только parkrun и S95" in row.last_error
