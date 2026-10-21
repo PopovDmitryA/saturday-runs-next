@@ -22,6 +22,7 @@ import redis
 from sqlalchemy import Date, String, and_, bindparam, case, column, func, or_, select, text, values
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Session, aliased
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.activity_url import resolve_activity_url
 from app.core.age_groups import (  # noqa: F401 — реэкспорт: по этим именам их берут рейтинги и протоколы
@@ -3741,10 +3742,53 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
 # v3 — в строках появилась погода в час старта (weather).
 LAST_RESULTS_CACHE_KEY = "locations:last-results:v3"
 
+# Режим «За день» той же страницы (/results?date=…): список дней со стартами и
+# строки одного дня. Строки дня — те же, что у «последнего старта», поэтому
+# при смене формы строки бампать версию нужно у всех трёх ключей сразу.
+LAST_RESULTS_DAYS_CACHE_KEY = "locations:last-results:days:v1"
+LAST_RESULTS_DAY_CACHE_PREFIX = "locations:last-results:day:v1:"
+# TTL снимка дня — как у каталога, и у старых дней тоже. Сутки для архива
+# не окупаются: историю правят и мимо mark_location_results_changed (сверка
+# S95 удаляет фантомы и перенумеровывает старты, бэкфилл кросслинков RunPark,
+# слияния parkrun), и список дней пересчитался бы раньше снимка — число в
+# скобках разошлось бы со строками таблицы. Холодный день стоит меньше
+# секунды, и платит за него только тот, кто его открыл. Так же живут недели
+# единого протокола.
+
+
+def last_results_day_cache_key(day: date) -> str:
+    return f"{LAST_RESULTS_DAY_CACHE_PREFIX}{day.isoformat()}"
+
 
 def invalidate_last_results_cache() -> None:
     try:
         get_redis_client().delete(LAST_RESULTS_CACHE_KEY)
+    except redis.RedisError:
+        pass
+
+
+def invalidate_last_results_days_cache() -> None:
+    """Снести список дней и снимки всех дней режима «За день».
+
+    Ключи дней перечислить заранее нельзя (любой день истории, который кто-то
+    открыл), поэтому — scan по узкой маске, как у срезов состава в
+    invalidate_location_page_cache. Зовут его только при смене состава
+    локаций (flush_location_catalog_caches), а не на каждый протокол: там TTL
+    подрезает mark_location_results_changed, и scan по всей базе Redis на
+    каждую запись был бы непозволительно дорог. FLUSHDB запрещён — база
+    общая с сессиями.
+    """
+    try:
+        client = get_redis_client()
+        client.delete(LAST_RESULTS_DAYS_CACHE_KEY)
+        batch: list[str] = []
+        for key in client.scan_iter(match=f"{LAST_RESULTS_DAY_CACHE_PREFIX}*", count=1000):
+            batch.append(key)
+            if len(batch) >= 500:
+                client.delete(*batch)
+                batch = []
+        if batch:
+            client.delete(*batch)
     except redis.RedisError:
         pass
 
@@ -3767,14 +3811,69 @@ def build_last_results(db: Session, *, use_cache: bool = True, refresh: bool = F
     return payload
 
 
-def _compute_last_results(db: Session) -> dict[str, object]:
-    """Одна строка на идентичность: её последний старт и цифры этого старта."""
+def build_last_results_days(db: Session, *, use_cache: bool = True, refresh: bool = False) -> dict[str, object]:
+    """Дни со стартами для выбора дня в режиме «За день». Флаги — как у build_last_results."""
+    if use_cache and not refresh:
+        cached = _read_json_cache(LAST_RESULTS_DAYS_CACHE_KEY)
+        if cached is not None:
+            return cached
+
+    payload = _compute_last_results_days(db)
+
+    if use_cache:
+        _write_json_cache(LAST_RESULTS_DAYS_CACHE_KEY, payload, LOCATIONS_INDEX_CACHE_TTL_SECONDS)
+    return payload
+
+
+def build_day_results(db: Session, day: date, *, use_cache: bool = True, refresh: bool = False) -> dict[str, object]:
+    """Все локации, стартовавшие в один день. Флаги — как у build_last_results."""
+    key = last_results_day_cache_key(day)
+    if use_cache and not refresh:
+        cached = _read_json_cache(key)
+        if cached is not None:
+            return cached
+
+    # Дешёвая отсечка до сборки каталога: день без единого события (будний,
+    # будущий или просто случайная дата в адресе) не стоит идентичностей всех
+    # локаций и списка кросслинков. И в кэш такой день не пишем: адрес
+    # принимает любую дату от 0001 до 9999, и обход по датам копил бы
+    # миллионы пустых ключей в Redis, общем с сессиями и брокером.
+    has_events = db.query(
+        select(Event.id).where(Event.event_date == day, Event.is_test_event.is_(False)).exists()
+    ).scalar()
+    if not has_events:
+        return {"date": day, "items": [], "total": 0}
+
+    payload = _compute_day_results(db, day)
+
+    if use_cache:
+        _write_json_cache(key, payload, LOCATIONS_INDEX_CACHE_TTL_SECONDS)
+    return payload
+
+
+@dataclass
+class _LastResultsScope:
+    """Что считается стартом для витрины «Результаты стартов» — общее для обоих режимов.
+
+    Оба режима («последний старт» и «за день») обязаны видеть одни и те же
+    события: иначе число локаций в списке дней разошлось бы со строками дня,
+    а строка дня — со строкой последнего старта той же локации.
+    """
+
+    catalog_index: LocationCatalogIndex
+    identity_locations: dict[str, list[tuple[Location, str]]]
+    location_id_to_identity: dict[UUID, str]
+    kept_events: ColumnElement[bool]
+
+
+def _last_results_scope(db: Session) -> _LastResultsScope | None:
+    """Идентичности каталога и условие «событие в счёт». None — каталог пуст."""
     catalog_index = LocationCatalogIndex(db)
     identity_locations, location_id_to_identity = _collect_catalog_identities(db, catalog_index)
 
     location_ids = list(location_id_to_identity.keys())
     if not location_ids:
-        return {"saturday_date": None, "items": [], "total": 0}
+        return None
 
     # Дедуп кросслинков — как в _bulk_identity_stats: вторичное событие не в
     # счёт, если его первичное тоже принадлежит каталогу. Раньше это считалось
@@ -3786,6 +3885,9 @@ def _compute_last_results(db: Session) -> dict[str, object]:
     # Кросслинков немного, поэтому их проще привезти списком, чем гонять
     # коррелированный NOT EXISTS по каждому событию каталога (на dev такой
     # план стоил больше двух минут).
+    # Список глобальный, а не по дню: у кросслинка первичное и вторичное
+    # события могут стоять в разные дни, и дедуп дня по одному дню пропустил
+    # бы дубль, который «последний старт» отсекает.
     crosslink_rows = (
         db.query(EventCrosslink.primary_event_id, EventCrosslink.secondary_event_id)
         .join(Event, EventCrosslink.secondary_event_id == Event.id)
@@ -3811,7 +3913,48 @@ def _compute_last_results(db: Session) -> dict[str, object]:
     kept_conditions = [Event.location_id.in_(location_ids), Event.is_test_event.is_(False)]
     if excluded_secondary:
         kept_conditions.append(Event.id.notin_(excluded_secondary))
-    kept_events = and_(*kept_conditions)
+    return _LastResultsScope(
+        catalog_index=catalog_index,
+        identity_locations=identity_locations,
+        location_id_to_identity=location_id_to_identity,
+        kept_events=and_(*kept_conditions),
+    )
+
+
+def _chosen_events_query(db: Session, kept_events: ColumnElement[bool]) -> Any:
+    """Колонки события, которые нужны строке витрины, — без гидрации ORM-объектов."""
+    return (
+        db.query(
+            Event.id.label("id"),
+            Event.location_id.label("location_id"),
+            Event.event_date.label("event_date"),
+            Event.event_number.label("event_number"),
+            Event.finishers_count.label("finishers_count"),
+            Event.source_url.label("source_url"),
+            Platform.code.label("platform_code"),
+        )
+        .join(Platform, Event.platform_id == Platform.id)
+        .filter(kept_events)
+    )
+
+
+def _group_chosen_events(
+    event_rows: Iterable[Any], location_id_to_identity: dict[UUID, str]
+) -> dict[str, list[tuple[Any, str]]]:
+    chosen: dict[str, list[tuple[Any, str]]] = {}
+    for event_row in event_rows:
+        identity_key = location_id_to_identity[event_row.location_id]
+        chosen.setdefault(identity_key, []).append((event_row, event_row.platform_code))
+    return chosen
+
+
+def _compute_last_results(db: Session) -> dict[str, object]:
+    """Одна строка на идентичность: её последний старт и цифры этого старта."""
+    scope = _last_results_scope(db)
+    if scope is None:
+        return {"saturday_date": None, "items": [], "total": 0}
+    location_id_to_identity = scope.location_id_to_identity
+    kept_events = scope.kept_events
 
     # «Последняя суббота» — как пульс на главной: максимальная субботняя дата.
     # Fallback на общий максимум нужен разве что теоретически (пустых суббот
@@ -3858,16 +4001,7 @@ def _compute_last_results(db: Session) -> dict[str, object]:
             name="latest_event_pairs",
         ).data(latest_pairs)
         chosen_rows = (
-            db.query(
-                Event.id.label("id"),
-                Event.location_id.label("location_id"),
-                Event.event_date.label("event_date"),
-                Event.event_number.label("event_number"),
-                Event.finishers_count.label("finishers_count"),
-                Event.source_url.label("source_url"),
-                Platform.code.label("platform_code"),
-            )
-            .join(Platform, Event.platform_id == Platform.id)
+            _chosen_events_query(db, kept_events)
             .join(
                 pairs_source,
                 and_(
@@ -3875,13 +4009,114 @@ def _compute_last_results(db: Session) -> dict[str, object]:
                     Event.event_date == pairs_source.c.event_date,
                 ),
             )
-            .filter(kept_events)
             .all()
         )
-        for event_row in chosen_rows:
-            identity_key = location_id_to_identity[event_row.location_id]
-            chosen.setdefault(identity_key, []).append((event_row, event_row.platform_code))
+        chosen = _group_chosen_events(chosen_rows, location_id_to_identity)
 
+    items = _build_last_results_rows(db, scope, chosen, saturday_date=saturday_date)
+
+    # Свежие сверху, внутри даты — по явке (имя — стабильный алфавитный
+    # тай-брейк); хвост «давно не стартовали» уезжает вниз.
+    items.sort(key=lambda item: str(item["name"]).lower())
+    items.sort(
+        key=lambda item: (
+            cast(date, item["event_date"]).toordinal(),
+            cast("int | None", item["finishers"]) or 0,
+        ),
+        reverse=True,
+    )
+    return {"saturday_date": saturday_date, "items": items, "total": len(items)}
+
+
+def _compute_day_results(db: Session, day: date) -> dict[str, object]:
+    """Режим «За день»: строка на каждую идентичность, стартовавшую в этот день.
+
+    Строка — та же, что у «последнего старта» (тот же сборщик), только событие
+    выбрано не «последнее у локации», а «в этот день». Поэтому parkrun-эпоха
+    тоже видна: её событие попадает в строку сегодняшней идентичности.
+    """
+    scope = _last_results_scope(db)
+    if scope is None:
+        return {"date": day, "items": [], "total": 0}
+
+    chosen_rows = _chosen_events_query(db, scope.kept_events).filter(Event.event_date == day).all()
+    chosen = _group_chosen_events(chosen_rows, scope.location_id_to_identity)
+    # Дата у всех строк одна — «последняя суббота» строке дня не нужна,
+    # is_last_saturday остаётся False.
+    items = _build_last_results_rows(db, scope, chosen, saturday_date=None)
+
+    # По явке, внутри равной явки — по имени (стабильная двухпроходная
+    # сортировка, как у «последнего старта»).
+    items.sort(key=lambda item: str(item["name"]).lower())
+    items.sort(key=lambda item: cast("int | None", item["finishers"]) or 0, reverse=True)
+    return {"date": day, "items": items, "total": len(items)}
+
+
+def _compute_last_results_days(db: Session) -> dict[str, object]:
+    """Дни со стартами и число локаций в каждом — для выбора дня.
+
+    Число локаций дня обязано совпасть с числом строк _compute_day_results:
+    то же условие «событие в счёт» и та же склейка в идентичности (две
+    системы одной локации в один день — одна строка). Склейку делаем в SQL
+    через VALUES-маппинг location_id → identity_key: в Python приезжает по
+    строке на день, а не по строке на каждое событие истории.
+    """
+    scope = _last_results_scope(db)
+    if scope is None:
+        return {"days": [], "latest_saturday": None}
+
+    # В маппинг попадают только идентичности, у которых есть строка
+    # (_collect_catalog_identities кладёт туда лишь ключи identity_locations),
+    # фильтр здесь — страховка на случай, если это правило там поменяют.
+    identity_pairs = [
+        (location_id, identity_key)
+        for location_id, identity_key in scope.location_id_to_identity.items()
+        if identity_key in scope.identity_locations
+    ]
+    if not identity_pairs:
+        return {"days": [], "latest_saturday": None}
+    identity_source = values(
+        column("location_id", PG_UUID(as_uuid=True)),
+        column("identity_key", String),
+        name="last_results_identity_map",
+    ).data(identity_pairs)
+    day_rows = (
+        db.query(Event.event_date, func.count(func.distinct(identity_source.c.identity_key)))
+        .join(identity_source, Event.location_id == identity_source.c.location_id)
+        .filter(scope.kept_events)
+        .group_by(Event.event_date)
+        .order_by(Event.event_date)
+        .all()
+    )
+    days = [{"date": event_date, "locations": int(count)} for event_date, count in day_rows if count]
+
+    # По умолчанию режим открывается на последней субботе, а не на последнем
+    # дне: воскресным вечером последний день — один «Кулибин» RunPark.
+    saturdays = [cast(date, day["date"]) for day in days if cast(date, day["date"]).weekday() == 5]
+    latest_saturday: date | None
+    if saturdays:
+        latest_saturday = max(saturdays)
+    elif days:
+        latest_saturday = cast(date, days[-1]["date"])
+    else:
+        latest_saturday = None
+    return {"days": days, "latest_saturday": latest_saturday}
+
+
+def _build_last_results_rows(
+    db: Session,
+    scope: _LastResultsScope,
+    chosen: dict[str, list[tuple[Any, str]]],
+    *,
+    saturday_date: date | None,
+) -> list[dict[str, object]]:
+    """Строки витрины по выбранным событиям: {identity_key: [(событие, система), …]}.
+
+    Общий сборщик обоих режимов: цифры протокола, волонтёры, сводки, погода и
+    гости считаются одинаково, а какие события выбраны и как строки
+    отсортированы — решает вызывающий. Порядок строк на выходе не определён.
+    """
+    catalog_index = scope.catalog_index
     chosen_event_ids = [event.id for pairs in chosen.values() for event, _code in pairs]
     # Локации выбранных событий — включая parkrun-эпоху, которой нет среди
     # витринных members идентичности (из них берётся слаг для ссылки на
@@ -3951,7 +4186,7 @@ def _compute_last_results(db: Session) -> dict[str, object]:
         return format_finish_time_display(value) if value is not None else None
 
     items: list[dict[str, object]] = []
-    for identity_key, members in identity_locations.items():
+    for identity_key, members in scope.identity_locations.items():
         events_for_key = chosen.get(identity_key)
         if not events_for_key:
             continue  # локация без единого старта — показывать нечего
@@ -4052,18 +4287,7 @@ def _compute_last_results(db: Session) -> dict[str, object]:
                 ),
             }
         )
-
-    # Свежие сверху, внутри даты — по явке (имя — стабильный алфавитный
-    # тай-брейк); хвост «давно не стартовали» уезжает вниз.
-    items.sort(key=lambda item: str(item["name"]).lower())
-    items.sort(
-        key=lambda item: (
-            cast(date, item["event_date"]).toordinal(),
-            cast("int | None", item["finishers"]) or 0,
-        ),
-        reverse=True,
-    )
-    return {"saturday_date": saturday_date, "items": items, "total": len(items)}
+    return items
 
 
 def build_location_age_group_standings(db: Session, user_id: UUID, event_ids: list[UUID]) -> list[dict[str, object]]:

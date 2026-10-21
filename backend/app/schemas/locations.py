@@ -629,6 +629,30 @@ class LastResultsResponse(BaseModel):
     total: int = 0
 
 
+class LastResultsDayRefResponse(BaseModel):
+    """День со стартами для выбора дня на «Результатах стартов»."""
+
+    date: date
+    # Сколько локаций стартовало в этот день — ровно столько строк будет в
+    # таблице дня (две системы одной локации — одна строка).
+    locations: int = 0
+
+
+class LastResultsDaysResponse(BaseModel):
+    days: list[LastResultsDayRefResponse] = Field(default_factory=list)
+    # День, на котором открывается режим «За день»: последняя суббота, а не
+    # последний день — воскресным вечером тот был бы одним «Кулибиным».
+    latest_saturday: date | None = None
+
+
+class LastResultsDayResponse(BaseModel):
+    """Режим «За день»: все локации, стартовавшие в выбранный день."""
+
+    date: date
+    items: list[LastResultsItemResponse] = Field(default_factory=list)
+    total: int = 0
+
+
 class CatalogLocationTableRowResponse(BaseModel):
     row_key: str
     catalog_identity_key: str

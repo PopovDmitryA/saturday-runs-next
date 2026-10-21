@@ -11707,10 +11707,168 @@ a.admin-system-chip:hover {
   min-width: 117rem;
 }
 
-/* «Результаты последней субботы» — та же таблица плюс колонка номера старта
+/* «Результаты стартов» — та же таблица плюс колонка номера старта
    (col-compact, 4.5rem). */
 .last-results-table {
   min-width: 108.5rem;
+}
+
+/* «Результаты стартов»: смена вида не должна выглядеть как новая страница
+   (правка Дмитрия 21.10.2026). Всё, что зависит от вида, стоит в одном месте
+   панели фильтров постоянной ширины: «неактивные» в «Последнем старте» и
+   выбор дня в «За день». Ряд фильтров поэтому переносится одинаково в обоих
+   видах, и таблица под ним не сдвигается. Ширина — по выбору дня: стрелка,
+   «сб 29.08.2026 (248)», стрелка. */
+.fp-group.results-mode-slot {
+  flex: 0 0 18.5rem;
+}
+
+/* Обёртка переключателя вида только ловит наведение (предзагрузка дня),
+   в раскладке ряда её нет. */
+.results-mode-intent {
+  display: contents;
+}
+
+.fp-group > .results-day-nav {
+  min-height: 2.25rem;
+}
+
+.results-day-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+}
+
+/* Список растягивается на всё место между стрелками: от длины подписи
+   («(248)» против «(1)») стрелки не ездят. */
+.results-day-nav .fp-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Отступы у́же, чем у обычного списка: на телефоне между стрелками остаётся
+   ~180px, и «сб 29.08.2026 (248)» с прежними отступами обрезался. */
+.results-day-nav .fp-select-button {
+  width: 100%;
+  justify-content: space-between;
+  padding-inline: 0.7rem;
+}
+
+.results-day-arrow {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  color: var(--text, inherit);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+a.results-day-arrow:hover {
+  background: var(--tint-indigo-bg, rgba(79, 70, 229, 0.12));
+}
+
+/* На краях истории стрелка гаснет, но место держит. */
+.results-day-arrow-off {
+  opacity: 0.35;
+  cursor: default;
+}
+
+@media (max-width: 640px) {
+  .fp-group.results-mode-slot {
+    flex-basis: 100%;
+  }
+
+  .results-day-nav .fp-select-button .results-day-count {
+    display: none;
+  }
+}
+
+/* Самые узкие экраны (320–360 px): в кнопке дня остаётся только дата, а в
+   строке над таблицей — «старты 29.08 →». */
+@media (max-width: 400px) {
+  .results-count-wide {
+    display: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .results-day-nav .fp-select-button .results-day-weekday {
+    display: none;
+  }
+}
+
+/* Ошибка загрузки — внутри области таблицы, с кнопкой повтора. */
+.results-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.results-error p {
+  margin: 0;
+}
+
+.results-retry {
+  appearance: none;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+  border-radius: 999px;
+  background: var(--surface, transparent);
+  color: var(--text, inherit);
+  padding: 0.35rem 0.9rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Пока едут строки нового вида или дня, прежние остаются на месте
+   приглушёнными, а новые проявляются, а не выскакивают. */
+.results-table-area {
+  transition: opacity 0.15s ease;
+}
+
+/* Строка над таблицей — всегда одна строка: перенос на телефоне сдвигал бы
+   таблицу при смене вида. Не влезло — хвост уходит в многоточие. */
+.results-table-area > .loc-index-count {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.results-table-area.is-stale {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.results-rows {
+  animation: results-rows-in 0.2s ease-out;
+}
+
+@keyframes results-rows-in {
+  from {
+    opacity: 0.3;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .results-table-area {
+    transition: none;
+  }
+
+  .results-rows {
+    animation: none;
+  }
 }
 
 /* Липнет не только номер, но и название: при горизонтальном скролле по одному
@@ -11794,7 +11952,7 @@ a.admin-system-chip:hover {
   }
 }
 
-/* Карточка каталога (и «Результатов последней субботы») — сетка .card с одной
+/* Карточка каталога (и «Результатов стартов») — сетка .card с одной
    неявной колонкой шириной auto: колонку растягивал самый широкий ребёнок,
    таблица «Серии стартов» (≈600px). На телефоне страница раскладывалась шире
    экрана: браузер её уменьшал, нижняя панель уезжала за край, фильтры

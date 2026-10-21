@@ -42,3 +42,21 @@ export function ourProtocolHref(item: ProtocolTarget): string | null {
   }
   return locationProtocolHref(slug, item.platform_code, item.event_date);
 }
+
+/**
+ * Единый протокол недели, в которую попал день: адрес подписан субботой
+ * (пн — начало недели, как date_trunc('week') у бэкенда). Воскресенье и
+ * праздник в будни уходят в протокол своей недели, а не следующей.
+ */
+export function unifiedProtocolWeekHref(day: string): string {
+  const date = new Date(`${day}T00:00:00`);
+  const saturday = new Date(date);
+  saturday.setDate(date.getDate() - ((date.getDay() + 6) % 7) + 5);
+  // Дата — в местном времени, как её и считали. toISOString() переводил
+  // полночь субботы в UTC, и в Москве (UTC+3) адрес становился пятничным:
+  // в индекс Яндекса ушли дубли /protocol/{пятница} (выгрузка 03.10.2026).
+  const yyyy = saturday.getFullYear();
+  const mm = String(saturday.getMonth() + 1).padStart(2, "0");
+  const dd = String(saturday.getDate()).padStart(2, "0");
+  return `/protocol/${yyyy}-${mm}-${dd}`;
+}

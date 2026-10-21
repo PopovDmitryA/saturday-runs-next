@@ -38,6 +38,7 @@ import { useTableColumns } from "../../components/tableUx/useTableColumns";
 import type { AdaptiveColumn } from "../../components/tableUx/useAdaptiveColumns";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
+import { unifiedProtocolWeekHref } from "../../lib/protocolHref";
 import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
 import { locationProtocolSubject } from "../sharing/subjects";
 
@@ -55,21 +56,6 @@ export type LocationProtocolParams = {
 
 function protocolHref(slug: string, platformCode: string, eventDate: string): string {
   return `/locations/${encodeURIComponent(slug)}/protocol/${encodeURIComponent(platformCode)}/${eventDate}`;
-}
-
-/** Единый протокол той же недели: адрес подписан субботой (пн — начало недели). */
-function unifiedWeekHref(eventDate: string): string {
-  const day = new Date(`${eventDate}T00:00:00`);
-  const monday = new Date(day);
-  monday.setDate(day.getDate() - ((day.getDay() + 6) % 7));
-  monday.setDate(monday.getDate() + 5);
-  // Дата — в местном времени, как её и считали. toISOString() переводил
-  // полночь субботы в UTC, и в Москве (UTC+3) адрес становился пятничным:
-  // в индекс Яндекса ушли дубли /protocol/{пятница} (выгрузка 03.10.2026).
-  const yyyy = monday.getFullYear();
-  const mm = String(monday.getMonth() + 1).padStart(2, "0");
-  const dd = String(monday.getDate()).padStart(2, "0");
-  return `/protocol/${yyyy}-${mm}-${dd}`;
 }
 
 /** «00:21:07» → секунды; null, если времени нет. */
@@ -597,7 +583,7 @@ function LocationProtocolContent({ slug, platformCode, eventDate }: LocationProt
           )}
           <a href={`/locations/${data.slug}/events`}>журнал</a>
           {/* Тот же старт в масштабе страны: где эти времена в общем протоколе недели. */}
-          <a href={unifiedWeekHref(data.event_date)}>единый протокол недели</a>
+          <a href={unifiedProtocolWeekHref(data.event_date)}>единый протокол недели</a>
           {data.next ? (
             <a href={protocolHref(data.slug, data.next.platform_code, data.next.event_date)}>
               {formatDate(data.next.event_date)}

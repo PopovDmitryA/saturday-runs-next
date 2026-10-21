@@ -34,8 +34,10 @@ from app.models import Location, LocationCatalog, LocationCatalogLink
 from app.services.location_catalog_service import normalize_location_slug
 from app.services.location_page_service import (
     LAST_RESULTS_CACHE_KEY,
+    LAST_RESULTS_DAYS_CACHE_KEY,
     LOCATIONS_INDEX_CACHE_KEY,
     _write_json_cache,
+    last_results_day_cache_key,
     location_events_cache_key,
     location_leaders_cache_key,
     location_page_cache_key,
@@ -253,6 +255,7 @@ def mark_location_results_changed(
     *,
     reason: str,
     protocols: Iterable[tuple[str, date]] = (),
+    days: Iterable[date] = (),
 ) -> None:
     """Пометить витрины площадки устаревшими: у неё появились новые результаты.
 
@@ -262,6 +265,9 @@ def mark_location_results_changed(
     `protocols` — пары «система, дата старта» тех протоколов, которые менялись:
     у страницы протокола свой ключ кэша, и без этого исправленный протокол
     доезжал бы до читателя только к следующему протуханию.
+
+    `days` — даты стартов, у которых поменялось что-то кроме протокола (погода
+    дописывается отдельной задачей): их снимок в «Результатах стартов» за день.
     """
     ids = [location_id for location_id in location_ids if location_id is not None]
     if not ids:
@@ -277,6 +283,9 @@ def mark_location_results_changed(
     showcase: set[str] = db.info.setdefault(_PENDING_SHOWCASE_KEYS, set())
     showcase.add(LOCATIONS_INDEX_CACHE_KEY)
     showcase.add(LAST_RESULTS_CACHE_KEY)
+    # Список дней режима «За день» (там число стартовавших локаций) — та же
+    # витрина, тот же пересчёт по всей стране.
+    showcase.add(LAST_RESULTS_DAYS_CACHE_KEY)
 
     # Сами ключи кабинета разворачиваем уже после коммита: между пометкой и
     # коммитом кто-то мог открыть кабинет и записать новый снимок — он тоже
@@ -317,7 +326,12 @@ def mark_location_results_changed(
         # заодно — в нём цифры этой же недели.
         for _platform_code, event_date in protocol_pairs:
             showcase.add(unified_protocol_cache_key(saturday_of(event_date)))
+            # «Результаты стартов» за день: ключ — сам день старта, а не
+            # суббота недели (воскресный RunPark — отдельный день).
+            showcase.add(last_results_day_cache_key(event_date))
         showcase.add(unified_protocol_weeks_cache_key())
+    for day in days:
+        showcase.add(last_results_day_cache_key(day))
 
 
 @sa_event.listens_for(Session, "after_commit")

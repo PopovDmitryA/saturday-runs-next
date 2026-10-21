@@ -3666,6 +3666,36 @@ export function getLastResults() {
   return apiFetch<LastResultsResponse>("/locations/last-results");
 }
 
+/** День со стартами для вида «За день»: сколько локаций в тот день стартовало. */
+export type LastResultsDay = {
+  date: string;
+  locations: number;
+};
+
+export type LastResultsDays = {
+  /** По возрастанию даты, только дни хотя бы с одним стартом. */
+  days: LastResultsDay[];
+  /** Последняя суббота среди дней (нет суббот — последний день); null — данных нет. */
+  latest_saturday: string | null;
+};
+
+/** Все старты одного календарного дня — те же строки, что у «Последнего старта». */
+export type LastResultsDayResponse = {
+  date: string;
+  items: LastResultsItem[];
+  total: number;
+};
+
+export function getLastResultsDays() {
+  // Холодный список проходит всю историю стартов с 2014 года — как и недели
+  // единого протокола, штатного таймаута ему может не хватить.
+  return apiFetch<LastResultsDays>("/locations/last-results/days", undefined, { timeoutMs: 60_000 });
+}
+
+export function getLastResultsDay(day: string) {
+  return apiFetch<LastResultsDayResponse>(`/locations/last-results/day/${encodeURIComponent(day)}`);
+}
+
 export type AutoSyncPlatformPreference = {
   platform_code: string;
   enabled: boolean;

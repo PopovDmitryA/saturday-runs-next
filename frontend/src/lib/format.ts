@@ -34,6 +34,16 @@ export function formatDateLong(value: string): string {
   return `${date.getDate()} ${MONTHS_GENITIVE[date.getMonth()]} ${date.getFullYear()}`;
 }
 
+// Дни недели — своим списком, как и месяцы выше: короткая форма Intl зависит
+// от движка («сб» против «сб.»), а в подписях списка дней она стоит рядом.
+const WEEKDAYS_SHORT = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"] as const;
+
+/** «2026-10-17» → «сб»; не дата — пустая строка. */
+export function formatWeekdayShort(value: string): string {
+  const date = parseIsoDate(value);
+  return date ? WEEKDAYS_SHORT[date.getDay()] : "";
+}
+
 /** ISO YYYY-MM-DD without UTC timezone shift (for chart axis labels). */
 export function parseIsoDate(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);

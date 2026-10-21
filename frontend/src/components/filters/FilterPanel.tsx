@@ -53,14 +53,16 @@ export function FilterGroup({
   children,
   /** Прижать группу к правому краю ряда (обычно так стоит поиск). */
   trailing = false,
+  className = "",
 }: {
   label?: ReactNode;
   hint?: ReactNode;
   children: ReactNode;
   trailing?: boolean;
+  className?: string;
 }) {
   return (
-    <div className={`fp-group${trailing ? " fp-group-trailing" : ""}`}>
+    <div className={`fp-group${trailing ? " fp-group-trailing" : ""}${className ? ` ${className}` : ""}`}>
       {label && (
         <span className="fp-label">
           {label}

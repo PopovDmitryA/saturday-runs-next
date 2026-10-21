@@ -15,6 +15,8 @@ from app.models import User
 from app.schemas.dashboard import HomeDistanceDetailResponse
 from app.schemas.locations import (
     CatalogLocationsTableResponse,
+    LastResultsDayResponse,
+    LastResultsDaysResponse,
     LastResultsResponse,
     LocationAttendanceResponse,
     LocationEventsResponse,
@@ -37,7 +39,9 @@ from app.services.location_map_service import list_catalog_map_locations, list_u
 from app.services.location_page_service import (
     LOCATION_ATTENDANCE_MAX_LIMIT,
     LOCATION_ATTENDANCE_PAGE_LIMIT,
+    build_day_results,
     build_last_results,
+    build_last_results_days,
     build_location_attendance,
     build_location_events,
     build_location_leaders,
@@ -79,6 +83,29 @@ def locations_last_results(
     """«Результаты последней субботы»: последний старт каждой локации по всем системам."""
     payload = build_last_results(db)
     return LastResultsResponse.model_validate(payload)
+
+
+@router.get("/last-results/days", response_model=LastResultsDaysResponse)
+def locations_last_results_days(
+    db: Annotated[Session, Depends(get_db)],
+) -> LastResultsDaysResponse:
+    """Дни со стартами и число стартовавших локаций — для выбора дня в режиме «За день»."""
+    payload = build_last_results_days(db)
+    return LastResultsDaysResponse.model_validate(payload)
+
+
+@router.get("/last-results/day/{day}", response_model=LastResultsDayResponse)
+def locations_last_results_day(
+    day: date,
+    db: Annotated[Session, Depends(get_db)],
+) -> LastResultsDayResponse:
+    """«Результаты стартов» за один день: все локации, стартовавшие в этот день.
+
+    День без стартов — пустой список, а не 404: в адрес /results?date=… можно
+    вписать любую дату, и странице проще показать «стартов не было».
+    """
+    payload = build_day_results(db, day)
+    return LastResultsDayResponse.model_validate(payload)
 
 
 @router.get("/page/{slug}/weather", response_model=LocationWeatherResponse)

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any, cast
 
 from app.db.session import get_session_factory
 from app.services.location_page_service import (
+    build_day_results,
     build_last_results,
+    build_last_results_days,
     build_location_events,
     build_location_leaders,
     build_location_page,
@@ -54,6 +56,7 @@ def _warm_locations_cache() -> dict[str, object]:
     warmed = 0
     failed = 0
     weeks_warmed = 0
+    days_warmed = 0
     try:
         # refresh=True — считаем заново и перезаписываем; иначе прогрев прочитал
         # бы ещё живой кэш и ничего не обновил. Раньше здесь стоял
@@ -76,10 +79,29 @@ def _warm_locations_cache() -> dict[str, object]:
                 logger.exception("locations warm failed for slug %s", slug)
                 db.rollback()
                 failed += 1
-        # «Последние пробежки» — ПОСЛЕ страниц локаций: витрина берёт число
+        # «Результаты стартов» — ПОСЛЕ страниц локаций: витрина берёт число
         # гостей из кэша каждой площадки, а его только что наполнил цикл выше.
         # До перестановки страница отставала на один прогрев.
         build_last_results(db, refresh=True)
+        # Режим «За день» той же страницы — тоже после страниц локаций (те же
+        # гости из кэша площадок). Греем список дней и неделю последней
+        # субботы: саму субботу (на ней режим открывается), воскресный RunPark
+        # и будничные праздники. Старые дни открывают редко — их оплатит
+        # посетитель.
+        try:
+            days_payload = build_last_results_days(db, refresh=True)
+            latest_saturday = days_payload.get("latest_saturday")
+            if latest_saturday is not None:
+                anchor = date.fromisoformat(str(latest_saturday))
+                for day_ref in cast(list[dict[str, Any]], days_payload.get("days") or []):
+                    day = date.fromisoformat(str(day_ref["date"]))
+                    if day > anchor - timedelta(days=7):
+                        build_day_results(db, day, refresh=True)
+                        days_warmed += 1
+        except Exception:
+            logger.exception("last results days warm failed")
+            db.rollback()
+            failed += 1
         # Единый протокол: свежая неделя и предыдущая. Холодный расчёт недели
         # — это 12–16 тыс. строк со всей страны, и без прогрева его оплатил бы
         # первый же посетитель субботним вечером. Список недель тоже трогаем:
@@ -97,6 +119,11 @@ def _warm_locations_cache() -> dict[str, object]:
             failed += 1
     finally:
         db.close()
-    result: dict[str, object] = {"warmed": warmed, "failed": failed, "weeks": weeks_warmed}
+    result: dict[str, object] = {
+        "warmed": warmed,
+        "failed": failed,
+        "weeks": weeks_warmed,
+        "days": days_warmed,
+    }
     logger.info("locations cache warmed: %s", result)
     return result

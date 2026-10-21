@@ -16,7 +16,7 @@ export const PAGE_TYPE_LABELS: Record<string, string> = {
   history: "Моя история",
   profile: "Публичные профили",
   locations_index: "Локации (список)",
-  last_results: "Результаты последней субботы",
+  last_results: "Результаты стартов",
   unified_protocol: "Единый протокол недели",
   location: "Локация (карточка)",
   location_events: "Локация (забеги)",

@@ -313,6 +313,13 @@
   color: var(--tint-rose-text);
 }
 
+/* Погашенная таблетка (parkrun в дне без его стартов): место держит, но не
+   нажимается. */
+.fp-tabs .fp-tab:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .fp-gender .fp-tab:disabled {
   opacity: 0.45;
   cursor: default;

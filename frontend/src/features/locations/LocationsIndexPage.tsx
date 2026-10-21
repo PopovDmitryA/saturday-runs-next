@@ -559,7 +559,7 @@ function LocationsIndexContent() {
         </div>
         <p className="muted loc-header-place">
           Все локации субботних стартов: цифры, рекорды и история каждой.{" "}
-          <a href="/results">Результаты последней субботы →</a>
+          <a href="/results">Результаты стартов →</a>
         </p>
       </header>
 
