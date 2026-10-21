@@ -138,7 +138,11 @@ services:
       - "${EDGE_BIND:-0.0.0.0}:80:80"
       - "${EDGE_BIND:-0.0.0.0}:443:443"
     volumes:
-      - ./deploy/nginx/home/edge.conf:/etc/nginx/conf.d/default.conf:ro
+      # Каталог, а не файл: git при выкате пишет edge.conf новым файлом, и
+      # смонтированный по отдельности он оставался бы в контейнере старым —
+      # nginx -s reload в deploy_home.sh перечитывал бы прежний конфиг.
+      # nginx подключает conf.d/*.conf, то есть edge.conf; grafana-farewell — каталог.
+      - ./deploy/nginx/home:/etc/nginx/conf.d:ro
       - ./deploy/nginx:/maintenance:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - certbot_webroot:/var/www/certbot

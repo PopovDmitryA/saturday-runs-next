@@ -58,6 +58,14 @@ mlog=$(mktemp)
   { tail -20 "$mlog" >&2; rm -f "$mlog"; die "миграция упала — стек не трогал, код на диске уже $sha"; }
 tail -2 "$mlog"; rm -f "$mlog"
 
+# Пока контейнеры пересоздаются, край на секунду теряет nginx и отдаёт 502.
+# Вместо «Что-то сломалось» — «Обновляемся» (deploy/nginx/home/edge.conf,
+# try_files). Файл убирается при любом выходе: и при успехе, и при падении, и
+# при обрыве — иначе настоящая авария потом пряталась бы за «Обновляемся».
+MAINT_CURRENT="$HOME_DIR/deploy/nginx/maintenance_current.html"
+cp "$HOME_DIR/deploy/nginx/maintenance_deploy.html" "$MAINT_CURRENT"
+trap 'rm -f "$MAINT_CURRENT"' EXIT HUP INT TERM
+
 say "пересобираю и поднимаю"
 "${COMPOSE[@]}" up -d --build || die "стек не поднялся"
 # nginx и край — на готовом образе с конфигами-файлами: compose их не
