@@ -394,7 +394,8 @@ def sync_latest_results(
                 )
                 # Коммит строго до паузы: 30-40 секунд сна с открытой
                 # транзакцией — это 30-40 секунд «idle in transaction», а на
-                # проде такие сессии рвёт таймаут в 15 минут.
+                # проде такие сессии рвёт таймаут в 60 с (app/db/session.py;
+                # см. iteration_commit.release_before_fetch).
                 commit_step(db)
                 if index + 1 < len(protocol_queue):
                     wait_between_protocols(reason="latest")

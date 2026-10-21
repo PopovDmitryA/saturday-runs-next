@@ -179,6 +179,35 @@ def test_card_and_comment_notify_admin_channel(
     assert any("Комментарий к «Идея с уведомлением»" in text for text in sent)
 
 
+def test_admin_notify_goes_without_open_transaction(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """notify_admin — сеть (Telegram/ВК): транзакция к этому моменту отпущена,
+    иначе Postgres рвёт соединение через 60 с простоя. expire_on_commit — как
+    на проде; ответы API при этом прежние."""
+    from app.services import backlog_service
+
+    calls: list[tuple[str, bool]] = []
+    monkeypatch.setattr(
+        backlog_service, "notify_admin", lambda text: calls.append((text, db_session.in_transaction()))
+    )
+    author = _make_user(db_session, name="Автор идеи")
+    fan = _make_user(db_session, name="Фанат")
+    db_session.expire_on_commit = True
+
+    card = _make_card(db_session, author.id, title="Идея без транзакции")
+    voted = vote_card(db_session, card.id, user_id=fan.id, value=1)
+    comment = create_comment(db_session, card.id, author_id=fan.id, body="Поддерживаю", is_anonymous=False)
+
+    assert [in_tx for _, in_tx in calls] == [False, False, False]
+    assert "«Идея без транзакции» от Автор идеи" in calls[0][0]
+    assert "счёт теперь 1 (1/0)" in calls[1][0]
+    assert "от Фанат: Поддерживаю" in calls[2][0]
+    assert card.title == "Идея без транзакции" and card.author_display_name == "Автор идеи"
+    assert voted.score == 1 and voted.my_vote == 1
+    assert comment.body == "Поддерживаю" and comment.author_display_name == "Фанат"
+
+
 def test_admin_sees_real_author_even_when_anonymous(db_session: Session) -> None:
     author = _make_user(db_session, name="Скрытый автор")
     _make_card(db_session, author.id, title="Анонимная карточка", is_anonymous=True)

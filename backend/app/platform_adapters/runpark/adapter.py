@@ -160,26 +160,31 @@ def lookup_profile_preview_from_db(db: Session, barcode_id: str) -> ProfilePrevi
     from app.platform_adapters.canonical import CanonicalRunResult, CanonicalVolunteerResult
     from app.profile_preview import build_recent_preview_activities
 
+    # Тестовые старты RunPark (6 стартов, «#-1» и т. п.) не считаются, как в
+    # превью других систем (participant_profile_service) — разбор 21.10.2026.
+    counted = Event.is_test_event.is_(False)
     total_runs = (
         db.query(RunResult)
-        .filter(RunResult.participant_id == participant.id)
+        .join(Event, RunResult.event_id == Event.id)
+        .filter(RunResult.participant_id == participant.id, counted)
         .count()
     )
     total_volunteering = (
         db.query(VolunteerResult)
-        .filter(VolunteerResult.participant_id == participant.id)
+        .join(Event, VolunteerResult.event_id == Event.id)
+        .filter(VolunteerResult.participant_id == participant.id, counted)
         .count()
     )
     last_run_date = (
         db.query(sa_func.max(Event.event_date))
         .join(RunResult, RunResult.event_id == Event.id)
-        .filter(RunResult.participant_id == participant.id)
+        .filter(RunResult.participant_id == participant.id, counted)
         .scalar()
     )
     last_vol_date = (
         db.query(sa_func.max(Event.event_date))
         .join(VolunteerResult, VolunteerResult.event_id == Event.id)
-        .filter(VolunteerResult.participant_id == participant.id)
+        .filter(VolunteerResult.participant_id == participant.id, counted)
         .scalar()
     )
     dates = [d for d in [last_run_date, last_vol_date] if d is not None]
@@ -189,7 +194,7 @@ def lookup_profile_preview_from_db(db: Session, barcode_id: str) -> ProfilePrevi
         db.query(RunResult, Event, Location)
         .join(Event, RunResult.event_id == Event.id)
         .join(Location, Event.location_id == Location.id)
-        .filter(RunResult.participant_id == participant.id)
+        .filter(RunResult.participant_id == participant.id, counted)
         .order_by(Event.event_date.desc())
         .limit(5)
         .all()
@@ -198,7 +203,7 @@ def lookup_profile_preview_from_db(db: Session, barcode_id: str) -> ProfilePrevi
         db.query(VolunteerResult, Event, Location)
         .join(Event, VolunteerResult.event_id == Event.id)
         .join(Location, Event.location_id == Location.id)
-        .filter(VolunteerResult.participant_id == participant.id)
+        .filter(VolunteerResult.participant_id == participant.id, counted)
         .order_by(Event.event_date.desc())
         .limit(5)
         .all()

@@ -13,6 +13,7 @@ from app.platform_adapters.five_verst.http import fetch_html
 from app.platform_adapters.s95.url import S95_DOMAINS
 from app.sync import upsert
 from app.sync.five_verst_protocol import fetch_and_upsert_event_protocol
+from app.sync.five_verst_reconcile import summary_to_canonical
 from app.sync.s95_protocol_api import fetch_and_upsert_activity_protocol_api
 from app.sync.s95_protocol_lookup import ACTIVITY_URL_RE, _summary_to_canonical
 
@@ -38,13 +39,19 @@ def _ensure_five_verst_summary(
     html: str,
 ) -> EventSummary:
     external_event_key = f"{slug}:{event_date.isoformat()}"
+    # Настоящие сводки 5 вёрст хранятся с номером старта в ключе
+    # («slug:N:дата»), поэтому ищем по локации и дате — как admin_resync.
+    # Поиск по ключу без номера их не находил, и заглушка без признака теста
+    # создавалась даже рядом с настоящей сводкой.
     summary_row = (
         db.query(EventSummary)
         .filter(
             EventSummary.platform_id == platform.id,
-            EventSummary.external_event_key == external_event_key,
+            EventSummary.location_id == location.id,
+            EventSummary.event_date == event_date,
         )
-        .one_or_none()
+        .order_by(EventSummary.event_number.desc().nullslast())
+        .first()
     )
     if summary_row is not None:
         return summary_row
@@ -60,6 +67,7 @@ def _ensure_five_verst_summary(
         finishers_count=None,
         source_url=source_url,
         summary_hash=hashlib.sha256(source_url.encode()).hexdigest()[:32],
+        is_test_event=upsert.known_test_event(db, location.id, event_date),
     )
     row, _ = upsert.upsert_event_summary(db, platform, location, summary)
     db.flush()
@@ -102,16 +110,11 @@ def _sync_five_verst_protocol_url(db: Session, url: str) -> dict[str, object]:
         source_url=source_url,
         html=html,
     )
-    summary = CanonicalEventSummary(
-        external_event_key=summary_row.external_event_key,
-        event_date=summary_row.event_date,
-        event_number=summary_row.event_number,
-        location_external_key=location.external_key,
-        location_name=location.name,
-        finishers_count=summary_row.finishers_count,
-        source_url=summary_row.source_url or source_url,
-        summary_hash=summary_row.summary_hash,
-    )
+    # Общая сборка сводки, как у сверки: с признаком теста. Ручная сборка его
+    # не передавала, и перечитка протокола теста по ссылке превращала его в
+    # обычный старт — во всей статистике и в уведомлениях (разбор 21.10.2026).
+    summary = summary_to_canonical(summary_row, location)
+    summary.source_url = summary_row.source_url or source_url
     result = fetch_and_upsert_event_protocol(db, platform, location, summary, summary_row)
     db.commit()
     return {

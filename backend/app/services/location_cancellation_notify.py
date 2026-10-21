@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from app.config import get_settings
 from app.services.admin_notify import notify_admin
 from app.services.platform_titles import platform_title
+from app.sync.iteration_commit import release_before_fetch
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -81,6 +82,17 @@ def notify_cancellation_changes(changes: list[CancellationChange], db: Session |
         except Exception:
             # Рассылка не имеет права ронять синк и админский канал.
             logger.exception("Не удалось разослать уведомления об отмене старта")
+        # notify_admin — сеть (Telegram, легла прокси — ВК), а Postgres рвёт
+        # соединение, простоявшее в транзакции дольше 60 с. Реестры 5 вёрст и
+        # S95 и наблюдатель S95 свои правки коммитят до вызова, дальше только
+        # чтение — отпускаем транзакцию (iteration_commit.release_before_fetch).
+        # Коммит, а не откат: правки нового вызывающего не пропадут молча.
+        try:
+            release_before_fetch(db)
+        except Exception:
+            # Как и рассылка, закрытие транзакции не имеет права ронять синк.
+            db.rollback()
+            logger.exception("Не удалось закрыть транзакцию перед уведомлением об отмене старта")
     try:
         return notify_admin(text)
     except Exception:

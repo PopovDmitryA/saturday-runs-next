@@ -219,8 +219,9 @@ def fetch_and_upsert_event_protocol(
     # моменту уже сделали свои SELECT'ы, то есть транзакция открыта, а фетч
     # страницы 5verst.ru — это до пяти попыток по 30 секунд плюс ожидание
     # общего лока загрузок; всё это время соединение висит «idle in
-    # transaction». На проде стоит idle_in_transaction_session_timeout=15min,
-    # и он регулярно рвал прогоны latest и reconcile на середине очереди.
+    # transaction». На проде стоит idle_in_transaction_session_timeout=60s
+    # (app/db/session.py), и он рвал прогоны latest и reconcile на середине
+    # очереди. Приём тот же, что iteration_commit.release_before_fetch.
     db.commit()
     run_results, volunteer_results, protocol_html = bulk_parser.fetch_event_protocol(
         slug,

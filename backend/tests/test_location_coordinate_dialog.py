@@ -36,6 +36,9 @@ def sent_messages(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
     monkeypatch.setattr(module, "notify_admin_dialog", _send)
     monkeypatch.setattr(module, "admin_dialog_chat_id", lambda: ADMIN_CHAT_ID)
+    # Регион по координатам — без живого Nominatim: тест не должен зависеть от
+    # сети (429 после серии прогонов роняла его вслепую, 21.10.2026).
+    monkeypatch.setattr(module, "lookup_region", lambda latitude, longitude: "Москва")
     return texts
 
 

@@ -751,3 +751,71 @@ def test_gender_from_profile_and_linked_person_counted_once(db_session: Any) -> 
     assert tops is not None
     assert len(tops["fastest_male"]) == 1
     assert len(tops["fastest_female"]) == 1
+
+
+def test_histogram_separates_anonymous_finishes_and_tops_count_genderless(db_session: Any) -> None:
+    """«Пол не указан» — люди, «неизвестные бегуны» — безымянные строки протокола.
+
+    Тимирязевский, репорт Егора 20.10.2026: «Пол не указан 51» складывалось из
+    39 безымянных финишей RunPark и 12 результатов пяти бегунов parkrun без
+    пола, а топы молча были на 5 человек меньше «уникальных участников».
+    """
+    from uuid import uuid4
+
+    from app.models import Event, Location, Participant, Platform, RunResult
+
+    suffix = uuid4().hex[:8]
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        platform = Platform(code="five_verst", name="5 вёрст")
+        db_session.add(platform)
+        db_session.flush()
+    location = Location(platform_id=platform.id, external_key=f"anon-hist-{suffix}", name=f"Аноним {suffix}", country="Россия")
+    db_session.add(location)
+    db_session.flush()
+    event = Event(
+        platform_id=platform.id,
+        location_id=location.id,
+        external_event_key=f"anon-hist-{suffix}:1",
+        event_date=date(2026, 8, 1),
+        event_number=1,
+        title="Старт",
+    )
+    db_session.add(event)
+    db_session.flush()
+
+    def person(external_user_id: str, name: str, gender: str | None) -> Participant:
+        row = Participant(platform_id=platform.id, external_user_id=external_user_id, display_name=name, gender=gender)
+        db_session.add(row)
+        db_session.flush()
+        return row
+
+    runner = person(f"{suffix}-m", "Иван МУЖСКОЙ", "male")
+    genderless = person(f"{suffix}-x", "Екатерина БЕЗПОЛА", None)
+    stub = person(f"unknown:anon-hist-{suffix}:2026-08-01:3", "НЕИЗВЕСТНЫЙ", None)
+    for place, (participant, category) in enumerate(((runner, "М30-34"), (genderless, None), (stub, None)), start=1):
+        db_session.add(
+            RunResult(
+                event_id=event.id,
+                participant_id=participant.id,
+                external_result_key=f"{suffix}-{place}",
+                position=place,
+                finish_time_sec=1500 + place * 60,
+                age_category=category,
+            )
+        )
+    db_session.flush()
+
+    payload = location_page_service.build_location_page(db_session, location.external_key, use_cache=False)
+    assert payload is not None
+    by_kind: dict[tuple[str | None, bool], int] = {}
+    for row in payload["histogram"]["rows"]:
+        key = (row["gender"], bool(row.get("anonymous")))
+        by_kind[key] = by_kind.get(key, 0) + row["count"]
+    assert by_kind == {("male", False): 1, (None, False): 1, (None, True): 1}
+    assert payload["stats"]["unique_participants"] == 2
+
+    tops = location_page_service._compute_location_tops(db_session, location.external_key)
+    assert tops is not None
+    assert len(tops["fastest_male"]) == 1 and len(tops["fastest_female"]) == 0
+    assert tops["runners_without_gender"] == 1

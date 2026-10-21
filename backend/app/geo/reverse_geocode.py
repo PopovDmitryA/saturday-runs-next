@@ -25,7 +25,7 @@ def normalize_region(region: str) -> str:
     return region
 
 
-def _fetch_address(latitude: float, longitude: float) -> dict[str, str]:
+def _fetch_address(latitude: float, longitude: float, *, zoom: int = 10) -> dict[str, str]:
     global _last_request_at
 
     elapsed = time.monotonic() - _last_request_at
@@ -38,7 +38,7 @@ def _fetch_address(latitude: float, longitude: float) -> dict[str, str]:
             "lon": longitude,
             "format": "jsonv2",
             "accept-language": "ru",
-            "zoom": 10,
+            "zoom": zoom,
         }
     )
     request = urllib.request.Request(
@@ -63,9 +63,22 @@ def lookup_region(latitude: float, longitude: float) -> str | None:
     return None
 
 
+_CITY_KEYS = ("city", "town", "village", "municipality", "suburb", "hamlet")
+# Уровень, на котором Nominatim отдаёт малые города («town» в OSM). На zoom 10
+# у Усть-Илимска приходит только «городской округ Усть-Илимск», и локация
+# осталась без города (репорт Егора 20.10.2026). Глобально zoom не поднимаем:
+# тот же запрос нужен lookup_region и подписям «белых пятен» бота.
+TOWN_ZOOM = 12
+
+
 def lookup_address(latitude: float, longitude: float) -> dict[str, str | None]:
     """Resolve country, region and city from coordinates via Nominatim (OSM)."""
     address = _fetch_address(latitude, longitude)
+    if not any(address.get(key) for key in _CITY_KEYS):
+        # Второй запрос — только когда города нет: это редкость, а лимит
+        # Nominatim — запрос в секунду.
+        closer = _fetch_address(latitude, longitude, zoom=TOWN_ZOOM)
+        address = {**address, **{key: closer[key] for key in _CITY_KEYS if closer.get(key)}}
 
     region = None
     for key in ("state", "region", "ISO3166-2-lvl4", "county"):
@@ -75,7 +88,7 @@ def lookup_address(latitude: float, longitude: float) -> dict[str, str | None]:
             break
 
     city = None
-    for key in ("city", "town", "village", "municipality", "suburb", "hamlet"):
+    for key in _CITY_KEYS:
         value = address.get(key)
         if value:
             city = value

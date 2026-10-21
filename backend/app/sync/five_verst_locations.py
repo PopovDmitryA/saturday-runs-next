@@ -131,9 +131,48 @@ def _enrich_location_geo(location: CanonicalLocation) -> CanonicalLocation:
     )
 
 
-def _backfill_geo_for_row(db: Session, row: Location) -> bool:
-    changed = apply_reverse_geocode_to_location(row)
+_GEO_FIELDS = ("region", "city", "country")
+
+
+def _backfill_geo_for_row(
+    db: Session,
+    row: Location,
+    result: LocationRegistrySyncResult,
+    pending_cancellations: list[CancellationChange],
+) -> bool:
+    """Дозаполнить регион, город и страну по координатам — геокодер вне транзакции.
+
+    Nominatim — сеть (до двух запросов по 15 с плюс пауза лимита), а прод рвёт
+    соединение, простоявшее минуту «idle in transaction» (iteration_commit).
+    Поэтому правки строки коммитим до него, а найденное дописываем короткой
+    транзакцией — коммит следом, в цикле реестра. Геокодер работает с
+    отвязанной копией: после коммита поля строки протухают (expire_on_commit),
+    и их чтение открыло бы транзакцию прямо перед сетью.
+    """
+    if row.latitude is None or row.longitude is None:
+        return False
+    if all(getattr(row, name) is not None for name in _GEO_FIELDS):
+        return False
+    snapshot = Location(
+        external_key=row.external_key,
+        latitude=row.latitude,
+        longitude=row.longitude,
+        region=row.region,
+        city=row.city,
+        country=row.country,
+    )
+    _commit_entry(db, result, pending_cancellations)
+    if not apply_reverse_geocode_to_location(snapshot):
+        return False
+    changed = False
+    for name in _GEO_FIELDS:
+        value = getattr(snapshot, name)
+        # Только пустое: пока ходили в Nominatim, строку мог дописать кто-то ещё.
+        if value is not None and getattr(row, name) is None:
+            setattr(row, name, value)
+            changed = True
     if changed:
+        row.fetched_at = snapshot.fetched_at
         db.flush()
     return changed
 
@@ -256,12 +295,12 @@ def _create_merge_request_if_needed(
     return row
 
 
-def _notify_merge_request(request: LocationMergeRequest) -> bool:
+def _merge_request_alert_text(request: LocationMergeRequest) -> str:
     sample_dates = ", ".join(request.overlap_event_dates[:5])
     if len(request.overlap_event_dates) > 5:
         sample_dates += ", …"
 
-    text = (
+    return (
         "⚠️ Возможный дубль локации 5 вёрст\n\n"
         f"Новый slug: {request.candidate_slug}\n"
         f"Имя: {request.candidate_name}\n"
@@ -271,6 +310,9 @@ def _notify_merge_request(request: LocationMergeRequest) -> bool:
         f"Примеры дат: {sample_dates}\n\n"
         "Проверьте вручную: возможно, локация сменила URL/имя."
     )
+
+
+def _notify_merge_request(text: str) -> bool:
     return notify_admin(text)
 
 
@@ -285,23 +327,39 @@ def _friendly_fetch_error(exc: Exception) -> str:
     return message
 
 
-def _record_cancel_change(
-    result: LocationRegistrySyncResult,
-    entry: ParsedRegistryEntry,
-) -> None:
+def _cancellation_change(entry: ParsedRegistryEntry) -> CancellationChange:
+    return CancellationChange(
+        platform_code=PLATFORM_CODE,
+        slug=entry.slug,
+        name=entry.name,
+        cancelled=registry_entry_is_cancelled(entry.status),
+        reason=entry.cancel_reason,
+    )
+
+
+def _record_cancel_change(result: LocationRegistrySyncResult, change: CancellationChange) -> None:
     """Запомнить смену статуса «отмена» — и для отчёта, и для мониторинга."""
 
     result.cancel_status_changed += 1
-    _record_location(result, "cancel_changed_locations", entry.slug, entry.name)
-    result.cancellation_changes.append(
-        CancellationChange(
-            platform_code=PLATFORM_CODE,
-            slug=entry.slug,
-            name=entry.name,
-            cancelled=registry_entry_is_cancelled(entry.status),
-            reason=entry.cancel_reason,
-        )
-    )
+    _record_location(result, "cancel_changed_locations", change.slug, change.name)
+    result.cancellation_changes.append(change)
+
+
+def _commit_entry(
+    db: Session,
+    result: LocationRegistrySyncResult,
+    pending_cancellations: list[CancellationChange],
+) -> None:
+    """Коммит шага записи реестра; отмены уходят в result только после него.
+
+    По result.cancellation_changes в конце прогона рассылается мониторинг
+    отмен. Положи изменение туда до коммита — и при упавшем коммите отмена в
+    базе откатится, а сообщение о ней всё равно уйдёт.
+    """
+    commit_step(db)
+    for change in pending_cancellations:
+        _record_cancel_change(result, change)
+    pending_cancellations.clear()
 
 
 def _record_location(result: LocationRegistrySyncResult, field: str, slug: str, name: str | None) -> None:
@@ -319,6 +377,7 @@ def _process_registry_entry(
     fetch_missing_coordinates: bool,
     detect_duplicates: bool,
     result: LocationRegistrySyncResult,
+    pending_cancellations: list[CancellationChange],
 ) -> None:
     row = (
         db.query(Location)
@@ -334,6 +393,13 @@ def _process_registry_entry(
         if row.latitude is not None and row.longitude is not None and not row.is_official_map:
             row.is_official_map = True
             meta_changed = True
+        # Город из заголовка группы реестра — и уже заведённой строке, если её
+        # завела ротация без города. Так 19.09.2026 вышло с Усть-Илимском: реестр
+        # упал на нём, ротация создала строку, а реестр потом город только новым
+        # строкам и ставил (репорт Егора 20.10.2026). Свой город не трогаем.
+        if row.city is None and entry.city_group:
+            row.city = entry.city_group
+            meta_changed = True
         if meta_changed:
             result.locations_updated += 1
             _record_location(result, "updated_locations", entry.slug, entry.name)
@@ -341,7 +407,7 @@ def _process_registry_entry(
             result.pause_status_changed += 1
             _record_location(result, "pause_changed_locations", entry.slug, entry.name)
         if cancel_changed:
-            _record_cancel_change(result, entry)
+            pending_cancellations.append(_cancellation_change(entry))
 
         needs_coords = row.latitude is None or row.longitude is None
         if needs_coords and fetch_missing_coordinates:
@@ -351,7 +417,7 @@ def _process_registry_entry(
             # рвёт сессии «idle in transaction» через 60 с: без коммита смена
             # статуса отмены терялась вместе с соединением, а ошибка
             # всплывала на следующем SELECT (см. iteration_commit).
-            commit_step(db)
+            _commit_entry(db, result, pending_cancellations)
             try:
                 location_data, location_html = bulk_parser.fetch_location(entry.slug)
                 if location_data.latitude is None or location_data.longitude is None:
@@ -377,14 +443,14 @@ def _process_registry_entry(
                         result.pause_status_changed += 1
                         _record_location(result, "pause_changed_locations", entry.slug, entry.name)
                     if cancel_changed:
-                        _record_cancel_change(result, entry)
+                        pending_cancellations.append(_cancellation_change(entry))
                     row = updated_row
             except NotFoundError:
                 result.locations_skipped_no_coords += 1
             except Exception as exc:
                 result.errors.append(f"{entry.slug}: координаты — {_friendly_fetch_error(exc)}")
 
-        if _backfill_geo_for_row(db, row):
+        if _backfill_geo_for_row(db, row, result, pending_cancellations):
             result.regions_backfilled += 1
             result.locations_updated += 1
             _record_location(result, "updated_locations", entry.slug, entry.name)
@@ -436,7 +502,7 @@ def _process_registry_entry(
         result.pause_status_changed += 1
         _record_location(result, "pause_changed_locations", entry.slug, entry.name)
     if cancel_changed:
-        _record_cancel_change(result, entry)
+        pending_cancellations.append(_cancellation_change(entry))
     result.locations_created += 1
     _record_location(result, "created_locations", entry.slug, entry.name)
 
@@ -444,7 +510,7 @@ def _process_registry_entry(
         # Локация создана и мета применена — коммитим до второго похода в сеть
         # (страница результатов для проверки на дубль), иначе новая локация
         # висела бы незакоммиченной весь фетч и терялась при обрыве.
-        commit_step(db)
+        _commit_entry(db, result, pending_cancellations)
         candidate_dates = _candidate_summary_dates(entry.slug, entry.name)
         matches = _find_duplicate_matches(db, platform, entry, candidate_dates)
         if matches:
@@ -454,7 +520,16 @@ def _process_registry_entry(
                 result.merge_requests_created += 1
                 _record_location(result, "merge_request_locations", entry.slug, entry.name)
                 if merge_request.notified_at is None:
-                    if _notify_merge_request(merge_request):
+                    # Заявку коммитим ДО уведомления: notify_admin — Telegram
+                    # через прокси, при сбое ещё и ВК, до 30 с на каждый. В
+                    # грязной транзакции соединение рвалось бы (iteration_commit),
+                    # и вместе с ним терялась сама заявка. Текст — до коммита:
+                    # после него поля заявки протухают, и их чтение открыло бы
+                    # транзакцию прямо перед сетью.
+                    alert_text = _merge_request_alert_text(merge_request)
+                    _commit_entry(db, result, pending_cancellations)
+                    if _notify_merge_request(alert_text):
+                        # Пометка — короткой транзакцией: коммит следом, в цикле реестра.
                         merge_request.notified_at = datetime.now(timezone.utc)
                         result.merge_notifications_sent += 1
                         db.flush()
@@ -478,6 +553,9 @@ def sync_locations_registry(
         result.entries_total = len(entries)
 
         for entry in entries:
+            # Отмены записи копятся здесь и попадают в result только после
+            # коммита (_commit_entry): откатившаяся отмена в рассылку не идёт.
+            pending_cancellations: list[CancellationChange] = []
             try:
                 _process_registry_entry(
                     db,
@@ -486,8 +564,9 @@ def sync_locations_registry(
                     fetch_missing_coordinates=options.fetch_missing_coordinates,
                     detect_duplicates=options.detect_duplicates,
                     result=result,
+                    pending_cancellations=pending_cancellations,
                 )
-                commit_step(db)
+                _commit_entry(db, result, pending_cancellations)
             except Exception as exc:
                 rollback_step(db)
                 result.errors.append(f"{entry.slug}: {exc}")

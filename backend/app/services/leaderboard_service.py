@@ -270,7 +270,9 @@ REFRESH_INTERVAL_HOURS = 2
 # меняется сам состав таблицы и порог входа, ждать TTL незачем.
 # v10 — они же возвращены в рейтинг, но без прогноза (27.08.2026, решение
 # Дмитрия): состав таблицы и порог входа меняются обратно.
-CACHE_KEY_PREFIX = "leaderboards:v10"
+# v11 — миграция 114 сняла связки RunPark с тестовыми стартами 5 вёрст
+# (21.10.2026): три старта Михалково 2022 возвращаются в рейтинги.
+CACHE_KEY_PREFIX = "leaderboards:v11"
 
 # Победные рейтинги показывают две дополнительные колонки: глобальный рекорд
 # участника и последнюю победу (у win_locations — последнюю НОВУЮ локацию с
@@ -3550,7 +3552,11 @@ def used_role_keys(db: Session) -> set[str]:
         pass
     keys: set[str] = set()
     for (label,) in db.execute(
-        text("SELECT DISTINCT role FROM volunteer_results WHERE role IS NOT NULL")
+        # Роль только с тестовых стартов кнопкой фильтра не нужна: в зачёт она не идёт.
+        text(
+            "SELECT DISTINCT vr.role FROM volunteer_results vr JOIN events e ON e.id = vr.event_id"
+            " WHERE vr.role IS NOT NULL AND e.is_test_event = false"
+        )
     ).all():
         canonical = canonical_volunteer_role(label)
         if canonical is not None:

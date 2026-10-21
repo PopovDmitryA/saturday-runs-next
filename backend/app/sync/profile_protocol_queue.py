@@ -417,6 +417,7 @@ def fetch_five_verst_protocol_for_profile(
             location_name=location_name or location.name,
             source_url=f"https://5verst.ru/{location_slug}/results/{event_date.strftime('%d.%m.%Y')}/",
             summary_hash="profile_stub",
+            is_test_event=upsert.known_test_event(db, location.id, event_date),
         )
         summary_row, _ = upsert.upsert_event_summary(db, platform, location, stub)
 

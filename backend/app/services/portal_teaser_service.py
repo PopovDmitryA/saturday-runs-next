@@ -56,6 +56,8 @@ def build_portal_teaser(db: Session, platform_code: str, raw_athlete_id: str) ->
         .filter(
             RunResult.participant_id == participant.id,
             RunResult.finish_time_sec.isnot(None),
+            # Тест №0 — не пробежка, как в кабинете и рейтингах.
+            Event.is_test_event.is_(False),
         )
         .one()
     )

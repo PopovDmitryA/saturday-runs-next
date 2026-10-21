@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.geo.reverse_geocode import lookup_address
 from app.models import Location, Platform
+from app.sync.iteration_commit import release_before_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,11 @@ def apply_reverse_geocode_to_location(location: Location) -> bool:
     except Exception:
         logger.warning("Reverse geocode failed for %s", location.external_key, exc_info=True)
         return False
+    return _apply_address(location, address)
 
+
+def _apply_address(location: Location, address: dict[str, str | None]) -> bool:
+    """Дописать пустые страну, регион и город из ответа геокодера."""
     changed = False
     if location.region is None and address.get("region"):
         location.region = address["region"]
@@ -112,16 +117,23 @@ def backfill_location_geo(
         from app.sync import upsert
         from app.sync.five_verst_locations import _enrich_location_geo
 
-        rows = _coords_retry_candidates_query(
-            db,
-            platform_code="five_verst",
-            official_map_only=official_map_only,
-        ).limit(limit).all()
-        result.candidates_total = len(rows)
+        # Поля кандидатов — в локальные переменные до похода в сеть: каждая
+        # локация — фетч 5 вёрст (лок и rate-limit, десятки секунд) плюс
+        # Nominatim, а прод рвёт «idle in transaction» через 60 с. Поэтому сеть
+        # идёт без открытой транзакции, а каждая локация пишется своим коммитом.
+        candidates = [
+            (location.external_key, location.name, location.country, location.city, location.region, location.source_url)
+            for location, _platform in _coords_retry_candidates_query(
+                db,
+                platform_code="five_verst",
+                official_map_only=official_map_only,
+            ).limit(limit).all()
+        ]
+        result.candidates_total = len(candidates)
 
         platform = upsert.get_platform(db, "five_verst")
-        for location, _platform in rows:
-            slug = location.external_key
+        for slug, name, country, city, region, source_url in candidates:
+            release_before_fetch(db)
             try:
                 location_data, location_html = bulk_parser.fetch_location(slug)
                 if location_data.latitude is None or location_data.longitude is None:
@@ -130,13 +142,13 @@ def backfill_location_geo(
                 location_data = _enrich_location_geo(location_data)
                 location_data = CanonicalLocation(
                     external_key=location_data.external_key,
-                    name=location.name or location_data.name,
-                    country=location_data.country or location.country,
-                    city=location_data.city or location.city,
-                    region=location_data.region or location.region,
+                    name=name or location_data.name,
+                    country=location_data.country or country,
+                    city=location_data.city or city,
+                    region=location_data.region or region,
                     latitude=location_data.latitude,
                     longitude=location_data.longitude,
-                    source_url=location.source_url or location_data.source_url,
+                    source_url=source_url or location_data.source_url,
                     course_source_url=location_data.course_source_url,
                     map_url=location_data.map_url,
                 )
@@ -146,24 +158,43 @@ def backfill_location_geo(
                     location_data,
                     source_hash=bulk_parser.source_hash(location_html),
                 )
-                if changed or updated_row.latitude is not None:
+                fetched = changed or updated_row.latitude is not None
+                db.commit()
+                if fetched:
                     result.coords_fetched += 1
                 else:
                     result.unchanged += 1
             except Exception as exc:
+                db.rollback()
                 result.errors.append(f"{slug}: {exc}")
         db.commit()
         return result
 
-    rows = _geo_backfill_candidates_query(
-        db,
-        platform_codes=platform_codes,
-        official_map_only=official_map_only,
-    ).limit(limit).all()
-    result.candidates_total = len(rows)
+    # Nominatim — секунда на запрос, кандидатов десятки: раньше всё шло в
+    # одной транзакции от SELECT до общего коммита, и прод рвал её через 60 с
+    # простоя. Теперь геокодим без транзакции, по id и координатам, а каждую
+    # локацию пишем коротким коммитом.
+    candidates = [
+        (location.id, location.external_key, location.latitude, location.longitude)
+        for location, _platform in _geo_backfill_candidates_query(
+            db,
+            platform_codes=platform_codes,
+            official_map_only=official_map_only,
+        ).limit(limit).all()
+    ]
+    result.candidates_total = len(candidates)
 
-    for location, _platform in rows:
-        if apply_reverse_geocode_to_location(location):
+    for location_id, external_key, latitude, longitude in candidates:
+        release_before_fetch(db)
+        try:
+            address = lookup_address(latitude, longitude)
+        except Exception:
+            logger.warning("Reverse geocode failed for %s", external_key, exc_info=True)
+            result.unchanged += 1
+            continue
+        location = db.get(Location, location_id)
+        if location is not None and _apply_address(location, address):
+            db.commit()
             result.regions_backfilled += 1
         else:
             result.unchanged += 1

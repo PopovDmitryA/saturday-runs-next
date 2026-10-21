@@ -44,6 +44,7 @@ from app.services import backlog_status_digest as status_digest
 from app.services import notification_service as notifications
 from app.services.admin_notify import notify_admin
 from app.services.photo_service import PhotoPayload, delete_backlog_photo, list_backlog_photos
+from app.sync.iteration_commit import release_before_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -91,31 +92,42 @@ def _truncate(text: str, limit: int) -> str:
     return text[:limit].rstrip() + "…"
 
 
-def _notify_new_card(card: BacklogCard) -> None:
+def _notify_admin_outside_transaction(db: Session, text: str) -> None:
+    """notify_admin ходит в Telegram (легла прокси — в ВК) с таймаутами в
+    десятки секунд, а Postgres рвёт соединение, простоявшее в транзакции
+    дольше 60 с. Правки к этому моменту закоммичены, после коммита было только
+    чтение — отпускаем транзакцию до похода в сеть (см.
+    iteration_commit.release_before_fetch). Текст собирать ДО вызова: после
+    коммита поля протухнут, и их чтение снова открыло бы транзакцию."""
+    release_before_fetch(db)
+    notify_admin(text)
+
+
+def _notify_new_card(db: Session, card: BacklogCard) -> None:
     author = _author_label(card.author, anonymous=card.is_anonymous)
     text = (
         f"🆕 Новая карточка бэклога: [{_TYPE_LABELS[card.type]}] «{card.title}» от {author}\n"
         f"{_truncate(card.description, _DESCRIPTION_PREVIEW_LIMIT)}\n\n{_card_link(card.id)}"
     )
-    notify_admin(text)
+    _notify_admin_outside_transaction(db, text)
 
 
-def _notify_new_vote(card: BacklogCard, value: int) -> None:
+def _notify_new_vote(db: Session, card: BacklogCard, value: int) -> None:
     mark = "👍" if value > 0 else "👎"
     text = (
         f"{mark} Доп. голос за «{card.title}»: счёт теперь {card.score} "
         f"({card.upvotes}/{card.downvotes})\n\n{_card_link(card.id)}"
     )
-    notify_admin(text)
+    _notify_admin_outside_transaction(db, text)
 
 
-def _notify_new_comment(card: BacklogCard, comment: BacklogComment) -> None:
+def _notify_new_comment(db: Session, card: BacklogCard, comment: BacklogComment) -> None:
     author = _author_label(comment.author, anonymous=comment.is_anonymous)
     text = (
         f"💬 Комментарий к «{card.title}» от {author}: "
         f"{_truncate(comment.body, _COMMENT_PREVIEW_LIMIT)}\n\n{_card_link(card.id)}"
     )
-    notify_admin(text)
+    _notify_admin_outside_transaction(db, text)
 
 
 # ---------------------------------------------------------------------------
@@ -551,7 +563,7 @@ def create_card(
     db.commit()
     db.refresh(card)
     card = _get_card(db, card.id, for_update_author=True)
-    _notify_new_card(card)
+    _notify_new_card(db, card)
     _notify_card_created(db, card)
     return _cards_to_responses(db, [card], author_id)[0]
 
@@ -754,7 +766,7 @@ def vote_card(db: Session, card_id: UUID, *, user_id: UUID, value: int) -> Backl
     card = _get_card(db, card_id, for_update_author=True)
 
     if not had_vote_before and value != 0:
-        _notify_new_vote(card, value)
+        _notify_new_vote(db, card, value)
 
     return _cards_to_responses(db, [card], user_id)[0]
 
@@ -843,7 +855,7 @@ def create_comment(
     comment = db.execute(
         select(BacklogComment).options(joinedload(BacklogComment.author)).where(BacklogComment.id == comment.id)
     ).scalar_one()
-    _notify_new_comment(card, comment)
+    _notify_new_comment(db, card, comment)
     _notify_subscribers(db, card, comment)
     return _comment_to_response(comment, viewer_id=author_id)
 

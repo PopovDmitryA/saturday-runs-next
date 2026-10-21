@@ -7,6 +7,7 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
+from app.db.tx_guard import DEFAULT_IDLE_SECONDS, install_tx_guard
 
 
 def _engine_connect_args() -> dict[str, object]:
@@ -57,7 +58,34 @@ def get_engine() -> Engine:
         "pool_timeout": 10,
         "connect_args": _engine_connect_args(),
     }
-    return create_engine(settings.database_url, **kwargs)
+    engine = create_engine(settings.database_url, **kwargs)
+    # Сторож простоя транзакции (app/db/tx_guard.py): называет место, где SQL
+    # или COMMIT пришёл после долгой паузы внутри транзакции — до того, как
+    # Postgres оборвёт такое соединение на 60 с. Где таймаут снят (Mac-демон
+    # parkrun держит транзакцию весь браузерный фетч намеренно), сторожить нечего.
+    idle_seconds = tx_guard_idle_seconds()
+    if idle_seconds is not None:
+        install_tx_guard(engine, idle_seconds=idle_seconds)
+    return engine
+
+
+def tx_guard_idle_seconds() -> float | None:
+    """Порог сторожа простоя транзакции; None — сторож выключен.
+
+    Ручка движка, как DB_STATEMENT_TIMEOUT: DB_TX_GUARD_DISABLED=1 выключает
+    (и отладка теста в pdb), DB_TX_GUARD_IDLE_SECONDS задаёт порог. Где таймаут
+    простоя Postgres снят (DB_DISABLE_IDLE_TX_TIMEOUT=1), сторожить нечего.
+    """
+    if os.environ.get("DB_DISABLE_IDLE_TX_TIMEOUT") == "1":
+        return None
+    if os.environ.get("DB_TX_GUARD_DISABLED", "").strip().lower() in {"1", "true", "yes"}:
+        return None
+    raw = os.environ.get("DB_TX_GUARD_IDLE_SECONDS", "").strip()
+    try:
+        value = float(raw) if raw else DEFAULT_IDLE_SECONDS
+    except ValueError:
+        value = DEFAULT_IDLE_SECONDS
+    return value if value > 0 else DEFAULT_IDLE_SECONDS
 
 
 @lru_cache

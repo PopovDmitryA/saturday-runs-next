@@ -1106,6 +1106,7 @@ def _predict_upcoming_starts(
         .join(Platform, Event.platform_id == Platform.id)
         .filter(
             Event.event_number.isnot(None),
+            Event.is_test_event.is_(False),
             Location.is_cancelled.is_(False),
             Location.is_paused.is_(False),
         )

@@ -1019,13 +1019,13 @@ def _seen_at_lateral(
         select(literal(1).label("hit"))
         .select_from(RunResult)
         .join(Event, RunResult.event_id == Event.id)
-        .where(RunResult.participant_id == who, Event.location_id.in_(ids))
+        .where(RunResult.participant_id == who, Event.location_id.in_(ids), Event.is_test_event.is_(False))
     )
     volunteering = (
         select(literal(1).label("hit"))
         .select_from(VolunteerResult)
         .join(Event, VolunteerResult.event_id == Event.id)
-        .where(VolunteerResult.participant_id == who, Event.location_id.in_(ids))
+        .where(VolunteerResult.participant_id == who, Event.location_id.in_(ids), Event.is_test_event.is_(False))
     )
     return union_all(runs, volunteering).limit(1).lateral("seen_at_place")
 
@@ -1048,7 +1048,8 @@ def _place_event_ids(db: Session, place: _Place) -> list[UUID] | None:
     ids = [
         event_id
         for (event_id,) in db.query(Event.id)
-        .filter(Event.location_id.in_(list(place.location_ids)))
+        # Тест №0 — не визит на место: был только на тесте — не «бегал здесь».
+        .filter(Event.location_id.in_(list(place.location_ids)), Event.is_test_event.is_(False))
         .limit(PLACE_EVENT_LIST_LIMIT + 1)
         .all()
     ]
@@ -1062,7 +1063,11 @@ def _place_people(location_ids: frozenset[UUID]) -> Any:
     стартов), и дальше Postgres только сверяет с ним найденных по имени, а не
     перебирает протоколы на каждого тёзку.
     """
-    place_events = select(Event.id).where(Event.location_id.in_(list(location_ids))).cte("place_events")
+    place_events = (
+        select(Event.id)
+        .where(Event.location_id.in_(list(location_ids)), Event.is_test_event.is_(False))
+        .cte("place_events")
+    )
     people = (
         union(
             select(RunResult.participant_id).where(RunResult.event_id.in_(select(place_events.c.id))),

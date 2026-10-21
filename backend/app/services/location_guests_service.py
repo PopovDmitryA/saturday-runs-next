@@ -49,7 +49,7 @@ _CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 
 
 def _cache_key(identity_key: str) -> str:
-    return f"location:guests:v1:{identity_key}"
+    return f"location:guests:v2:{identity_key}"
 
 
 def _read_cache(identity_key: str) -> dict[str, int] | None:

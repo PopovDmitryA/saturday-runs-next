@@ -783,6 +783,7 @@ def _five_verst_summary_for_date(
             location_name=location.name,
             source_url=bulk_parser._results_date_url(location.external_key, event_date),
             summary_hash="admin_resync_stub",
+            is_test_event=upsert.known_test_event(db, location.id, event_date),
         )
         summary_row, _ = upsert.upsert_event_summary(db, platform, location, stub)
         db.flush()
@@ -874,9 +875,13 @@ def _run_five_verst_location(db: Session, row: AdminResyncRequest, progress: Res
     slug = row.target["slug"]
     platform = upsert.get_platform(db, PLATFORM_FIVE_VERST)
     location = _five_verst_location(db, platform, slug)
+    # Имя — до коммита: после него чтение location.name выдаёт SELECT, тот
+    # открывает транзакцию, и она висит весь поход на 5verst.ru (лок загрузок
+    # и паузы до минут) — Postgres рвёт такое соединение через 60 с.
+    location_name = location.name
     db.commit()
-    progress.step("fetch", f"Запрашиваем список стартов {location.name}")
-    summaries, _html = bulk_parser.fetch_event_summaries(slug, location.name)
+    progress.step("fetch", f"Запрашиваем список стартов {location_name}")
+    summaries, _html = bulk_parser.fetch_event_summaries(slug, location_name)
     progress.step("compare", f"Сравниваем {len(summaries)} стартов с базой")
 
     plan: list[ProtocolPlanItem] = []

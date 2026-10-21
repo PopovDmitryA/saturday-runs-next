@@ -118,6 +118,7 @@ def test_location_page_number_still_wins_later(
     event = _existing_event(db_session, five_verst_platform, location)
 
     upsert._apply_event_fields(
+        db_session,
         event,
         platform_code="five_verst",
         location=location,

@@ -209,6 +209,8 @@ class LocationHistogramRowResponse(BaseModel):
     gender: str | None = None
     age_group: str | None = None
     count: int
+    # Безымянный финиш (строка протокола без человека) — только у строк без пола.
+    anonymous: bool = False
 
 
 class LocationHistogramResponse(BaseModel):
@@ -454,6 +456,8 @@ class LocationTopsResponse(BaseModel):
     fastest_female: list[LocationFastestRunnerResponse] = Field(default_factory=list)
     winners_overall: list[LocationTopWinnerResponse] = Field(default_factory=list)
     winners_female: list[LocationTopWinnerResponse] = Field(default_factory=list)
+    # Люди со временем, не попавшие ни в один зачёт: пол неизвестен.
+    runners_without_gender: int = 0
 
 
 class LocationAttendanceItemResponse(BaseModel):

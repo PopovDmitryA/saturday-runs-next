@@ -121,6 +121,10 @@ def label_place(db: Session, row_id: int) -> str | None:
     cell = (row.cell_latitude, row.cell_longitude)
     label = row.place_label or _known_label(db, cell)
     if label is None:
+        # Nominatim — секунда-две, а с ожиданием лимита и таймаутом дольше;
+        # держать на нём транзакцию чтений выше нельзя: прод рвёт «idle in
+        # transaction» через 60 с. Писать пока нечего — просто откатываем.
+        db.rollback()
         label = _place_label(lookup_address(cell[0], cell[1]))
     if label is None:
         return None

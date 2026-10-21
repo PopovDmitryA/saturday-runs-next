@@ -233,7 +233,8 @@ def sync_location(db: Session, options: LocationSyncOptions) -> LocationSyncResu
                 if upsert_result.protocol_changed:
                     result.changed_protocols.append(label)
                 # Коммит строго до паузы — иначе сон засчитывается в
-                # «idle in transaction», который прод рвёт через 15 минут.
+                # «idle in transaction», который прод рвёт через 60 с
+                # (app/db/session.py; см. iteration_commit.release_before_fetch).
                 commit_step(db)
                 if index + 1 < len(protocol_queue):
                     wait_between_protocols(reason="location")

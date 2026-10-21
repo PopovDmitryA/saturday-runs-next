@@ -350,6 +350,43 @@ def test_deliver_all_failed_permanent_exhausts_attempts(db_session: Session, mon
     assert delivery.attempts == notify.MAX_ATTEMPTS
 
 
+def test_deliver_sends_outside_transaction(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Отправители и копия админу ходят в сеть без открытой транзакции:
+    Postgres рвёт соединение, простоявшее в ней дольше 60 с. expire_on_commit —
+    как на проде: там чтение протухшего поля после коммита открывает транзакцию."""
+    user = _make_user(db_session, chat_id=100, email="runner@example.com")
+    user.telegram_username = "runner"
+    _on(db_session, user, "telegram")
+    _on(db_session, user, "email")
+    delivery = notify.notify_user(db_session, user, "runs", title="t", text="x", dedupe_key="k")
+    assert delivery is not None
+    db_session.expire_on_commit = True
+
+    outcomes = {"telegram": SendOutcome(ok=False, error="timeout"), "email": SendOutcome(ok=True)}
+    in_tx: list[tuple[str, bool]] = []
+
+    def _sender(channel: str):
+        def _send(target: str, message):  # noqa: ANN001
+            in_tx.append((channel, db_session.in_transaction()))
+            return outcomes[channel]
+
+        return _send
+
+    monkeypatch.setattr(notify, "SENDERS", {c: _sender(c) for c in channels.CHANNEL_ORDER})
+    copies: list[tuple[str, bool]] = []
+    monkeypatch.setattr(
+        admin_copy, "add_copy", lambda recipient, *_args, **_kw: copies.append((recipient, db_session.in_transaction()))
+    )
+
+    assert notify.deliver_now(db_session, delivery.id) == "sent"
+    assert in_tx == [("telegram", False), ("email", False)]
+    assert copies == [("@runner", False)]
+    db_session.refresh(delivery)
+    assert delivery.attempts == 1 and delivery.channel == "email"
+    tg = channels.get_channel(db_session, user.id, "telegram")
+    assert tg is not None and tg.last_error == "timeout"
+
+
 def test_deliver_skips_when_unsubscribed_meanwhile(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     user = _make_user(db_session, chat_id=200)
     _on(db_session, user)

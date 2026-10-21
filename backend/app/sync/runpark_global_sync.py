@@ -338,7 +338,12 @@ def _ensure_event(
     external_event_key = str(row["event_id"]).upper()
     event_date = row["event_date"].date() if hasattr(row["event_date"], "date") else row["event_date"]
     event_number = row.get("event_number") or None
-    title = f"{location.name} #{event_number}" if event_number else location.name
+    is_test = bool(row.get("is_test_event"))
+    # Тест подписываем так же, как у 5 вёрст: «… (тестовый)», а не «#-1».
+    if is_test:
+        title = f"{location.name} (тестовый)"
+    else:
+        title = f"{location.name} #{event_number}" if event_number else location.name
     source_url = f"{protocol_base}/event/{event_number}" if protocol_base and event_number else None
 
     existing = (
@@ -376,7 +381,7 @@ def _ensure_event(
             external_event_key=external_event_key,
             event_date=event_date,
             event_number=event_number,
-            is_test_event=bool(row.get("is_test_event")),
+            is_test_event=is_test,
             title=title,
             finishers_count=row.get("finishers_count"),
             runners_count=row.get("finishers_count"),
@@ -387,6 +392,10 @@ def _ensure_event(
         db.flush()
     else:
         existing.event_number = event_number
+        # Признак теста RunPark может поменять задним числом — держим его и
+        # подпись в согласии с источником (раньше ставились только при создании).
+        existing.is_test_event = is_test
+        existing.title = title
         existing.finishers_count = row.get("finishers_count")
         existing.runners_count = row.get("finishers_count")
         if source_url:

@@ -46,7 +46,9 @@ def _finished_runs_query(db: Session, user_id: UUID) -> Any:
     """Состоявшиеся финиши пользователя по всем его платформам.
 
     Строки без finish_time_sec — отметки об участии без результата; в личных
-    цифрах они дали бы завышенный счёт.
+    цифрах они дали бы завышенный счёт. Тестовые старты (№0) не считаются, как
+    в кабинете: иначе тест вставал «последней пробежкой» и закрывал пропуск в
+    серии суббот (разбор 21.10.2026).
     """
     return (
         db.query(RunResult, Event)
@@ -56,6 +58,7 @@ def _finished_runs_query(db: Session, user_id: UUID) -> Any:
         .filter(
             PlatformLink.user_id == user_id,
             RunResult.finish_time_sec.isnot(None),
+            Event.is_test_event.is_(False),
         )
     )
 

@@ -14,7 +14,10 @@ type DisplayBin = {
   total: number;
   male: number;
   female: number;
+  // Люди, чей пол не указан, и безымянные финиши (строки протокола без
+  // человека) — порознь: иначе «Пол не указан» не сверить с топами.
   unknown: number;
+  anonymous: number;
 };
 
 type TimeRange = { startSec: number; endSec: number };
@@ -63,6 +66,7 @@ export function LocationFinishHistogram({ rows, binSizeSec }: LocationFinishHist
       male: 0,
       female: 0,
       unknown: 0,
+      anonymous: 0,
     }));
     for (const row of visibleRows) {
       const bin = result[Math.floor((row.start_sec - firstBinStart) / displayBinSize)];
@@ -71,6 +75,8 @@ export function LocationFinishHistogram({ rows, binSizeSec }: LocationFinishHist
         bin.male += row.count;
       } else if (row.gender === "female") {
         bin.female += row.count;
+      } else if (row.anonymous) {
+        bin.anonymous += row.count;
       } else {
         bin.unknown += row.count;
       }
@@ -82,11 +88,13 @@ export function LocationFinishHistogram({ rows, binSizeSec }: LocationFinishHist
     let total = 0;
     let male = 0;
     let female = 0;
+    let anonymous = 0;
     let weightedSum = 0;
     for (const bin of bins) {
       total += bin.total;
       male += bin.male;
       female += bin.female;
+      anonymous += bin.anonymous;
       weightedSum += (bin.startSec + (bin.endSec - bin.startSec) / 2) * bin.total;
     }
     let median: number | null = null;
@@ -105,7 +113,8 @@ export function LocationFinishHistogram({ rows, binSizeSec }: LocationFinishHist
       // Без пола: безымянные финиши RunPark (у них есть время) и участники,
       // о поле которых не знают ни протокол, ни профиль. Без этой строки
       // «Мужчины + Женщины» не сходились с «N финишей» (репорт 15.10.2026).
-      unknown: total - male - female,
+      anonymous,
+      unknown: total - male - female - anonymous,
       mean: total > 0 ? Math.round(weightedSum / total) : null,
       median: median !== null ? Math.round(median) : null,
     };
@@ -191,7 +200,8 @@ export function LocationFinishHistogram({ rows, binSizeSec }: LocationFinishHist
                     pluralizeRu(bin.total, ["финиш", "финиша", "финишей"]),
                     `Мужчины: ${formatInt(bin.male)}`,
                     `Женщины: ${formatInt(bin.female)}`,
-                    ...(bin.unknown > 0 ? [`Пол неизвестен: ${bin.unknown}`] : []),
+                    ...(bin.unknown > 0 ? [`Пол не указан: ${formatInt(bin.unknown)}`] : []),
+                    ...(bin.anonymous > 0 ? [`Неизвестные бегуны: ${formatInt(bin.anonymous)}`] : []),
                   ]}
                 >
                   <span
@@ -200,8 +210,11 @@ export function LocationFinishHistogram({ rows, binSizeSec }: LocationFinishHist
                       height: `${Math.max((bin.total / maxCount) * 100, bin.total > 0 ? 3 : 0)}%`,
                     }}
                   >
-                    {bin.unknown > 0 && (
-                      <span className="loc-hist-seg loc-hist-seg-unknown" style={segmentStyle(bin.unknown, bin)} />
+                    {bin.unknown + bin.anonymous > 0 && (
+                      <span
+                        className="loc-hist-seg loc-hist-seg-unknown"
+                        style={segmentStyle(bin.unknown + bin.anonymous, bin)}
+                      />
                     )}
                     {bin.female > 0 && (
                       <span className="loc-hist-seg loc-hist-seg-female" style={segmentStyle(bin.female, bin)} />
@@ -230,6 +243,15 @@ export function LocationFinishHistogram({ rows, binSizeSec }: LocationFinishHist
               <span className="analytics-legend-item">
                 <span className="analytics-legend-swatch loc-hist-swatch-unknown" />
                 Пол не указан {formatInt(totals.unknown)}
+              </span>
+            )}
+            {totals.anonymous > 0 && (
+              <span
+                className="analytics-legend-item"
+                title="Финиши без имени в протоколе: время есть, человека нет. В «уникальных участниках» и топах их нет"
+              >
+                <span className="analytics-legend-swatch loc-hist-swatch-unknown" />
+                Неизвестные бегуны {formatInt(totals.anonymous)}
               </span>
             )}
             {totals.median !== null && (

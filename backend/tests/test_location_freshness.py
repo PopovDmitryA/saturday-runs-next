@@ -218,7 +218,7 @@ def test_organizer_cabinet_caches_expire_on_new_protocol(
 
     identity = SimpleNamespace(locations=[(location, "five_verst")])
     attendance_key = f"organizer:attendance:v2:location:{location.id}"
-    protocols_key = f"organizer:protocols:v3:location:{location.id}"
+    protocols_key = f"organizer:protocols:v4:location:{location.id}"
     for key in (attendance_key, protocols_key):
         write_organizer_cache(identity, key, {"stub": True}, 3 * 60 * 60)
 
@@ -255,8 +255,8 @@ def test_organizer_index_does_not_touch_other_locations(
     db_session.add_all([mine, theirs])
     db_session.flush()
 
-    my_key = f"organizer:health:v8:location:{mine.id}"
-    their_key = f"organizer:health:v8:location:{theirs.id}"
+    my_key = f"organizer:health:v9:location:{mine.id}"
+    their_key = f"organizer:health:v9:location:{theirs.id}"
     write_organizer_cache(SimpleNamespace(locations=[(mine, "five_verst")]), my_key, {}, 3 * 60 * 60)
     write_organizer_cache(
         SimpleNamespace(locations=[(theirs, "five_verst")]), their_key, {}, 3 * 60 * 60

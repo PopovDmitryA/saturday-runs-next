@@ -28,6 +28,7 @@ from app.platform_adapters.registry import ensure_adapters_registered, get_adapt
 from app.platform_fetch.cooldown import is_platform_in_cooldown, parse_cooldown_until_from_message
 from app.s95.errors import S95BanDetected, S95FetchTimeout
 from app.services.participant_profile_service import resolve_profile_identity
+from app.sync.iteration_commit import release_before_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -309,6 +310,11 @@ def _persist_profile_preview(db: Session, platform: Platform, profile_input: str
 
     ensure_adapters_registered()
     adapter = get_adapter(platform.code)
+    # Транзакцию открыли чтения строки очереди и платформы, а фетч профиля —
+    # сеть с ожиданием лока и rate-limit, бывает дольше минуты. Прод рвёт
+    # «idle in transaction» через 60 с, и падала запись ПОСЛЕ фетча. Писать
+    # ещё нечего — отпускаем (см. iteration_commit.release_before_fetch).
+    release_before_fetch(db)
     preview = adapter.fetch_profile_preview(profile_input)
     _upsert_participant(db, platform, preview, adapter.parser_version)
     return preview.external_user_id
@@ -325,6 +331,8 @@ def _import_s95_activity(db: Session, platform: Platform, external_user_id: str)
     from app.platform_adapters.s95.parser import fetch_athlete_activity
     from app.sync import upsert
 
+    # Сеть вне транзакции — см. _persist_profile_preview.
+    release_before_fetch(db)
     profile, runs, volunteering = fetch_athlete_activity(external_user_id)
     participant = upsert.upsert_participant(
         db,
@@ -343,6 +351,8 @@ def _import_five_verst_activity(db: Session, platform: Platform, profile_input: 
     from app.sync import upsert
 
     identity = resolve_profile_identity(platform.code, profile_input)
+    # Сеть вне транзакции — см. _persist_profile_preview.
+    release_before_fetch(db)
     profile, runs, volunteering = fetch_athlete_activity(identity.external_user_id)
     participant = upsert.upsert_participant(
         db,

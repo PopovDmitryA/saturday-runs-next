@@ -181,7 +181,55 @@ def test_sync_registry_backfills_region_for_existing_location(
     db_session.refresh(location)
     assert result.regions_backfilled == 1
     assert location.region == "Москва"
-    assert location.city == "Москва"
+    # Город — из заголовка группы реестра, как у новых строк: он главнее геокодера.
+    assert location.city == "Test City"
+
+
+def test_sync_registry_fills_missing_city_of_existing_location(
+    db_session: Session, five_verst_platform: Platform
+) -> None:
+    """Строку, заведённую ротацией без города, реестр дополняет городом группы.
+
+    Усть-Илимск (alleyaslavy) 19.09.2026: реестр упал на нём, строку создала
+    ротация, город не пришёл ни из заголовка страницы, ни от геокодера, а
+    реестр потом ставил город только новым строкам — и на сайте висел «—»
+    (репорт Егора 20.10.2026). Уже заполненный город реестр не трогает.
+    """
+    from app.platform_adapters.five_verst.bulk_parser import ParsedEventsPage
+
+    empty = f"no-city-{uuid4().hex[:8]}"
+    named = f"own-city-{uuid4().hex[:8]}"
+    for slug, city in ((empty, None), (named, "Свой Город")):
+        db_session.add(
+            Location(
+                platform_id=five_verst_platform.id,
+                external_key=slug,
+                name=slug,
+                city=city,
+                region="Иркутская",
+                country="Россия",
+                latitude=57.95,
+                longitude=102.73,
+                is_official_map=True,
+                source_url=f"https://5verst.ru/{slug}/",
+            )
+        )
+    db_session.commit()
+    page = ParsedEventsPage(
+        entries=[_entry(slug, slug, LocationRegistryStatus.active) for slug in (empty, named)],
+        saturday_cancellations=[],
+    )
+    with patch("app.sync.five_verst_locations.bulk_parser.fetch_events_page", return_value=(page, "<html></html>")):
+        with patch("app.services.location_geo_service.lookup_address", return_value={"country": None, "region": None, "city": None}):
+            sync_locations_registry(
+                db_session,
+                LocationRegistrySyncOptions(fetch_missing_coordinates=False, detect_duplicates=False),
+            )
+    cities = {
+        row.external_key: row.city
+        for row in db_session.query(Location).filter(Location.external_key.in_([empty, named])).all()
+    }
+    assert cities == {empty: "Test City", named: "Свой Город"}
 
 
 def test_sync_registry_skips_new_location_without_coords(db_session: Session, five_verst_platform: Platform) -> None:

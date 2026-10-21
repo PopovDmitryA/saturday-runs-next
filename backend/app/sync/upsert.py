@@ -17,6 +17,7 @@ from app.activity_url import prefer_event_source_url
 from app.geo.country_names import normalize_country_name
 from app.models import (
     Event,
+    EventCrosslink,
     EventSummary,
     Location,
     LocationDescription,
@@ -467,6 +468,56 @@ def _mark_summary_changed(
     )
 
 
+def forget_test_event_credits(db: Session, event_id: UUID, *, flags: bool = True) -> None:
+    """Тестовый старт ничего не засчитывает: ни связки с RunPark, ни дебютов и рекордов.
+
+    Тест не бывает первичной стороной кросслинка: иначе вторичный старт RunPark
+    выбрасывается как дубль, а сам тест не считается — и старт пропадает
+    везде (Михалково 2022, миграция 114). flags — старт только что стал
+    тестовым: 5 вёрст пометили его задним числом, а протокол не изменился, и
+    строки не перепишутся (короткий путь в fetch_and_upsert_event_protocol) —
+    флаги и метки из иконок снимаем здесь.
+    """
+    db.query(EventCrosslink).filter(EventCrosslink.primary_event_id == event_id).delete(synchronize_session=False)
+    if flags:
+        db.query(RunResult).filter(RunResult.event_id == event_id).update(
+            {
+                RunResult.is_pr: False,
+                RunResult.is_global_pr: False,
+                RunResult.is_first_run: False,
+                RunResult.is_first_run_at_location: False,
+                RunResult.achievement_labels: [],
+            },
+            synchronize_session=False,
+        )
+
+
+def known_test_event(db: Session, location_id: UUID, event_date: date) -> bool:
+    """Старт на этой локации в этот день уже известен как тестовый.
+
+    Для заглушек сводки 5 вёрст (перекачка из админки, очередь протоколов
+    профиля): у заглушки признака теста нет, и без этой проверки протокол
+    теста ложился бы обычным стартом — со статистикой и уведомлениями.
+    """
+    if (
+        db.query(Event.id)
+        .filter(Event.location_id == location_id, Event.event_date == event_date, Event.is_test_event.is_(True))
+        .first()
+        is not None
+    ):
+        return True
+    return (
+        db.query(EventSummary.id)
+        .filter(
+            EventSummary.location_id == location_id,
+            EventSummary.event_date == event_date,
+            EventSummary.is_test_event.is_(True),
+        )
+        .first()
+        is not None
+    )
+
+
 def upsert_event_for_summary(
     db: Session,
     platform: Platform,
@@ -534,7 +585,10 @@ def upsert_event_for_summary(
         row.event_number = summary.event_number
     if row.event_number is not None and not summary.is_test_event:
         title = f"{summary.location_name} #{row.event_number}"
+    became_test = summary.is_test_event and not row.is_test_event
     row.is_test_event = summary.is_test_event
+    if row.is_test_event and row.id is not None:
+        forget_test_event_credits(db, row.id, flags=became_test)
     row.title = title
     row.finishers_count = summary.finishers_count
     row.runners_count = summary.finishers_count
@@ -680,6 +734,10 @@ def upsert_run_results(
 ) -> int:
     upserted = 0
     touched_participant_ids: set = set()
+    # Тестовый старт (№0) не даёт ни дебюта, ни рекорда: у 5 вёрст флаги
+    # приходят из иконок протокола, и на тесте Губайловского Экопарка
+    # (18.06.2022) человеку засчитался «первый финиш» (разбор 21.10.2026).
+    counts = not event.is_test_event
     for item in results:
         participant = upsert_participant(
             db,
@@ -731,11 +789,11 @@ def upsert_run_results(
                 pace_display=pace_display,
                 age_category=item.age_category,
                 status=item.status,
-                is_pr=item.is_pr,
-                is_first_run=item.is_first_run,
-                is_first_run_at_location=item.is_first_run_at_location,
+                is_pr=item.is_pr and counts,
+                is_first_run=item.is_first_run and counts,
+                is_first_run_at_location=item.is_first_run_at_location and counts,
                 club_name=item.club_name,
-                achievement_labels=item.achievement_labels,
+                achievement_labels=item.achievement_labels if counts else [],
                 fetched_at=now,
             )
             db.add(row)
@@ -784,11 +842,11 @@ def upsert_run_results(
                 row.pace_display = pace_display
                 row.age_category = item.age_category
                 row.status = item.status
-                row.is_pr = item.is_pr
-                row.is_first_run = item.is_first_run
-                row.is_first_run_at_location = item.is_first_run_at_location
+                row.is_pr = item.is_pr and counts
+                row.is_first_run = item.is_first_run and counts
+                row.is_first_run_at_location = item.is_first_run_at_location and counts
                 row.club_name = item.club_name
-                row.achievement_labels = item.achievement_labels
+                row.achievement_labels = item.achievement_labels if counts else []
             row.fetched_at = now
             upserted += 1
     _discover_participants_after_protocol_upsert(db, platform, touched_participant_ids)
@@ -1284,13 +1342,14 @@ def _assign_external_event_key(
 
 
 def _apply_event_fields(
+    db: Session,
     row: Event,
     *,
     platform_code: str,
     location: Location,
     event_date: date,
     event_number: int | None,
-    is_test_event: bool,
+    is_test_event: bool | None,
     title: str,
     source_url: str | None,
     finishers_count: int | None = None,
@@ -1303,7 +1362,14 @@ def _apply_event_fields(
     # номер нечем.
     if event_number is not None:
         row.event_number = event_number
-    row.is_test_event = is_test_event
+    # None — источник о тесте ничего не сказал (импорт профиля): признак, уже
+    # записанный синком протоколов, не трогаем — иначе тест превращался бы в
+    # обычный старт с номером в заголовке (разбор 21.10.2026).
+    if is_test_event is not None:
+        became_test = is_test_event and not row.is_test_event
+        row.is_test_event = is_test_event
+        if is_test_event and row.id is not None:
+            forget_test_event_credits(db, row.id, flags=became_test)
     row.title = title
     preferred_source_url = prefer_event_source_url(platform_code, row.source_url, source_url)
     if preferred_source_url:
@@ -1328,7 +1394,7 @@ def upsert_event_for_profile(
     location_name: str,
     location_slug: str,
     source_url: str,
-    is_test_event: bool = False,
+    is_test_event: bool | None = None,
 ) -> Event:
     row = _find_existing_event(
         db,
@@ -1346,8 +1412,16 @@ def upsert_event_for_profile(
     effective_number = event_number if event_number is not None else (
         row.event_number if row is not None else None
     )
+    if is_test_event is None and row is None:
+        # Новое событие из профиля: профиль 5 вёрст признака теста не несёт.
+        # Если протокол теста ещё не загружен, без этой проверки тест до его
+        # прихода считался бы обычным стартом — со статистикой кабинета и
+        # уведомлением. У 5 вёрст тест — это забег №0 (обычных с номером ≤ 0 нет).
+        is_test_event = known_test_event(db, location.id, event_date) or (
+            platform.code == "five_verst" and event_number is not None and event_number <= 0
+        )
     title = _profile_event_title(location_name, effective_number)
-    if is_test_event:
+    if is_test_event or (is_test_event is None and row is not None and row.is_test_event):
         title = f"{location_name} (тестовый)"
 
     if row is None:
@@ -1357,7 +1431,7 @@ def upsert_event_for_profile(
             external_event_key=external_event_key,
             event_date=event_date,
             event_number=event_number,
-            is_test_event=is_test_event,
+            is_test_event=bool(is_test_event),
             title=title,
             source_url=source_url,
             parser_version=PARSER_VERSION,
@@ -1384,6 +1458,7 @@ def upsert_event_for_profile(
 
     _assign_external_event_key(db, platform, row, external_event_key)
     _apply_event_fields(
+        db,
         row,
         platform_code=platform.code,
         location=location,
@@ -1411,6 +1486,7 @@ def upsert_event_for_profile(
             raise
         _assign_external_event_key(db, platform, row, external_event_key)
         _apply_event_fields(
+            db,
             row,
             platform_code=platform.code,
             location=location,

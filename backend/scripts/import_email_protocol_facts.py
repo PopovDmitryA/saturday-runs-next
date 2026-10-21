@@ -96,7 +96,9 @@ def main() -> None:
 
         event_dates = set(
             db.execute(
-                sa.select(Event.event_date).where(Event.location_id == location.id)
+                # Факт выгрузки — только для настоящих стартов: факт на дату теста
+                # уходил в медиану оргкабинета и в место в сети.
+                sa.select(Event.event_date).where(Event.location_id == location.id, Event.is_test_event.is_(False))
             ).scalars()
         )
         existing = {

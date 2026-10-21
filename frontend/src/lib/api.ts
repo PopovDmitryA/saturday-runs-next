@@ -2861,6 +2861,8 @@ export type LocationHistogramRow = {
   gender: "male" | "female" | null;
   age_group: string | null;
   count: number;
+  /** Безымянный финиш: строка протокола без человека («Неизвестный бегун»). Только у строк без пола. */
+  anonymous?: boolean;
 };
 
 export type LocationAgeGroupTopRow = {
@@ -3124,6 +3126,8 @@ export type LocationTops = {
   fastest_female: LocationFastestRunner[];
   winners_overall: LocationTopWinner[];
   winners_female: LocationTopWinner[];
+  /** Люди со временем, не попавшие ни в один зачёт: пол не указан нигде. */
+  runners_without_gender?: number;
 };
 
 export function getLocationTops(slug: string) {

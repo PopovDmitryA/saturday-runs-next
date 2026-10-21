@@ -37,7 +37,7 @@ import {
 } from "../../lib/api";
 import { applyPageMeta, locationPageMeta } from "../../lib/pageMeta";
 import { flushMetrikaHit } from "../../lib/metrika";
-import { formatDate, formatInt, platformCodeLabel } from "../../lib/format";
+import { formatDate, formatInt, platformCodeLabel, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import {
@@ -263,6 +263,8 @@ function LocationTopsContent({ slug }: { slug: string }) {
       onSettled: flushMetrikaHit,
     },
   );
+  // Люди со временем без пола — не попали ни в один зачёт (старые протоколы parkrun).
+  const withoutGender = data?.runners_without_gender ?? 0;
   const [board, setBoard] = useState<Board>(initialBoard);
   const [division, setDivision] = useState<Division>(initialDivision);
   const [sort, setSort] = useRestorableState<SortState>("tops.sort", { key: "place", asc: true });
@@ -495,6 +497,17 @@ function LocationTopsContent({ slug }: { slug: string }) {
         {query.trim() && (
           <span className="muted loc-people-found">
             {rows.length > 0 ? `Найдено: ${formatInt(rows.length)}` : "Никого не нашли"}
+          </span>
+        )}
+        {board === "time" && withoutGender > 0 && (
+          // Без этой строки сумма зачётов молча расходилась с «уникальными
+          // участниками» на странице локации (репорт Егора 20.10.2026).
+          <span className="muted loc-people-found">
+            {`Ещё ${pluralizeRu(withoutGender, ["бегун", "бегуна", "бегунов"])} ${pluralFormRu(withoutGender, [
+              "не вошёл",
+              "не вошли",
+              "не вошли",
+            ])} в зачёты: система не указала пол`}
           </span>
         )}
       </FilterPanel>

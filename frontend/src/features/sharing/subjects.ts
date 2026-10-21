@@ -568,7 +568,12 @@ export function summarySubject(
 ): ShareSubject {
   const analytics = stats.analytics;
   const year = new Date().getFullYear();
-  const yearRuns = runs.filter((run) => run.event_date >= `${year}-01-01`);
+  // Только засчитанные пробежки: дубль кросслинка («не в зачёте») — тот же
+  // старт в другой системе, тест №0 — не пробежка. Без этого один старт в
+  // 5 вёрст и RunPark давал две пробежки и две локации (разбор 21.10.2026).
+  const yearRuns = runs.filter(
+    (run) => run.event_date >= `${year}-01-01` && !run.is_crosslinked && !run.is_test_event,
+  );
   const metrics: ShareMetric[] = [];
 
   if (period === "year") {

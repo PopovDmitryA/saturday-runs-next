@@ -136,8 +136,14 @@ def get_admin_site_stats(db: Session, *, period_days: int = 30) -> dict[str, obj
         "platform_links_total": platform_links_total,
         "links_by_platform": links_by_platform,
         "participants_total": db.query(func.count(Participant.id)).scalar() or 0,
-        "events_total": db.query(func.count(Event.id)).scalar() or 0,
-        "run_results_total": db.query(func.count(RunResult.id)).scalar() or 0,
+        # Без тестовых стартов (№0): «мероприятий» и «результатов» здесь — как
+        # на сайте, а не строк в базе (разбор 21.10.2026).
+        "events_total": db.query(func.count(Event.id)).filter(Event.is_test_event.is_(False)).scalar() or 0,
+        "run_results_total": db.query(func.count(RunResult.id))
+        .join(Event, Event.id == RunResult.event_id)
+        .filter(Event.is_test_event.is_(False))
+        .scalar()
+        or 0,
         "locations_total": db.query(func.count(Location.id)).scalar() or 0,
         "sync_jobs_total": db.query(func.count(SyncJob.id)).scalar() or 0,
         "sync_jobs_active": db.query(func.count(SyncJob.id))

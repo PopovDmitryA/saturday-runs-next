@@ -57,13 +57,13 @@ GREEN_DELAY_HOURS = 3.0
 
 def protocol_timeline_cache_key(identity_key: str) -> str:
     # v3 — старты до начала наблюдения за выгрузкой в список не попадают.
-    return f"organizer:protocols:v3:{identity_key}"
+    return f"organizer:protocols:v4:{identity_key}"
 
 
 def health_cache_key(identity_key: str) -> str:
     # v8 — «Полнота протокола» и «Удержание новичков» научились видеть
     # безымянные строки s95 и RunPark; прогретый кэш держал бы старые нули.
-    return f"organizer:health:v8:{identity_key}"
+    return f"organizer:health:v9:{identity_key}"
 
 
 def _five_verst_locations(identity: LocationIdentity) -> list[Location]:
@@ -141,9 +141,12 @@ def _compute_protocol_timeline(db: Session, identity: LocationIdentity, *, limit
     tz_offset = base["tz_offset_moscow"]
     schedule = _identity_schedule(db, fv_locations)
 
+    # Тестовый старт (№0) — не протокол локации: в таблице он стоял обычной
+    # строкой и со своей задержкой входил в медиану, место в сети и среднее
+    # по организаторам (Видное, тест 14.03.2026 — разбор 21.10.2026).
     events = (
         db.query(Event)
-        .filter(Event.location_id.in_(fv_ids))
+        .filter(Event.location_id.in_(fv_ids), Event.is_test_event.is_(False))
         .order_by(Event.event_date.desc())
         .limit(limit)
         .all()
@@ -174,7 +177,13 @@ def _compute_protocol_timeline(db: Session, identity: LocationIdentity, *, limit
         )
         .all()
     )
-    fact_by_date = {fact.event_date: fact for fact in facts}
+    # Факты — только по датам настоящих стартов: факт на дату теста иначе
+    # сдвигал начало наблюдения (watch_started) на день теста.
+    test_dates = {
+        row[0]
+        for row in db.query(Event.event_date).filter(Event.location_id.in_(fv_ids), Event.is_test_event.is_(True))
+    }
+    fact_by_date = {fact.event_date: fact for fact in facts if fact.event_date not in test_dates}
 
     directors: dict[Any, list[str]] = {}
     volunteer_rows = (
@@ -278,7 +287,7 @@ def network_protocol_medians(db: Session) -> dict[str, float]:
     дороже, чем перебрать ~10 тыс. фактов за год.
     """
 
-    cache_key = "organizer:network-protocol:v1"
+    cache_key = "organizer:network-protocol:v2"
     cached = _read_json_cache(cache_key)
     if cached is not None:
         return {key: float(value) for key, value in cached.items()}
@@ -300,11 +309,17 @@ def network_protocol_medians(db: Session) -> dict[str, float]:
     finish_rows = (
         db.query(Event.location_id, Event.event_date, func.max(RunResult.finish_time_sec))
         .join(RunResult, RunResult.event_id == Event.id)
-        .filter(Event.platform_id == platform.id, Event.event_date >= cutoff)
+        .filter(Event.platform_id == platform.id, Event.event_date >= cutoff, Event.is_test_event.is_(False))
         .group_by(Event.location_id, Event.event_date)
         .all()
     )
     finish_by_key = {(location_id, event_date): max_sec for location_id, event_date, max_sec in finish_rows}
+    test_keys = {
+        (location_id, event_date)
+        for location_id, event_date in db.query(Event.location_id, Event.event_date).filter(
+            Event.platform_id == platform.id, Event.event_date >= cutoff, Event.is_test_event.is_(True)
+        )
+    }
 
     facts = (
         db.query(ProtocolUploadFact)
@@ -314,6 +329,9 @@ def network_protocol_medians(db: Session) -> dict[str, float]:
 
     delays_by_location: dict[Any, list[float]] = {}
     for fact in facts:
+        if (fact.location_id, fact.event_date) in test_keys:
+            # Выгрузка тестового старта — не про скорость протоколов локации.
+            continue
         schedule = schedule_by_location.get(fact.location_id)
         if not schedule:
             continue
@@ -643,7 +661,8 @@ def _network_retention_median(db: Session) -> float | None:
 
     # v2 — из дебютов вычтены безымянные строки протокола. Без этого локация со
     # своим (уже очищенным) удержанием сравнивалась бы с занижённой медианой.
-    cache_key = "organizer:network-retention:v2"
+    # v3 — тестовые старты не дебют и не возвращение (разбор 21.10.2026).
+    cache_key = "organizer:network-retention:v3"
     cached = _read_json_cache(cache_key)
     if cached is not None:
         return cached.get("median")
@@ -661,6 +680,7 @@ def _network_retention_median(db: Session) -> float | None:
                 join events e on e.id = rr.event_id
                 join participants p on p.id = rr.participant_id
                 where rr.finish_time_sec is not null
+                  and not e.is_test_event
                   and coalesce(lower(btrim(rr.status)), '') <> all(:unknown_statuses)
                   and coalesce(lower(btrim(p.display_name)), '') <> all(:unknown_names)
                 group by rr.participant_id
@@ -674,6 +694,7 @@ def _network_retention_median(db: Session) -> float | None:
                            join events e2 on e2.id = rr2.event_id
                            where rr2.participant_id = f.participant_id
                              and rr2.finish_time_sec is not null
+                             and not e2.is_test_event
                            order by e2.event_date
                            limit 1
                        ) as location_id
@@ -689,6 +710,7 @@ def _network_retention_median(db: Session) -> float | None:
                            where rr3.participant_id = d.participant_id
                              and e3.location_id = d.location_id
                              and rr3.finish_time_sec is not null
+                             and not e3.is_test_event
                              and e3.event_date > d.first_date
                        )
                    ) as returned

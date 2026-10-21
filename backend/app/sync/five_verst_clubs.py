@@ -298,8 +298,8 @@ def _detect_slug_change(db: Session, platform: Platform, club: Club, member_ids:
     return matches
 
 
-def _notify_slug_change(club: Club, matched: Club, overlap: int, roster_size: int) -> bool:
-    text = (
+def _slug_change_alert_text(club: Club, matched: Club, overlap: int, roster_size: int) -> str:
+    return (
         "⚠️ Возможная смена slug клуба 5 вёрст\n\n"
         f"Новый клуб: {club.external_key} ({club.name})\n"
         f"URL: {club.source_url or '—'}\n\n"
@@ -308,6 +308,9 @@ def _notify_slug_change(club: Club, matched: Club, overlap: int, roster_size: in
         f"Если это тот же клуб — объединить вручную:\n"
         f"scripts/link_club_catalog.py --rename-slug {matched.external_key} {club.external_key}"
     )
+
+
+def _notify_slug_change(text: str) -> bool:
     return notify_admin(text)
 
 
@@ -424,12 +427,17 @@ def sync_club_details_batch(db: Session, limit: int = 20) -> ClubDetailsSyncResu
 
                 member_ids = _sync_club_membership(db, platform, club, detail, result, now)
 
+                # Тревоги — только после коммита состава: notify_admin — это
+                # Telegram через прокси, при сбое ещё и ВК, до 30 с на каждый, и
+                # в грязной транзакции соединение рвалось бы (iteration_commit).
+                # Текст собираем сейчас: после коммита поля клубов протухают, и
+                # их чтение открыло бы транзакцию прямо перед сетью.
+                slug_alerts: list[str] = []
                 if first_detail_sync:
                     matches = _detect_slug_change(db, platform, club, member_ids)
                     if matches:
                         matched, overlap = matches[0]
-                        if _notify_slug_change(club, matched, overlap, len(member_ids)):
-                            result.slug_change_alerts += 1
+                        slug_alerts.append(_slug_change_alert_text(club, matched, overlap, len(member_ids)))
 
                 club.detail_synced_at = now
                 club.needs_detail_sync = False
@@ -438,6 +446,9 @@ def sync_club_details_batch(db: Session, limit: int = 20) -> ClubDetailsSyncResu
                 result.clubs_synced += 1
                 result.synced_clubs.append(club.external_key)
                 commit_step(db)
+                for alert_text in slug_alerts:
+                    if _notify_slug_change(alert_text):
+                        result.slug_change_alerts += 1
             except Exception as exc:
                 rollback_step(db)
                 result.errors.append(f"{club.external_key}: {exc}")

@@ -592,6 +592,7 @@ def viewer_age_group(db: Session, user_id: UUID | None) -> dict[str, str] | None
             RunResult.participant_id.in_(ids),
             RunResult.age_category.isnot(None),
             RunResult.age_category != "",
+            Event.is_test_event.is_(False),
         )
         .order_by(Event.event_date.desc())
         .first()

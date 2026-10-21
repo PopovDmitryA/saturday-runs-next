@@ -107,7 +107,8 @@ def mark_inactive_locations_paused(
         else:
             latest_event_date = (
                 db.query(func.max(EventSummary.event_date))
-                .filter(EventSummary.location_id == location.id)
+                # Тест №0 — не признак жизни площадки, как и везде в статистике.
+                .filter(EventSummary.location_id == location.id, EventSummary.is_test_event.is_(False))
                 .scalar()
             )
         if latest_event_date is None:

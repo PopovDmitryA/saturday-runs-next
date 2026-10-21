@@ -638,8 +638,12 @@ def _locked_run(
 
     run = ParkrunCatalogRun(status="running", started_at=now, summary={})
     db.add(run)
-    db.commit()
+    # id — до коммита: после него чтение run.id (expire_on_commit) открыло бы
+    # транзакцию SELECT'ом, и скачивание каталога (до минуты) шло бы внутри неё,
+    # а прод рвёт «idle in transaction» через 60 с.
+    db.flush()
     run_id = run.id
+    db.commit()
 
     reasons: list[str] = []
     size = digest = None

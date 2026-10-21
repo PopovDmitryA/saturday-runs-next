@@ -343,7 +343,9 @@ def _event_context(db: Session, event_id: UUID) -> tuple[Event, dict[str, Any], 
         .filter(Event.id == event_id)
         .one_or_none()
     )
-    if event is None:
+    # Тестовый старт — не забег локации: свода и поста по нему нет (в списке
+    # дат его и так нет, а ручной адрес с его id получит 404).
+    if event is None or event.is_test_event:
         return None
 
     loc_ids, all_loc_ids, canonical_name = _catalog_location_ids(db, event)

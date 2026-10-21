@@ -121,6 +121,7 @@ def _apply_status(
     status: S95LocationStatus | None,
     entry: S95ApiLocation,
     result: S95LocationRegistrySyncResult,
+    pending_cancellations: list[CancellationChange],
 ) -> bool:
     if status is None:
         return False
@@ -133,9 +134,7 @@ def _apply_status(
     if pause_changed:
         result.pause_status_changed += 1
     if cancel_changed:
-        result.cancel_status_changed += 1
-        result.cancel_changed_locations.append(location_detail_label(entry.slug, entry.name))
-        result.cancellation_changes.append(
+        pending_cancellations.append(
             CancellationChange(
                 platform_code=PLATFORM_CODE,
                 slug=entry.slug,
@@ -147,11 +146,77 @@ def _apply_status(
     return changed
 
 
+def _commit_entry(
+    db: Session,
+    result: S95LocationRegistrySyncResult,
+    pending_cancellations: list[CancellationChange],
+) -> None:
+    """Коммит шага записи реестра; отмены уходят в result только после него.
+
+    По result.cancellation_changes в конце прогона рассылается мониторинг
+    отмен. Положи изменение туда до коммита — и при упавшем коммите отмена в
+    базе откатится, а сообщение о ней всё равно уйдёт.
+    """
+    commit_step(db)
+    for change in pending_cancellations:
+        result.cancel_status_changed += 1
+        result.cancel_changed_locations.append(location_detail_label(change.slug, change.name))
+        result.cancellation_changes.append(change)
+    pending_cancellations.clear()
+
+
+_GEO_FIELDS = ("region", "city", "country")
+
+
+def _backfill_geo(
+    db: Session,
+    row: Location,
+    result: S95LocationRegistrySyncResult,
+    pending_cancellations: list[CancellationChange],
+) -> bool:
+    """Дозаполнить регион, город и страну по координатам — геокодер вне транзакции.
+
+    Nominatim — сеть (до двух запросов по 15 с плюс пауза лимита), а прод рвёт
+    соединение, простоявшее минуту «idle in transaction» (iteration_commit).
+    Поэтому правки строки коммитим до него, а найденное дописываем короткой
+    транзакцией — коммит следом, в цикле реестра. Геокодер работает с
+    отвязанной копией: после коммита поля строки протухают (expire_on_commit),
+    и их чтение открыло бы транзакцию прямо перед сетью.
+    """
+    if row.latitude is None or row.longitude is None:
+        return False
+    if all(getattr(row, name) is not None for name in _GEO_FIELDS):
+        return False
+    snapshot = Location(
+        external_key=row.external_key,
+        latitude=row.latitude,
+        longitude=row.longitude,
+        region=row.region,
+        city=row.city,
+        country=row.country,
+    )
+    _commit_entry(db, result, pending_cancellations)
+    if not apply_reverse_geocode_to_location(snapshot):
+        return False
+    changed = False
+    for name in _GEO_FIELDS:
+        value = getattr(snapshot, name)
+        # Только пустое: пока ходили в Nominatim, строку мог дописать кто-то ещё.
+        if value is not None and getattr(row, name) is None:
+            setattr(row, name, value)
+            changed = True
+    if changed:
+        row.fetched_at = snapshot.fetched_at
+        db.flush()
+    return changed
+
+
 def _process_entry(
     db: Session,
     platform: Platform,
     entry: S95ApiLocation,
     result: S95LocationRegistrySyncResult,
+    pending_cancellations: list[CancellationChange],
 ) -> None:
     status = _entry_status(entry, result)
 
@@ -167,11 +232,11 @@ def _process_entry(
         if entry.latitude is not None:
             row.is_official_map = True
         row.is_series = series_key_for_platform(PLATFORM_CODE, entry.slug)
-        _apply_status(row, status, entry, result)
-        if apply_reverse_geocode_to_location(row):
-            result.regions_backfilled += 1
+        _apply_status(row, status, entry, result, pending_cancellations)
         result.locations_created += 1
         db.flush()
+        if _backfill_geo(db, row, result, pending_cancellations):
+            result.regions_backfilled += 1
         return
 
     changed = False
@@ -231,7 +296,7 @@ def _process_entry(
         row.is_official_map = True
         changed = True
 
-    if _apply_status(row, status, entry, result):
+    if _apply_status(row, status, entry, result, pending_cancellations):
         changed = True
 
     if changed:
@@ -239,10 +304,9 @@ def _process_entry(
         result.locations_updated += 1
         db.flush()
 
-    if apply_reverse_geocode_to_location(row):
+    if _backfill_geo(db, row, result, pending_cancellations):
         result.regions_backfilled += 1
         result.locations_updated += 1
-        db.flush()
 
 
 def sync_s95_locations_registry(
@@ -269,9 +333,12 @@ def sync_s95_locations_registry(
 
         result.entries_total = len(entries)
         for entry in entries:
+            # Отмены записи копятся здесь и попадают в result только после
+            # коммита (_commit_entry): откатившаяся отмена в рассылку не идёт.
+            pending_cancellations: list[CancellationChange] = []
             try:
-                _process_entry(db, platform, entry, result)
-                commit_step(db)
+                _process_entry(db, platform, entry, result, pending_cancellations)
+                _commit_entry(db, result, pending_cancellations)
             except Exception as exc:
                 rollback_step(db)
                 result.errors.append(f"{entry.slug}: {exc}")

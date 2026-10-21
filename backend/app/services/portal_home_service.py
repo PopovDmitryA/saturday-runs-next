@@ -21,7 +21,7 @@ from uuid import UUID
 import redis
 from pydantic import ValidationError
 from sqlalchemy import String, and_, case, cast, exists, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.core.redis_client import get_redis_client
 from app.models import (
@@ -44,7 +44,7 @@ from app.services.unified_protocol_service import saturday_of, week_start_of
 
 logger = logging.getLogger(__name__)
 
-PORTAL_HOME_CACHE_KEY = "portal:home:v22"
+PORTAL_HOME_CACHE_KEY = "portal:home:v23"
 # TTL сильно больше периода прогрева (раз в час): пересчёт занимает ~2 мин и идёт
 # синхронно в запросе пользователя, поэтому пустой кэш — это минута ожидания на
 # главной. Запас в 24 часа переживает и пропущенные прогревы, и рестарт воркера:
@@ -107,8 +107,18 @@ def chart_window(pulse_date: date) -> tuple[date, date]:
     return week_start - timedelta(days=7 * (CHART_WEEKS - 1)), week_start + timedelta(days=6)
 
 
-def _not_crosslink_secondary(query: Any) -> Any:
-    """Исключить события-дубли (вторичная сторона кросслинка).
+def _counted_events(query: Any) -> Any:
+    """События, которые главная считает: без тестовых стартов и без дублей кросслинков.
+
+    Тестовые старты (is_test_event — забег №0 перед открытием) не считаются
+    нигде, как в едином протоколе и рейтингах. Раньше главная их брала: 10.10.2026
+    на графике «Локации по системам» у 5 вёрст стояло 216 вместо 215 (тест
+    Чехова), а финишей на 9 больше, чем в протоколе (репорт Егора 20.10.2026).
+
+    Вторичная сторона кросслинка — дубль, но только пока её первичное событие
+    само считается: так же решает протокол (_dedupe_crosslinked_events). Если
+    первичное — тест 5 вёрст, вторичное RunPark остаётся (Белгород, весна 2022:
+    иначе 47 финишей RunPark пропали бы с главной, а в протоколе остались).
 
     NOT EXISTS, а не LEFT JOIN + `IS NULL`: планировщик распознаёт эту форму как
     антиджойн и строит Hash Anti Join. С прежним LEFT JOIN он оценивал результат
@@ -119,8 +129,14 @@ def _not_crosslink_secondary(query: Any) -> Any:
 
     Функция стоит в 19 запросах главной, поэтому правка одна, а эффект общий.
     """
+    primary = aliased(Event)
     return query.filter(
-        ~exists().where(EventCrosslink.secondary_event_id == Event.id)
+        Event.is_test_event.is_(False),
+        ~exists().where(
+            EventCrosslink.secondary_event_id == Event.id,
+            EventCrosslink.primary_event_id == primary.id,
+            primary.is_test_event.is_(False),
+        ),
     )
 
 
@@ -196,7 +212,7 @@ def _load_events(db: Session) -> list[_EventRow]:
         .all()
     }
     rows = (
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(
                 Event.id,
                 Event.location_id,
@@ -245,14 +261,19 @@ def _participants_total(db: Session) -> int:
     заводится одноразовая личность, и в счётчике уникальных они выглядели бы
     сотней тысяч человек. Финиши при этом считаются со всеми — безымянный
     бежал так же, как остальные (решение Дмитрия 20.09.2026)."""
-    runners = select(RunResult.participant_id).where(
-        RunResult.participant_id.isnot(None)
+    # Тестовые старты не в счёт: 458 человек бежали только их (на 20.10.2026).
+    runners = (
+        select(RunResult.participant_id)
+        .join(Event, Event.id == RunResult.event_id)
+        .where(RunResult.participant_id.isnot(None), Event.is_test_event.is_(False))
     )
     total = int(
         db.query(func.count(func.distinct(RunResult.participant_id)))
         .join(Participant, Participant.id == RunResult.participant_id)
+        .join(Event, Event.id == RunResult.event_id)
         .filter(
             RunResult.participant_id.isnot(None),
+            Event.is_test_event.is_(False),
             identified_participant_clause(Participant.external_user_id, Participant.display_name),
         )
         .scalar()
@@ -286,7 +307,7 @@ def _participants_in_window(
 ) -> int:
     return int(
         _exclude_locations(
-            _not_crosslink_secondary(
+            _counted_events(
                 db.query(func.count(func.distinct(RunResult.participant_id)))
                 .select_from(RunResult)
                 .join(Event, Event.id == RunResult.event_id)
@@ -307,7 +328,7 @@ def _pulse_flags(
     db: Session, pulse_date: date, excluded_location_ids: list[UUID]
 ) -> tuple[int, int]:
     row = _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(
                 func.coalesce(
                     func.sum(case((RunResult.is_first_run.is_(True), 1), else_=0)), 0
@@ -327,7 +348,7 @@ def _pulse_volunteers(
 ) -> int:
     return int(
         _exclude_locations(
-            _not_crosslink_secondary(
+            _counted_events(
                 db.query(func.count(VolunteerResult.id))
                 .select_from(VolunteerResult)
                 .join(Event, Event.id == VolunteerResult.event_id)
@@ -371,7 +392,7 @@ def _course_minima_before(db: Session, week_start: date) -> list[Any]:
         )
     )
     return list(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(Event.location_id, gender, packed)
             .select_from(RunResult)
             .join(Event, Event.id == RunResult.event_id)
@@ -446,7 +467,7 @@ def _week_results(
     gender = _gender_expr()
     return list(
         _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(
                 Event.id,
                 Event.location_id,
@@ -489,7 +510,7 @@ def _fastest_by_platform(
     редко, показывать вечную дельту смысла нет (Дмитрий, 13.07.2026)."""
     gender = _gender_expr()
     minima = _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(Platform.code, gender, func.min(RunResult.finish_time_sec))
             .select_from(RunResult)
             .join(Event, Event.id == RunResult.event_id)
@@ -509,7 +530,7 @@ def _fastest_by_platform(
     if not wanted:
         return []
     rows = _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(
                 Platform.code,
                 gender,
@@ -573,7 +594,7 @@ def _fastest_previous_sec(
     """Рекорд, который держался до текущего лучшего результата (для дельты)."""
     gender = _gender_expr()
     result = _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(func.min(RunResult.finish_time_sec))
             .select_from(RunResult)
             .join(Event, Event.id == RunResult.event_id)
@@ -596,7 +617,7 @@ def _avg_finish_by_platform(
 ) -> tuple[int | None, dict[str, int]]:
     """Среднее время финиша: общее и по системам (только вменяемые времена)."""
     rows = _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(
                 Platform.code,
                 func.count(RunResult.id),
@@ -632,7 +653,7 @@ def _gender_split(
     пол неизвестен — они просто не попадают в знаменатель)."""
     gender = _gender_expr()
     rows = _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(Platform.code, gender, func.count(RunResult.id))
             .select_from(RunResult)
             .join(Event, Event.id == RunResult.event_id)
@@ -661,7 +682,7 @@ def _newcomers_by_year(
     events (тот список уже агрегирован по протоколу)."""
     year_expr = func.extract("year", Event.event_date)
     rows = _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(
                 year_expr,
                 Platform.code,
@@ -687,7 +708,7 @@ def _newcomers_by_date(
     """(дата, платформа) → число новичков внутри окна дат — бакетится по
     неделям в Python той же формулой, что и остальные недельные графики."""
     rows = _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(
                 Event.event_date,
                 Platform.code,
@@ -715,7 +736,7 @@ def _personal_records_by_year(
     снова можно агрегировать напрямую, без оконных функций."""
     year_expr = func.extract("year", Event.event_date)
     rows = _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(
                 year_expr,
                 Platform.code,
@@ -741,7 +762,7 @@ def _personal_records_by_date(
     """(дата, платформа) → число личных рекордов внутри окна дат — бакетится
     по неделям в Python той же формулой, что и остальные недельные графики."""
     rows = _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(
                 Event.event_date,
                 Platform.code,
@@ -779,7 +800,7 @@ def _registered_parks(db: Session) -> int:
         )
         .join(RunResult, RunResult.participant_id == PlatformLink.participant_id)
         .join(Event, Event.id == RunResult.event_id)
-        .filter(PlatformLink.participant_id.isnot(None))
+        .filter(PlatformLink.participant_id.isnot(None), Event.is_test_event.is_(False))
         .group_by(PlatformLink.user_id, Event.location_id)
         .subquery()
     )
@@ -791,7 +812,7 @@ def _registered_parks(db: Session) -> int:
 def _total_time_sec(db: Session, excluded_location_ids: list[UUID]) -> int:
     return int(
         _exclude_locations(
-            _not_crosslink_secondary(
+            _counted_events(
                 db.query(func.coalesce(func.sum(RunResult.finish_time_sec), 0))
                 .select_from(RunResult)
                 .join(Event, Event.id == RunResult.event_id)
@@ -809,7 +830,7 @@ def _avg_finish_sec_in_range(
     end: date,
 ) -> int | None:
     row = _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(
                 func.count(RunResult.id),
                 func.coalesce(func.sum(RunResult.finish_time_sec), 0),
@@ -837,7 +858,7 @@ def _avg_finish_sec_up_to(
     (без нижней границы) — та же формула, что и avg_overall в _avg_finish_by_platform,
     но на срезе «история до прошлой недели», для дельты историч. среднего."""
     row = _exclude_locations(
-        _not_crosslink_secondary(
+        _counted_events(
             db.query(
                 func.count(RunResult.id),
                 func.coalesce(func.sum(RunResult.finish_time_sec), 0),
@@ -863,7 +884,7 @@ def _total_time_sec_in_range(
 ) -> int:
     return int(
         _exclude_locations(
-            _not_crosslink_secondary(
+            _counted_events(
                 db.query(func.coalesce(func.sum(RunResult.finish_time_sec), 0))
                 .select_from(RunResult)
                 .join(Event, Event.id == RunResult.event_id)
@@ -1033,11 +1054,17 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
     ]
     excluded_set = set(excluded_location_ids)
     events = [row for row in events if row.location_id not in excluded_set]
+    # Серия стартов («Старты сообществ», «С95 и друзья») — формат, а не
+    # площадка (series_locations.py): её финиши идут в суммы, но в счёт
+    # локаций, карту, регионы, топы стартов и рекорды посещаемости — нет, как
+    # в едином протоколе. 08.08.2026 у 5 вёрст на графике было 207 локаций
+    # против 206 в протоколе (репорт Егора 20.10.2026).
+    place_events = [row for row in events if not locations[row.location_id].is_series]
 
     # --- герой ---
     starts_total = len(events)
     finishes_total = sum(row.finishers for row in events)
-    identity_keys = {identity_of(row.location_id) for row in events}
+    identity_keys = {identity_of(row.location_id) for row in place_events}
     hero = {
         "finishes_total": finishes_total,
         "participants_total": _participants_total(db),
@@ -1084,7 +1111,11 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
                 db, year_start, year_end, excluded_location_ids
             ),
             "locations_total": len(
-                {identity_of(row.location_id) for row in year_events}
+                {
+                    identity_of(row.location_id)
+                    for row in year_events
+                    if not locations[row.location_id].is_series
+                }
             ),
             "starts_total": len(year_events),
         }
@@ -1093,7 +1124,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
     top_saturday: list[dict[str, Any]] = []
     if pulse_date is not None:
         best_by_identity: dict[str, _EventRow] = {}
-        for row in events:
+        for row in place_events:
             if row.event_date != pulse_date or row.finishers <= 0:
                 continue
             key = identity_of(row.location_id)
@@ -1120,7 +1151,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         week_end = week_start + timedelta(days=WEEK_RECORD_WINDOW_DAYS - 1)
 
         attendance_list = _week_attendance_records(
-            events, week_start, week_end, identity_of, display_of, slug_of, city_of
+            place_events, week_start, week_end, identity_of, display_of, slug_of, city_of
         )
 
         # рекорды трассы М/Ж: лучшее время недели против исторического
@@ -1215,9 +1246,10 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
         year = row.event_date.year
         finishes_by_year[year] += row.finishers
         finishes_year_platform[(year, row.platform_code)] += row.finishers
-        locations_year_platform[(year, row.platform_code)].add(
-            identity_of(row.location_id)
-        )
+        if not locations[row.location_id].is_series:
+            locations_year_platform[(year, row.platform_code)].add(
+                identity_of(row.location_id)
+            )
     sorted_years = sorted(finishes_by_year)
     while sorted_years and finishes_by_year[sorted_years[0]] == 0:
         sorted_years.pop(0)
@@ -1325,9 +1357,10 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
             week_key = week_start_of(row.event_date)
             finishes_by_week[week_key] += row.finishers
             finishes_week_platform[(week_key, row.platform_code)] += row.finishers
-            locations_week_platform[(week_key, row.platform_code)].add(
-                identity_of(row.location_id)
-            )
+            if not locations[row.location_id].is_series:
+                locations_week_platform[(week_key, row.platform_code)].add(
+                    identity_of(row.location_id)
+                )
         chart_weeks = [
             {
                 "saturday": saturday_of(week),
@@ -1421,11 +1454,13 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
                 {
                     identity_of(row.location_id)
                     for row in rows
-                    if row.event_date >= recent_cutoff
+                    if row.event_date >= recent_cutoff and not locations[row.location_id].is_series
                 }
             )
         else:
-            locations_count = len({identity_of(row.location_id) for row in rows})
+            locations_count = len(
+                {identity_of(row.location_id) for row in rows if not locations[row.location_id].is_series}
+            )
         avg_sec = avg_by_platform.get(code)
         systems.append(
             {
@@ -1443,7 +1478,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
     # --- география ---
     starts_by_identity: dict[str, int] = defaultdict(int)
     identity_sample_location: dict[str, UUID] = {}
-    for row in events:
+    for row in place_events:
         key = identity_of(row.location_id)
         starts_by_identity[key] += 1
         identity_sample_location.setdefault(key, row.location_id)
@@ -1483,7 +1518,7 @@ def _compute_portal_home(db: Session) -> dict[str, Any]:
 
     def _attendance_top(year: int | None) -> list[dict[str, Any]]:
         best: dict[str, _EventRow] = {}
-        for row in events:
+        for row in place_events:
             if row.finishers <= 0:
                 continue
             if year is not None and row.event_date.year != year:

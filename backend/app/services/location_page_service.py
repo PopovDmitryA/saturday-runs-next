@@ -454,7 +454,10 @@ def resolve_location_identity(db: Session, slug: str) -> LocationIdentity | None
     if len(matched) > 1:
         member_ids = [location.id for key in matched for location, _code in identity_locations[key]]
         locations_with_events = {
-            row[0] for row in db.query(Event.location_id).filter(Event.location_id.in_(member_ids)).distinct()
+            row[0]
+            for row in db.query(Event.location_id)
+            .filter(Event.location_id.in_(member_ids), Event.is_test_event.is_(False))
+            .distinct()
         }
 
         def identity_has_events(key: str) -> bool:
@@ -600,6 +603,13 @@ def _histogram_rows(db: Session, event_ids: list[UUID]) -> list[dict[str, object
     (схема отдаёт null) — его собирает страница протокола из своих данных.
     Версию ключа кэша не бампаем: старый снимок валиден, просто толще, и за
     три часа TTL уйдёт сам — бамп означал бы пересчёт всех трёх тысяч страниц.
+
+    anonymous — финиш без человека: безымянная строка протокола («Неизвестный
+    бегун» у RunPark и s95 приходит со временем). Витрина показывает такие
+    отдельно от людей, чей пол не указан: на Тимирязевском «Пол не указан 51»
+    складывалось из 39 безымянных финишей и 12 результатов пяти живых
+    бегунов, и сверить это с топами было нельзя (репорт Егора 20.10.2026).
+    Флаг ставится только строкам без пола — у остальных он ничего не меняет.
     """
     gender_expr = _gender_expression(
         Platform.code,
@@ -609,10 +619,12 @@ def _histogram_rows(db: Session, event_ids: list[UUID]) -> list[dict[str, object
         Participant.gender,
     )
     bin_expr = (RunResult.finish_time_sec // HISTOGRAM_BIN_SEC) * HISTOGRAM_BIN_SEC
+    anonymous_expr = ~func.coalesce(_identified_participant_clause(), False)
     rows = (
         db.query(
             bin_expr.label("start_sec"),
             gender_expr.label("gender"),
+            anonymous_expr.label("anonymous"),
             func.count().label("count"),
         )
         .join(Event, RunResult.event_id == Event.id)
@@ -627,19 +639,55 @@ def _histogram_rows(db: Session, event_ids: list[UUID]) -> list[dict[str, object
         # "start_sec"/"gender": PostgreSQL при group-by по алиасу требует, чтобы
         # все колонки внутри выражения (platforms.code в CASE для gender) тоже
         # были в GROUP BY, и падал с GroupingError. Семантика та же.
-        .group_by(bin_expr, gender_expr)
+        .group_by(bin_expr, gender_expr, anonymous_expr)
         .all()
     )
-    aggregated: dict[tuple[int, str | None], int] = {}
-    for start_sec, gender, count in rows:
+    aggregated: dict[tuple[int, str | None, bool], int] = {}
+    for start_sec, gender, anonymous, count in rows:
         if gender not in ("male", "female"):
             gender = None
-        key = (int(start_sec), gender)
+        key = (int(start_sec), gender, bool(anonymous) and gender is None)
         aggregated[key] = aggregated.get(key, 0) + int(count)
     return [
-        {"start_sec": start_sec, "gender": gender, "count": count}
-        for (start_sec, gender), count in sorted(aggregated.items(), key=lambda item: item[0][0])
+        {"start_sec": start_sec, "gender": gender, "count": count, "anonymous": anonymous}
+        for (start_sec, gender, anonymous), count in sorted(aggregated.items(), key=lambda item: item[0][0])
     ]
+
+
+def _runners_without_gender(db: Session, event_ids: list[UUID]) -> int:
+    """Люди со временем на этой локации, не попавшие ни в мужской, ни в женский зачёт.
+
+    Пол не дали ни протокол, ни профиль — так бывает у старых протоколов
+    parkrun (пять человек на Тимирязевском, 2015–2018). Без этого числа сумма
+    зачётов на /tops молча расходилась с «уникальными участниками» страницы.
+    Ключ человека — тот же, что у топов; безымянные строки сюда не входят.
+    """
+    if not event_ids:
+        return 0
+    gender_expr = _gender_expression(
+        Platform.code,
+        Participant.profile_extra,
+        RunResult.age_category,
+        Participant.age_category,
+        Participant.gender,
+    )
+    group_key = func.coalesce(PlatformLink.user_id, RunResult.participant_id)
+    rows = (
+        db.query(group_key, func.bool_or(gender_expr.in_(("male", "female"))))
+        .select_from(RunResult)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(Platform, Event.platform_id == Platform.id)
+        .join(Participant, RunResult.participant_id == Participant.id)
+        .outerjoin(PlatformLink, _platform_link_join())
+        .filter(
+            RunResult.event_id.in_(event_ids),
+            RunResult.finish_time_sec > 0,
+            _identified_name_clause(Participant.display_name),
+        )
+        .group_by(group_key)
+        .all()
+    )
+    return sum(1 for _key, has_gender in rows if not has_gender)
 
 
 def _location_event_ids(db: Session, location_ids: list[UUID]) -> list[UUID]:
@@ -1031,6 +1079,7 @@ def _compute_location_tops(db: Session, slug: str) -> dict[str, object] | None:
         "winners_female": _top_winners(
             db, event_ids, gender="female", limit=None, by_platform=True
         ),
+        "runners_without_gender": _runners_without_gender(db, event_ids),
     }
 
 
@@ -3544,7 +3593,11 @@ def _collect_catalog_identities(
         for row in db.query(Event.location_id)
         .join(Location, Location.id == Event.location_id)
         .join(Platform, Platform.id == Location.platform_id)
-        .filter(Platform.code.in_(("five_verst", "s95", "runpark")), Location.is_official_map.is_(False))
+        .filter(
+            Platform.code.in_(("five_verst", "s95", "runpark")),
+            Location.is_official_map.is_(False),
+            Event.is_test_event.is_(False),
+        )
         .distinct()
     }
     unofficial_rows = (
@@ -4202,13 +4255,22 @@ def build_location_personal_stats(db: Session, user: User, slug: str) -> dict[st
     }
 
     # Все пробежки пользователя (по всем локациям) — для строки «это N% ваших стартов».
-    total_runs = (
+    # Без тестов и без дублей кросслинков, как «Пробежек всего» в кабинете:
+    # числитель (_location_event_ids) их не считает, и доля выходила занижена
+    # у 210 человек, бегавших тестовые старты (разбор 21.10.2026).
+    from app.services.personal_record_service import user_secondary_crosslinked_run_ids
+
+    duplicate_run_ids = user_secondary_crosslinked_run_ids(db, user_id)
+    total_runs_query = (
         db.query(func.count(RunResult.id))
+        .join(Event, RunResult.event_id == Event.id)
         .join(Participant, RunResult.participant_id == Participant.id)
         .join(PlatformLink, _platform_link_join())
-        .filter(PlatformLink.user_id == user_id)
-        .scalar()
+        .filter(PlatformLink.user_id == user_id, Event.is_test_event.is_(False))
     )
+    if duplicate_run_ids:
+        total_runs_query = total_runs_query.filter(RunResult.id.notin_(duplicate_run_ids))
+    total_runs = total_runs_query.scalar()
     payload["total_runs"] = int(total_runs or 0)
 
     if not event_ids:

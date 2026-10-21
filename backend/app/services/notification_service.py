@@ -417,8 +417,11 @@ def notify_user(
         logger.info("notify: duplicate %s/%s for user %s skipped", kind, dedupe_key, user.id)
         return None
     if commit:
+        # id — до коммита: чтение протухшего поля после него открыло бы
+        # транзакцию, и она висела бы, пока задача уходит в брокер.
+        delivery_id = delivery.id
         db.commit()
-        enqueue_delivery(delivery.id)
+        enqueue_delivery(delivery_id)
     return delivery
 
 
@@ -510,6 +513,13 @@ def deliver_now(db: Session, delivery_id: UUID) -> str:
         return STATUS_SKIPPED
 
     message = build_message(get_settings(), delivery)
+    # Отправители ходят в Telegram/ВК/почту с таймаутами до минуты, а Postgres
+    # рвёт соединение, простоявшее в транзакции дольше 60 с
+    # (idle_in_transaction_session_timeout, app/db/session.py). Поэтому «попытка N»
+    # фиксируется до отправки, итог каждого канала — своей короткой транзакцией
+    # после неё: в сеть уходим без открытой транзакции. Заодно попытку съедает и
+    # отправитель, упавший исключением, — подметальщик не крутит его вечно.
+    db.commit()
     errors: list[str] = []
     transient = False
     for target in targets:
@@ -520,11 +530,15 @@ def deliver_now(db: Session, delivery_id: UUID) -> str:
             delivery.status = STATUS_SENT
             delivery.sent_at = datetime.now(UTC)
             delivery.error = None
+            # Подпись — до коммита: после него поля пользователя протухнут, и их
+            # чтение держало бы транзакцию открытой, пока уходит копия админу.
+            recipient = recipient_label(user)
             db.commit()
-            _admin_copy(user, target.channel, message)
+            _admin_copy(recipient, target.channel, message)
             return STATUS_SENT
         errors.append(f"{target.channel}: {outcome.error}")
         transient = transient or not outcome.permanent
+        db.commit()
 
     delivery.status = STATUS_FAILED
     delivery.error = "; ".join(errors)[:1000]
@@ -543,20 +557,21 @@ def recipient_label(user: User) -> str:
     return f"{name} (№{user.serial_id})"
 
 
-def _admin_copy(user: User, channel: str, message: OutgoingMessage) -> None:
+def _admin_copy(recipient: str, channel: str, message: OutgoingMessage) -> None:
     """Копия доставленного уведомления в админский Telegram (пока включено
     NOTIFICATIONS_ADMIN_COPY). Не сразу: одинаковые сообщения копятся и уходят
     одной сводкой со списком получателей (notification_admin_copy). Сбой
-    копии доставку не откатывает."""
+    копии доставку не откатывает.
+
+    recipient — готовая подпись (recipient_label): зовётся после коммита, и
+    ORM-объект пользователя здесь читать нельзя (см. deliver_now)."""
     settings = get_settings()
     if not settings.notifications_admin_copy or not settings.telegram_admin_chat_id or not settings.telegram_bot_token:
         return
     try:
-        admin_copy.add_copy(
-            recipient_label(user), channels.CHANNEL_TITLES.get(channel, channel), message.telegram_html()
-        )
+        admin_copy.add_copy(recipient, channels.CHANNEL_TITLES.get(channel, channel), message.telegram_html())
     except Exception:  # noqa: BLE001 — копия админу не важнее самой доставки
-        logger.exception("notify: admin copy failed for user %s", user.id)
+        logger.exception("notify: admin copy failed for %s", recipient)
 
 
 def send_test_notification(db: Session, user: User) -> NotificationDelivery | None:

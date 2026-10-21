@@ -226,7 +226,11 @@ class LocationCatalogIndex:
         }
         locations_with_events = {
             location_id
-            for (location_id,) in db.query(EventSummary.location_id).distinct().all()
+            # Тест №0 ещё не забег: точка с одним тестом не «с забегами».
+            for (location_id,) in db.query(EventSummary.location_id)
+            .filter(EventSummary.is_test_event.is_(False))
+            .distinct()
+            .all()
             if location_id is not None
         }
         rows = (

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from app.services.location_cancellation_notify import (
     CancellationChange,
     format_cancellation_report,
@@ -57,3 +60,30 @@ def test_failed_delivery_does_not_break_the_sync() -> None:
             )
             is False
         )
+
+
+def test_admin_message_goes_without_open_transaction(db_session: Session) -> None:
+    """notify_admin — сеть (Telegram/ВК): транзакцию, которую открыло чтение
+    рассылки подписчикам, отпускаем до неё — Postgres рвёт соединение через
+    60 с простоя, и следующий SQL синка упал бы."""
+    seen: list[bool] = []
+
+    def _subscribers_read_only(db: Session, changes: list[CancellationChange]) -> int:
+        db.execute(select(1))  # ранний выход рассылки: прочитали — и ничего не записали
+        return 0
+
+    with (
+        patch(
+            "app.services.cancellation_notification_service.notify_cancellation_subscribers",
+            side_effect=_subscribers_read_only,
+        ),
+        patch(
+            "app.services.location_cancellation_notify.notify_admin",
+            side_effect=lambda _text: seen.append(db_session.in_transaction()) or True,
+        ),
+    ):
+        assert notify_cancellation_changes(
+            [CancellationChange(platform_code="s95", slug="ivanovo", name="Иваново", cancelled=True)],
+            db_session,
+        )
+    assert seen == [False]

@@ -60,6 +60,7 @@ def _run(
     location_name: str = "Кузьминки",
     is_pr: bool = False,
     is_global_pr: bool = False,
+    is_test_event: bool = False,
 ) -> None:
     location = Location(
         platform_id=participant.platform_id,
@@ -73,6 +74,7 @@ def _run(
         location_id=location.id,
         event_date=day,
         external_event_key=f"ev-{uuid4().hex[:10]}",
+        is_test_event=is_test_event,
     )
     db.add(event)
     db.flush()
@@ -177,3 +179,14 @@ def test_streak_survives_crosslinked_duplicate(db_session: Session) -> None:
     payload = build_portal_me(db_session, user, today=date(2026, 8, 20))
 
     assert payload["saturday_streak"] == 2
+
+
+def test_test_run_is_not_the_last_run(db_session: Session) -> None:
+    """Тестовый старт (№0) не встаёт «последней пробежкой» — как в кабинете (разбор 21.10.2026)."""
+    user = _user(db_session)
+    participant = _linked_participant(db_session, user, "five_verst")
+    _run(db_session, participant, date(2026, 8, 8), 1_600, location_name="Своя")
+    _run(db_session, participant, date(2026, 8, 15), 1_500, location_name="Чехов", is_test_event=True)
+
+    payload = build_portal_me(db_session, user, today=date(2026, 8, 20))
+    assert payload["last_run"]["location_name"] == "Своя"

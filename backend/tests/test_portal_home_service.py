@@ -352,3 +352,114 @@ def test_chart_window_labels_weeks_by_their_saturday() -> None:
     """Подпись недели на графиках совпадает с адресом единого протокола."""
     week_start, _ = chart_window(date(2026, 8, 29))
     assert saturday_of(week_start + timedelta(days=7 * (CHART_WEEKS - 1))) == date(2026, 8, 29)
+
+
+def test_counted_events_skip_test_runs_like_the_protocol(db_session: Session) -> None:
+    """Главная не считает тестовые старты — как единый протокол.
+
+    10.10.2026 на графике «Локации по системам» у 5 вёрст стояло 216 вместо
+    215: тест Чехова (№0, 9 финишёров) — репорт Егора 20.10.2026. Дубль
+    кросслинка отсекается, только если его первичное событие само считается:
+    тест 5 вёрст с RunPark-копией (Белгород, весна 2022) оставляет RunPark.
+    """
+    from app.models import EventCrosslink
+    from app.services.portal_home_service import _counted_events
+
+    suffix = uuid4().hex[:8]
+    platforms = {}
+    for code, name in (("five_verst", "5 вёрст"), ("runpark", "RunPark")):
+        row = db_session.query(Platform).filter(Platform.code == code).one_or_none()
+        if row is None:
+            row = Platform(code=code, name=name)
+            db_session.add(row)
+            db_session.flush()
+        platforms[code] = row
+
+    def event(code: str, key: str, *, test: bool = False) -> Event:
+        location = Location(platform_id=platforms[code].id, external_key=f"{key}-{suffix}", name=key)
+        db_session.add(location)
+        db_session.flush()
+        row = Event(
+            platform_id=platforms[code].id,
+            location_id=location.id,
+            external_event_key=f"{key}-{suffix}:1",
+            event_date=date(2026, 10, 10),
+            event_number=0 if test else 1,
+            is_test_event=test,
+            title=key,
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row
+
+    regular = event("five_verst", "regular")
+    chekhov_test = event("five_verst", "chekhov", test=True)
+    belgorod_test = event("five_verst", "belgorod", test=True)
+    belgorod_runpark = event("runpark", "belgorod-rp")
+    dup_primary = event("five_verst", "dup")
+    dup_secondary = event("runpark", "dup-rp")
+    db_session.add_all(
+        [
+            EventCrosslink(primary_event_id=belgorod_test.id, secondary_event_id=belgorod_runpark.id),
+            EventCrosslink(primary_event_id=dup_primary.id, secondary_event_id=dup_secondary.id),
+        ]
+    )
+    db_session.flush()
+
+    mine = [regular, chekhov_test, belgorod_test, belgorod_runpark, dup_primary, dup_secondary]
+    query = db_session.query(Event.id).filter(Event.id.in_([row.id for row in mine]))
+    counted = {row[0] for row in _counted_events(query).all()}
+    assert counted == {regular.id, belgorod_runpark.id, dup_primary.id}
+
+
+def test_home_counts_places_without_test_runs_and_series(db_session: Session) -> None:
+    """Локации на главной — как в едином протоколе: без тестов и без серий.
+
+    Репорт Егора 20.10.2026: 10.10 у 5 вёрст на графике 216 локаций при 215
+    в протоколе (тест Чехова), 08.08 — 207 против 206 («Старты сообществ»).
+    Финиши серии в суммах остаются, финиши теста — нет.
+    """
+    from app.services.portal_home_service import _compute_portal_home
+
+    suffix = uuid4().hex[:8]
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one_or_none()
+    if platform is None:
+        platform = Platform(code="five_verst", name="5 вёрст")
+        db_session.add(platform)
+        db_session.flush()
+    day = date(2026, 10, 10)
+
+    def start(key: str, finishers: int, *, test: bool = False, series: bool = False) -> None:
+        location = Location(
+            platform_id=platform.id,
+            external_key=f"{key}-{suffix}",
+            name=key,
+            country="Россия",
+            is_series=series,
+        )
+        db_session.add(location)
+        db_session.flush()
+        db_session.add(
+            Event(
+                platform_id=platform.id,
+                location_id=location.id,
+                external_event_key=f"{key}-{suffix}:1",
+                event_date=day,
+                event_number=0 if test else 1,
+                is_test_event=test,
+                finishers_count=finishers,
+                title=key,
+            )
+        )
+        db_session.flush()
+
+    start("park", 100)
+    start("chekhov", 9, test=True)
+    start("community", 50, series=True)
+
+    payload = _compute_portal_home(db_session)
+    week = next(item for item in payload["locations_by_week"] if item["saturday"] == day)
+    finishes = next(item for item in payload["chart_weeks"] if item["saturday"] == day)
+    assert week["platforms"]["five_verst"] == 1
+    assert finishes["platforms"]["five_verst"] == 150
+    assert payload["pulse"]["finishes"] == 150
