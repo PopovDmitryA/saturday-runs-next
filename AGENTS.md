@@ -1,7 +1,7 @@
 # Saturday Runs — справочник для агентов
 
 Документ для AI-агентов и разработчиков: архитектура, prod, синхронизация, типичные задачи.  
-Обновлено: **21 сентября 2026**.
+Обновлено: **21 октября 2026** (прод переехал на домашний сервер).
 
 **Секреты и пароли:** локальный файл [`PROJECT_HANDOFF.local.md`](PROJECT_HANDOFF.local.md) (в `.gitignore`, не коммитить). Там SSH, prod PG, OAuth, нюансы деплоя.
 
@@ -56,11 +56,11 @@ data/
   location_catalog.json   # cross-platform location mapping (русские названия parkrun)
 docs/
 docker-compose.yml        # Dev
-docker-compose.prod.yml   # Prod overlay (host PG)
-docker-compose.home.yml   # Воркеры синков на домашнем сервере (база и Redis — прод по tailnet)
-docker-compose.home-site.yml # Боевой стек целиком на домашнем сервере (переезд)
+docker-compose.prod.yml   # Оверрайд VPS (host PG) — до 21.10.2026, теперь только для отката
+docker-compose.home.yml   # Воркеры сбора дома при сайте на VPS (до 21.10.2026 и после отката)
+docker-compose.home-site.yml # БОЕВОЙ стек на домашнем сервере (srs_home) с 21.10.2026
 docker-compose.dev.yml    # VK OAuth на :80
-scripts/deploy_prod.sh    # git-based деплой (см. remote_deploy.sh)
+scripts/deploy_home.sh    # деплой прода (дома); deploy_prod.sh — VPS, только для отката
 scripts/archive/          # отработавшие скрипты Grafana и переезда доменов
 Makefile
 AGENTS.md                 # этот файл
@@ -73,128 +73,142 @@ GitHub: `PopovDmitryA/saturday-runs-next`, branch `main`.
 
 ## 3. Production
 
+**С 21.10.2026 (DNS переключён ~18:20 МСК) боевой сайт работает на домашнем
+сервере `saturday-run`.** VPS 195.58.34.112 заморожен и остаётся точкой отката
+до ~20.11.2026 (см. «VPS после переезда» ниже). Всё, что раньше делалось «на
+проде по SSH», теперь делается на домашнем сервере.
+
 | Параметр | Значение |
 |----------|----------|
-| Хост | `195.58.34.112` |
-| Путь | `/opt/saturday-runs-next` |
-| **Основной сайт** | **https://run5k.run** |
+| **Основной сайт** | **https://run5k.run** (A → 95.165.143.93, статический IP; IPv6 нет — AAAA у апекса удалена) |
+| Хост | домашний сервер `saturday-run` (LAN 192.168.1.26, tailnet `saturday-run`), Ubuntu 24.04 |
+| Код прода | клон `~/srs-prod`, коммит прода — `~/srs-prod/.deployed_sha` |
+| Compose | `cd ~/srs-prod && docker compose -p srs_home -f docker-compose.yml -f docker-compose.home-site.yml --profile telegram` |
+| БД | контейнер `postgres` (postgres:16 Debian, TZ Europe/Moscow, контрольные суммы), с хоста — `127.0.0.1:5433` |
+| Web | роутер 80/443 → `edge` (nginx + TLS, `deploy/nginx/home/edge.conf`, certbot в контейнере) → контейнерный `nginx` → `api` |
+| Маркер «сайт дома» | `~/.srs-site-at-home` — по нему синхронизаторы, бэкап и очередь профилей работают с домашней базой |
 | grafana.run5k.run | заглушка «дашборды переехали»; Grafana закрыта 04.09.2026 |
 | Старый URL ЛK | `app.run5k.run` → 301 на run5k.run |
-| SSH user | `viewer` (пароль в PROJECT_HANDOFF.local.md) |
-| Compose | `docker compose -f docker-compose.yml -f docker-compose.prod.yml` |
-| БД | Host PostgreSQL (`DATABASE_URL` в prod `.env`) |
-| Web | Host nginx (TLS) → Docker nginx :8080 → API + static |
 
 ### Контейнеры (prod)
 
-| Сервис | Назначение |
-|--------|------------|
-Команды — в `docker-compose.yml`, тест `tests/test_celery_beat_schedule.py` и
-`tests/test_worker_queue_isolation.py` читают их оттуда же.
+Все 17 сервисов — в одном стеке `srs_home`. Команды — в `docker-compose.yml`,
+домашние отличия — в `docker-compose.home-site.yml`; тесты
+`tests/test_celery_beat_schedule.py` и `tests/test_worker_queue_isolation.py`
+читают команды оттуда же.
 
 | Сервис | Назначение |
 |--------|------------|
-| `api` | FastAPI, 2 uvicorn workers |
+| `api` | FastAPI, 4 uvicorn workers |
 | `nginx` | React `frontend/dist` + proxy `/api` |
-| `redis` | Sessions, Celery, locks, cooldown — **не публиковать :6379** (на проде публикуется только на tailnet-адрес для домашних воркеров) |
+| `edge` | TLS и домены, редиректы www/app, заглушка grafana; перечитывает сертификат раз в 6 ч |
+| `certbot` | продление сертификатов (`renew --webroot` раз в сутки) |
+| `postgres`, `redis` | база и брокер; наружу — только postgres на 127.0.0.1:5433 |
 | `beat` | Celery Beat (Europe/Moscow) |
 | `worker` | `-Q celery,warm --concurrency=2`: наблюдатель протоколов, прогрев главной, агрегаты популярности, погода, admin-дайджест |
-| `worker-warm` | `-Q warm --concurrency=1`: прогрев рейтингов и страниц локаций (рядом с базой) |
+| `worker-warm` | `-Q warm --concurrency=1`: прогрев рейтингов и страниц локаций |
 | `worker-five-verst-user` | `-Q five_verst_user --concurrency=1` (синки по кнопке) |
-| `worker-parkrun` | `-Q parkrun --max-tasks-per-child=100`: очередь parkrun + og_render (Chromium; пишет картинки в `./data`, которые раздаёт nginx) |
-| `bot` | Telegram long poll (вход + admin: /stats /status /sweep /sync); профиль `telegram` |
-| `tg-proxy` | xray, выход к api.telegram.org (см. §10) |
-
-Воркеры, которые ходят наружу по HTTP, с 17.09.2026 живут **на домашнем
-сервере** (`docker-compose.home.yml`; база и Redis — прод по tailnet). На проде
-`remote_deploy.sh` их гасит (`HOME_SERVICES`), а домашний сервер поднимает
-`scripts/home_workers_sync.sh` по маркеру деплоя (его зовёт таймер
-`pm-home-sync`, см. ниже). Дом лёг — воркеры поднимают на проде руками
-(`compose up -d` этих сервисов) и деплоят с `KEEP_HOME_WORKERS=1 bash
-scripts/deploy_prod.sh` — флаг доезжает до сервера с 25.09.2026:
-
-| Сервис (дом) | Назначение |
-|--------|------------|
 | `worker-five-verst` | `-Q five_verst --concurrency=1 --prefetch-multiplier=1` (фон: сверка, ротация, реестр, клубы) |
 | `worker-five-verst-fresh` | `-Q five_verst_fresh --concurrency=1` (свежесть: latest) — отдельный контейнер, потому что порядок очередей в `-Q` kombu не гарантирует |
 | `worker-s95` | `-Q s95_user,s95 --concurrency=1 --prefetch-multiplier=1 -O fair` |
 | `worker-runpark` | `-Q runpark --concurrency=1 --max-tasks-per-child=1` |
+| `worker-parkrun` | `-Q parkrun --max-tasks-per-child=100`: og_render (Chromium; пишет картинки в `./data`, их раздаёт nginx). Дома сам в parkrun не ходит (`PARKRUN_SERVER_FETCH_ENABLED=false`) |
+| `bot` | Telegram long poll (вход + admin: /stats /status /sweep /sync) |
+| `tg-proxy` | xray, выход к api.telegram.org (см. §10); через неё же дома ходят сверка каталога parkrun (`PARKRUN_CATALOG_PROXY_URL`) и прогноз Open-Meteo (`WEATHER_PROXY_URL` — api.open-meteo.com с домашнего адреса не отвечает) |
 
-Логи домашних контейнеров (и воркеров сбора, и боевого стека после переезда)
-пишутся в journald и переживают пересоздание контейнера при выкате:
-`journalctl -t srs-prod-worker-s95-1 --since '2 days ago' -o cat` (тег — имя контейнера;
-после переезда — `srs_home-worker-s95-1`). Строки длиннее 16 КБ лежат в журнале кусками,
-`docker compose logs` склеивает их обратно, пока контейнер жив.
-До 21.10.2026 json-лог умирал с каждым деплоем, и сбой 13.10 разобрать было нечем.
+Профили parkrun разбирает очередь `pm-site-queue.timer` (копия кода
+`~/saturday-runs-next`, VPN-выходы 127.0.0.1:10851–10878) — с маркером она
+пишет в домашнюю базу.
+
+**Логи** всех контейнеров — в journald и переживают пересоздание при выкате:
+`journalctl -t srs_home-worker-s95-1 --since '2 days ago' -o cat` (тег — имя
+контейнера). Строки длиннее 16 КБ лежат в журнале кусками, `docker compose logs`
+склеивает их обратно, пока контейнер жив.
+
+### Как работать с продом
+
+```bash
+cd ~/srs-prod
+C="docker compose -p srs_home -f docker-compose.yml -f docker-compose.home-site.yml --profile telegram"
+$C ps                                                    # что работает (должно быть 17)
+$C exec -T -e PYTHONPATH=/app api python - < script.py   # разовый скрипт на боевой базе
+$C exec -T api python scripts/<скрипт>.py               # скрипт из репозитория
+$C exec -T postgres psql -U saturday_runs -d saturday_runs_lk   # SQL
+$C logs --since 30m worker                               # логи живого контейнера
+```
+
+С Мака и из других сессий — через tailnet: `ssh saturday-run '<команда>'`.
+Только чтение — `report_ro` на `127.0.0.1:5433` или отчётный API (ниже).
+**На VPS за данными не ходить**: его база закрыта на запись и застыла на 21.10.2026.
 
 ### Деплой
 
 ```bash
-# С Mac (нужны TEMP_SSH_* в .env, sshpass):
-bash scripts/deploy_prod.sh
+# На домашнем сервере (или ssh saturday-run 'bash ~/srs-prod/scripts/deploy_home.sh'):
+bash ~/srs-prod/scripts/deploy_home.sh            # вершина origin/main
+bash ~/srs-prod/scripts/deploy_home.sh <коммит>   # конкретный коммит
 ```
 
-Git-based (не rsync, см. scripts/remote_deploy.sh): прод переводится на вершину `origin/main` одним SSH,
-затем `npm ci && npm run build` в Docker node, alembic upgrade, rebuild workers + api + bot + nginx.
+`deploy_home.sh` переводит `~/srs-prod` на коммит, собирает фронт (node:22-alpine)
+и образы, прогоняет миграции, пересоздаёт стек, перезапускает nginx и
+перечитывает край, проверяет `/health` и что все сервисы в running, и только
+тогда пишет `~/srs-prod/.deployed_sha`. Без маркера `~/.srs-site-at-home` не
+работает. Упал — сайт остаётся на старых контейнерах, код на диске уже новый:
+`deploy_home.sh <прошлый коммит>`.
 
-**Если фронт не обновился** — remote build мог не выполниться; см. PROJECT_HANDOFF.local.md §1.
+`scripts/deploy_prod.sh` (выкат на VPS) после переезда отказывает: на VPS лежит
+`.site-moved-home`. Осознанно (откат) — `ALLOW_VPS_DEPLOY=1`.
 
 **Версия релиза.** Каждый деплой получает версию X.Y.Z (или X.Y.Z-fixN) по
 протоколу docs/release_management.md: ПЕРЕД деплоем согласовать номер с
 Дмитрием (`scripts/add_release.py --suggest` печатает кандидатов), ПОСЛЕ —
-внести скрытую запись релиза на проде (`scripts/add_release.py`). Публикация
+внести скрытую запись релиза на проде: `$C exec -T api python
+scripts/add_release.py …` (правка — `scripts/update_release.py`). Публикация
 и правки — в админке `/admin/releases`.
 
-**Домашний сервер обязан догнать прод.** Код сайта исполняется не только в
-контейнерах на проде: домашний сервер (`saturday-run`, 192.168.1.26) разбирает
-очередь профилей `profile_fetch_pending` — тем же кодом и в ТУ ЖЕ базу. Значит
-после каждого деплоя он должен встать на тот же коммит, иначе схема и код
-разойдутся. 02.09.2026 это уже случилось и проявилось как
-`column users.display_name_style does not exist` посреди разбора очереди.
+**Копия кода очереди профилей.** `~/saturday-runs-next` (очередь parkrun) обязана
+совпадать с продом. Таймер `pm-home-sync` (`scripts/home_sync.sh`) раз в 5 минут
+сверяет её с `~/srs-prod/.deployed_sha` и, если коммит сменился, дожидается
+конца прогона очереди, копирует код и при изменении `pyproject.toml` обновляет
+venv. Там же `scripts/home_workers_sync.sh` с маркером сторожит стек: не все 17
+сервисов в running или `/health` не 200 два захода подряд — тревога админу в
+Telegram (`scripts/lib/home_alert.sh`, повтор не чаще раза в 6 часов,
+«восстановлено» — когда прошло). Сбой ночного бэкапа — тоже тревога.
 
-Толкать обновление с деплоя нельзя: домашняя сеть за NAT, наружу открыты только
-80 и 443, SSH намеренно не проброшен. Поэтому направление — изнутри:
-
-- `remote_deploy.sh` после успешного health-check пишет на проде `.deployed_sha`;
-- на домашнем сервере ДВЕ копии кода: `~/saturday-runs-next` (разбор очереди
-  профилей) и `~/srs-prod` (docker-контейнеры воркеров сбора — 5 вёрст, S95,
-  RunPark, см. `docker-compose.home.yml`). Обе обязаны совпадать с продом;
-- на домашнем сервере таймер `pm-home-sync` запускает `scripts/home_sync.sh`:
-  читает маркер, и если коммит сменился — ждёт конца идущего прогона очереди,
-  останавливает её таймер (и возвращает при любом выходе), подтягивает код,
-  при изменении `pyproject.toml` обновляет venv (упал pip — маркер не пишется,
-  повтор через 5 минут), запускает очередь обратно;
-- клон воркеров `~/srs-prod` двигает ТОЛЬКО `scripts/home_workers_sync.sh`
-  (home_sync.sh зовёт его на каждом заходе): ветка `main` ставится ровно на
-  коммит прода (`checkout -B` — хоть вперёд, хоть назад при откате прода),
-  дальше `up -d --build`. В клоне правки или свои коммиты — не трогает;
-- **`git pull` в `~/srs-prod` не делать**: клон уйдёт вперёд прода. Застрял
-  клон — `git -C ~/srs-prod status`, правки убрать (`git restore`), дальше
-  таймер сам;
-- любая заминка (правки в клоне, упал fetch/pip/docker, воркеры не работают,
-  прод не отвечает по ssh полчаса) — тревога админу в Telegram
-  (`scripts/lib/home_alert.sh`, повтор не чаще раза в 6 часов, «восстановлено» —
-  когда прошло). До 25.09.2026 об этом знал только journal, и воркеры полтора
-  суток собирали данные старым кодом.
-
-Ориентир — именно маркер, а не `git rev-parse HEAD` на проде: HEAD на диске и
-код внутри контейнеров расходятся, если сделать `git pull` без деплоя.
+**`git pull` в `~/srs-prod` не делать** — клон двигает только `deploy_home.sh`.
 
 Предохранитель: `app/db/schema_guard.py` сверяет головную миграцию кода с
 `alembic_version` в базе и останавливает разбор очереди с внятным сообщением,
 если версии разъехались.
 
-**Переезд сайта домой** (подготовлен, не выполнен): `scripts/cutover_to_home.sh`
-по шагам `preflight → certs → media → build → freeze → db → start → mark →
-start-full → warm → verify → DNS → outside`, откат — `scripts/cutover_rollback.sh`
-(`now`; если дома уже писали — `back-dump`, заливка на проде, потом `now`).
-Шаги сами проверяют порядок. После `freeze` на VPS лежит `.site-moved-home`, и
-`deploy_prod.sh` туда не выкатывает (осознанно — `ALLOW_VPS_DEPLOY=1`); выкат дома —
-`scripts/deploy_home.sh`, он без маркера `~/.srs-site-at-home` не работает. В DNS
-переезжают все имена сертификатов: run5k.run, app, grafana (www в панели Timeweb
-нет — он сам повторяет все записи run5k.run, включая TTL). Дома сайт
-в parkrun сам не ходит (`PARKRUN_SERVER_FETCH_ENABLED=false`): адрес общий со всем
-домом, profile-заявки разбирает очередь через VPN-выходы.
+### Бэкапы
+
+`srs-pg-backup.timer` (23:30) → `scripts/home_pg_backup.sh` → S3
+`backup:backup-popov-servers/postgres/saturday_runs_lk/saturday_runs_lk_home_*.dump`
+(локально — `~/srs-backups/pg`, 3 дня; в бакете — 30 дней). Без маркера — SKIP.
+Восстановление — как шаг `db` сценария переезда: `pg_restore --no-owner
+--no-acl`, затем `scripts/create_report_ro_role.sql`.
+
+### VPS после переезда (точка отката до ~20.11.2026)
+
+`195.58.34.112`, `/opt/saturday-runs-next`, ssh `viewer` по ключу с домашнего
+сервера, root — веб-консоль Timeweb. Там:
+- работают api, nginx и redis на заглушке `deploy/nginx/maintenance_on`, фон остановлен;
+- база `saturday_runs_lk` — `default_transaction_read_only = on`;
+- крон `pg_backup.sh` под root закомментирован.
+
+Откат: `scripts/cutover_rollback.sh now` с домашнего сервера:
+- снимает режим «только чтение»;
+- поднимает VPS с чистым расписанием beat;
+- возвращает `.env` и маркер, DNS — руками обратно.
+
+Если дома уже писали — сначала `back-dump`. Он ставит дом на заглушку, переносит
+Redis, кладёт на VPS дамп и скрипт `/tmp/home_back_*.sh`, который запускает root
+на VPS; потом `now`.
+
+Сценарий переезда — `scripts/cutover_to_home.sh` (`preflight → certs → media →
+build → freeze → media → db → start → mark → start-full → warm → verify → DNS →
+outside`). Выполнен 21.10.2026.
 
 **Фронт локально:**
 
@@ -327,7 +341,7 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 
 ## 5. S95: блокировка IP и cooldown
 
-**Prod IP `195.58.34.112` может быть заблокирован s95.ru (HTTP 403).**
+**Адрес, с которого ходит сбор, может быть заблокирован s95.ru (HTTP 403).** Так было с VPS `195.58.34.112`; с 17.09.2026 S95 собирается с домашнего `95.165.143.93`.
 
 | Механизм | Где |
 |----------|-----|
@@ -1029,9 +1043,9 @@ cd backend && ruff check app tests
 | Новая таблица со ссылкой на `users` | Продумать ON DELETE (CASCADE / SET NULL) или добавить шаг в `account_deletion_service` и строку в `BLOCKING_USER_REFERENCES`; сторож — `pytest tests/test_account_deletion.py` (см. §9, «Удаление профиля») |
 | Новый запрос статистики по `events` / `run_results` / `volunteer_results` | Тестовые старты (`events.is_test_event`, забег №0) не считаются нигде — фильтр `Event.is_test_event = false`, как в едином протоколе и рейтингах. Тест не бывает первичной стороной кросслинка: синк снимает такую связку (`upsert.forget_test_event_credits`, миграция 114), поэтому обычный дедуп вторичных событий остаётся верным |
 | Сеть внутри синка или запроса | Перед походом в сеть закрыть транзакцию: `release_before_fetch` / `commit_step` (`app/sync/iteration_commit.py`), в API — `release_db_connection_for_network_io`. Postgres рвёт соединение после 60 с простоя в транзакции; сторож `app/db/tx_guard.py` пишет на проде предупреждение со стеком после 30 с, а в тестах роняет тест |
-| Deploy | `deploy_prod.sh`; verify build + health |
-| API 502 | `docker compose logs api` — часто SyntaxError после деплоя |
-| Prod DB query | SSH + `docker compose exec api python -c "…"` |
+| Deploy | `bash ~/srs-prod/scripts/deploy_home.sh` на домашнем сервере (§3); версию — по протоколу релизов |
+| API 502 | `$C logs api` в `~/srs-prod` (§3) — часто SyntaxError после деплоя |
+| Prod DB query | на домашнем сервере: `$C exec -T -e PYTHONPATH=/app api python - < script.py` или psql в контейнере postgres (§3); НЕ на VPS |
 
 ---
 
@@ -1039,9 +1053,8 @@ cd backend && ruff check app tests
 
 - Коммиты — **только по просьбе** пользователя
 - Prod `.env` не в git; локальный `.env` и `PROJECT_HANDOFF.local.md` — gitignored
-- На сервере руками `git pull` не делать: прод переводится на вершину `origin/main`
-  только деплоем (`scripts/deploy_prod.sh` → `remote_deploy.sh`), иначе код на
-  диске и в контейнерах разъедутся
+- В `~/srs-prod` руками `git pull` не делать: прод переводится на вершину `origin/main`
+  только деплоем (`scripts/deploy_home.sh`), иначе код на диске и в контейнерах разъедутся
 
 ---
 
@@ -1113,8 +1126,10 @@ Prod API **не** fetch'ит parkrun.org.uk. Очередь `profile_fetch_pendi
 | `scripts/recalculate_personal_records.py` | backfill PR |
 | `scripts/import_location_catalog.py` | catalog → DB |
 | `scripts/backfill_location_descriptions.py` | первый сбор описаний площадок (5 вёрст, S95) |
-| `scripts/deploy_prod.sh` | git-based деплой на прод (одним SSH, см. `remote_deploy.sh`) |
-| `scripts/dev_prod_db.sh` | локальный сайт на prod DB (read-only tunnel) |
+| `scripts/deploy_home.sh` | деплой прода на домашнем сервере (§3) |
+| `scripts/deploy_prod.sh` | деплой на VPS — после 21.10.2026 только для отката (`ALLOW_VPS_DEPLOY=1`) |
+| `scripts/cutover_rollback.sh` | откат на VPS: `now`, с данными — `back-dump` (§3) |
+| `scripts/dev_prod_db.sh` | локальный сайт на БД VPS (read-only tunnel) — после переезда смотрит в замороженную базу |
 | `scripts/add_release.py` / `update_release.py` | записи релизов для «Обновлений» |
 | `scripts/prune_server_disk.sh` | чистка диска на сервере (образы без `-a`, кэш сборки, journald) |
 | `make parkrun` | parkrun fetch daemon (Mac; на домашнем сервере — `scripts/home_queue_run.sh`) |
