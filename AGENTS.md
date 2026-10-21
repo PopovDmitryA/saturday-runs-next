@@ -592,7 +592,7 @@ IP, 2 с одного устройства (`SIGNUP_LIMIT_PER_*`). Вход су
   награда — новая запись, без миграции. Название, значок и текст общие для
   всех обладателей. `single_holder=True` — награда одна на весь сайт, вторую
   выдачу сервер отклоняет (409), пока первую не отзовут.
-- **Хранение** — `user_awards` (миграция 111): `code`, `awarded_on` (дата
+- **Хранение** — `user_awards` (миграция 113): `code`, `awarded_on` (дата
   события, её видит человек, — не дата выдачи), `granted_by_user_id`,
   `note` (только для админа, наружу не отдаётся). Вид пропал из кода — строка
   остаётся, но нигде не показывается.
@@ -760,7 +760,7 @@ Telegram / HTML письма / текст VK), `services/notification_service.py
   `user_notification_prefs.cancellation_platforms` (пустой список = все,
   миграция 101; в интерфейсе только 5 вёрст и S95, у parkrun/RunPark
   недельных отмен нет) — и места: таблица `user_cancellation_places`
-  (миграция 111, `services/cancellation_places_service.py`). Место —
+  (миграция 113, `services/cancellation_places_service.py`). Место —
   локация (ключ каталога `catalog:<id>`, поэтому таблица в
   `CATALOG_KEY_REFERENCES`) или целиком `city:`/`region:`/`country:` по
   свёрнутому имени; нет ни одного — вся страна. В настройках это поле с

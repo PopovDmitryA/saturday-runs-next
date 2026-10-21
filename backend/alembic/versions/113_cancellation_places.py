@@ -9,8 +9,8 @@
 узла каталога (`catalog:<id>`), и импорт каталога должен видеть ссылки на
 узел обычным запросом (CATALOG_KEY_REFERENCES).
 
-Revision ID: 111_cancellation_places
-Revises: 110_location_status_override
+Revision ID: 113_cancellation_places
+Revises: 112_parkrun_catalog
 Create Date: 2026-10-21
 """
 
@@ -21,8 +21,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "111_cancellation_places"
-down_revision = "110_location_status_override"
+revision = "113_cancellation_places"
+down_revision = "112_parkrun_catalog"
 branch_labels = None
 depends_on = None
 
