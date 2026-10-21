@@ -547,6 +547,11 @@ class LocationParticipantsResponse(BaseModel):
     volunteers_people_total: int = 0
 
 
+class LocationSystemStatusResponse(BaseModel):
+    is_paused: bool = False
+    is_cancelled: bool = False
+
+
 class LocationIndexItemResponse(BaseModel):
     slug: str
     identity_key: str
@@ -557,6 +562,10 @@ class LocationIndexItemResponse(BaseModel):
     platform_codes: list[str] = Field(default_factory=list)
     is_paused: bool = False
     is_cancelled: bool = False
+    # Статус в каждой системе площадки — по нему фильтр каталога по системе
+    # решает, активна ли она именно там (Раменское: в С95 действует, в 5 вёрст —
+    # на паузе). У площадки с одной системой совпадает с общим статусом.
+    system_status: dict[str, LocationSystemStatusResponse] = Field(default_factory=dict)
     events_count: int = 0
     finishers_total: int = 0
     # Самый первый старт площадки в любой системе, включая parkrun-эпоху.

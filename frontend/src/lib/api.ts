@@ -2955,6 +2955,12 @@ export type LocationIndexItem = {
   platform_codes: string[];
   is_paused: boolean;
   is_cancelled: boolean;
+  /**
+   * Статус в каждой системе площадки — по нему фильтр по системе решает,
+   * активна ли она именно там (Раменское: в С95 действует, в 5 вёрст — на
+   * паузе). Нет поля (кэш старого ответа) — берётся общий статус.
+   */
+  system_status?: Record<string, { is_paused: boolean; is_cancelled: boolean }>;
   events_count: number;
   finishers_total: number;
   /** Самый первый старт площадки в любой системе, включая parkrun-эпоху. */

@@ -80,6 +80,19 @@ function formatAvgFinishers(item: LocationIndexItem): string {
   return value.toFixed(1).replace(".", ",");
 }
 
+/**
+ * Статус площадки с учётом выбранной системы. Без фильтра — общий статус; с
+ * фильтром — статус именно в этой системе: Раменское ушло из 5 вёрст в С95,
+ * и при фильтре «5 вёрст» оно не активная локация, а на паузе (репорт
+ * 22.10.2026 — каталог насчитывал 217 активных 5 вёрст вместо 216).
+ */
+function statusFor(item: LocationIndexItem, platform: string): { isPaused: boolean; isCancelled: boolean } {
+  const own = platform !== "all" ? item.system_status?.[platform] : undefined;
+  return own
+    ? { isPaused: own.is_paused, isCancelled: own.is_cancelled }
+    : { isPaused: item.is_paused, isCancelled: item.is_cancelled };
+}
+
 function matchesQuery(item: LocationIndexItem, query: string): boolean {
   const haystack = [item.name, item.city, item.region, item.country]
     .filter(Boolean)
@@ -141,10 +154,13 @@ const LOCATIONS_COLUMNS: AdaptiveColumn[] = [
 
 function LocationsTable({
   items,
+  platform,
   tableColumns,
   homeIdentityKey,
 }: {
   items: LocationIndexItem[];
+  /** Выбранная система — пометка «на паузе» показывает статус в ней. */
+  platform: string;
   tableColumns: TableColumns;
   homeIdentityKey: string | null;
 }) {
@@ -329,7 +345,7 @@ function LocationsTable({
                       🏠 моя
                     </a>
                   )}
-                  <LocationStatusBadge isPaused={item.is_paused} isCancelled={item.is_cancelled} />
+                  <LocationStatusBadge {...statusFor(item, platform)} />
                 </td>
                 {show("city") && (
                   <td className="muted">
@@ -529,8 +545,11 @@ function LocationsIndexContent() {
       if (platform !== "all" && !item.platform_codes.includes(platform)) {
         return false;
       }
-      if (!showPaused && (item.is_paused || item.is_cancelled)) {
-        return false;
+      if (!showPaused) {
+        const status = statusFor(item, platform);
+        if (status.isPaused || status.isCancelled) {
+          return false;
+        }
       }
       return true;
     });
@@ -610,6 +629,7 @@ function LocationsIndexContent() {
             </p>
             <LocationsTable
               items={filtered}
+              platform={platform}
               tableColumns={tableColumns}
               homeIdentityKey={homeIdentityKey}
             />

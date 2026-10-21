@@ -86,7 +86,8 @@ HISTOGRAM_BIN_SEC = 10
 # чем оправдывает выигрыш (эти цифры не обязаны быть live).
 # v5 — в строку добавлены first_event_date_in_system и first_event_system_code:
 # без бампа кэшированный payload отдавал бы их как None до истечения TTL.
-LOCATIONS_INDEX_CACHE_KEY = "locations:index:v5"
+# v6 — статус по каждой системе (system_status) для фильтра каталога по системе.
+LOCATIONS_INDEX_CACHE_KEY = "locations:index:v6"
 LOCATIONS_INDEX_CACHE_TTL_SECONDS = 3 * 60 * 60
 # Страница/журнал/рейтинги одной локации — тоже тяжёлые (resolve_location_identity
 # перечитывает ВСЕ локации + весь каталог на каждый вызов, плюс десяток
@@ -365,6 +366,55 @@ def _identity_status(
     )
     is_cancelled = not parkrun_only and all(location.is_cancelled for location, _code in locations)
     return is_paused, is_cancelled
+
+
+def _identity_status_by_system(
+    catalog_index: LocationCatalogIndex,
+    locations: list[tuple[Location, str]],
+    identity_status: tuple[bool, bool],
+) -> dict[str, dict[str, bool]]:
+    """Статус идентичности в каждой её системе — для фильтра каталога по системе.
+
+    Общий статус (_identity_status) один на всю локацию: узел каталога на паузе,
+    только если на паузе все его системы. Для фильтра по системе это неверно у
+    переехавшей локации: Раменское ушло из 5 вёрст в С95 — оно действует, но
+    действующей локацией 5 вёрст не является, и при фильтре «5 вёрст» каталог
+    насчитывал 217 активных вместо 216 (репорт 22.10.2026).
+
+    - одна система — её статус и есть общий: обычные локации не меняются;
+    - локация целиком на паузе или отменена — так же во всех системах;
+    - иначе каждая система по своим строкам: parkrun — по действующему каталогу
+      parkrun, как в _identity_status; остальные — по итоговым is_paused и
+      is_cancelled строки (в is_paused уже сложены реестр системы, правило
+      молчания и ручной статус). Из нескольких строк одной системы берётся
+      лучшая: действует, потом отмена, потом пауза.
+    """
+    is_paused, is_cancelled = identity_status
+    codes = sorted({code for _location, code in locations}, key=_platform_order_index)
+    if len(codes) <= 1 or is_paused or is_cancelled:
+        return {code: {"is_paused": is_paused, "is_cancelled": is_cancelled} for code in codes}
+
+    active_parkrun: set[str] | None = None
+    if "parkrun" in codes:
+        from app.parkrun.catalog_store import active_parkrun_slugs
+
+        active_parkrun = active_parkrun_slugs(catalog_index.db)
+    rank = {"active": 0, "cancelled": 1, "paused": 2}
+    best: dict[str, str] = {}
+    for location, code in locations:
+        if code == "parkrun":
+            state = "active" if active_parkrun is not None and location.external_key in active_parkrun else "paused"
+        elif location.is_cancelled:
+            state = "cancelled"
+        elif location.is_paused:
+            state = "paused"
+        else:
+            state = "active"
+        if code not in best or rank[state] < rank[best[code]]:
+            best[code] = state
+    return {
+        code: {"is_paused": best[code] == "paused", "is_cancelled": best[code] == "cancelled"} for code in codes
+    }
 
 
 def _identity_cancel_reason(locations: list[tuple[Location, str]]) -> str | None:
@@ -3696,6 +3746,7 @@ def _compute_locations_index(db: Session) -> dict[str, object]:
                 "platform_codes": sorted({code for _loc, code in ordered}, key=_platform_order_index),
                 "is_paused": is_paused,
                 "is_cancelled": is_cancelled,
+                "system_status": _identity_status_by_system(catalog_index, ordered, (is_paused, is_cancelled)),
                 "events_count": stat.events_count if stat else 0,
                 "finishers_total": stat.finishers_total if stat else 0,
                 "first_event_date": stat.first_event_date if stat else None,
