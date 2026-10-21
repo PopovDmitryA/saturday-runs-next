@@ -163,6 +163,26 @@ def test_federal_city_chip_without_catalog(db_session: Session, catalog: list[di
     assert [p["kind"] for p in places.user_places(db_session, user.id)] == ["city", "region"]
 
 
+def test_places_saved_together_keep_their_order(db_session: Session, catalog: list[dict]) -> None:
+    """Несколько мест одним сохранением встают в том порядке, в каком пришли,
+    а не по алфавиту; добавленное позже — в конец строки."""
+    user = _user(db_session, 9105)
+    notify.update_prefs(db_session, user.id, cancellation_places=["catalog:udel", "region:москва", "catalog:kuzm"])
+    db_session.commit()
+    assert [p["label"] for p in places.user_places(db_session, user.id)] == ["Удельный", "Москва", "Кузьминки"]
+
+    notify.update_prefs(
+        db_session, user.id, cancellation_places=["catalog:udel", "region:москва", "catalog:kuzm", "city:химки"]
+    )
+    db_session.commit()
+    assert [p["label"] for p in places.user_places(db_session, user.id)] == [
+        "Удельный",
+        "Москва",
+        "Кузьминки",
+        "Химки",
+    ]
+
+
 def test_unknown_place_is_rejected(db_session: Session, catalog: list[dict]) -> None:
     user = _user(db_session, 9102)
     with pytest.raises(ValueError):

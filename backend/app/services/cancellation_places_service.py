@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -301,8 +302,19 @@ def set_user_places(db: Session, user_id: UUID, keys: list[str]) -> None:
                 UserCancellationPlace.user_id == user_id, UserCancellationPlace.place_key.in_(removed)
             )
         )
-    for key in new_keys:
-        db.add(UserCancellationPlace(user_id=user_id, place_key=key, label=labels[key][:256]))
+    # Порядок чипов — по created_at. Серверное now() одно на всю транзакцию,
+    # и места, добавленные одним сохранением, выстраивались бы по алфавиту
+    # подписи; поэтому время ставим сами, с шагом в микросекунду.
+    base = datetime.now(UTC)
+    for index, key in enumerate(new_keys):
+        db.add(
+            UserCancellationPlace(
+                user_id=user_id,
+                place_key=key,
+                label=labels[key][:256],
+                created_at=base + timedelta(microseconds=index),
+            )
+        )
     db.flush()
 
 
