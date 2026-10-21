@@ -126,3 +126,97 @@ def test_rank_by_runs_counts_everyone_and_skips_unnamed(db_session: Session) -> 
     assert stats["rank_by_runs"] == 2
     # В знаменателе живые люди: я, лидер и редкий гость.
     assert stats["runners_total"] == 3
+
+
+def test_named_rows_without_barcode_are_not_runners(db_session: Session) -> None:
+    """Строка 5 вёрст без штрихкода, но с именем — не отдельный бегун на каждый старт.
+
+    Йошкар-Ола, репорт 21.10.2026: «из 1013 бегунов» в плитке места, а
+    «уникальных участников» 996. Разницу дали 17 строк без штрихкода: имя в
+    протоколе живое, а личность у каждой строки своя (unknown:<локация>:<дата>:<место>),
+    и проверка имени группы считала её человеком — Peter ZDRAV шёл за 11.
+    Плитка, таблица лидеров, постоянный состав и «уникальные участники»
+    обязаны давать одно число.
+    """
+    from app.services import location_page_service
+
+    suffix = uuid4().hex[:8]
+    platform = _platform(db_session)
+    location = Location(
+        platform_id=platform.id,
+        external_key=f"locrank-nobarcode-{suffix}",
+        name="Парк без штрихкодов",
+        city="Йошкар-Ола",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    events = []
+    for index in range(3):
+        event = Event(
+            platform_id=platform.id,
+            location_id=location.id,
+            external_event_key=f"locrank-nobarcode-{suffix}-{index}",
+            event_date=date(2097, 4, 3 + index * 7),
+            event_number=940_000 + index,
+            title=location.name,
+        )
+        db_session.add(event)
+        events.append(event)
+    db_session.flush()
+
+    me = _participant(db_session, platform, f"nb-me-{suffix}", "Я Бегун")
+    user = _link_user(db_session, platform, me)
+    regular = _participant(db_session, platform, f"nb-regular-{suffix}", "Завсегдатай Парка")
+
+    def _run(event: Event, participant: Participant, position: int) -> None:
+        db_session.add(
+            RunResult(
+                event_id=event.id,
+                participant_id=participant.id,
+                external_result_key=f"{event.external_event_key}:{participant.external_user_id}",
+                position=position,
+                finish_time_sec=1500 + position,
+                status="finished",
+            )
+        )
+
+    for event in events:
+        _run(event, me, 1)
+        _run(event, regular, 2)
+        # Человек без штрихкода: имя есть, личность на каждой строке своя.
+        no_barcode = Participant(
+            platform_id=platform.id,
+            external_user_id=f"unknown:{location.external_key}:{event.event_date}:3",
+            display_name="Peter ZDRAV",
+        )
+        db_session.add(no_barcode)
+        db_session.flush()
+        db_session.add(
+            RunResult(
+                event_id=event.id,
+                participant_id=no_barcode.id,
+                external_result_key=f"{event.external_event_key}:3",
+                position=3,
+                finish_time_sec=1503,
+                status="unknown",
+            )
+        )
+    db_session.commit()
+
+    stats = build_location_personal_stats(db_session, user, location.external_key)
+    assert stats is not None
+    assert stats["runners_total"] == 2
+
+    page = location_page_service.build_location_page(db_session, location.external_key, use_cache=False)
+    assert page is not None
+    assert page["stats"]["unique_participants"] == 2
+
+    leaders = location_page_service.build_location_leaders(db_session, location.external_key, use_cache=False)
+    assert leaders is not None
+    assert [row["name"] for row in leaders["runners"]] == ["Завсегдатай Парка", "Я Бегун"]
+
+    participants = location_page_service.build_location_participants(db_session, location.external_key, use_cache=False)
+    assert participants is not None
+    assert participants["runners_people_total"] == 2
+    assert "Peter ZDRAV" not in {row["name"] for row in participants["runners"]}
