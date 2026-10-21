@@ -43,7 +43,7 @@ backend/
   app/                    # FastAPI, models, sync, parsers, services
   app/workers/celery_app.py
   app/workers/tasks/      # five_verst_sync, s95_sync, parkrun_sync, sync_task_reporting
-  app/s95/fetch/          # Playwright + Redis lock + priority yield
+  app/s95/fetch/          # httpx (HTML + JSON API), Redis lock, пауза, лестница охлаждения, priority yield
   app/services/           # dashboard, location_catalog, sync_job, personal_record
   bot_app/                # Telegram: вход + admin-бот (/stats, /status, /sweep, /sync)
   scripts/                # CLI: синки, перечитки, релизы; archive/ — отработавшие бэкфилы
@@ -61,6 +61,7 @@ docker-compose.home.yml   # Воркеры сбора дома при сайте
 docker-compose.home-site.yml # БОЕВОЙ стек на домашнем сервере (srs_home) с 21.10.2026
 docker-compose.dev.yml    # VK OAuth на :80
 scripts/deploy_home.sh    # деплой прода (дома); deploy_prod.sh — VPS, только для отката
+scripts/dev_stack.sh      # стенд под worktree на домашнем сервере (§13)
 scripts/archive/          # отработавшие скрипты Grafana и переезда доменов
 Makefile
 AGENTS.md                 # этот файл
@@ -146,15 +147,14 @@ $C logs --since 30m worker                               # логи живого
 ```bash
 # На домашнем сервере (или ssh saturday-run 'bash ~/srs-prod/scripts/deploy_home.sh'):
 bash ~/srs-prod/scripts/deploy_home.sh            # вершина origin/main
-bash ~/srs-prod/scripts/deploy_home.sh <коммит>   # конкретный коммит
+bash ~/srs-prod/scripts/deploy_home.sh <коммит>   # откат (коммит из main, см. ниже)
 ```
 
 `deploy_home.sh` переводит `~/srs-prod` на коммит, собирает фронт (node:22-alpine)
 и образы, прогоняет миграции, пересоздаёт стек, перезапускает nginx и
 перечитывает край, проверяет `/health` и что все сервисы в running, и только
 тогда пишет `~/srs-prod/.deployed_sha`. Без маркера `~/.srs-site-at-home` не
-работает. Упал — сайт остаётся на старых контейнерах, код на диске уже новый:
-`deploy_home.sh <прошлый коммит>`.
+работает. Упал — что уже новое и как откатить, см. «Протокол деплоя» ниже.
 
 `scripts/deploy_prod.sh` (выкат на VPS) после переезда отказывает: на VPS лежит
 `.site-moved-home`. Осознанно (откат) — `ALLOW_VPS_DEPLOY=1`.
@@ -180,6 +180,64 @@ Telegram (`scripts/lib/home_alert.sh`, повтор не чаще раза в 6 
 Предохранитель: `app/db/schema_guard.py` сверяет головную миграцию кода с
 `alembic_version` в базе и останавливает разбор очереди с внятным сообщением,
 если версии разъехались.
+
+### Протокол деплоя
+
+Деплой = «привести прод к вершине `origin/main`», а не «выкатить мою фичу»:
+`deploy_home.sh` сам делает `git fetch` в `~/srs-prod` и берёт `origin/main`,
+откуда бы его ни позвали. Незапушенное и несмерженное не уедет; один запуск
+везёт все смерженные фичи, а каждый — это `npm ci`, сборка образов и
+пересоздание стека: по разу на фичу не гонять. Просьбы поэтому две.
+
+**«Закоммить и запушь»** — фичевая сессия, прод не трогаем:
+1. Коммитить только своё — по путям (`git add <пути>`), не `-A`.
+2. `git fetch origin && git rebase origin/main`, затем `git push origin HEAD:main`
+   (отказ — снова fetch + rebase, без `--force`). Ветку `main` в worktree не
+   переключить — её держит основная папка, и она там отстаёт: не ориентир.
+3. Доложить: коммит в `origin/main`, деплой — отдельной просьбой.
+   **`deploy_home.sh` не запускать**: соседняя сессия может быть посреди
+   вливания, и выкат увезёт её полуфабрикат.
+
+**«Задеплой»** — деплойная сессия:
+1. Версию релиза согласовать с Дмитрием (абзац «Версия релиза» выше).
+2. Что поедет: `git fetch origin && git log --oneline $(cat ~/srs-prod/.deployed_sha)..origin/main`.
+   Коммит прода — маркер, не `HEAD` клона: после упавшего выката `HEAD` уже
+   новый, маркер — прежний. Маркер записать: это коммит отката.
+3. **Замка нет** (`/tmp/saturday-runs-deploy.lock` — только у `deploy_prod.sh`):
+   два запуска подерутся за checkout, сборку и `up -d` одного стека. Перед
+   запуском `pgrep -af '[d]eploy_home'` (без скобок найдёт свою же оболочку); идёт —
+   дождаться и сверить маркер, твой коммит мог уехать с ним.
+4. `bash ~/srs-prod/scripts/deploy_home.sh` и дочитать вывод. Успех — последняя
+   строка `✓ health 200, маркер обновлён: <sha>`. Любой сбой (fetch, коммит,
+   сборка фронта или образов, миграция, `up`, nginx/край, `/health` не 200,
+   сервис не в running) — `ДЕПЛОЙ НЕ ПРОШЁЛ: …` и код 1. Перезапускать —
+   только поняв причину.
+5. После — скрытая запись релиза. Копию очереди профилей `pm-home-sync`
+   подтянет сам (заход раз в 5 мин, идущий прогон очереди пережидает).
+
+**Сбой и откат.**
+- До `up -d` (фронт, образы, миграция) контейнеры старые, но на диске уже
+  новое: **фронт** (nginx отдаёт `frontend/dist` с диска, его пересобирают
+  первым шагом) и **код** (`./backend` смонтирован во все python-сервисы —
+  перезапуск любого поднимет новый код). После `up -d` новые и контейнеры.
+- Откат — `deploy_home.sh <коммит>`, коммит — маркер до выката (шаг 2; на
+  сбое `.deployed_sha` не двигается, после успеха он уже новый). Скрипт не
+  сверяет коммит с `origin/main` и не предупреждает: всё смерженное позже
+  уедет с прода, а `origin/<ветка>` выкатит несмерженное. «Выкатить только моё» старым коммитом — нельзя.
+- **Через новую миграцию так не откатиться**: старый код её не знает,
+  `alembic upgrade head` падает `Can't locate revision`, скрипт встаёт на
+  миграциях. Сначала, пока `~/srs-prod` на новом коммите (миграции alembic
+  берёт с диска), `$C run --rm -T api alembic downgrade <ревизия>`, потом
+  выкат; или чинить вперёд. Ревизия — `revision = "…"` головного файла
+  `backend/alembic/versions` старого коммита (с именем файла совпадает не
+  всегда: 101, 104). Откат уже упал — клон стоит на старом коммите, сначала
+  `git -C ~/srs-prod checkout -q --detach <новый>`.
+- Работает та копия скрипта, которую позвали: из `~/srs-prod` — версия
+  прошлого выката (bash дочитывает старый файл и после checkout). Правка
+  самого `deploy_home.sh` действует со следующего выката.
+- Руками в `~/srs-prod` не править: `checkout --detach` (не `reset --hard`,
+  как на VPS) понесёт правку в следующий выкат, а конфликтующую — уронит на
+  checkout.
 
 ### Бэкапы
 
@@ -209,13 +267,6 @@ Redis, кладёт на VPS дамп и скрипт `/tmp/home_back_*.sh`, к�
 Сценарий переезда — `scripts/cutover_to_home.sh` (`preflight → certs → media →
 build → freeze → media → db → start → mark → start-full → warm → verify → DNS →
 outside`). Выполнен 21.10.2026.
-
-**Фронт локально:**
-
-```bash
-make frontend-build   # или docker run node:22-alpine …
-docker compose restart nginx
-```
 
 ### Запросы к prod-БД (read-only reporting API)
 
@@ -270,7 +321,7 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 | `five_verst` | worker-five-verst | остальные `five_verst_sync.*`: registry, rotation, reconcile, обход недели, клубы, сообщества |
 | `s95_user` | worker-s95 | `run_user_sync`, `run_admin_resync` (приоритетная, уступка через LLEN) |
 | `s95` | worker-s95 | остальные `s95_sync.*`: реестр, JSON-протоколы, отмены, описания |
-| `parkrun` | worker-parkrun | `parkrun_sync.*` (очередь профилей), `og_render.*` |
+| `parkrun` | worker-parkrun | `parkrun_sync.*` (дома в parkrun не ходит: «Обновить» ставит заявку в `profile_fetch_pending`, разбор выключен `PARKRUN_SERVER_QUEUE_ENABLED=false`), `og_render.*` |
 | `runpark` | worker-runpark | `runpark_sync.*`: latest, кросслинки, user_sync |
 | `warm` | worker-warm, worker | `leaderboards.warm_cache`, `locations.warm_cache` |
 | `celery` (default) | worker | наблюдатель протоколов, прогрев главной, page_stats, погода, user_names, sync_runs.close_stale, дайджест |
@@ -286,7 +337,7 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 
 При появлении задачи в `s95_user` batch прерывается (`S95YieldForUserSync` в `app/s95/fetch/priority.py`), ставится обратно в очередь, user sync выполняется первым.
 
-Код: `coordinator.py`, `rate_limit.py`, `s95_athletes_registry.py`, `workers/s95_batch_yield.py`.
+Код: `app/s95/fetch/` — `coordinator.py` (одна дверь для HTML и JSON), `priority.py`, `rate_limit.py`; `workers/s95_batch_yield.py`.
 
 ### 5 вёрст user priority (пауза батча)
 
@@ -332,34 +383,42 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 | location_descriptions | `:50` каждые 4 ч |
 
 **RunPark**: latest 3,8,13,18,23 (`:00`); backfill crosslinks 03:30.
-**parkrun**: очередь профилей `:07`/`:37`; og_render — выходные и понедельник.
+**parkrun**: `process_pending_queue` `:07`/`:37` — только на VPS (дома выключено, очередь разбирает `pm-site-queue.timer`, §16); og_render — выходные и понедельник.
 **Прогревы**: главная — выходные ежечасно `:15`, будни 4,9,14,19; рейтинги `:20`
 и локации `:40` каждые 2 ч. **Служебное**: page_stats `:35`, sync_runs.close_stale
 `:05`, статусы локаций 21:10, дайджест 21:50, погода 03:05/03:20 (+ пятница 8,14,20).
 
 ---
 
-## 5. S95: блокировка IP и cooldown
+## 5. S95: блокировка адреса и охлаждение
 
-**Адрес, с которого ходит сбор, может быть заблокирован s95.ru (HTTP 403).** Так было с VPS `195.58.34.112`; с 17.09.2026 S95 собирается с домашнего `95.165.143.93`.
+**Адрес, с которого ходит сбор, может быть заблокирован s95.ru.** Так было с VPS `195.58.34.112`; с 17.09.2026 S95 собирается с домашнего `95.165.143.93`.
+
+Транспорт — обычный httpx (`app/s95/fetch/http.py`), Playwright снят 17.07.2026,
+образ `worker-s95` без Chromium. HTML (профили участников, описания и статус
+локаций) и JSON API (`app/s95/api_client.py`: `pages.json`, события, активности)
+идут через одну дверь `fetch/coordinator.py`: уступка пользователю →
+охлаждение → пауза 15–30 с → Redis-замок → пауза ещё раз под замком → запрос.
+До 29.08.2026 JSON ходил мимо координатора.
 
 | Механизм | Где |
 |----------|-----|
-| Детект 403 / Forbidden | `app/s95/ban.py`, `fetch/browser.py`, `fetch/coordinator.py` |
-| Cooldown 1 час | Redis `s95:fetch:ban_cooldown_until`, `s95_ban_cooldown_seconds=3600` |
-| Пропуск batch при cooldown | `sync_task_reporting.py` |
-| Текст ошибки пользователю | `app/s95/messages.py`, `sync_error_format.py` |
+| Отказ = бан | 403/429 и `ConnectError` (с 25.08.2026 s95 рвёт TCP) — `fetch/http.py`; страница защиты в HTML — `app/s95/ban.py`. Таймаут — не бан |
+| Охлаждение 1ч → 5ч → 24ч → 72ч → неделя | `fetch/ban_state.py`; Redis `s95:fetch:ban_cooldown_until` + `s95:fetch:ban_level`; `s95_ban_cooldown_steps_seconds`. Успешный запрос сбрасывает лестницу |
+| Пропуск batch при охлаждении | `sync_task_reporting.py` (`platform_fetch/cooldown.py`) |
+| Текст ошибки пользователю | `app/s95/messages.py`, `services/sync_error_format.py` |
 
-Диагностика:
+Диагностика (`$C` — см. §3, «Как работать с продом»):
 
 ```bash
-scripts/check_failed_sync_jobs.py   # полные тексты ошибок sync_jobs
-redis-cli GET s95:fetch:ban_cooldown_until
+$C exec -T api python scripts/check_failed_sync_jobs.py      # полные тексты ошибок sync_jobs
+$C exec -T redis redis-cli GET s95:fetch:ban_cooldown_until   # unix-время конца охлаждения
+$C exec -T redis redis-cli GET s95:fetch:ban_level            # ступень лестницы
 ```
 
 ---
 
-## 6. Синхронизация: три уровня
+## 6. Синхронизация: два уровня
 
 ### 6.1 Bulk sync (Celery, автомат)
 
@@ -375,24 +434,52 @@ Admin queue: `/admin/queue`, API `/api/admin/sync-queue`.
 
 **Reconcile «задача не была обработана воркером»:** задача dequeued, но worker занят long batch; исправлено проверкой `task_is_worker_reserved` + S95 yield.
 
-### 6.3 S95 athletes registry
-
-Перепроверка профилей без штрихкода / stale `profile_checked_at`. До 50 за прогон, ~30 мин.
-
 ---
 
-## 7. Personal records (PR)
+## 7. Личные рекорды (PR)
 
-| Тип | Логика | UI |
-|-----|--------|-----|
-| PR | Улучшение на платформе, метка протокола 5v «Личный рекорд!», первая пробежка | плашка **PR** |
-| Global PR | Первое улучшение лучшего времени среди всех систем | **оранжевый жирный** финиш |
+Три хранимых флага на `run_results` (`is_global_pr` и `is_location_pr` —
+миграция 046, `is_pr` старше). Правило одно: **первый
+результат в разрезе — база отсчёта, а не рекорд**; рекорд — только строго более
+быстрый забег позже. Тестовые старты (`is_test_event`) и дубли «не в зачёте»
+(вторичная сторона `event_crosslinks`) базу не задают и флагов не получают.
 
-Код: `personal_record_service.py`, `dashboard_service.py`, `GlobalPrFinishTime.tsx`.
+| Флаг | Разрез | Пересчёт | UI |
+|------|--------|----------|----|
+| `is_pr` | одна система (5 вёрст / S95 / parkrun / RunPark), по `Participant` | `recalculate_personal_records(db, platform, participant_id=…)`; у 5 вёрст метка протокола «Личный рекорд» (`achievement_labels`) OR-ится с расчётом | плашка **PR** (`.badge-pr`) |
+| `is_global_pr` | все системы человека, по `User`; каждое улучшение лучшего времени; дебют в новой системе — рекорд, если быстрее всего прежнего | `recalculate_cross_platform_personal_records(db, user_id)` | **янтарный жирный** финиш (`GlobalPrFinishTime.tsx`) |
+| `is_location_pr` | одна физическая локация сквозь системы, по `User`; ключ — `LocationCatalogIndex.canonical_identity_key` (`catalog:<id>`, без узла — `location:<id>`) | та же функция, что для `is_global_pr` | **фиолетовое жирное** название локации (`LocationPrLocationName.tsx`) |
 
-Backfill: `scripts/recalculate_personal_records.py --platform all`.
+**Витрина ≠ база** (решение Дмитрия 19.07.2026). В списке пробежек и на
+странице рекордов (`dashboard_service.list_user_runs` /
+`list_user_personal_records`) дебют в системе идёт с плашкой PR
+(`is_pr OR is_first_run`), а самая первая пробежка с временем — как глобальный
+рекорд (`_user_first_timed_run_id`); флаги в БД остаются False. Что попадает в
+список PR и в счётчик плитки, решает один фильтр
+`run_displayed_personal_record_sql_filter()`. Поменял критерий — увеличь
+`ANALYTICS_VERSION`.
 
-**Не вызывать** старый reset PR всей платформы по participant — исправлено.
+Пересчёт запускается сам: `sync/upsert.py` после записи протокола или профиля
+(`recalculate_pr`) пересчитывает затронутым участникам флаги дебюта, потом
+`is_pr`, потом кросс-системные флаги. Демон очереди parkrun копит участников в
+`parkrun_pr_service.deferred_pr_recalc()` и считает их одним проходом в конце прогона.
+С `participant_id` сбрасывается только этот участник, без него — вся
+платформа (тяжело; так работает полный обход S95 API).
+
+Не путать: `location_records_service.py` — рекорды трассы среди ВСЕХ бегунов
+(«Рекорды локаций»), к этим флагам не относится. Вехи «Моей истории»
+(`my_history_service.py`) считают те же три разреза на лету, одна веха на
+пробежку: global_pr → pr → location_pr.
+
+Бэкфилл (на проде — `$C exec -T api …`, §3):
+
+```bash
+python scripts/recalculate_personal_records.py --platform all          # is_pr; ещё --platform five_verst|s95|parkrun|runpark, --participant-id
+python scripts/recalculate_cross_platform_personal_records.py          # is_global_pr + is_location_pr; --user-id
+```
+
+`backend/scripts/run_recalc_all_prs.sh` прошит на путь VPS
+(`/opt/saturday-runs-next`) — дома не работает.
 
 ---
 
@@ -875,8 +962,8 @@ Telegram / HTML письма / текст VK), `services/notification_service.py
 | Платформа | Lock | Интервал |
 |-----------|------|----------|
 | 5 verst | Redis | 20–30 с |
-| S95 | Playwright + Redis | 15–30 с, concurrency=1 cluster-wide |
-| parkrun | Mac Chromium | см. docs/parkrun_pipeline.md |
+| S95 | httpx + Redis `s95:fetch:global_lock` (TTL 180 с) | 15–30 с, пауза и до замка, и под ним; один запрос на кластер |
+| parkrun | Redis `parkrun:fetch:global_lock` (`parkrun_fetch_lock`); у очереди профилей — в её Redis :6399 | очередь дома: httpx через VPN-выходы, `DELAY`=3 с ±30%; серверный путь и ручной `make parkrun` — 25–55 с (§16) |
 
 ---
 
@@ -1006,9 +1093,60 @@ Telegram / HTML письма / текст VK), `services/notification_service.py
 
 ## 13. Локальная разработка
 
+### Домашний сервер (`saturday-run`, `~/dev/saturday-runs-next`)
+
+У каждого worktree свой стенд `srs_<имя>` — `scripts/dev_stack.sh` (справка: `--help`):
+
+```bash
+scripts/dev_stack.sh up            # redis + api + nginx, свободные порты подбирает сам
+scripts/dev_stack.sh up --own-db   # своя копия dev-базы — если в ветке есть миграции
+scripts/dev_stack.sh up --front    # пересобрать фронт (node:22-alpine под своим uid)
+scripts/dev_stack.sh url           # адрес; ещё: ls (все стенды), logs api, psql, down, rm, chown
+```
+
+- Порты: сайт `18080+N`, api `18000+N`; слот закреплён в
+  `docker-compose.worktree-override.yml` (gitignored, правит только скрипт).
+- База общая — postgres основного стека `srs_dev` на `15433`; без него `up`
+  падает. Поднять в основном клоне:
+  `docker compose -p srs_dev -f docker-compose.yml -f docker-compose.devserver.yml up -d postgres`
+  (`devserver.yml` лежит только на сервере, в git его нет).
+- `alembic upgrade head` в общую базу не катать — там соседние стенды. Ветка
+  с миграцией → `up --own-db`.
+- Воркеры и beat стенд не поднимает (дублировали бы задачи в общей базе);
+  `--with-workers` — только вместе с `--own-db`.
+- Compose стенда: `C="docker compose -p srs_<имя> -f docker-compose.yml -f docker-compose.worktree-override.yml"`
+  (имя — в `scripts/dev_stack.sh ls`). Голый `docker compose` / `make up` в
+  worktree поднимет другой проект: все воркеры, beat, свой postgres.
+- **`127.0.0.1:5433` на сервере — БОЕВОЙ postgres `srs_home`.** Туда же
+  смотрит дефолтный `DATABASE_URL` в `app/config.py`. Поэтому `make migrate`,
+  `make test`, `make lint` (это `cd backend && alembic|pytest|ruff|mypy` прямо
+  на хосте) здесь не запускать. node на хосте нет; venv с backend один —
+  `~/queue-venv` очереди профилей (alembic есть, pytest/ruff/mypy нет), его
+  не активировать.
+- `make frontend-build` здесь не годится: без `--user` оставляет root-овые
+  `node_modules`/`dist`. Фронт — `scripts/dev_stack.sh up --front`.
+
+Проверки — те же, что в CI (`.github/workflows/ci.yml`):
+
+```bash
+# Образ api с 21.09.2026 — только рантайм, pytest/ruff/fakeredis в нём нет.
+# Ставим в контейнер стенда (живут до его пересоздания), зовём через python -m:
+$C exec api pip install --user -q pytest pytest-timeout fakeredis ruff
+$C exec api python -m pytest -q tests/test_<что>.py   # база стенда, тест откатывается; нет базы — skip
+$C exec api python -m ruff check app tests bot_app
+# Фронт: lint = tsc --noEmit
+docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_cache=/tmp/.npm \
+  -v "$PWD/frontend:/app" -w /app node:22-alpine sh -c "npm ci --no-audit --no-fund && npm run lint"
+```
+
+`mypy` — не ворота: `mypy app` даёт 833 ошибки (21.10.2026), в CI шаг с
+`continue-on-error`. Отсюда `make lint` (ruff && mypy) красный всегда.
+
+### Отдельная машина (не сервер)
+
 ```bash
 cp .env.example .env   # + PROJECT_HANDOFF.local.md для prod credentials
-docker compose up --build
+docker compose up --build            # = make up; погасить — make down
 docker compose exec api alembic upgrade head
 make frontend-build && docker compose restart nginx
 ```
@@ -1017,15 +1155,12 @@ make frontend-build && docker compose restart nginx
 |-----|------------|
 | http://localhost:8080 | сайт |
 | http://localhost:8080/about | О проекте |
-| http://localhost/login | VK нужен порт 80 (`docker-compose.dev.yml`) |
-| localhost:5433 | Postgres (DBeaver) |
+| http://localhost/login | VK нужен порт 80 (`docker-compose.dev.yml`); на сервере 80/443 заняты краем прода |
+| localhost:5433 | dev Postgres (DBeaver) — только не на сервере (там это прод) |
 
-Тесты:
-
-```bash
-docker compose run --rm api pytest
-cd backend && ruff check app tests
-```
+Тесты и линт — как на сервере (`docker compose exec api pip install …`,
+`python -m pytest`, `python -m ruff check app tests bot_app`).
+`make migrate/test/lint` идут на хосте и требуют venv с `pip install -e ".[dev]"`.
 
 ---
 
@@ -1036,7 +1171,7 @@ cd backend && ruff check app tests
 | S95 все sync failed | Проверить 403 с prod IP, cooldown Redis, писать админам S95 |
 | Очередь admin — длинные ошибки | tooltip в QueuePage; полный текст в `error_message` |
 | Parkrun English names | catalog link + norm slug; import catalog |
-| PR не показывается | `is_pr`, five_verst protocol label, backfill PR |
+| PR не показывается | `is_pr` / `is_global_pr` / `is_location_pr`, метка протокола 5 вёрст, витрина (`is_first_run`); бэкфилл обоими скриптами §7 |
 | Новая страница на сайте | Роут в `App.tsx` + раздел в аналитике: `_STATIC_PAGE_TYPES`, `PAGE_TYPE_LABELS`, `APP_ROUTES` (см. §12) |
 | Новая страница: где её найдут | Пункт в `frontend/src/features/portal/nav/siteNav.ts` с синонимами (`keywords`) — из этого дерева рисуются рельс и колонка на компьютере, ссылки шапки и подвал, нижняя панель, полоса страниц раздела и «Меню» на телефоне и поиск по страницам. Новый верхний адрес раздела — ещё и в `SECTION_PATH_PREFIXES`; проверка — `pytest tests/test_site_nav_routes.py` (см. §12, «Навигация и поиск») |
 | Новая особая награда | Запись в `backend/app/award_kinds.py` (код, название, значок, текст, `single_holder`, на марке — `emblem`/`caption`/`tone`), выдача — в `/admin/users` → «Награды» (см. §9, «Особые награды») |
@@ -1051,7 +1186,10 @@ cd backend && ruff check app tests
 
 ## 15. Git и prod
 
-- Коммиты — **только по просьбе** пользователя
+- Коммит, пуш и деплой делает агент, но **только по явной просьбе** Дмитрия;
+  «закоммить и запушь» и «задеплой» — разные просьбы (§3, «Протокол деплоя»).
+  Сессии живут в worktree на ветках `claude/*`; в `main` — rebase на
+  `origin/main` и `git push origin HEAD:main`.
 - Prod `.env` не в git; локальный `.env` и `PROJECT_HANDOFF.local.md` — gitignored
 - В `~/srs-prod` руками `git pull` не делать: прод переводится на вершину `origin/main`
   только деплоем (`scripts/deploy_home.sh`), иначе код на диске и в контейнерах разъедутся
@@ -1060,9 +1198,56 @@ cd backend && ruff check app tests
 
 ## 16. Parkrun (отдельно)
 
-Prod API **не** fetch'ит parkrun.org.uk. Очередь `profile_fetch_pending` → **`make parkrun`** на Mac.
+Сайт сам в parkrun.org.uk не ходит: дома `PARKRUN_SERVER_FETCH_ENABLED=false`
+и `PARKRUN_SERVER_QUEUE_ENABLED=false` (`docker-compose.home-site.yml`). Всё, где
+нужна живая страница parkrun («Обновить», привязка или предпросмотр незнакомого
+профиля, discovery), ложится строкой в `profile_fetch_pending`. Человек видит
+«Операция добавлена в очередь».
 
-Подробнее: [docs/parkrun_pipeline.md](docs/parkrun_pipeline.md).
+**Кто разбирает очередь.**
+
+- **Домашний сервер — основной.** `pm-site-queue.timer` (через 20 мин после
+  конца прошлого прогона, `LIMIT=50 DELAY=3` в юните) → `scripts/home_queue_run.sh`
+  → `backend/scripts/parkrun_queue_daemon.py --no-browser --solve-captcha`.
+  Страницы качает httpx через VPN-выходы 127.0.0.1:10851–10878: каждый выход
+  перед прогоном проверяется запросом к parkrun, живых нет — прогон пропускается,
+  с домашнего адреса не ходим. Капчу решает CLIP из `~/parkrun-monitoring`; если
+  выход упёрся в защиту, берём следующий. Порядок: очередь S95, затем ручные
+  «Обновить» parkrun, строки с `user_id`, сид RunPark, discovery без пользователя
+  (`list_pending_rows`), ресинк привязок в `error`. Код —
+  `~/saturday-runs-next` (догоняет прод `home_sync.sh`), база — домашняя
+  (маркер `~/.srs-site-at-home`), Redis — свой `pm-queue-redis` на :6399.
+  Логи: `journalctl -u pm-site-queue.service`,
+  `~/saturday-runs-next/backend/data/parkrun_daemon.log`.
+- **`make parkrun`** — ручной запасной путь тем же демоном (Chromium, капча
+  глазами). Базу берёт туннелем `scripts/prod_db_env.sh` на
+  `TEMP_SSH_HOST:5432` и маркер `~/.srs-site-at-home` не смотрит: без правки
+  `.env` ходит в замороженную с 21.10.2026 базу VPS (только чтение — запись упадёт).
+- **`parkrun_sync.process_pending_queue`** (beat `:07`/`:37`, только строки с
+  `user_id`, пачка `PARKRUN_SERVER_QUEUE_BATCH_SIZE`=5, при капче стоп) — путь
+  VPS, дома отвечает `skipped: disabled`. Его проверка «демон жив» смотрит
+  `parkrun:local_worker:heartbeat`, а эту метку пишет только
+  `make parkrun-local-worker`, не демон очереди.
+
+**Охлаждение после капчи** (`app/parkrun/fetch/captcha_state.py`). Лестница
+`PARKRUN_BAN_COOLDOWN_STEPS_SECONDS`: 1ч → 5ч → 24ч → 72ч → неделя, дальше
+снова неделя. Ключи `parkrun:fetch:ban_cooldown_until` и
+`parkrun:fetch:ban_level`; уровень живёт ступень + 7 дней. Гейт —
+`_check_ban_cooldown` в `fetch/coordinator.py`, только на серверном пути. После
+ступени фетч идёт пробой: успех (`clear_captcha_pending`) обнуляет лестницу,
+капча поднимает её на ступень. Заявка, пришедшая во время охлаждения, уходит в
+очередь со сроком из текста `until <ts>`.
+
+- Дома лестница сайта спит: `_check_server_fetch_allowed` отказывает раньше
+  гейта, без эскалации и без срока.
+- У демона очереди своя лестница в своём Redis, и `run_daemon` сбрасывает её в
+  начале каждого прогона (`prepare_parkrun_cdp_fetch`). Защита на всех выходах
+  останавливает пачку до следующего прогона; мёртвые выходы лестницу не двигают.
+- Поэтому блок parkrun на `/admin/queue` (капча, охлаждение, «воркер жив»;
+  `GET /api/sync/queue`) читает Redis сайта
+  и о домашней очереди не говорит ничего. Смотреть — логи выше.
+
+Прежняя схема (ручной демон с Chromium) — история: [docs/parkrun_pipeline.md](docs/parkrun_pipeline.md).
 
 **Каталог площадок parkrun — в боевой базе** (этап 2, 18.10.2026): таблицы
 `parkrun_events` (слаг как у parkrun, id площадки у parkrun, имена, страна,
@@ -1124,15 +1309,17 @@ Prod API **не** fetch'ит parkrun.org.uk. Очередь `profile_fetch_pendi
 |--------|------------|
 | `scripts/check_failed_sync_jobs.py` | failed sync_jobs за 7 дней |
 | `scripts/recalculate_personal_records.py` | backfill PR |
+| `scripts/recalculate_cross_platform_personal_records.py` | backfill глобальных рекордов и рекордов локации |
 | `scripts/import_location_catalog.py` | catalog → DB |
 | `scripts/backfill_location_descriptions.py` | первый сбор описаний площадок (5 вёрст, S95) |
 | `scripts/deploy_home.sh` | деплой прода на домашнем сервере (§3) |
 | `scripts/deploy_prod.sh` | деплой на VPS — после 21.10.2026 только для отката (`ALLOW_VPS_DEPLOY=1`) |
 | `scripts/cutover_rollback.sh` | откат на VPS: `now`, с данными — `back-dump` (§3) |
-| `scripts/dev_prod_db.sh` | локальный сайт на БД VPS (read-only tunnel) — после переезда смотрит в замороженную базу |
+| `scripts/dev_stack.sh` | стенд под worktree на домашнем сервере: `up` (`--own-db`, `--front`), `ls`, `url`, `rm` (§13) |
+| `scripts/dev_prod_db.sh` | локальный сайт на БД VPS (read-only tunnel) — после переезда смотрит в замороженную базу; на сервере не стартует (в .env нет TEMP_SSH_HOST), прод читать через report_ro (§3) |
 | `scripts/add_release.py` / `update_release.py` | записи релизов для «Обновлений» |
 | `scripts/prune_server_disk.sh` | чистка диска на сервере (образы без `-a`, кэш сборки, journald) |
-| `make parkrun` | parkrun fetch daemon (Mac; на домашнем сервере — `scripts/home_queue_run.sh`) |
+| `make parkrun` | ручной демон очереди parkrun — запасной путь; база туннелем `prod_db_env.sh` на `TEMP_SSH_HOST` (с 21.10.2026 — замороженная база VPS). Дома — `scripts/home_queue_run.sh` по `pm-site-queue.timer` (§16) |
 | `backend/scripts/archive/` | отработавшие бэкфилы — не запускать, см. README там |
 
 ---
