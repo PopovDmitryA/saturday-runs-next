@@ -47,6 +47,13 @@ x-home-env: &home-env
   # зарубежные выходы, не с домашнего адреса: events.json через неё скачан
   # 21.10.2026 — 940 КБ, 3002 площадки. Один запрос в сутки.
   PARKRUN_CATALOG_PROXY_URL: ${PARKRUN_CATALOG_PROXY_URL:-http://tg-proxy:8118}
+  # Прогноз погоды (api.open-meteo.com) с домашнего адреса не отвечает совсем —
+  # пакеты глушатся у провайдера; архив archive-api отвечает. Через tg-proxy
+  # прогноз отдан за 0,2 с (21.10.2026); код пускает через неё только прогноз.
+  WEATHER_PROXY_URL: ${WEATHER_PROXY_URL:-http://tg-proxy:8118}
+  # Как у воркеров сбора в docker-compose.home.yml: иначе контейнеры root-ом
+  # пишут __pycache__ в примонтированный backend/ клона.
+  PYTHONDONTWRITEBYTECODE: "1"
 
 services:
   postgres:
@@ -194,6 +201,7 @@ services:
       TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
       REDIS_URL: redis://redis:6379/0
       TELEGRAM_PROXY_URL: ${TELEGRAM_PROXY_URL}
+      PYTHONDONTWRITEBYTECODE: "1"
     logging: *journald
 
   tg-proxy:

@@ -37,7 +37,6 @@ from typing import Any
 from urllib.parse import quote
 from uuid import UUID
 
-import httpx
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
@@ -56,7 +55,7 @@ from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.my_history_service import get_my_history
 from app.services.platform_titles import PLATFORM_TITLES
 from app.services.start_weather_service import weather_for_pairs, weather_line
-from app.services.weather_service import collect_event_weather, event_weather_needed
+from app.services.weather_service import collect_event_weather, event_weather_needed, open_meteo_client
 from app.time_format import normalize_finish_time_display
 
 logger = logging.getLogger(__name__)
@@ -348,7 +347,7 @@ def _weather_for_runs(db: Session, pairs: list[tuple[UUID, date]]) -> dict[tuple
     # лежат незаписанные настройки человека.
     weather_db = get_session_factory()()
     try:
-        with httpx.Client(headers={"User-Agent": "run5k.run weather collector"}, timeout=20) as client:
+        with open_meteo_client("run5k.run weather collector", timeout=20) as client:
             for location_id, event_date in sorted(missing, key=str):
                 collect_event_weather(weather_db, client, location_id, event_date)
     except Exception:  # noqa: BLE001 — погода не должна задерживать уведомление

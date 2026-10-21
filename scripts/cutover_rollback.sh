@@ -42,6 +42,28 @@ case "${1:-now}" in
 
 now)
   cd "$HOME_DIR" || { echo "СТОП: нет $HOME_DIR — откат запускается на домашнем сервере" >&2; exit 1; }
+  # Сначала — жив ли VPS. Иначе дом погашен, а прод не поднят: лежат оба
+  # (фильтр Timeweb иногда рвёт ssh на ~45 с — тогда просто повторить now).
+  ssh "${SSH_OPTS[@]}" "$VPS" true ||
+    { say "✗ VPS не отвечает по ssh — дом НЕ гашу. Подождать минуту и повторить now"; exit 1; }
+  # Шаг db переезда закрыл базу VPS на запись (default_transaction_read_only),
+  # чтобы забытые инструменты не писали в брошенную базу молча. Прод с такой
+  # базой не принял бы ни одной записи — снимаем до подъёма. Адрес — из
+  # PROD_DATABASE_URL (после mark) или DATABASE_URL (до mark).
+  prod_url=$(sed -n 's/^PROD_DATABASE_URL=//p' .env | tail -1 | tr -d "'\"")
+  [ -n "$prod_url" ] || prod_url=$(sed -n 's/^DATABASE_URL=//p' .env | tail -1 | tr -d "'\"")
+  prod_url="${prod_url/postgresql+psycopg/postgresql}"
+  case "${SKIP_DB_RESET:+skip}$prod_url" in
+    skip*) say "! SKIP_DB_RESET=1: режим «только чтение» на VPS снят руками" ;;
+    *@100.93.200.8:*)
+      PGCONNECT_TIMEOUT=15 PGOPTIONS='-c default_transaction_read_only=off' psql "$prod_url" -X -q -v ON_ERROR_STOP=1 \
+        -c "ALTER DATABASE saturday_runs_lk RESET default_transaction_read_only" ||
+        { say "✗ не снял с базы VPS режим «только чтение» (tailnet?) — дом НЕ гашу. Повторить now, или на VPS под root:"
+          say "  sudo -u postgres psql -d saturday_runs_lk -c 'ALTER DATABASE saturday_runs_lk RESET default_transaction_read_only' — и снова now с SKIP_DB_RESET=1"
+          exit 1; }
+      say "база VPS снова принимает запись" ;;
+    *) say "! адреса базы VPS в .env нет — режим «только чтение» не проверял" ;;
+  esac
   say "гашу домашний стек (кроме базы — она понадобится для back-dump)"
   # Первым делом — край: пока он слушает 80/443, к нам продолжают приходить
   # те, у кого DNS ещё не обновился, и пишут в базу, которую мы бросаем.
@@ -74,6 +96,13 @@ compose() { docker compose -f docker-compose.yml -f docker-compose.prod.yml --pr
 svcs=$(compose config --services | grep -vxF "$(printf '%s\n' $home)")
 echo "   на VPS: $(echo $svcs)"
 echo "   не поднимаю (живут дома): $home"
+# Расписание beat — с чистого листа, как в start-full дома: со старым файлом
+# beat разом выполнил бы всё «пропущенное» за жизнь сайта дома, вплоть до
+# второй недельной рассылки рейтингов. Пропущенное за это время делал дом.
+rm -f backend/celerybeat-schedule*
+# api всё время заморозки работал, и соединения его пула, открытые после db,
+# — только на чтение: перезапуск даёт свежие.
+compose restart api || true
 compose up -d $svcs
 # Метка переезда запрещала деплой на VPS (deploy_prod.sh) — сайт снова здесь.
 rm -f deploy/nginx/maintenance_on deploy/nginx/maintenance_current.html .site-moved-home
@@ -217,8 +246,14 @@ back-dump)
   # не везём: объекты создаёт сама роль сайта (SET ROLE ниже), права report_ro
   # выдаёт её скрипт. Плоский дамп pg_dump 16.10+ начинается с \restrict —
   # psql на VPS (14.24, проверено 25.09.2026) его понимает.
+  # pg_stat_statements — без него: на VPS расширение создаёт только суперпользователь,
+  # а заливка идёт ролью сайта — psql остановился бы на первой строке, и база
+  # осталась бы пустой (проверено на PG 14.24, 21.10.2026). Создаёт его скрипт ниже.
+  # --exclude-extension есть только с pg_dump 17, поэтому фильтр.
   "${COMPOSE[@]}" exec -T postgres pg_dump -U "${POSTGRES_USER:-saturday_runs}" \
-    --no-owner --no-acl "${POSTGRES_DB:-saturday_runs_lk}" | gzip > "$DUMP_DIR/$dump" || exit 1
+    --no-owner --no-acl "${POSTGRES_DB:-saturday_runs_lk}" |
+    grep -vE '^(CREATE EXTENSION IF NOT EXISTS pg_stat_statements|COMMENT ON EXTENSION pg_stat_statements) ' |
+    gzip > "$DUMP_DIR/$dump" || exit 1
   scp -q "${SSH_OPTS[@]}" "$DUMP_DIR/$dump" "$VPS:/tmp/$dump" || exit 1
   # Скрипт роли везём из домашнего клона: его список закрытых таблиц должен
   # совпадать со схемой этой базы, а на проде лежит код последнего деплоя.
@@ -241,13 +276,43 @@ back-dump)
   # Заливка — РЯДОМ со старой базой, подмена — только после успеха. Раньше
   # здесь был dropdb перед заливкой: упади она (-1 откатывает всё), прод
   # остался бы с пустой базой.
-  say "дальше НА ПРОДЕ, под root (сайт на заглушке всё время заливки):"
-  say "  cd $REMOTE_DIR && touch deploy/nginx/maintenance_on"
-  say "  docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile telegram stop beat bot worker worker-warm worker-five-verst-user worker-parkrun"
-  say "  sudo -u postgres createdb -O saturday_runs saturday_runs_lk_back"
-  say "  zcat /tmp/$dump | sudo -u postgres psql -X -1 -v ON_ERROR_STOP=1 -d saturday_runs_lk_back -c 'SET ROLE saturday_runs' -f - >/dev/null"
-  say "  sudo -u postgres psql -X -q -d saturday_runs_lk_back -v ON_ERROR_STOP=1 -f - < /tmp/$ro_sql"
-  say "  sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d postgres -c \"ALTER DATABASE saturday_runs_lk ALLOW_CONNECTIONS false\" -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'saturday_runs_lk'\" -c \"SELECT pg_sleep(2)\" -c \"ALTER DATABASE saturday_runs_lk RENAME TO saturday_runs_lk_before_back_${stamp//-/_}\" -c \"ALTER DATABASE saturday_runs_lk_back RENAME TO saturday_runs_lk\""
+  # Команды для VPS — одним скриптом с set -e: раньше они печатались строками,
+  # и при неудачной заливке RENAME всё равно подменил бы боевую базу пустой.
+  # Один короткий запуск ещё и удобнее в веб-консоли Timeweb (длинные вставки
+  # там теряют символы).
+  back_sh="home_back_${stamp}.sh"
+  cat > "$DUMP_DIR/$back_sh" <<BACKSH
+#!/usr/bin/env bash
+# Заливка домашней базы на VPS (cutover_rollback.sh back-dump, $stamp). Запуск — root.
+set -euo pipefail
+before=saturday_runs_lk_before_back_${stamp//-/_}
+# Повторный запуск после успеха (двойная вставка в веб-консоли) закрыл бы
+# подключения к уже НОВОЙ боевой базе и упал на RENAME — сайт без базы.
+if sudo -u postgres psql -X -Atq -d postgres -c "select 1 from pg_database where datname = '\$before'" | grep -q 1; then
+  echo "уже выполнено раньше: боевая — залитая из дома, старая — \$before. Ничего не делаю"; exit 0
+fi
+# Обрыв дампа на границе строки psql доиграл бы без ошибки — полбазы.
+zcat /tmp/$dump | tail -n 20 | grep -q 'PostgreSQL database dump complete' ||
+  { echo "СТОП: дамп /tmp/$dump неполный (нет строки «dump complete») — боевую базу не трогаю"; exit 1; }
+cd $REMOTE_DIR
+touch deploy/nginx/maintenance_on
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile telegram stop beat bot worker worker-warm worker-five-verst-user worker-parkrun
+sudo -u postgres dropdb --if-exists saturday_runs_lk_back
+sudo -u postgres createdb -O saturday_runs saturday_runs_lk_back
+zcat /tmp/$dump | sudo -u postgres psql -X -1 -v ON_ERROR_STOP=1 -d saturday_runs_lk_back -c 'SET ROLE saturday_runs' -f - >/dev/null
+sudo -u postgres psql -X -q -v ON_ERROR_STOP=1 -d saturday_runs_lk_back -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'
+sudo -u postgres psql -X -q -d saturday_runs_lk_back -v ON_ERROR_STOP=1 -f - < /tmp/$ro_sql
+if ! sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d postgres -c "ALTER DATABASE saturday_runs_lk ALLOW_CONNECTIONS false" -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'saturday_runs_lk'" -c "SELECT pg_sleep(2)" -c "ALTER DATABASE saturday_runs_lk RENAME TO \$before" -c "ALTER DATABASE saturday_runs_lk_back RENAME TO saturday_runs_lk"; then
+  # Упали между закрытием и подменой — открыть ту, что сейчас боевая, иначе сайт без базы.
+  sudo -u postgres psql -X -d postgres -c "ALTER DATABASE saturday_runs_lk ALLOW_CONNECTIONS true" || true
+  echo "СТОП: подмена базы не прошла — боевая база открыта снова, сайт на заглушке"; exit 1
+fi
+echo "OK: домашняя база залита и стала боевой; старая — saturday_runs_lk_before_back_${stamp//-/_}"
+BACKSH
+  scp -q "${SSH_OPTS[@]}" "$DUMP_DIR/$back_sh" "$VPS:/tmp/$back_sh" || exit 1
+  say "дальше НА ПРОДЕ, под root (веб-консоль Timeweb), одной командой — сайт на заглушке всё время заливки:"
+  say "  bash /tmp/$back_sh"
+  say "  она остановится на первой ошибке и боевую базу тогда не тронет; в конце — строка OK"
   say "  старая база остаётся рядом (saturday_runs_lk_before_back_${stamp//-/_}); убедишься — sudo -u postgres dropdb её"
   say "потом ОТСЮДА: bash scripts/cutover_rollback.sh now — поднимет прод и снимет заглушку; DNS — после"
   ;;

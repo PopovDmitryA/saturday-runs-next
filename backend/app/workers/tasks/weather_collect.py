@@ -20,8 +20,6 @@ from datetime import date, datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-import httpx
-
 from app.core.rate_limit import get_redis
 from app.core.runtime_env import is_test_run
 from app.db.session import get_session_factory
@@ -32,6 +30,7 @@ from app.services.weather_service import (
     collect_scope,
     event_weather_needed,
     format_run_report,
+    open_meteo_client,
 )
 from app.workers.celery_app import celery_app
 from app.workers.time_limits import LIMITS_SHORT
@@ -54,10 +53,8 @@ def collect_start_weather_task() -> dict[str, object]:
     db = get_session_factory()()
     summary = ScopeRunSummary()
     try:
-        with httpx.Client(headers={"User-Agent": "run5k.run weather collector"}) as client:
-            summary = collect_scope(
-                db, client, wait_hourly_reset=False, max_weighted_calls=NIGHTLY_WEIGHT_BUDGET
-            )
+        with open_meteo_client("run5k.run weather collector") as client:
+            summary = collect_scope(db, client, wait_hourly_reset=False, max_weighted_calls=NIGHTLY_WEIGHT_BUDGET)
     except Exception as exc:  # noqa: BLE001 — отчёт важнее трейсбека в логе воркера
         # Сюда попадает только то, что не поймал collect_scope (БД, сеть до первой локации).
         logger.exception("Сбор погоды на стартах упал")
@@ -92,7 +89,7 @@ def collect_preliminary_task() -> dict[str, object]:
     db = get_session_factory()()
     summary = ScopeRunSummary(preliminary=True)
     try:
-        with httpx.Client(headers={"User-Agent": "run5k.run weather collector"}) as client:
+        with open_meteo_client("run5k.run weather collector") as client:
             summary = collect_scope(db, client, wait_hourly_reset=False, preliminary=True)
     except Exception as exc:  # noqa: BLE001 — отчёт важнее трейсбека в логе воркера
         logger.exception("Предварительная погода на стартах упала")
@@ -117,7 +114,7 @@ def collect_event_weather_task(location_id: str, event_date: str) -> int:
     """Погода одного свежего старта — ставится при записи нового события."""
     db = get_session_factory()()
     try:
-        with httpx.Client(headers={"User-Agent": "run5k.run weather collector"}) as client:
+        with open_meteo_client("run5k.run weather collector") as client:
             return collect_event_weather(db, client, UUID(location_id), date.fromisoformat(event_date))
     except Exception:  # noqa: BLE001 — не критично: доберут уведомление или вечерний прогон
         logger.exception("Погода старта %s %s не собрана", location_id, event_date)

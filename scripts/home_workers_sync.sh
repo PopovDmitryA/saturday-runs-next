@@ -63,6 +63,24 @@ done
 # этот скрипт с --keep-code.
 if [ -f "$MARKER" ]; then
     log "сайт переехал домой — воркеры живут в общем стеке, синхронизировать нечего"
+    # Но сторожить есть что. До переезда этот скрипт раз в 5 минут проверял
+    # воркеров сбора; после mark никто не замечал бы, что встал воркер, бот или
+    # край (аудит 21.10.2026). Проверяем весь стек сайта и /health через край;
+    # тревога — со второго захода подряд, чтобы выкат (deploy_home.sh пересоздаёт
+    # контейнеры) не поднимал ложную.
+    site=(docker compose -p "${HOME_PROJECT:-srs_home}" -f docker-compose.yml -f docker-compose.home-site.yml --profile telegram)
+    want=$(cd "$HOME_DIR" && "${site[@]}" config --services 2>/dev/null | sort)
+    have=$(cd "$HOME_DIR" && "${site[@]}" ps --status running --services 2>/dev/null | sort)
+    missing=$(comm -23 <(echo "$want") <(echo "$have") | tr '\n' ' ')
+    health=$(curl -s --noproxy '*' -o /dev/null -m 15 --resolve run5k.run:443:127.0.0.1 -w '%{http_code}' https://run5k.run/health)
+    if [ -z "$want" ] || [ -n "$missing" ] || [ "$health" != "200" ]; then
+        n=$(streak_inc site)
+        log "сайт дома: health=${health:-нет}, не работают: ${missing:-—} (заход $n подряд)"
+        [ "$n" -ge 2 ] && alert site-down "сайт дома: /health=${health:-нет ответа}, не работают сервисы: ${missing:-—}. docker compose -p ${HOME_PROJECT:-srs_home} ps"
+    else
+        streak_reset site
+        alert_clear site- "сайт дома снова в порядке: все сервисы работают, /health 200"
+    fi
     exit 0
 fi
 

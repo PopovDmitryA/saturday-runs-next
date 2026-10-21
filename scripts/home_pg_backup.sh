@@ -47,6 +47,13 @@ COMPOSE=(docker compose -p "${HOME_PROJECT:-srs_home}" -f docker-compose.yml -f 
 cd "$HOME_DIR"
 echo "=== $(date '+%F %T') START ==="
 
+# Сбой бэкапа раньше было видно только в systemctl --failed — то есть никому.
+# Теперь — тревога админу в Telegram (тот же канал, что у синхронизатора).
+log() { echo "$(date '+%F %T') $*"; }
+# shellcheck source=scripts/lib/home_alert.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/home_alert.sh"
+trap 'rc=$?; [ "$rc" -eq 0 ] || alert backup "ночной бэкап базы сайта не снят (код $rc) — journalctl -u srs-pg-backup -n 30"' EXIT
+
 if [ ! -f "$MARKER" ]; then
     echo "-- нет маркера $MARKER: сайт не дома (ещё не переехал или откачен), его базу бэкапит прод"
     echo "=== $(date '+%F %T') SKIP ==="
@@ -77,4 +84,5 @@ rclone copy "$F" "$REMOTE/$DB/" --s3-no-check-bucket
 echo "-- ротация: локально >${KEEP_LOCAL_DAYS}д, в бакете >${KEEP_REMOTE_DAYS}д"
 find "$DIR" -name '*.dump' -mtime +$KEEP_LOCAL_DAYS -delete
 rclone delete "$REMOTE" --min-age ${KEEP_REMOTE_DAYS}d
+alert_clear backup "ночной бэкап базы сайта снова снимается и уходит в S3"
 echo "=== $(date '+%F %T') OK ==="

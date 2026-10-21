@@ -54,6 +54,21 @@ OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 # Прогнозная модель отдаёт и прошедшие дни (до 92 суток): из неё берём
 # субботу в саму субботу, пока архив не догнал.
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+
+
+def open_meteo_client(user_agent: str, **kwargs: Any) -> httpx.Client:
+    """httpx-клиент для Open-Meteo: прогнозный хост — через WEATHER_PROXY_URL.
+
+    Дома api.open-meteo.com напрямую недоступен, а archive-api доступен, и
+    через архив ночью идут тысячи вызовов — их через прокси не гоняем.
+    """
+    from app.config import get_settings
+
+    proxy = (get_settings().weather_proxy_url or "").strip()
+    mounts = {"https://api.open-meteo.com": httpx.HTTPTransport(proxy=proxy)} if proxy else None
+    return httpx.Client(headers={"User-Agent": user_agent}, mounts=mounts, **kwargs)
+
+
 # Лестница источников: чем ниже строка, тем окончательнее.
 #   forecast — прогнозная модель, снимок субботним вечером;
 #   archive  — best_match, склейка ERA5 с оперативной моделью (доступна сразу);

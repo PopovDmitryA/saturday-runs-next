@@ -21,10 +21,14 @@ from datetime import date, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import httpx  # noqa: E402
 
 from app.db.session import get_session_factory  # noqa: E402
-from app.services.weather_service import collect_scope, format_run_report, list_scope_locations  # noqa: E402
+from app.services.weather_service import (  # noqa: E402
+    collect_scope,
+    format_run_report,
+    list_scope_locations,
+    open_meteo_client,
+)
 
 
 def main() -> None:
@@ -60,7 +64,7 @@ def main() -> None:
             f"записано {stats.rows_written}, без данных {stats.skipped_no_data}, вызовов {stats.api_calls}"  # type: ignore[attr-defined]
         )
 
-    with httpx.Client(headers={"User-Agent": "run5k.run weather collector"}) as client:
+    with open_meteo_client("run5k.run weather collector") as client:
         summary = collect_scope(
             db,
             client,

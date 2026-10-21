@@ -17,11 +17,10 @@ from __future__ import annotations
 
 import logging
 
-import httpx
-
 from app.db.session import get_session_factory
 from app.services.admin_telegram_notify import send_admin_report
 from app.services.weather_forecast_service import ForecastStats, collect_forecasts, next_start_date
+from app.services.weather_service import open_meteo_client
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -35,7 +34,7 @@ def collect_forecast_task() -> dict[str, object]:
     stats = ForecastStats()
     error = ""
     try:
-        with httpx.Client(headers={"User-Agent": "run5k.run weather forecast"}) as client:
+        with open_meteo_client("run5k.run weather forecast") as client:
             stats = collect_forecasts(db, client)
     except Exception as exc:  # noqa: BLE001 — отчёт важнее трейсбека в логе воркера
         logger.exception("Прогноз погоды на старты упал")

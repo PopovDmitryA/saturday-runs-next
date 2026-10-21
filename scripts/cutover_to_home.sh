@@ -209,6 +209,14 @@ media)
   sudo -n chown -R "$(id -u):$(id -g)" "$HOME_DIR/data" 2>/dev/null
   rsync -a --no-o --no-g --info=stats2 -e "ssh ${SSH_OPTS[*]}" \
     "$VPS:$REMOTE_DIR/data/" "$HOME_DIR/data/" | tail -4
+  # Карточки OG, которых на VPS уже нет (удалённые профили), — убрать и дома:
+  # иначе домашний nginx снова отдал бы их по прямой ссылке (так было с 1057).
+  # Только пока сайт не дома: после start-full og_render пишет сюда сам.
+  if [ ! -f "$MARKER" ]; then
+    rsync -a --no-o --no-g --delete -e "ssh ${SSH_OPTS[*]}" "$VPS:$REMOTE_DIR/data/og/" "$HOME_DIR/data/og/" &&
+      say "data/og совпадает с VPS (лишние карточки удалены)" ||
+      say "✗ data/og не сверился с VPS (rsync) — повторить media"
+  fi
   ;;
 
 build)
@@ -337,6 +345,14 @@ db)
     die "строки дома не сходятся с продом (выше: < прод, > дом). Прод точно заморожен? Повторить db"
   fi
   say "✓ все $(wc -l <"$DUMP_DIR/counts_prod_$stamp.txt") таблиц сошлись, run_results: $(grep '^run_results|' "$DUMP_DIR/counts_home_$stamp.txt" | cut -d'|' -f2)"
+  # С этой минуты боевая база — домашняя. Базу VPS закрываем на запись: инструмент
+  # по старой памяти (скрипт через docker exec на VPS, make parkrun с Мака) получит
+  # ошибку «read-only transaction», а не «успех» в брошенную базу. Откат (now)
+  # снимает это первым делом. Повтор db работает: дамп и подсчёт только читают.
+  PGCONNECT_TIMEOUT=15 PGOPTIONS='-c default_transaction_read_only=off' psql "$PROD_URL" -X -q -v ON_ERROR_STOP=1 \
+    -c "ALTER DATABASE saturday_runs_lk SET default_transaction_read_only = on" &&
+    say "база VPS закрыта на запись (новые соединения — только чтение); откат now откроет" ||
+    say "✗ не закрыл базу VPS на запись — не страшно, но писать туда больше нельзя"
 
   # Redis: в нём не только кэш. Сессии (иначе разлогинятся все), дневная
   # статистика сайта, водяной знак рассылки уведомлений, курсоры ротации —
@@ -471,7 +487,7 @@ start-full)
   [ -f "$MARKER" ] || die "нет маркера «сайт дома» — сначала mark"
   # Пока прод жив, второй бот и второй планировщик — это дубль боевых токенов и
   # двойные походы наружу. Не ответил ssh — не знаем, значит не поднимаем.
-  running=$(vps "cd $REMOTE_DIR && docker compose ps --status running --services") ||
+  running=$(vps "cd $REMOTE_DIR && $VPS_COMPOSE ps --status running --services") ||
     die "не удалось спросить VPS, живы ли bot/beat — без ответа фон не поднимаю"
   grep -qxE "bot|beat" <<<"$running" &&
     die "на проде ещё живы bot/beat — сначала freeze, иначе получим два бота на один токен"

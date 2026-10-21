@@ -441,6 +441,11 @@ class Settings(BaseSettings):
     parkrun_catalog_sync_enabled: bool = False
     parkrun_catalog_proxy_url: str = ""
     parkrun_catalog_url: str = ""
+    # Прокси для прогнозного API Open-Meteo (api.open-meteo.com). С домашнего
+    # адреса он не отвечает вовсе (пакеты глушатся у провайдера, проверено
+    # 21.10.2026), а архив archive-api отвечает — поэтому через прокси идёт
+    # только прогнозный хост. Пусто — напрямую, как на VPS.
+    weather_proxy_url: str = ""
 
     runpark_mssql_server: str = "runpark.ru"
     runpark_mssql_database: str = "ParkrunLive"
