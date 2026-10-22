@@ -54,6 +54,7 @@ import { PortalRouteFallback } from "./features/portal/PortalRouteFallback";
 // остаются в стартовом чанке — их видит каждый.
 const LocationTopsPage = lazyPage(() => import("./features/locations/LocationTopsPage"), (m) => m.LocationTopsPage);
 const LocationWeatherPage = lazyPage(() => import("./features/locations/LocationWeatherPage"), (m) => m.LocationWeatherPage);
+const LocationRatePage = lazyPage(() => import("./features/locations/LocationRatePage"), (m) => m.LocationRatePage);
 const OrganizerBenchmarkPage = lazyPage(() => import("./features/organizer/OrganizerBenchmarkPage"), (m) => m.OrganizerBenchmarkPage);
 const AdminAbusePage = lazyPage(() => import("./features/admin/AdminAbusePage"), (m) => m.AdminAbusePage);
 const AdminBlockedSlugsPage = lazyPage(() => import("./features/admin/AdminBlockedSlugsPage"), (m) => m.AdminBlockedSlugsPage);
@@ -468,6 +469,12 @@ function renderRoute(path: string): ReactElement {
   const locationWeatherMatch = path.match(/^\/locations\/([^/]+)\/weather$/);
   if (locationWeatherMatch) {
     return <LocationWeatherPage slug={decodeURIComponent(locationWeatherMatch[1])} />;
+  }
+  // Оценка своего старта на локации и ссылка для чата локации — её туда
+  // кидают, чтобы каждый попал сразу сюда (решение Дмитрия 22.10.2026).
+  const locationRateMatch = path.match(/^\/locations\/([^/]+)\/rate$/);
+  if (locationRateMatch) {
+    return <LocationRatePage slug={decodeURIComponent(locationRateMatch[1])} />;
   }
   const locationMatch = path.match(/^\/locations\/([^/]+)$/);
   if (locationMatch) {

@@ -279,7 +279,7 @@ function LastEventSection({ lastEvent, page }: { lastEvent: LocationLastEvent; p
           <StatTile
             value={lastEvent.guests}
             label={pluralFormRu(lastEvent.guests, COUNT_FORMS.guests)}
-            hint="Все приезжие: финишёры, чья домашняя локация другая. В отличие от «впервые здесь», гость мог приезжать сюда и раньше — поэтому гостей всегда больше."
+            hint="Финишёры с другой домашней локацией, даже если бывают здесь не впервые. Дом считаем на сегодня; у кого его ещё нет, в гости не попадает."
           />
         )}
         {lastEvent.prs !== null && (
@@ -1334,7 +1334,11 @@ function LocationPageContent({ slug }: { slug: string }) {
           )}
           {organizerAccess && (
             <a className="loc-quick-link loc-quick-link-accent" href={`/organizer/${page.slug}`}>
-              <span aria-hidden="true">🛠</span> Кабинет организатора
+              <span aria-hidden="true">🛠</span>
+              {/* Короткое имя раздела на телефоне — как у соседних таблеток и
+                  как раздел зовётся в навигации сайта. */}
+              <span className="loc-quick-full">Кабинет организатора</span>
+              <span className="loc-quick-short">Оргкабинет</span>
             </a>
           )}
         </nav>
@@ -1408,7 +1412,7 @@ function LocationPageContent({ slug }: { slug: string }) {
               ]
                 .filter(Boolean)
                 .join(" · ")}
-              hint="Все приезжие за историю локации: финишёры, чья домашняя локация другая. Приезжать гость может не в первый раз, поэтому их всегда больше, чем пришедших сюда впервые."
+              hint="Все приезжие за историю локации: финишёры с другой домашней локацией, даже если бывали здесь не впервые. Дом считаем на сегодня; у кого его ещё нет, в гости не попадает."
             />
           )}
           <StatTile

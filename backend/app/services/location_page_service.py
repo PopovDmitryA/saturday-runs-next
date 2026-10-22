@@ -1249,9 +1249,11 @@ def location_attendance_cache_key(
     # v2 — в строках появились month_totals. Без бампа страница до истечения
     # TTL отдавала бы payload без них, и «Всего» в срезе месяца считалось бы
     # по клеткам (у закрытого профиля их нет — вышел бы ноль).
+    # v3 — из строк ушли неопознанные и нули среза (21.10.2026): старый
+    # ответ до истечения TTL показывал бы их и прежний total_rows.
     # Месяц меняет порядок строк, а значит и состав каждой порции.
     month_part = f":m{month}" if month else ""
-    return f"locations:attendance:v2:{slug.strip().lower()}:{year}:{kind}{month_part}:o{offset}:l{limit}"
+    return f"locations:attendance:v3:{slug.strip().lower()}:{year}:{kind}{month_part}:o{offset}:l{limit}"
 
 
 def _attendance_month(month: str | None, year: int | None) -> str | None:
@@ -1278,6 +1280,11 @@ class _AttendancePerson:
     user_name: str | None = None
     handle: str | None = None
     private: bool = False
+    # False — одноразовая личность под безымянную строку протокола
+    # («НЕИЗВЕСТНЫЙ», unknown:/anon:). В строки журнала не идёт, но в
+    # итоговой строке по датам учтена: там считается, сколько людей было на
+    # старте, а не сколько из них мы знаем.
+    identified: bool = True
     run_dates: set[date] = field(default_factory=set)
     # дата -> роли волонтёрства в этот день (канонические ярлыки).
     vol_roles: dict[date, set[str]] = field(default_factory=dict)
@@ -1291,10 +1298,20 @@ class _AttendancePerson:
         return self.run_dates | set(self.vol_roles)
 
 
-def _attendance_rows_query(db: Session, event_ids: list[UUID], result_model: Any) -> list[Any]:
+def _attendance_rows_query(
+    db: Session, event_ids: list[UUID], result_model: Any, user_id: UUID | None = None
+) -> list[Any]:
     """Сырые строки протоколов года: кто, когда, (роль). Группировка по
     человеку — та же, что в рейтингах локации: coalesce(platform_links.user_id,
-    participant_id) склеивает привязанные аккаунты в одну строку."""
+    participant_id) склеивает привязанные аккаунты в одну строку.
+
+    identified — правило «это человек, а не заглушка» ровно то же, что у
+    рейтингов и счётчика уникальных участников локации
+    (_identified_participant_clause): журнал не показывает человека, которого
+    страница локации не считает.
+
+    user_id — строки только этого профиля: строка «(вы)», когда сама таблица
+    пришла из кэша (_viewer_location_attendance)."""
     group_key = func.coalesce(PlatformLink.user_id, result_model.participant_id)
     columns = [
         group_key.label("gkey"),
@@ -1303,11 +1320,12 @@ def _attendance_rows_query(db: Session, event_ids: list[UUID], result_model: Any
         User.public_slug.label("public_slug"),
         User.serial_id.label("serial_id"),
         User.profile_private.label("private"),
+        _identified_participant_clause().label("identified"),
         Event.event_date.label("event_date"),
     ]
     if result_model is VolunteerResult:
         columns.append(VolunteerResult.role.label("role"))
-    return (
+    query = (
         db.query(*columns)
         .select_from(result_model)
         .join(Event, result_model.event_id == Event.id)
@@ -1315,15 +1333,28 @@ def _attendance_rows_query(db: Session, event_ids: list[UUID], result_model: Any
         .outerjoin(PlatformLink, _platform_link_join())
         .outerjoin(User, PlatformLink.user_id == User.id)
         .filter(result_model.event_id.in_(event_ids))
-        .all()
     )
+    if user_id is not None:
+        query = query.filter(PlatformLink.user_id == user_id)
+    return query.all()
 
 
-def _collect_attendance_people(db: Session, event_ids: list[UUID]) -> dict[object, _AttendancePerson]:
+def _collect_attendance_people(
+    db: Session, event_ids: list[UUID], user_id: UUID | None = None
+) -> dict[object, _AttendancePerson]:
+    """Люди года по ключу склейки (gkey). С user_id — только этот профиль,
+    собранный по тем же строкам и тем же правилам, что и вся таблица."""
     people: dict[object, _AttendancePerson] = {}
 
     def person_for(row: Any) -> _AttendancePerson:
-        person = people.setdefault(row.gkey, _AttendancePerson())
+        person = people.get(row.gkey)
+        # Непривязанный gkey — одна личность системы, флаг у всех его строк
+        # один. Привязанный склеивает личности разных систем: человек он, если
+        # хоть одна из них — человек.
+        if person is None:
+            person = people[row.gkey] = _AttendancePerson(identified=bool(row.identified))
+        elif row.identified:
+            person.identified = True
         if row.name and not person.name:
             person.name = str(row.name)
         if row.user_name and not person.user_name:
@@ -1337,9 +1368,9 @@ def _collect_attendance_people(db: Session, event_ids: list[UUID]) -> dict[objec
             person.handle = handle
         return person
 
-    for row in _attendance_rows_query(db, event_ids, RunResult):
+    for row in _attendance_rows_query(db, event_ids, RunResult, user_id):
         person_for(row).run_dates.add(row.event_date)
-    for row in _attendance_rows_query(db, event_ids, VolunteerResult):
+    for row in _attendance_rows_query(db, event_ids, VolunteerResult, user_id):
         person = person_for(row)
         roles = person.vol_roles.setdefault(row.event_date, set())
         canonical = canonical_volunteer_role(row.role)
@@ -1357,6 +1388,22 @@ def _attendance_dates(person: _AttendancePerson, kind: str) -> set[date]:
     return person.dates
 
 
+def _attendance_listed(person: _AttendancePerson, kind: str) -> bool:
+    """Попадает ли человек в строки журнала в этом срезе года.
+
+    Карточка бэклога 16.10.2026 (Алмаз Мансуров, решения Дмитрия 21.10.2026): номер
+    последней строки должен значить «столько разных людей бегало (волонтёрило)
+    здесь за год». Ему мешали две вещи. Каждый неопознанный финиш — своя
+    одноразовая личность и своя строка: у Парка Кирова в 2026-м это 61 строка
+    из 277 (59 «НЕИЗВЕСТНЫЙ» и двое с именем, но со статусом unknown и ключом
+    unknown:). И «Волонтёры» показывали всех людей года, а волонтёрили из них
+    40 — у остальных 237 строк в срезе стоял ноль. Теперь заглушек нет ни в
+    одном срезе, а нулей нет в «Бегунах» и «Волонтёрах». Кто и бежал, и
+    волонтёрил, есть в обоих срезах, как и раньше.
+    """
+    return person.identified and bool(_attendance_dates(person, kind))
+
+
 def _attendance_sort_key(person: _AttendancePerson, kind: str, month: str | None = None) -> tuple:
     """Порядок строк журнала: сверху самые активные в выбранном срезе.
 
@@ -1366,7 +1413,7 @@ def _attendance_sort_key(person: _AttendancePerson, kind: str, month: str | None
     Мещерского в сентябре волонтёрили 45 человек, а видно было 25: Замира
     Ханбикова стояла 113-й, и координатор волонтёров решила, что пропустила её
     при проставлении. Кто в этом месяце не был, уезжает вниз, но из журнала
-    не пропадает — как и при смене разреза.
+    не пропадает: прячутся только нули за весь год (_attendance_listed).
     """
     dates = _attendance_dates(person, kind)
     month_count = sum(1 for day in dates if day.strftime("%Y-%m") == month) if month else 0
@@ -1376,13 +1423,14 @@ def _attendance_sort_key(person: _AttendancePerson, kind: str, month: str | None
 def _attendance_row_payload(person: _AttendancePerson, *, me: bool = False, kind: str = "all") -> dict[str, object]:
     """Строка журнала в выбранном разрезе.
 
-    kind — это именно СРЕЗ, а не отбор строк: в «Бегунах» клетки показывают
-    только пробежки, и «Всего» считает их же. Никого при этом не выбрасываем —
-    человек, который и бежал, и волонтёрил, остаётся в журнале в обоих
-    разрезах, просто теряет заливку «чужой» роли (правки Дмитрия 28.08.2026).
-    Раньше же фильтр лишь выбрасывал тех, у кого совсем нет пробежек (или
-    волонтёрств), а клетки оставались прежними — и переключатель почти ничего
-    не менял: у большинства есть и то, и другое.
+    kind — это СРЕЗ, а не только отбор строк: в «Бегунах» клетки показывают
+    только пробежки, и «Всего» считает их же. Человек, который и бежал, и
+    волонтёрил, остаётся в журнале в обоих разрезах, просто теряет заливку
+    «чужой» роли (правки Дмитрия 28.08.2026). До них фильтр лишь выбрасывал
+    тех, у кого совсем нет пробежек (или волонтёрств), а клетки оставались
+    прежними — и переключатель почти ничего не менял: у большинства есть и
+    то, и другое. Строки с нулём в срезе с 21.10.2026 снова не показываются
+    (_attendance_listed) — но клетки по-прежнему режутся срезом.
     """
     dates = _attendance_dates(person, kind)
     items: list[dict[str, object]] = []
@@ -1429,8 +1477,10 @@ def build_location_attendance(
 
     Перенос Grafana-дашборда «Журнал посещаемости локации», но в одном журнале
     сразу и бегуны, и волонтёры: клетка даты различает пробежку, волонтёрство
-    и «и то и другое». Фильтр kind сужает СТРОКИ (кто попал в таблицу), клетки
-    строки всегда показывают обе роли.
+    и «и то и другое». Разрез kind режет клетки и счёт строки
+    (_attendance_row_payload) и отбирает строки: в таблице только опознанные
+    люди с ненулевым счётом в разрезе (_attendance_listed). Итоговая строка по
+    датам считает всех, включая неопознанных.
     """
     if kind not in LOCATION_ATTENDANCE_KINDS:
         kind = "all"
@@ -1508,29 +1558,47 @@ def build_location_attendance(
         # попадает и в runners, и в volunteers, поэтому для разреза «Все»
         # runners+volunteers завышали бы число людей — держим отдельный
         # дедуплицированный счётчик.
+        # Неопознанные («НЕИЗВЕСТНЫЙ») здесь учтены: это число людей на
+        # старте. Строк у них нет, и unidentified_* говорит, сколько из числа
+        # в итоговой строке в таблице не найти, — подпись под журналом
+        # объясняет разницу, в том числе за выбранный месяц.
         date_totals: dict[str, dict[str, int]] = {
-            day.isoformat(): {"runners": 0, "volunteers": 0, "people": 0} for day in columns_by_date
+            day.isoformat(): {
+                "runners": 0,
+                "volunteers": 0,
+                "people": 0,
+                "unidentified_runners": 0,
+                "unidentified_volunteers": 0,
+                "unidentified_people": 0,
+            }
+            for day in columns_by_date
         }
         for person in people.values():
-            for day in person.run_dates:
-                totals = date_totals.get(day.isoformat())
-                if totals is not None:
-                    totals["runners"] += 1
-            for day in person.vol_roles:
-                totals = date_totals.get(day.isoformat())
-                if totals is not None:
-                    totals["volunteers"] += 1
-            for day in person.dates:
-                totals = date_totals.get(day.isoformat())
-                if totals is not None:
-                    totals["people"] += 1
+            person_days: tuple[tuple[str, Iterable[date]], ...] = (
+                ("runners", person.run_dates),
+                ("volunteers", person.vol_roles),
+                ("people", person.dates),
+            )
+            for counter, days in person_days:
+                for day in days:
+                    totals = date_totals.get(day.isoformat())
+                    if totals is None:
+                        continue
+                    totals[counter] += 1
+                    if not person.identified:
+                        totals[f"unidentified_{counter}"] += 1
 
-        # Состав строк от разреза НЕ зависит: в журнале остаются все, кто был
-        # здесь в этом году (правка Дмитрия 28.08.2026 — «не должен исключать
-        # тех, кто и бежал, и волонтёрил»). Разрез меняет заливку клеток и счёт,
-        # а порядок ставит наверх самых активных именно в нём: у кого в разрезе
-        # пусто, тот честно уезжает вниз, но из журнала не пропадает.
-        selected = sorted(people.values(), key=lambda person: _attendance_sort_key(person, kind, month))
+        # Разрез меняет заливку клеток и счёт, а порядок ставит наверх самых
+        # активных именно в нём. В строки идут только опознанные люди с
+        # ненулевым счётом в разрезе за год (_attendance_listed): кто и бежал,
+        # и волонтёрил, есть в обоих разрезах (правка Дмитрия 28.08.2026), а
+        # номер последней строки — число разных людей в разрезе. Точнее —
+        # личностей: непривязанный человек с двумя штрихкодами занимает две
+        # строки, как и в рейтингах локации (склейка там та же, gkey).
+        selected = sorted(
+            (person for person in people.values() if _attendance_listed(person, kind)),
+            key=lambda person: _attendance_sort_key(person, kind, month),
+        )
         page = selected[offset : offset + limit]
 
         payload = {
@@ -1572,50 +1640,23 @@ def _viewer_location_attendance(
 ) -> dict[str, object] | None:
     """Строка «Вы» журнала локации — даже когда страница пришла из кэша.
 
-    Если агрегация года уже посчитана в этом запросе, берём готовую; иначе —
-    точечные выборки только по участникам зрителя.
+    Если агрегация года уже посчитана в этом запросе, берём готовую; иначе
+    собираем по тем же строкам протоколов только этого профиля
+    (_collect_attendance_people с user_id). Ответ обязан совпадать, из кэша
+    таблица или нет: фронт узнаёт свою строку в таблице по handle. До ревью
+    21.10.2026 кэшный путь собирал строку отдельными выборками без имени и
+    хендла — и залогиненный видел сверху «Участник (вы)», а себя ниже ещё раз,
+    без пометки. Те выборки к тому же искали участников по
+    platform_links.participant_id, который проставлен не всегда, а таблица
+    склеивает по (platform_id, external_user_id) — _platform_link_join.
+    Правило строк то же, что у таблицы: с нулём в разрезе зрителя нет и здесь.
     """
-    if people is not None:
-        person = people.get(viewer_user_id)
-        return _attendance_row_payload(person, me=True, kind=kind) if person is not None else None
-
-    participant_ids = [
-        row[0]
-        for row in db.query(PlatformLink.participant_id)
-        .filter(PlatformLink.user_id == viewer_user_id, PlatformLink.participant_id.isnot(None))
-        .all()
-    ]
-    if not participant_ids or not year_event_ids:
-        return None
-    person = _AttendancePerson()
-    run_rows = (
-        db.query(Event.event_date)
-        .select_from(RunResult)
-        .join(Event, RunResult.event_id == Event.id)
-        .filter(
-            RunResult.event_id.in_(year_event_ids),
-            RunResult.participant_id.in_(participant_ids),
-        )
-        .all()
-    )
-    for (event_date,) in run_rows:
-        person.run_dates.add(event_date)
-    vol_rows = (
-        db.query(Event.event_date, VolunteerResult.role)
-        .select_from(VolunteerResult)
-        .join(Event, VolunteerResult.event_id == Event.id)
-        .filter(
-            VolunteerResult.event_id.in_(year_event_ids),
-            VolunteerResult.participant_id.in_(participant_ids),
-        )
-        .all()
-    )
-    for event_date, role in vol_rows:
-        roles = person.vol_roles.setdefault(event_date, set())
-        canonical = canonical_volunteer_role(role)
-        if canonical is not None:
-            roles.add(canonical.label)
-    if not _attendance_dates(person, kind):
+    if people is None:
+        if not year_event_ids:
+            return None
+        people = _collect_attendance_people(db, year_event_ids, user_id=viewer_user_id)
+    person = people.get(viewer_user_id)
+    if person is None or not _attendance_listed(person, kind):
         return None
     return _attendance_row_payload(person, me=True, kind=kind)
 

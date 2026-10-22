@@ -70,3 +70,34 @@ def test_direct_push_state_callers_are_known() -> None:
         "адреса (см. useAppPath и onEntryChange), и добавьте файл в список:\n  "
         + "\n  ".join(new)
     )
+
+
+def test_same_entry_push_callers_are_known() -> None:
+    """pushSameEntry — запись истории с ключом ТЕКУЩЕЙ: страница не пересобирается.
+
+    Регулярка выше её не видит (там сырой History.prototype.pushState), а
+    подвох тот же и даже острее: у записей с общим ключом общий снимок
+    страницы. Годится только для шагов внутри одной страницы — листание
+    единого протокола (карточка бэклога 03.10.2026). Новый вызывающий — повод
+    проверить, что он не уводит на чужую страницу.
+    """
+    known = {
+        "lib/historyEntry.ts",  # сама функция
+        "features/locations/UnifiedProtocolPage.tsx",  # страницы и «к месту» протокола
+    }
+    root = _frontend_dir()
+    found = {
+        str(path.relative_to(root))
+        for path in root.rglob("*.ts*")
+        if re.search(r"\bpushSameEntry\(", path.read_text(encoding="utf-8"))
+    }
+    new = sorted(found - known)
+    assert not new, (
+        "новый вызов pushSameEntry — он годится только для шага внутри той же "
+        "страницы (см. lib/historyEntry); проверьте и добавьте файл в список:\n  "
+        + "\n  ".join(new)
+    )
+    # И сама функция извещает слушателей: иначе роутер не узнает о смене пути.
+    source = (root / "lib" / "historyEntry.ts").read_text(encoding="utf-8")
+    body = source.split("export function pushSameEntry(", 1)[1].split("\n}\n", 1)[0]
+    assert "emit(" in body, "pushSameEntry не зовёт emit: роутер и useOverlayHistory не узнают о шаге"

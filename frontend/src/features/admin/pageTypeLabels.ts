@@ -23,6 +23,7 @@ export const PAGE_TYPE_LABELS: Record<string, string> = {
   location_participants: "Локация (постоянный состав)",
   location_tops: "Локация (топы бегунов)",
   location_weather: "Локация (погода)",
+  location_rate: "Локация (оценка старта)",
   location_protocol: "Локация (протокол)",
   ratings_hub: "Рейтинги (хаб)",
   ratings_runs: "Рейтинг: пробежки",

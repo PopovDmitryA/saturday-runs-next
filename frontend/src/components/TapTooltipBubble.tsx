@@ -4,7 +4,12 @@ import { createPortal } from "react-dom";
 const VIEWPORT_GUTTER = 8;
 /** Отступ подсказки от элемента — столько же, сколько у StatHintTooltip. */
 const ANCHOR_GAP = 8;
-/** Если сверху меньше — показываем подсказку под элементом. */
+/**
+ * Если сверху меньше — показываем подсказку под элементом. Высокой плашке и
+ * этого мало: её переворачиваем, когда она не помещается над элементом
+ * целиком (см. ниже) — трёхстрочная подсказка у даты в карточке системы
+ * уходила за верх экрана, хотя дата была ниже порога.
+ */
 const FLIP_THRESHOLD = 96;
 /**
  * Насколько близко к краю подсказки можно подвинуть хвостик: скругление угла
@@ -48,7 +53,7 @@ export function TapTooltipBubble({
     const min = VIEWPORT_GUTTER + half;
     const max = window.innerWidth - VIEWPORT_GUTTER - half;
     const centre = rect.left + rect.width / 2;
-    const below = rect.top < FLIP_THRESHOLD;
+    const below = rect.top < FLIP_THRESHOLD || rect.top - ANCHOR_GAP - node.offsetHeight < VIEWPORT_GUTTER;
     const x = Math.min(Math.max(centre, min), Math.max(min, max));
     // Хвостик смотрит на элемент, а не на середину плашки: у края экрана
     // подсказка вжимается в экран, её центр уезжает от элемента, и хвостик,

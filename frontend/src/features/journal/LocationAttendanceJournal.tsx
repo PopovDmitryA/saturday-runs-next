@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { formatDate, formatInt } from "../../lib/format";
+import { formatDate, formatInt, pluralFormRu, pluralizeRu } from "../../lib/format";
 import {
   getLocationAttendance,
   type LocationAttendance,
@@ -56,6 +56,85 @@ const KIND_TABS: { value: LocationAttendanceKind; label: string }[] = [
   { value: "runners", label: "Бегуны" },
   { value: "volunteers", label: "Волонтёры" },
 ];
+
+// Кого считают строки: с 21.10.2026 в таблице только опознанные люди с
+// ненулевым счётом в срезе, и номер последней строки — число разных людей.
+// Подпись «из M …» называет их тем же словом, что итоговая строка.
+// Родительный после «из»: «из 21 бегуна», «из 22 бегунов».
+const KIND_PEOPLE_FORMS: Record<LocationAttendanceKind, readonly [string, string, string]> = {
+  all: ["участника", "участников", "участников"],
+  runners: ["бегуна", "бегунов", "бегунов"],
+  volunteers: ["волонтёра", "волонтёров", "волонтёров"],
+};
+
+const TOTALS_LABELS: Record<LocationAttendanceKind, string> = {
+  all: "Участников",
+  runners: "Бегунов",
+  volunteers: "Волонтёров",
+};
+
+// Таблица пуста, а старты были: во всём году нет никого, кого можно назвать
+// строкой — «стартов не было» здесь было бы неправдой.
+const EMPTY_SLICE_NOTES: Record<LocationAttendanceKind, string> = {
+  all: "В протоколах этого года нет опознанных участников.",
+  runners: "В протоколах этого года нет опознанных бегунов.",
+  volunteers: "В протоколах этого года волонтёров нет.",
+};
+
+// Волонтёров parkrun по стартам сайт не собирает: из профиля parkrun
+// приходит лишь сводка ролей без дат. У локации, где весь год стартовал
+// только parkrun, пустая вкладка «Волонтёры» значит «не собираем», а не
+// «волонтёров не было» (ревью 21.10.2026). Где есть и другая система, её
+// волонтёры в журнале есть — там пустой срез честно говорит «нет».
+const PARKRUN_NO_VOLUNTEERS_NOTE = "Волонтёров parkrun сайт не собирает.";
+
+function onlyParkrunStarts(columns: LocationAttendance["columns"]): boolean {
+  return (
+    columns.length > 0 &&
+    columns.every(
+      (column) =>
+        column.platforms.length > 0 && column.platforms.every((code) => code === "parkrun"),
+    )
+  );
+}
+
+// Неопознанных в таблице нет — у каждой безымянной строки протокола своя
+// одноразовая личность, и строками они раздували счёт людей. Но итоговая
+// строка их считает (это число людей на старте), и без этой фразы она
+// расходилась бы с таблицей молча. Слово — как в подсказке к месту на
+// странице локации («неопознанные финишёры»), без «НЕИЗВЕСТНЫЙ» в скобках: в
+// протоколе это и строки с именем, но без штрихкода, и «Неизвестный бегун»
+// RunPark, и «Unknown #…».
+function unidentifiedNote(
+  runs: number,
+  vols: number,
+  totalsLabel: string,
+  inMonth: boolean,
+): string | null {
+  const parts: string[] = [];
+  if (runs > 0) {
+    parts.push(pluralizeRu(runs, ["неопознанный финиш", "неопознанных финиша", "неопознанных финишей"]));
+  }
+  if (vols > 0) {
+    parts.push(
+      pluralizeRu(vols, [
+        "неопознанное волонтёрство",
+        "неопознанных волонтёрства",
+        "неопознанных волонтёрств",
+      ]),
+    );
+  }
+  if (parts.length === 0) {
+    return null;
+  }
+  const one = parts.length === 1 && pluralFormRu(runs + vols, ["one", "many", "many"]) === "one";
+  const counted = one ? (runs > 0 ? "учтён" : "учтено") : "учтены";
+  // С выбранным месяцем число — за месяц, как итоговая строка под ним, а «из
+  // M» строкой выше — люди года: без «в этом месяце» они читались бы как
+  // числа за один период.
+  const period = inMonth ? " в этом месяце" : "";
+  return `Ещё ${parts.join(" и ")}${period} в таблицу не ${one ? "входит" : "входят"}, но ${counted} в строке «${totalsLabel}»`;
+}
 
 function cellFor(row: LocationAttendanceRow): Record<string, MatrixCell> {
   const cells: Record<string, MatrixCell> = {};
@@ -164,7 +243,7 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
     setLoadingMore(true);
     getLocationAttendance(slug, {
       year: data.year,
-      kind,
+      kind: data.kind,
       month: data.month ?? null,
       offset: data.rows.length + extraRows.length,
     })
@@ -205,11 +284,13 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
     // куске. Если он уже в списке, дублировать его незачем: раньше человек
     // из топа встречал себя дважды — закреплённым и на своём месте
     // (Дмитрий 02.09.2026). Тот же приём, что в журнале рейтингов.
+    // Себя узнаём по handle — сервер отдаёт его в «me» тем же правилом, что
+    // в строках. Сравнение точное: по хвосту id хендл «12» совпал бы и с
+    // чужим «ivan-12».
     if (data.me && data.me.year_total > 0) {
       const meHandle = data.me.handle;
-      const existing = meHandle
-        ? result.find((row) => row.id.endsWith(`-${meHandle}`))
-        : undefined;
+      const index = meHandle ? listed.findIndex((row) => row.handle === meHandle) : -1;
+      const existing = index >= 0 ? result[index] : undefined;
       if (existing) {
         existing.me = true;
         existing.name = matrixRow(data.me, -1, true).name;
@@ -271,6 +352,12 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
     });
   };
 
+  // Всё, что описывает загруженные строки, берёт срез из ответа, а не из
+  // нажатой вкладки: total_rows с 21.10.2026 у каждого среза свой, и пока
+  // грузится новая вкладка, под прежней таблицей стояло бы «из 216
+  // волонтёров». Вкладка и легенда откликаются на нажатие сразу.
+  const view = data?.kind ?? kind;
+
   // Итоговая строка следует срезу: в «Бегунах» считает бегунов, в
   // «Волонтёрах» — волонтёров, в «Все» — и тех, и других.
   const totals = useMemo(() => {
@@ -280,24 +367,45 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
     const values: Record<string, number> = {};
     for (const [date, counters] of Object.entries(data.date_totals)) {
       values[date] =
-        kind === "runners"
+        view === "runners"
           ? counters.runners
-          : kind === "volunteers"
+          : view === "volunteers"
             ? counters.volunteers
             : // Люди без повторов: кто бежал и волонтёрил в один день — один
               // человек. Сумма — фолбэк для кэшированных ответов без поля.
               counters.people || counters.runners + counters.volunteers;
     }
-    const label =
-      kind === "runners" ? "Бегунов" : kind === "volunteers" ? "Волонтёров" : "Участников";
+    const label = TOTALS_LABELS[view];
     return {
       label,
       values,
-      title: `${label} на этом старте — по всем за год, не только по видимым строкам`,
+      title: `${label} на этом старте — по всем за год, включая неопознанных, а не только по строкам таблицы`,
     };
-  }, [data, kind]);
+  }, [data, view]);
+
+  // Неопознанные за видимые даты: с выбранным месяцем — за месяц, как и
+  // итоговая строка под ними.
+  const unidentifiedText = useMemo(() => {
+    if (!data) {
+      return null;
+    }
+    let runs = 0;
+    let vols = 0;
+    for (const column of columns) {
+      const counters = data.date_totals[column.key];
+      runs += counters?.unidentified_runners ?? 0;
+      vols += counters?.unidentified_volunteers ?? 0;
+    }
+    return unidentifiedNote(
+      view === "volunteers" ? 0 : runs,
+      view === "runners" ? 0 : vols,
+      TOTALS_LABELS[view],
+      month !== "all",
+    );
+  }, [data, view, columns, month]);
 
   const period = month === "all" ? "году" : "месяце";
+  const peopleWord = data ? pluralFormRu(data.total_rows, KIND_PEOPLE_FORMS[view]) : "";
   const shownRows = data ? data.rows.length + extraRows.length : 0;
   const hasMore = data ? shownRows < data.total_rows : false;
 
@@ -390,38 +498,54 @@ export function LocationAttendanceJournal({ slug, viewTabs }: LocationAttendance
             sort={sort}
             onSort={toggleSort}
             totalLabel={
-              kind === "runners" ? "Пробежек" : kind === "volunteers" ? "Волонтёрств" : "Всего"
+              view === "runners" ? "Пробежек" : view === "volunteers" ? "Волонтёрств" : "Всего"
             }
             // Подпись обязана совпадать с тем, что в колонке: с выбранным
             // месяцем там уже не год.
             totalHint={
-              kind === "all"
+              view === "all"
                 ? `Дней активности в выбранном ${period}: день с пробежкой и волонтёрством считается одним днём`
-                : kind === "runners"
+                : view === "runners"
                   ? `Пробежек на этой площадке в выбранном ${period}`
                   : `Волонтёрств на этой площадке в выбранном ${period}`
             }
             totals={totals}
-            emptyNote="За этот год стартов не было."
+            // Пустая таблица — не всегда «стартов не было»: срез без людей
+            // (волонтёры parkrun) или поиск, не нашедший никого.
+            emptyNote={
+              columns.length === 0
+                ? "За этот год стартов не было."
+                : data.total_rows === 0
+                  ? view === "volunteers" && onlyParkrunStarts(data.columns)
+                    ? PARKRUN_NO_VOLUNTEERS_NOTE
+                    : EMPTY_SLICE_NOTES[view]
+                  : "Никого не нашлось."
+            }
           />
-          <p className="aj-meta muted">
-            {query.trim() ? (
-              <>
-                Найдено {formatInt(visibleRows.length)} среди загруженных{" "}
-                {formatInt(Math.min(shownRows, data.total_rows))} из{" "}
-                {formatInt(data.total_rows)} участников
-              </>
-            ) : (
-              <>
-                Показаны {formatInt(Math.min(shownRows, data.total_rows))} из{" "}
-                {formatInt(data.total_rows)} участников
-              </>
-            )}
-            {kind !== "all" &&
-              (kind === "runners"
-                ? ` · сверху те, кто чаще бегал${month === "all" ? "" : " в этом месяце"}; волонтёрства не закрашены`
-                : ` · сверху те, кто чаще волонтёрил${month === "all" ? "" : " в этом месяце"}; пробежки не закрашены`)}
-          </p>
+          {/* «Показаны 0 из 0» под пустой таблицей ничего не добавляет. */}
+          {data.total_rows > 0 && (
+            <p className="aj-meta muted">
+              {query.trim() ? (
+                <>
+                  Найдено {formatInt(visibleRows.length)} среди загруженных{" "}
+                  {formatInt(Math.min(shownRows, data.total_rows))} из{" "}
+                  {formatInt(data.total_rows)} {peopleWord}
+                </>
+              ) : (
+                <>
+                  Показаны {formatInt(Math.min(shownRows, data.total_rows))} из{" "}
+                  {formatInt(data.total_rows)} {peopleWord}
+                </>
+              )}
+              {view !== "all" &&
+                (view === "runners"
+                  ? ` · сверху те, кто чаще бегал${month === "all" ? "" : " в этом месяце"}; волонтёрства не закрашены`
+                  : ` · сверху те, кто чаще волонтёрил${month === "all" ? "" : " в этом месяце"}; пробежки не закрашены`)}
+            </p>
+          )}
+          {/* Отдельной строкой: в одном абзаце с «Показаны N из M» на
+              телефоне число людей тонуло в пяти строках текста. */}
+          {unidentifiedText && <p className="aj-meta muted">{unidentifiedText}</p>}
           {hasMore && (
             <div className="aj-more">
               <button type="button" className="btn" onClick={loadMore} disabled={loadingMore}>

@@ -1229,3 +1229,17 @@ select.org-select-compact {
 .org-post-reset:hover {
   text-decoration: underline;
 }
+
+/* Карточка хаба с действием внутри (не ссылка целиком): не подпрыгивает
+   под курсором — нажимается кнопка, а не карточка. */
+.org-hub-card-static:hover {
+  transform: none;
+  border-color: var(--border);
+}
+
+/* «Открыть вкладку «Оценка»» под ссылкой для чата — тихая ссылка, а не
+   вторая кнопка: главное действие карточки — поделиться. */
+.org-hub-rate-tab {
+  align-self: flex-start;
+  font-size: 0.9rem;
+}

@@ -125,7 +125,8 @@ if (typeof window !== "undefined") {
       window.history.back();
     }
   });
-  // Новый переход вперёд: мы больше не на заглушке.
+  // Новый переход вперёд — и шаг внутри страницы (lib/historyEntry,
+  // pushSameEntry; ключ тот же): мы больше не на заглушке.
   onEntryChange(({ reason }) => {
     if (reason === "push") ghost = null;
   });

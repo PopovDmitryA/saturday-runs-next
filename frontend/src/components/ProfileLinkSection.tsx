@@ -13,6 +13,7 @@ import {
 } from "../lib/api";
 import {
   COUNT_FORMS,
+  formatDate,
   formatDateTime,
   platformCodeLabel,
   platformScanCode,
@@ -63,6 +64,33 @@ const closedSnackbar = (): SnackbarState => ({
   message: null,
 });
 
+// Одна фраза у даты и у кнопки: профиль parkrun иногда перечитывает очередь,
+// и дата двигается сама, — «автообновления нет» спорило бы с ней.
+const PARKRUN_MANUAL_HINT = "Новые пробежки parkrun сами не приходят — после своей пробежки нажмите «Обновить».";
+
+// Подсказка к дате у кнопки «Обновить»: когда обновились данные, какой старт
+// на сайте последний и нужна ли вообще кнопка. Голая дата читается как «с тех
+// пор ничего не приходило» — и «Обновить» жмут впустую. Строки идут в title:
+// на компьютере его показывает браузер, на телефоне — общий слой
+// TapTooltipLayer по тапу, и он же делит текст по переносам. StatHintTooltip
+// здесь не годится: на тач-экране он закрывается тем же тапом, что открыл.
+function dataFreshnessHint(
+  platformCode: string,
+  updatedAt: string | null | undefined,
+  throughDate: string | null | undefined,
+): string[] {
+  const label = platformCodeLabel(platformCode);
+  return [
+    updatedAt
+      ? `Данные ${label} на сайте обновлены ${formatDateTime(updatedAt)}.`
+      : `Данные ${label} на сайт ещё не загружались.`,
+    throughDate ? `Ваш последний старт на сайте — ${formatDate(throughDate)}.` : "Ваших стартов на сайте пока нет.",
+    platformCode === "parkrun"
+      ? PARKRUN_MANUAL_HINT
+      : "Новые результаты приходят сами из протоколов. Если чего-то не хватает — нажмите «Обновить».",
+  ];
+}
+
 type PlatformCardProps = {
   config: PlatformConfig;
   linked: PlatformLink | undefined;
@@ -92,8 +120,14 @@ function PlatformCard({
     ? platformScanCode(config.code, linked.barcode_id, linked.external_user_id)
     : null;
 
-  const syncTimeLabel = isSyncing ? "Обновление…" : linked?.last_user_sync_at
-    ? formatDateTime(linked.last_user_sync_at)
+  // Когда данные системы на сайте обновлялись любым путём — протокол по
+  // расписанию или кнопка (считает сервер). Время одного синка по кнопке
+  // месяцами стояло на месте (карточка бэклога 06.10.2026). К
+  // last_user_sync_at не откатываемся: сервер намеренно не считает
+  // обновлением отметку самой привязки.
+  const dataUpdatedAt = linked?.data_updated_at ?? null;
+  const syncTimeLabel = isSyncing ? "Обновление…" : dataUpdatedAt
+    ? formatDateTime(dataUpdatedAt)
     : "не обновлялось";
 
   const externalUrl = linked ? platformProfileUrl(linked) : null;
@@ -130,7 +164,10 @@ function PlatformCard({
                 </span>
               );
             })()}
-            <span className="profile-sync-updated" title="Последнее обновление данных с сайта">
+            <span
+              className="profile-sync-updated"
+              title={dataFreshnessHint(config.code, dataUpdatedAt, linked.data_through_date).join("\n")}
+            >
               {syncTimeLabel}
             </span>
             <button
@@ -139,7 +176,7 @@ function PlatformCard({
               aria-label={`Обновить данные ${platformCodeLabel(config.code)}`}
               title={
                 config.code === "parkrun"
-                  ? "Запросить свежие результаты (не чаще раза в 30 минут). У parkrun автообновления нет: после своей пробежки жмите эту кнопку."
+                  ? `Запросить свежие результаты (не чаще раза в 30 минут). ${PARKRUN_MANUAL_HINT}`
                   : "Запросить свежие результаты (не чаще раза в 30 минут)"
               }
               disabled={isSyncing || syncLoading}

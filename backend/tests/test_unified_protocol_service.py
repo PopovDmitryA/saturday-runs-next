@@ -498,3 +498,88 @@ def test_filter_counts_are_faceted(db_session: Session) -> None:
     platforms_men = {item["platform_code"]: item["finishers"] for item in men["platforms"]}
     platforms_all = {item["platform_code"]: item["finishers"] for item in everyone["platforms"]}
     assert platforms_men["five_verst"] < platforms_all["five_verst"]
+
+
+def _five_finishers_and_dnf(db: Session, suffix: str) -> None:
+    """Пять финишёров через 10 секунд (М, Ж, М, Ж, М) и сошедший без времени."""
+    five_verst = _platform(db, "five_verst", "5 вёрст")
+    event = _event(db, five_verst, _location(db, five_verst, suffix, "Сквер"), SATURDAY)
+    for index in range(5):
+        _result(
+            db,
+            event,
+            _runner(
+                db,
+                five_verst,
+                f"{suffix}{index}",
+                f"Бегун {index + 1}",
+                gender="female" if index % 2 else "male",
+            ),
+            position=index + 1,
+            finish_time_sec=1000 + index * 10,
+        )
+    _result(db, event, _runner(db, five_verst, f"{suffix}dnf", "Сошедший"), position=None, finish_time_sec=None)
+
+
+def test_slow_sort_keeps_real_places_and_untimed_tail(db_session: Session) -> None:
+    """«Медленные сверху»: места настоящие, строки без времени — всё равно в хвосте.
+
+    Карточка бэклога 03.10.2026: посмотреть самые медленные финиши недели. Колонка «№»
+    при этом показывает место в протоколе, а не номер строки, — иначе
+    последний финишёр недели выглядел бы победителем.
+    """
+    _five_finishers_and_dnf(db_session, "slow")
+
+    fast = _build(db_session)
+    assert fast["sort"] == "fast"
+    assert [row["place"] for row in fast["results"]] == [1, 2, 3, 4, 5, None]
+
+    slow = _build(db_session, sort="slow")
+    assert slow["sort"] == "slow"
+    assert [row["place"] for row in slow["results"]] == [5, 4, 3, 2, 1, None]
+    assert slow["results"][0]["name"] == "Бегун 5"
+    assert slow["results"][-1]["name"] == "Сошедший"
+    # Порядок показа не трогает ни плитки, ни места по полу.
+    assert slow["summary"] == fast["summary"]
+    gender_places = {row["name"]: row["gender_place"] for row in fast["results"]}
+    assert {row["name"]: row["gender_place"] for row in slow["results"]} == gender_places
+
+    # Разворачивается весь протокол, а не каждая страница по отдельности.
+    first = _build(db_session, sort="slow", per_page=2, page=1)
+    assert [row["place"] for row in first["results"]] == [5, 4]
+    last = _build(db_session, sort="slow", per_page=2, page=3)
+    assert [row["place"] for row in last["results"]] == [1, None]
+
+    # Внутри среза — места среза: женщины здесь вторая и четвёртая по времени.
+    women = _build(db_session, sort="slow", gender="female")
+    assert [(row["name"], row["place"]) for row in women["results"]] == [("Бегун 4", 2), ("Бегун 2", 1)]
+
+    # Мусор в параметре — обычный порядок, а не 500.
+    assert _build(db_session, sort="nonsense")["sort"] == "fast"
+
+
+def test_place_jump_opens_the_page_with_that_place(db_session: Session) -> None:
+    """«К месту N»: страницу выбирает сервер, строку с местом называет focus_place."""
+    _five_finishers_and_dnf(db_session, "jump")
+
+    third = _build(db_session, per_page=2, place=3)
+    assert (third["page"], third["focus_place"]) == (2, 3)
+    assert 3 in [row["place"] for row in third["results"]]
+
+    # В обратном порядке место 4 стоит второй строкой — это первая страница.
+    slow = _build(db_session, sort="slow", per_page=2, place=4)
+    assert (slow["page"], slow["focus_place"]) == (1, 4)
+
+    # Место важнее номера страницы: ссылка «к месту» всегда ведёт к нему.
+    assert _build(db_session, per_page=2, page=1, place=5)["page"] == 3
+
+    # Мест меньше, чем просили, — открываем последнее, а не пустую страницу.
+    beyond = _build(db_session, per_page=2, place=20000)
+    assert (beyond["page"], beyond["focus_place"]) == (3, 5)
+
+    # Поиск оставил одно место — к нему и ведём, даже если просили соседнее.
+    found = _build(db_session, per_page=1, query="бегун 2", place=3)
+    assert (found["page"], found["focus_place"]) == (1, 2)
+
+    # Без места подсвечивать нечего.
+    assert _build(db_session)["focus_place"] is None

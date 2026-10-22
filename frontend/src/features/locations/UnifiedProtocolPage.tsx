@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { normalizeAppPath } from "../../hooks/useAppPath";
 import { useCachedResource } from "../../hooks/useCachedResource";
 import { useRestorableState } from "../../hooks/useRestorableState";
 import { ColumnHeader } from "../../components/activityTable/ColumnHeader";
+import { Pagination } from "../../components/Pagination";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
@@ -12,6 +14,7 @@ import {
   FilterRow,
   FilterSearch,
   FilterSelect,
+  FilterTabs,
 } from "../../components/filters/FilterPanel";
 import { GenderFilter } from "../../components/filters/GenderFilter";
 import { PlatformFilter } from "../../components/filters/PlatformFilter";
@@ -26,10 +29,13 @@ import { useOptionalUser } from "../../lib/useOptionalUser";
 import {
   getUnifiedProtocol,
   getUnifiedProtocolWeeks,
+  type UnifiedProtocol,
   type UnifiedProtocolRow,
+  type UnifiedProtocolSort,
   type UnifiedProtocolWeekRef,
 } from "../../lib/api";
 import { formatDate, formatInt } from "../../lib/format";
+import { currentEntryKey, pushSameEntry } from "../../lib/historyEntry";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { flushMetrikaHit } from "../../lib/metrika";
 
@@ -42,8 +48,177 @@ export type UnifiedProtocolParams = {
 
 const PER_PAGE = 100;
 
-export function unifiedProtocolHref(saturday: string | null): string {
-  return saturday ? `/protocol/${saturday}` : "/protocol";
+/**
+ * Что открыто в протоколе: зачёт, поиск, порядок и страница.
+ *
+ * Всё это живёт в адресе (карточка бэклога 03.10.2026): ссылку на «медленные сверху,
+ * страница 37» или «где 1000-е место» можно отправить и открыть в новой
+ * вкладке, а «Назад» и «Вперёд» браузера листают страницы протокола. Значения
+ * по умолчанию в адрес не пишем — у недели один «голый» адрес. Для поисковика
+ * все эти варианты — одна страница: canonical у неё без строки запроса
+ * (lib/pageMeta, seo_service), как у фильтров рейтингов.
+ */
+type ProtocolView = {
+  platform: string | null;
+  gender: GenderFilter;
+  ageGroup: string | null;
+  query: string;
+  sort: UnifiedProtocolSort;
+  page: number;
+  /** «К месту N»: страницу, где стоит это место, выбирает сервер. */
+  place: number | null;
+};
+
+const DEFAULT_VIEW: ProtocolView = {
+  platform: null,
+  gender: "all",
+  ageGroup: null,
+  query: "",
+  sort: "fast",
+  page: 1,
+  place: null,
+};
+
+/** Ответ вместе с ключом среза, под который его просили (см. fresh ниже). */
+type ShownProtocol = UnifiedProtocol & { viewKey: string };
+
+/** Целое от единицы из адреса или поля ввода; мусор — null. */
+function positiveInt(raw: string | null): number | null {
+  if (!raw || !/^\d{1,7}$/.test(raw)) {
+    return null;
+  }
+  const value = Number(raw);
+  return value >= 1 ? value : null;
+}
+
+function readView(): ProtocolView {
+  const params = new URLSearchParams(window.location.search);
+  const gender = params.get("gender");
+  const place = positiveInt(params.get("place"));
+  return {
+    platform: params.get("platform") || null,
+    gender: gender === "male" || gender === "female" ? gender : "all",
+    ageGroup: params.get("age") || null,
+    query: (params.get("q") ?? "").trim(),
+    sort: params.get("sort") === "slow" ? "slow" : "fast",
+    // Место важнее номера страницы: страницу под него подберёт сервер.
+    page: place === null ? (positiveInt(params.get("page")) ?? 1) : 1,
+    place,
+  };
+}
+
+function viewSearch(view: ProtocolView): string {
+  const params = new URLSearchParams();
+  if (view.sort !== "fast") params.set("sort", view.sort);
+  if (view.place !== null) {
+    params.set("place", String(view.place));
+  } else if (view.page > 1) {
+    params.set("page", String(view.page));
+  }
+  if (view.platform) params.set("platform", view.platform);
+  if (view.gender !== "all") params.set("gender", view.gender);
+  if (view.ageGroup) params.set("age", view.ageGroup);
+  if (view.query) params.set("q", view.query);
+  const search = params.toString();
+  return search ? `?${search}` : "";
+}
+
+export function unifiedProtocolHref(saturday: string | null, view: ProtocolView = DEFAULT_VIEW): string {
+  return `${saturday ? `/protocol/${saturday}` : "/protocol"}${viewSearch(view)}`;
+}
+
+/**
+ * Строка запроса текущей записи истории — под показанный срез, без новой
+ * записи. В ней только срез протокола: чужие метки ссылки Метрика посчитала
+ * ещё при загрузке (init из сниппета), дальше в пересылаемой ссылке они лишние.
+ * Якорь не трогаем.
+ */
+function replaceSearch(search: string): void {
+  if (window.location.search !== search) {
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${search}${window.location.hash}`,
+    );
+  }
+}
+
+/** Ключ ответа в кэше вкладки: неделя и весь срез. */
+function protocolViewKey(saturday: string | null, view: ProtocolView): string {
+  return [
+    "protocol:week",
+    saturday ?? "latest",
+    view.platform ?? "",
+    view.gender,
+    view.ageGroup ?? "",
+    view.query,
+    view.sort,
+    view.place === null ? `p${view.page}` : `at${view.place}`,
+  ].join(":");
+}
+
+/**
+ * Поле «к месту N»: ввёл 1000 — открылась страница, где стоит 1000-е место,
+ * и строка подсвечена. Кейсы из карточки бэклога — граница ТОП-1000 и ТОП-10000.
+ */
+function PlaceJump({
+  value,
+  onJump,
+  onClear,
+}: {
+  value: number | null;
+  onJump: (place: number) => void;
+  onClear: () => void;
+}) {
+  const [text, setText] = useState(value === null ? "" : String(value));
+  // Место сменилось не отсюда («Назад», сброс фильтром) — поле показывает адрес.
+  useEffect(() => {
+    setText(value === null ? "" : String(value));
+  }, [value]);
+  const target = positiveInt(text);
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (target !== null) {
+      onJump(target);
+    }
+  };
+  return (
+    <form className="uniprot-place-jump" onSubmit={submit}>
+      <input
+        className="fp-search uniprot-place-input"
+        type="text"
+        inputMode="numeric"
+        enterKeyHint="go"
+        autoComplete="off"
+        placeholder="№ места"
+        aria-label="Номер места в протоколе"
+        value={text}
+        // Только цифры: «1 000» и «№1000» из буфера обмена — тоже 1000.
+        // Стёр число — переход снят: подсветка уходит, страница остаётся.
+        onChange={(event) => {
+          const next = event.target.value.replace(/\D+/g, "").slice(0, 7);
+          setText(next);
+          if (next === "" && value !== null) {
+            onClear();
+          }
+        }}
+      />
+      {value !== null && (
+        <button
+          type="button"
+          className="uniprot-place-clear"
+          aria-label="Сбросить переход к месту"
+          title="Сбросить переход к месту"
+          onClick={onClear}
+        >
+          ×
+        </button>
+      )}
+      <button type="submit" className="uniprot-place-go" disabled={target === null}>
+        Перейти
+      </button>
+    </form>
+  );
 }
 
 /** «00:18:08» → «18:08» — часовых времён на пятёрке не бывает. */
@@ -112,13 +287,21 @@ const UNIFIED_COLUMNS: AdaptiveColumn[] = [
   { key: "club", width: 168 },
 ];
 
-function RunnerCell({ row }: { row: UnifiedProtocolRow }) {
+/** Подпись на подсвеченной строке, когда запрошенного места нет. */
+type NearestNote = { label: string; hint: string };
+
+function RunnerCell({ row, nearest = null }: { row: UnifiedProtocolRow; nearest?: NearestNote | null }) {
   return (
     <span className="protocol-runner">
       {row.serial_id !== null ? (
         <a href={`/users/${row.serial_id}`}>{row.name ?? "—"}</a>
       ) : (
         <span>{row.name ?? "—"}</span>
+      )}
+      {nearest && (
+        <StatHintTooltip text={nearest.hint}>
+          <span className="protocol-row-badge uniprot-badge-nearest">{nearest.label}</span>
+        </StatHintTooltip>
       )}
       {row.is_me && <span className="protocol-row-badge protocol-badge-me">вы</span>}
       {row.is_first_run && (
@@ -151,101 +334,339 @@ function LocationCell({ row }: { row: UnifiedProtocolRow }) {
 
 const EMPTY_WEEKS: UnifiedProtocolWeekRef[] = [];
 
+/** Куда докрутить, когда приедет нужная страница: к строке места или к таблице. */
+type ScrollTarget = "row" | "table";
+
+/**
+ * Намерение докрутки вместе со срезом, под который оно заказано. Тратится
+ * только на ответ под этот срез: при быстром двойном «Назад» отложенный эффект
+ * прошлой отрисовки (соседняя страница из кэша) забирал «к строке» себе, строки
+ * не находил и уводил к началу таблицы, а пришедшую страницу с местом
+ * докручивать было уже некому (ревью 21.10.2026).
+ */
+type PendingScroll = { target: ScrollTarget; view: ProtocolView } | null;
+
 function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
   // undefined — сессия ещё проверяется: пока не знаем, баннер не мигаем.
   const viewer = useOptionalUser();
-  // Фильтры и страница живут в снимке записи истории (см. hooks/useRestorableState):
-  // «назад» из профиля возвращает тот же срез протокола на той же странице.
-  const [platform, setPlatform] = useRestorableState<string | null>("uniprot.platform", null);
-  const [gender, setGender] = useRestorableState<GenderFilter>("uniprot.gender", "all");
-  const [ageGroup, setAgeGroup] = useRestorableState<string | null>("uniprot.age", null);
-  const [search, setSearch] = useRestorableState("uniprot.search", "");
-  const [query, setQuery] = useRestorableState("uniprot.query", "");
-  const [page, setPage] = useRestorableState("uniprot.page", 1);
+  // Срез, порядок и страница — из адреса (см. ProtocolView). «Назад» из
+  // профиля возвращает ту же запись истории, а с ней и тот же адрес.
+  const [view, setView] = useState<ProtocolView>(readView);
+  // Последний выбранный срез — для обработчиков, которые живут дольше рендера
+  // (popstate, пауза в наборе поиска).
+  const viewRef = useRef(view);
+  // Текст в поле поиска отдельно от view.query: запрос уходит после паузы в наборе.
+  const [search, setSearch] = useState(view.query);
+  const { platform, gender, ageGroup, query, sort, page, place } = view;
+  const viewKey = protocolViewKey(saturday, view);
   // Ответ по срезу — из кэша вкладки, свежий подъезжает следом (см. hooks/useCachedResource).
   const {
     data,
     error,
     loading,
-  } = useCachedResource(
-    `protocol:week:${saturday ?? "latest"}:${platform ?? ""}:${gender}:${ageGroup ?? ""}:${query}:${page}`,
-    () =>
-      getUnifiedProtocol(saturday, {
+    reload,
+  } = useCachedResource<ShownProtocol>(
+    viewKey,
+    async () => ({
+      ...(await getUnifiedProtocol(saturday, {
         platform,
         gender: gender === "all" ? null : gender,
         ageGroup,
         q: query || null,
+        sort,
         page,
+        place,
         perPage: PER_PAGE,
-      }),
-    [saturday, platform, gender, ageGroup, query, page],
+      })),
+      viewKey,
+    }),
+    [saturday, platform, gender, ageGroup, query, sort, page, place],
     { errorText: "Не удалось загрузить протокол", onSettled: flushMetrikaHit },
   );
+  // Пока новый срез грузится, на экране стоит прежний ответ (так таблица не
+  // мигает пустотой). Подсветка места, докрутка и правка адреса смотрят только
+  // на ответ, пришедший именно под текущий срез.
+  const fresh = data !== null && data.viewKey === viewKey;
+  // Неделя на экране — для адреса без даты (см. navigate).
+  const shownWeekRef = useRef<string | null>(null);
+  shownWeekRef.current = data?.saturday ?? null;
   const { data: weeksData } = useCachedResource("protocol:weeks", getUnifiedProtocolWeeks, []);
   const weeks = weeksData?.weeks ?? EMPTY_WEEKS;
-  // Эффекты-сбросы ниже не должны срабатывать на монтировании: иначе они
-  // затирали бы только что восстановленный снимок записи.
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-  }, []);
   const tableSectionRef = useRef<HTMLElement | null>(null);
   const attachFloatingHead = useFloatingTableHead(".tview-bar");
   const tableColumns = useTableColumns(UNIFIED_COLUMNS);
   const show = tableColumns.show;
   const showFull = tableColumns.showFull;
 
-  // Поиск по имени дёргает сервер — ждём паузы в наборе.
+  // Пришли по ссылке прямо в глубину протокола (?place=, ?page=) — докрутим к
+  // таблице, как только приедет ответ. Только при первой сборке записи
+  // истории: следующая — это возврат «назад» или F5, там позицию возвращает
+  // lib/scrollMemory, и докрутка спорила бы с ней.
+  const [seen, setSeen] = useRestorableState("uniprot.seen", false);
+  const pendingScroll = useRef<PendingScroll>(
+    seen ? null : place !== null ? { target: "row", view } : page > 1 ? { target: "table", view } : null,
+  );
   useEffect(() => {
-    const timer = window.setTimeout(() => setQuery(search.trim()), 350);
-    return () => window.clearTimeout(timer);
-  }, [search]);
+    setSeen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Смена недели — это новая страница: сбрасываем всё, кроме выбранной системы
-  // (её обычно хотят удержать, листая недели). Неделя — часть адреса, так что
-  // сюда попадаем только с уже смонтированной страницы.
+  const scrollToTable = useCallback((behavior: ScrollBehavior) => {
+    tableSectionRef.current?.scrollIntoView({ behavior, block: "start" });
+  }, []);
+
+  // К строке места (или ближайшего, если такого нет), а нет её на странице —
+  // к началу таблицы.
+  const scrollToPlace = useCallback(
+    (focus: number | null) => {
+      const row =
+        focus !== null ? tableSectionRef.current?.querySelector(`tr[data-place="${focus}"]`) : null;
+      if (row) {
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+      } else {
+        scrollToTable("smooth");
+      }
+    },
+    [scrollToTable],
+  );
+
   useEffect(() => {
-    if (!mounted.current) {
+    const pending = pendingScroll.current;
+    if (!data || !fresh || pending === null || data.viewKey !== protocolViewKey(saturday, pending.view)) {
       return;
     }
-    setGender("all");
-    setAgeGroup(null);
-    setSearch("");
-    setQuery("");
-    setPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saturday]);
-
-  const filtersKey = `${platform ?? ""}|${gender}|${ageGroup ?? ""}|${query}`;
-  const lastFiltersKey = useRef(filtersKey);
-  useEffect(() => {
-    // Страницу сбрасывает именно смена фильтров, а не первый прогон эффекта:
-    // в StrictMode он выполняется дважды и затирал бы восстановленный номер.
-    if (lastFiltersKey.current !== filtersKey) {
-      lastFiltersKey.current = filtersKey;
-      setPage(1);
+    pendingScroll.current = null;
+    if (pending.target === "row") {
+      scrollToPlace(data.focus_place);
+    } else {
+      scrollToTable("smooth");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtersKey]);
+  }, [fresh, data]);
+
+  /**
+   * Сменить срез или страницу. Страница таблицы и «к месту» — новая запись
+   * истории («Назад» листает обратно), но с тем же ключом (pushSameEntry):
+   * страница не пересобирается, плитки и колонки стоят на месте. Фильтры и
+   * порядок правят текущую запись — как фильтры рейтингов
+   * (LeaderboardPage.writeBoardFilters).
+   *
+   * Адрес без даты (/protocol) — «последняя неделя», и с первым стартом новой
+   * недели он поведёт на неё. Страница и место имеют смысл только внутри своей
+   * недели, поэтому шаг к ним закрепляет в адресе неделю на экране: ссылка
+   * «вот граница ТОП-1000», отправленная в воскресенье, и в пятницу откроет
+   * того же человека. Роутер узнаёт о новом пути от pushSameEntry, а страница
+   * не пересобирается (см. UnifiedProtocolPage ниже). Фильтры и порядок без
+   * страницы остаются «последней неделей» — такую ссылку и хотят держать.
+   *
+   * Докрутку заказывает последний шаг (scroll): прежнее намерение относилось
+   * к другому срезу, и его ответа больше не ждём.
+   */
+  const navigate = useCallback(
+    (next: ProtocolView, mode: "push" | "replace", scroll: ScrollTarget | null = null) => {
+      pendingScroll.current = scroll === null ? null : { target: scroll, view: next };
+      const search = viewSearch(next);
+      if (mode === "push") {
+        const week = shownWeekRef.current;
+        const path =
+          week && normalizeAppPath() === "/protocol" ? `/protocol/${week}` : window.location.pathname;
+        pushSameEntry(`${path}${search}`);
+      } else {
+        replaceSearch(search);
+      }
+      viewRef.current = next;
+      setView(next);
+    },
+    [],
+  );
+
+  // Срез поменялся — страница и «к месту» сбрасываются: в новом зачёте место N
+  // занимает другой человек. Повторный клик по выбранному ничего не сбрасывает.
+  const refine = useCallback(
+    (patch: Partial<ProtocolView>) => {
+      const current = viewRef.current;
+      const changed = (Object.keys(patch) as (keyof ProtocolView)[]).some(
+        (name) => patch[name] !== current[name],
+      );
+      if (changed) {
+        navigate({ ...current, ...patch, page: 1, place: null }, "replace");
+      }
+    },
+    [navigate],
+  );
 
   // Смена системы обнуляет возрастную группу: ступени у систем разные, а у S95
   // категорий нет вовсе — иначе фильтр оставался бы висеть невидимым и
   // протокол пустовал бы без объяснений.
-  const lastPlatform = useRef(platform);
-  useEffect(() => {
-    if (lastPlatform.current !== platform) {
-      lastPlatform.current = platform;
-      setAgeGroup(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [platform]);
+  const choosePlatform = useCallback(
+    (next: string | null) => {
+      if (next !== viewRef.current.platform) {
+        refine({ platform: next, ageGroup: null });
+      }
+    },
+    [refine],
+  );
 
-  const goToPage = useCallback((next: number) => {
-    setPage(next);
-    tableSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
+  // Порядок — не срез: места те же. Но переход «к месту» он снимает и
+  // открывает первую страницу: «Медленные» показывают самых медленных. Раньше
+  // открытое место переживало разворот, и после «К месту 1092» кнопка
+  // «Медленные» возвращала к той же строке — казалось, что ничего не
+  // поменялось (ревью 22.10.2026).
+  const chooseSort = useCallback(
+    (next: UnifiedProtocolSort) => {
+      const current = viewRef.current;
+      if (next === current.sort) {
+        return;
+      }
+      navigate({ ...current, sort: next, page: 1, place: null }, "replace");
+    },
+    [navigate],
+  );
+
+  // Сброс «к месту»: подсветка снимается, а страница остаётся той, где
+  // стояло место, — человек смотрит на неё и не хочет улететь в начало.
+  const clearPlace = useCallback(() => {
+    const current = viewRef.current;
+    if (current.place === null) {
+      return;
+    }
+    const shownPage =
+      data !== null && data.viewKey === protocolViewKey(saturday, current) ? data.page : current.page;
+    navigate({ ...current, place: null, page: shownPage }, "replace");
+  }, [navigate, data, saturday]);
+
+  const goToPage = useCallback(
+    (next: number) => {
+      const current = viewRef.current;
+      if (next !== current.page || current.place !== null) {
+        navigate({ ...current, page: next, place: null }, "push");
+      } else if (error) {
+        // Эту страницу уже просили, и запрос упал (на экране прежняя, ссылка на
+        // эту ещё жива): клик по ней — повтор запроса, а не вторая такая же
+        // запись в истории.
+        reload();
+      }
+      scrollToTable("smooth");
+    },
+    [navigate, scrollToTable, error, reload],
+  );
+
+  const jumpToPlace = useCallback(
+    (target: number) => {
+      const current = viewRef.current;
+      if (target !== current.place) {
+        navigate({ ...current, page: 1, place: target }, "push", "row");
+        return;
+      }
+      // То же место ещё раз. Ответ сверяем с адресом (viewRef), а не с прошлым
+      // рендером: пока новый ответ в пути, на экране прежний, и двойное
+      // «Перейти» уводило к его строке, а пришедшую строку уже не докручивало.
+      if (data !== null && data.viewKey === protocolViewKey(saturday, current)) {
+        // Ответ под это место уже на экране — докручиваем без запроса.
+        pendingScroll.current = null;
+        scrollToPlace(data.focus_place);
+        return;
+      }
+      // Ответ ещё в пути — докрутит эффект, когда он придёт.
+      pendingScroll.current = { target: "row", view: current };
+      if (error) {
+        // Запрос под это место упал: «Перейти» с тем же числом — повтор.
+        reload();
+      }
+    },
+    [navigate, scrollToPlace, data, error, reload, saturday],
+  );
+
+  // Поиск по имени дёргает сервер — ждём паузы в наборе.
+  useEffect(() => {
+    const trimmed = search.trim();
+    if (trimmed === viewRef.current.query) {
+      return;
+    }
+    const timer = window.setTimeout(() => refine({ query: trimmed }), 350);
+    return () => window.clearTimeout(timer);
+  }, [search, refine]);
+
+  // «Назад»/«Вперёд» между страницами протокола: запись та же (pushSameEntry),
+  // App страницу не пересобирает — адрес перечитываем сами.
+  useEffect(() => {
+    const ownKey = currentEntryKey();
+    const onPop = () => {
+      // Ушли на другую запись истории — её соберёт App, здесь делать нечего.
+      if (currentEntryKey() !== ownKey) {
+        return;
+      }
+      const next = readView();
+      // Закрылось окно поверх страницы (поиск, «Меню») — адрес тот же.
+      if (viewSearch(next) === viewSearch(viewRef.current)) {
+        return;
+      }
+      viewRef.current = next;
+      setView(next);
+      setSearch(next.query);
+      // Намерение — под пришедший срез: ответ прошлой отрисовки, если его
+      // эффект доиграет уже после этого «Назад», докрутку не заберёт.
+      pendingScroll.current = next.place !== null ? { target: "row", view: next } : null;
+      if (next.place === null && (tableSectionRef.current?.getBoundingClientRect().top ?? 0) < 0) {
+        // Листали внизу таблицы — показываем начало пришедшей страницы.
+        scrollToTable("auto");
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [scrollToTable]);
+
+  // Адрес — под то, что реально показано: систему, которой нет в неделе
+  // (мусор в набранной руками ссылке или parkrun в неделе без parkrun), сервер
+  // молча игнорирует, а страницу за концом протокола заменяет последней.
+  // Возрастную группу сервер не проверяет: чужая или выдуманная (?age=) давала
+  // пустой протокол, а select, не найдя её среди вариантов, показывал «Все
+  // группы» — и выбрать их, чтобы снять фильтр, было нельзя. Снимаем сами.
+  //
+  // Правим только по ответу под срез, который в адресе сейчас (viewRef), а не
+  // под тот, с которым рисовали: после быстрого «Назад» отложенный эффект
+  // прошлой отрисовки видит уже новый адрес, но свой старый ответ — и вписал
+  // бы в новую запись чужую страницу.
+  useEffect(() => {
+    if (!data || !fresh || data.viewKey !== protocolViewKey(saturday, viewRef.current)) {
+      return;
+    }
+    const current = viewRef.current;
+    const platformGone = current.platform !== null && data.scope_platform !== current.platform;
+    const ageGone =
+      current.ageGroup !== null && !data.age_groups.some((group) => group.age_group === current.ageGroup);
+    if (platformGone || ageGone) {
+      // Место в адресе остаётся — и строку докрутим уже в исправленном срезе:
+      // с выдуманной группой (?place=1000&age=zzz) протокол был пуст, и
+      // докрутка по первому ответу уходила к началу таблицы.
+      navigate(
+        {
+          ...current,
+          platform: platformGone ? data.scope_platform : current.platform,
+          ageGroup: ageGone ? null : current.ageGroup,
+        },
+        "replace",
+        current.place !== null ? "row" : null,
+      );
+      return;
+    }
+    // Дальше — только адрес (и его копия для обработчиков): ответ уже на
+    // экране, перезапрашивать его под другой ключ незачем. Страницу за концом
+    // протокола сервер заменил последней. Мусор (?sort=xxx, ?page=-5,
+    // ?page=1.5, ?place=0, ?gender=xxx) readView уже заменил умолчаниями, а
+    // ?page рядом с ?place — страницей места; в адресе он оставался, и ссылка,
+    // которой поделятся, несла его дальше (ревью 21.10.2026).
+    if (current.place === null && data.page !== current.page) {
+      viewRef.current = { ...current, page: data.page };
+    }
+    replaceSearch(viewSearch(viewRef.current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fresh, data]);
 
   const weekOptions = useMemo(() => [...weeks].reverse(), [weeks]);
+  // Листая недели, систему и порядок обычно хотят удержать; остальной срез и
+  // страница — свои у каждой недели.
+  const weekView: ProtocolView = { ...DEFAULT_VIEW, platform, sort };
 
   // Полноэкранная ошибка — только пока нечего показывать. Когда данные уже
   // есть (упал запрос при листании или смене фильтра), страница остаётся:
@@ -298,18 +719,46 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
     (hasPace && show("pace") ? 1 : 0) +
     (show("location_position") ? 1 : 0) +
     (hasClubs && show("club") ? 1 : 0);
+  // Строка, к которой перешли «к месту N». Подсвечена, пока место в адресе:
+  // ссылкой «вот граница ТОП-1000» делятся, и пришедший видит, о ком речь.
+  const focusPlace = fresh && place !== null ? data.focus_place : null;
+  // Такого места нет («К месту 20000» при 13 146 финишёрах) — подсвечено
+  // ближайшее. Пояснение над таблицей после докрутки к строке оставалось за
+  // верхним краем экрана: в поле 20000, подсвечено 13 146, и почему — не
+  // видно. Поэтому коротко повторяем его на самой строке (ревью 21.10.2026).
+  const nearestNote: NearestNote | null =
+    focusPlace !== null && place !== null && focusPlace !== place
+      ? {
+          label: `ближайшее к ${formatInt(place)}`,
+          hint: `Места ${formatInt(place)} ${
+            query ? "среди найденных" : "в этом зачёте"
+          } нет — показано ближайшее, ${formatInt(focusPlace)}.`,
+        }
+      : null;
+  const shownFrom = data.total ? (data.page - 1) * data.per_page + 1 : 0;
+  const shownTo = Math.min(data.page * data.per_page, data.total);
+
+  const isFocusRow = (row: UnifiedProtocolRow) => focusPlace !== null && row.place === focusPlace;
 
   const renderRow = (row: UnifiedProtocolRow, keyPrefix: string) => (
     <tr
       key={`${keyPrefix}-${row.place ?? "x"}-${row.platform_code}-${row.external_user_id ?? row.name ?? ""}`}
-      className={row.is_me ? "protocol-row-me" : row.is_unknown ? "protocol-row-unknown" : undefined}
+      className={
+        [
+          row.is_me ? "protocol-row-me" : row.is_unknown ? "protocol-row-unknown" : null,
+          isFocusRow(row) ? "uniprot-row-focus" : null,
+        ]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
+      data-place={row.place ?? undefined}
     >
       <td className="td-compact">
         {medal(row.place) ?? ""}
         {row.place ?? "—"}
       </td>
       <td>
-        <RunnerCell row={row} />
+        <RunnerCell row={row} nearest={isFocusRow(row) ? nearestNote : null} />
       </td>
       <td className="td-compact">{stripHours(row.finish_time_display)}</td>
       {show("location") && (
@@ -380,7 +829,7 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
         )}
         <nav className="protocol-nav" aria-label="Выбор недели">
           {data.previous_saturday ? (
-            <a href={unifiedProtocolHref(data.previous_saturday)}>
+            <a href={unifiedProtocolHref(data.previous_saturday, weekView)}>
               ← {formatDate(data.previous_saturday)}
             </a>
           ) : (
@@ -391,7 +840,7 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
               ariaLabel="Неделя"
               value={data.saturday}
               onChange={(value) => {
-                window.location.href = unifiedProtocolHref(String(value) || null);
+                window.location.href = unifiedProtocolHref(String(value) || null, weekView);
               }}
               options={weekOptions.map((week) => ({
                 value: week.saturday,
@@ -400,7 +849,7 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
             />
           )}
           {data.next_saturday ? (
-            <a href={unifiedProtocolHref(data.next_saturday)}>
+            <a href={unifiedProtocolHref(data.next_saturday, weekView)}>
               {formatDate(data.next_saturday)} →
             </a>
           ) : (
@@ -662,7 +1111,7 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
                   }
                   key={group.age_group}
                   aria-pressed={active}
-                  onClick={() => setAgeGroup(active ? null : group.age_group)}
+                  onClick={() => refine({ ageGroup: active ? null : group.age_group })}
                   title={
                     active
                       ? "Снять фильтр по группе"
@@ -707,7 +1156,7 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
           <PlatformFilter
             mode="single"
             value={platform ?? "all"}
-            onChange={(next) => setPlatform(next === "all" ? null : next)}
+            onChange={(next) => choosePlatform(next === "all" ? null : next)}
             options={data.platforms.map((item) => ({
               code: item.platform_code,
               label: item.title,
@@ -716,7 +1165,7 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
           />
           <GenderFilter
             value={gender}
-            onChange={(next) => setGender(next as GenderFilter)}
+            onChange={(next) => refine({ gender: next as GenderFilter })}
             options={[
               { value: "all", count: genderCounts.total },
               { value: "male", count: genderCounts.male, disabled: !genderKnown },
@@ -728,7 +1177,7 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
             <FilterSelect
               ariaLabel="Фильтр по возрастной группе"
               value={ageGroup ?? ""}
-              onChange={(value) => setAgeGroup(String(value) || null)}
+              onChange={(value) => refine({ ageGroup: String(value) || null })}
               options={[
                 { value: "", label: "Все группы" },
                 ...data.age_groups.map((group) => ({
@@ -753,8 +1202,33 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
             />
           </FilterGroup>
           </FilterRow>
+          {/* Порядок и «к месту» — навигация по протоколу, а не зачёт: места
+              от них не меняются. Отдельным рядом, чтобы не путались с фильтрами. */}
+          <FilterRow divided>
+            <FilterGroup label="Порядок">
+              <FilterTabs<UnifiedProtocolSort>
+                ariaLabel="Порядок строк протокола"
+                value={sort}
+                onChange={chooseSort}
+                // Подписи короткие: заголовок группы «Порядок» уже даёт
+                // контекст, а «Медленные сверху» на телефоне в 360px обрезалась.
+                options={[
+                  { value: "fast", label: "Быстрые", title: "Быстрые сверху — обычный порядок протокола" },
+                  {
+                    value: "slow",
+                    label: "Медленные",
+                    title: "Самые медленные финиши первыми — места при этом настоящие",
+                  },
+                ]}
+              />
+            </FilterGroup>
+            <FilterGroup label="К месту">
+              <PlaceJump value={place} onJump={jumpToPlace} onClear={clearPlace} />
+            </FilterGroup>
+          </FilterRow>
           {loading && <span className="muted uniprot-total">Считаем…</span>}
         </FilterPanel>
+        {nearestNote && <p className="muted uniprot-scope-note">{nearestNote.hint}</p>}
         {summary.skipped_foreign_parkrun > 0 && (
           <p className="muted uniprot-scope-note">
             Зарубежный parkrun в зачёт не входит ({formatInt(summary.skipped_foreign_parkrun)}{" "}
@@ -842,30 +1316,19 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
           </table>
         </TableWrap>
 
-        {data.pages > 1 && (
-          <nav className="uniprot-pager" aria-label="Страницы протокола">
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={() => goToPage(data.page - 1)}
-              disabled={data.page <= 1 || loading}
-            >
-              ← Назад
-            </button>
-            <span className="muted">
-              Строки {formatInt((data.page - 1) * data.per_page + 1)}—
-              {formatInt(Math.min(data.page * data.per_page, data.total))} из {formatInt(data.total)}
-            </span>
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={() => goToPage(data.page + 1)}
-              disabled={data.page >= data.pages || loading}
-            >
-              Вперёд →
-            </button>
-          </nav>
-        )}
+        {/* Номера страниц — настоящие ссылки (?page=N с текущим срезом): их
+            можно открыть в новой вкладке. Обычный клик листает без
+            пересборки страницы (goToPage → pushSameEntry). Неделя в ссылке —
+            всегда с датой, даже на /protocol: страница N — место внутри
+            своей недели (см. navigate). */}
+        <Pagination
+          page={data.page}
+          pages={data.pages}
+          hrefForPage={(target) => unifiedProtocolHref(data.saturday, { ...view, page: target, place: null })}
+          onNavigate={goToPage}
+          label="Страницы протокола"
+          summary={`Строки ${formatInt(shownFrom)}–${formatInt(shownTo)} из ${formatInt(data.total)}`}
+        />
       </section>
 
       <ScrollToTopButton />
@@ -874,6 +1337,10 @@ function UnifiedProtocolContent({ saturday }: UnifiedProtocolParams) {
 }
 
 export function UnifiedProtocolPage(params: UnifiedProtocolParams) {
-  // key по неделе: смена адреса пересобирает состояние страницы с нуля.
-  return <UnifiedProtocolContent key={params.saturday ?? "latest"} {...params} />;
+  // Ключа по неделе нет. Другая неделя — это новая запись истории, и App
+  // пересобирает страницу сам (Fragment key=entryKey). А шаг вглубь протокола
+  // на адресе без даты (/protocol → /protocol/{дата}, см. navigate) — та же
+  // неделя и та же запись: пересборка мигнула бы «Собираем протокол недели…»
+  // вместо соседней страницы таблицы.
+  return <UnifiedProtocolContent {...params} />;
 }

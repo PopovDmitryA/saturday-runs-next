@@ -11,6 +11,7 @@ import "./NotFoundPage.css";
 // превращается в «sokolniki погода» (локацию поиск найдёт и по slug).
 const SEGMENT_WORDS: Record<string, string> = {
   weather: "погода",
+  rate: "оценка",
   events: "протоколы",
   protocol: "протокол",
   tops: "топ",

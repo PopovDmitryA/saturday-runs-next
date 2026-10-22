@@ -1,0 +1,118 @@
+/* Вкладка «Оценка» локации (LocationRatePage.tsx) и ссылка на неё для чата
+   (RateLinkShare.tsx — её же показывает оргкабинет). Отдельным файлом, а не
+   в index.css: правка компактная и должна переезжать вместе с компонентами
+   (редизайн страницы локации идёт параллельно). Цвета — только переменные
+   темы. */
+
+.rate-tab p {
+  margin: 0;
+}
+
+.rate-tab-lead {
+  line-height: 1.45;
+}
+
+.rate-tab-note {
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.rate-tab-hint {
+  padding: 0.5rem 0.7rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  background: var(--bg-muted);
+  border-radius: 10px;
+}
+
+.rate-tab-run {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.rate-tab-run-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.rate-tab-run-date {
+  font-weight: 600;
+}
+
+.rate-tab-stars {
+  letter-spacing: 0.05em;
+  color: var(--accent-amber-text);
+}
+
+.rate-tab-stars-empty {
+  color: var(--neutral-soft);
+}
+
+/* На телефоне кнопка — во всю ширину: «Войти и оценить» под большой палец,
+   а не крошечная сбоку. */
+@media (max-width: 30rem) {
+  .rate-tab-actions > .btn {
+    flex: 1 1 100%;
+  }
+}
+
+/* Ссылка для чата: адрес текстом в плашке (тап выделяет его целиком) и
+   кнопка рядом; на узком экране кнопка уходит под адрес. */
+.rate-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+/* Адрес переносится, а не обрезается многоточием: слаг — единственное, по
+   чему видно, на какую локацию ссылка. Длинный слаг без дефисов рвётся где
+   придётся (overflow-wrap), обычный — после «/locations/» (<wbr>). */
+.rate-share-url {
+  flex: 1 1 14rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-muted);
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  cursor: text;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+.rate-share-btn {
+  flex: none;
+}
+
+@media (max-width: 30rem) {
+  .rate-share-btn {
+    flex: 1 1 100%;
+  }
+}
+
+/* Подписи «до» и «после» копирования в одной ячейке сетки: кнопка всегда
+   шириной с длинную, и «Скопировано» не дёргает соседей. */
+.rate-share-faces {
+  display: inline-grid;
+}
+
+.rate-share-face {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rate-share-face.is-off {
+  visibility: hidden;
+}

@@ -14,6 +14,7 @@ import { HeaderHint } from "../../components/tableUx/HeaderHint";
 import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { locationHintFor, rememberLocationHint } from "../../lib/locationHint";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { RateLinkShare, locationRatePath } from "../locations/RateLinkShare";
 import { OrganizerBreadcrumbs } from "./OrganizerBreadcrumbs";
 import { OrganizerDenied } from "./OrganizerDenied";
 import "./organizer.css";
@@ -25,6 +26,9 @@ import "./organizer.css";
 function OrganizerHubContent({ slug }: { slug: string }) {
   const [dates, setDates] = useState<OrganizerEventDateItem[] | null>(null);
   const [locationName, setLocationName] = useState<string | null>(null);
+  // Основной слаг локации: ссылку на вкладку «Оценка» раздаём с ним, а не с
+  // тем вариантом, по которому открыли кабинет.
+  const [locationSlug, setLocationSlug] = useState<string | null>(null);
   // Процент удержания — цифра на карточке (просьба Дмитрия 16.08.2026):
   // видно, как локация справляется с новичками, ещё до захода в таблицу.
   const [newcomers, setNewcomers] = useState<OrganizerNewcomersResponse | null>(null);
@@ -45,6 +49,7 @@ function OrganizerHubContent({ slug }: { slug: string }) {
         }
         setDates(payload.items);
         setLocationName(payload.location.name);
+        setLocationSlug(payload.location.slug);
         rememberLocationHint({ slug: payload.location.slug, name: payload.location.name });
         getOrganizerNewcomers(slug)
           .then((stats) => {
@@ -320,17 +325,25 @@ function OrganizerHubContent({ slug }: { slug: string }) {
           </span>
         </a>
 
-        <div className="card org-hub-card org-hub-card-disabled" aria-disabled="true">
+        {/* Сводки отзывов здесь ещё нет, а собирать их можно уже сейчас:
+            ссылка на вкладку «Оценка» из чата локации ведёт каждого сразу к
+            оценке своего старта (карточка бэклога 23.09.2026 «Кнопка-ссылка
+            "Оценить локацию"», решение Дмитрия 22.10.2026). Блок ссылки —
+            тот же, что на самой вкладке. */}
+        <div className="card org-hub-card org-hub-card-static">
           <span className="org-hub-emoji" aria-hidden="true">
             ⭐
           </span>
           <h2 className="org-hub-title">Отзывы и оценки</h2>
           <p className="muted org-hub-text">
-            Что участники говорят о вашей локации: оценки организации, трассы и атмосферы с
-            комментариями. Уже копим данные — а пока рекомендуйте участникам оставить оценку на
-            странице локации: это ваша будущая обратная связь.
+            Оценки организации, трассы и атмосферы с комментариями — ваша обратная связь. Сводка
+            появится здесь, а пока соберите отзывы: отправьте ссылку в чат локации — каждый
+            попадёт сразу на оценку своего старта.
           </p>
-          <span className="org-hub-soon">Скоро</span>
+          <RateLinkShare slug={locationSlug ?? slug} locationName={name} />
+          <a className="org-hub-rate-tab" href={locationRatePath(locationSlug ?? slug)}>
+            Открыть вкладку «Оценка» →
+          </a>
         </div>
       </div>
 

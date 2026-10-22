@@ -99,3 +99,13 @@ def test_page_is_clamped_to_existing_pages(client: TestClient) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["page"] == payload["pages"]
+
+
+def test_sort_and_place_are_echoed_and_validated(client: TestClient) -> None:
+    """Порядок и «к месту» приходят из адреса страницы: мусор её не роняет."""
+    slow = client.get("/api/protocol/week/2026-08-15?sort=slow&place=1")
+    assert slow.status_code == 200, slow.text
+    assert slow.json()["sort"] == "slow"
+    assert client.get("/api/protocol/week/2026-08-15?sort=garbage").json()["sort"] == "fast"
+    # Места нумеруются с единицы — ноль отвергает валидация.
+    assert client.get("/api/protocol/week/2026-08-15?place=0").status_code == 422

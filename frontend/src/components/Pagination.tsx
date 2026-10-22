@@ -39,7 +39,21 @@ export function paginationRange(page: number, pages: number): (number | "gap")[]
   if (page >= pages - 2) {
     around.add(pages - 1).add(pages - 2).add(pages - 3);
   }
-  const numbers = [...around].filter((value) => value >= 1 && value <= pages).sort((a, b) => a - b);
+  return withGaps(around, pages);
+}
+
+/**
+ * Короткий ряд для телефона: первая, текущая и последняя страницы, «…» — там,
+ * где между ними есть пропуск. Соседей текущей в полный ряд не прятать
+ * CSS-ом: у края («1 2 3 4 … 124» на третьей) вместе с ними пропадала бы и
+ * дыра — «1 3 … 124» читалось бы как «второй страницы нет» (ревью 21.10.2026).
+ */
+export function compactPaginationRange(page: number, pages: number): (number | "gap")[] {
+  return withGaps(new Set([1, page, pages]), pages);
+}
+
+function withGaps(values: Set<number>, pages: number): (number | "gap")[] {
+  const numbers = [...values].filter((value) => value >= 1 && value <= pages).sort((a, b) => a - b);
   const result: (number | "gap")[] = [];
   let previous = 0;
   for (const value of numbers) {
@@ -72,46 +86,78 @@ export function Pagination({
     onNavigate(target);
   };
 
-  const arrow = (target: number, text: string, disabled: boolean, extra: string) =>
+  // Подпись стрелки на узком экране прячется (остаётся «←»/«→»): «← Назад» и
+  // «Вперёд →» переносились на две строки и отнимали место у номеров.
+  // Зазор между стрелкой и подписью — gap у .pager-arrow, а не пробел в
+  // тексте: внутри inline-flex подпись — отдельный элемент, и пробел у её
+  // края схлопывался в «←Назад» (ревью 21.10.2026).
+  const arrow = (target: number, text: ReactNode, label: string, disabled: boolean, extra: string) =>
     disabled ? (
       <span className={`pager-item pager-arrow ${extra} pager-item-disabled`} aria-hidden="true">
         {text}
       </span>
     ) : (
-      <a className={`pager-item pager-arrow ${extra}`} href={hrefForPage(target)} onClick={go(target)}>
+      <a
+        className={`pager-item pager-arrow ${extra}`}
+        href={hrefForPage(target)}
+        onClick={go(target)}
+        aria-label={label}
+      >
         {text}
       </a>
+    );
+  const range = paginationRange(page, pages);
+  // Длинный ряд (есть «…») на телефоне не помещается даже без подписей стрелок —
+  // там показываем короткий: «← 1 … 37 … 124 →», на соседнюю ведут стрелки.
+  // Какой из двух виден, решает CSS (.pager-pages-full / -compact).
+  const compact = range.includes("gap") ? compactPaginationRange(page, pages) : null;
+  const numbers = (values: (number | "gap")[]) =>
+    values.map((value, index) =>
+      value === "gap" ? (
+        <span key={`gap-${index}`} className="pager-gap" aria-hidden="true">
+          …
+        </span>
+      ) : value === page ? (
+        <span key={value} className="pager-item pager-item-current" aria-current="page">
+          {value}
+        </span>
+      ) : (
+        <a
+          key={value}
+          className="pager-item"
+          href={hrefForPage(value)}
+          onClick={go(value)}
+          aria-label={`Страница ${value}`}
+        >
+          {value}
+        </a>
+      ),
     );
 
   return (
     <nav className="pager" aria-label={label}>
       {summary && <p className="pager-summary">{summary}</p>}
       <div className="pager-controls">
-        {arrow(page - 1, "← Назад", page <= 1, "pager-prev")}
-        <div className="pager-pages">
-          {paginationRange(page, pages).map((value, index) =>
-            value === "gap" ? (
-              <span key={`gap-${index}`} className="pager-gap" aria-hidden="true">
-                …
-              </span>
-            ) : value === page ? (
-              <span key={value} className="pager-item pager-item-current" aria-current="page">
-                {value}
-              </span>
-            ) : (
-              <a
-                key={value}
-                className="pager-item"
-                href={hrefForPage(value)}
-                onClick={go(value)}
-                aria-label={`Страница ${value}`}
-              >
-                {value}
-              </a>
-            ),
-          )}
-        </div>
-        {arrow(page + 1, "Вперёд →", page >= pages, "pager-next")}
+        {arrow(
+          page - 1,
+          <>
+            ←<span className="pager-arrow-label">Назад</span>
+          </>,
+          "Предыдущая страница",
+          page <= 1,
+          "pager-prev",
+        )}
+        <div className={compact ? "pager-pages pager-pages-full" : "pager-pages"}>{numbers(range)}</div>
+        {compact && <div className="pager-pages pager-pages-compact">{numbers(compact)}</div>}
+        {arrow(
+          page + 1,
+          <>
+            <span className="pager-arrow-label">Вперёд</span>→
+          </>,
+          "Следующая страница",
+          page >= pages,
+          "pager-next",
+        )}
       </div>
     </nav>
   );

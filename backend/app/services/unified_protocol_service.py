@@ -85,6 +85,12 @@ MAX_PAGE_SIZE = 500
 
 GENDER_FILTERS = ("male", "female")
 
+# Порядок показа строк. «Медленные сверху» — карточка бэклога 03.10.2026: посмотреть
+# самые медленные финиши, не листая сотню страниц до конца.
+SORT_FAST = "fast"
+SORT_SLOW = "slow"
+SORT_ORDERS = (SORT_FAST, SORT_SLOW)
+
 
 def week_start_of(anchor: date) -> date:
     """Понедельник недели, которой принадлежит дата."""
@@ -655,6 +661,41 @@ def _matches_query(row: dict[str, Any], needle: str) -> bool:
     return needle in haystack
 
 
+def _ordered(rows: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
+    """Строки в порядке показа. Места к этому моменту уже проставлены.
+
+    «Медленные сверху» — разворот только строк со временем: места остаются
+    настоящими местами зачёта (12 354, 12 353, …), а не номерами строк, а
+    строки без времени (DNF, дисквалификация) и здесь стоят в хвосте — самым
+    медленным финишем они не являются.
+    """
+    if sort != SORT_SLOW:
+        return rows
+    timed = [row for row in rows if row["finish_time_sec"] is not None]
+    untimed = [row for row in rows if row["finish_time_sec"] is None]
+    return timed[::-1] + untimed
+
+
+def _locate_place(rows: list[dict[str, Any]], place: int) -> tuple[int, int] | None:
+    """Где в списке стоит место N: (индекс строки, её место) или None.
+
+    Точного места может не быть: ввели 20 000 при 12 354 финишёрах или поиск
+    оставил от зачёта несколько строк. Тогда берём ближайшее место, при
+    равенстве — меньшее: «к месту» не должно отвечать пустой страницей.
+    """
+    best: tuple[int, int, int] | None = None
+    for index, row in enumerate(rows):
+        row_place = row["place"]
+        if row_place is None:
+            continue
+        candidate = (abs(row_place - place), row_place, index)
+        if best is None or candidate < best:
+            best = candidate
+    if best is None:
+        return None
+    return best[2], best[1]
+
+
 def build_unified_protocol(
     db: Session,
     saturday: date,
@@ -663,7 +704,9 @@ def build_unified_protocol(
     gender: str | None = None,
     age_group: str | None = None,
     query: str | None = None,
+    sort: str | None = None,
     page: int = 1,
+    place: int | None = None,
     per_page: int = DEFAULT_PAGE_SIZE,
     viewer: User | None = None,
     use_cache: bool = True,
@@ -680,6 +723,11 @@ def build_unified_protocol(
     только выбранного среза.
 
     Поиск по имени зачёт не трогает: он ищет строку, а не сужает соревнование.
+
+    Порядок (sort) — только порядок показа: места считаются по времени до
+    него. place — «к месту N»: страницу, где стоит это место, выбирает сервер
+    (номер страницы при этом не нужен), а focus_place в ответе говорит, какую
+    строку подсветить.
     """
     week = _week_rows(db, saturday, use_cache=use_cache, refresh=refresh)
     all_rows: list[dict[str, Any]] = list(week.get("rows") or [])
@@ -762,11 +810,18 @@ def build_unified_protocol(
     summary["unknown_gender"] = gender_counts["unknown"]
 
     needle = (query or "").strip().lower()
-    filtered = [row for row in in_scope if not needle or _matches_query(row, needle)]
+    sort_order = sort if sort in SORT_ORDERS else SORT_FAST
+    filtered = _ordered([row for row in in_scope if not needle or _matches_query(row, needle)], sort_order)
 
     per_page = max(1, min(per_page, MAX_PAGE_SIZE))
     total = len(filtered)
     pages = max(1, (total + per_page - 1) // per_page)
+    focus_place: int | None = None
+    if place is not None:
+        located = _locate_place(filtered, place)
+        if located is not None:
+            index, focus_place = located
+            page = index // per_page + 1
     page = max(1, min(page, pages))
     start = (page - 1) * per_page
 
@@ -785,6 +840,8 @@ def build_unified_protocol(
         "gender": gender if gender in GENDER_FILTERS else None,
         "age_group": age_group or None,
         "query": query or None,
+        "sort": sort_order,
+        "focus_place": focus_place,
         "platforms": platforms,
         "summary": summary,
         "gender_counts": gender_counts,

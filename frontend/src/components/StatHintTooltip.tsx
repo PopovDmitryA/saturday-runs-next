@@ -1,7 +1,15 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 const VIEWPORT_GUTTER = 8;
+/** Отступ подсказки от триггера. */
+const ANCHOR_GAP = 8;
+/** Ближе к краю плашки хвостик не двигаем: там скругление угла (как в TapTooltipBubble). */
+const ARROW_EDGE_INSET = 14;
+
+/** Где триггер на экране: центр по горизонтали, верх и низ. */
+type Anchor = { centre: number; top: number; bottom: number };
+type Placement = { x: number; y: number; below: boolean; arrow: number };
 
 type StatHintTooltipProps = {
   text?: string;
@@ -14,7 +22,8 @@ export function StatHintTooltip({ text, content, children, className }: StatHint
   const triggerRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(false);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [anchor, setAnchor] = useState<Anchor | null>(null);
+  const [placement, setPlacement] = useState<Placement | null>(null);
   const tooltipBody = content ?? text;
 
   if (!tooltipBody) {
@@ -27,10 +36,7 @@ export function StatHintTooltip({ text, content, children, className }: StatHint
       return;
     }
     const rect = trigger.getBoundingClientRect();
-    setPosition({
-      x: rect.left + rect.width / 2,
-      y: rect.top - 8,
-    });
+    setAnchor({ centre: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom });
   };
 
   const show = () => {
@@ -45,20 +51,36 @@ export function StatHintTooltip({ text, content, children, className }: StatHint
 
   // Тултип центрируется по триггеру (transform: translateX(-50%)), поэтому у
   // правого края экрана он вылезал за границу — у колонки PR подсказка
-  // обрезалась. После рендера меряем реальную ширину и вжимаем в экран.
+  // обрезалась. После рендера меряем реальный размер и вжимаем в экран: по
+  // горизонтали — сдвигом (хвостик остаётся над триггером, а не посреди
+  // плашки, иначе он показывал на «?» соседней колонки), по вертикали —
+  // разворотом вниз, если над триггером плашка целиком не помещается
+  // (заголовок таблицы под шапкой сайта срезал начало подсказки «Гостей»).
   useLayoutEffect(() => {
     const tip = tooltipRef.current;
-    if (!visible || !tip) {
+    if (!visible || !tip || !anchor) {
+      setPlacement(null);
       return;
     }
-    const half = tip.offsetWidth / 2;
+    const width = tip.offsetWidth;
+    const height = tip.offsetHeight;
+    const half = width / 2;
     const min = VIEWPORT_GUTTER + half;
     const max = window.innerWidth - VIEWPORT_GUTTER - half;
-    const clamped = Math.min(Math.max(position.x, min), Math.max(min, max));
-    if (Math.abs(clamped - position.x) > 0.5) {
-      setPosition((current) => ({ ...current, x: clamped }));
-    }
-  }, [visible, position.x]);
+    const x = Math.min(Math.max(anchor.centre, min), Math.max(min, max));
+    const roomAbove = anchor.top - ANCHOR_GAP - height >= VIEWPORT_GUTTER;
+    const roomBelow = anchor.bottom + ANCHOR_GAP + height <= window.innerHeight - VIEWPORT_GUTTER;
+    const below = !roomAbove && roomBelow;
+    setPlacement({
+      x,
+      y: below ? anchor.bottom + ANCHOR_GAP : anchor.top - ANCHOR_GAP,
+      below,
+      arrow: Math.min(
+        Math.max(anchor.centre - (x - half), ARROW_EDGE_INSET),
+        Math.max(ARROW_EDGE_INSET, width - ARROW_EDGE_INSET),
+      ),
+    });
+  }, [visible, anchor]);
 
   useEffect(() => {
     if (!visible) {
@@ -109,8 +131,15 @@ export function StatHintTooltip({ text, content, children, className }: StatHint
             ref={tooltipRef}
             id="stat-hint-tooltip"
             role="tooltip"
-            className="unique-locations-count-tooltip stat-hint-tooltip"
-            style={{ left: position.x, top: position.y }}
+            // Разворот вниз и хвостик — те же правила, что у тач-подсказки
+            // (.tap-tooltip-below, --tap-tooltip-arrow в index.css). Пока
+            // размер не измерен, плашка невидима — без мигания в углу экрана.
+            className={`unique-locations-count-tooltip stat-hint-tooltip${placement?.below ? " tap-tooltip-below" : ""}`}
+            style={
+              placement
+                ? ({ left: placement.x, top: placement.y, "--tap-tooltip-arrow": `${placement.arrow}px` } as CSSProperties)
+                : { left: 0, top: 0, visibility: "hidden" }
+            }
           >
             {tooltipBody}
           </span>,

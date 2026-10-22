@@ -47,7 +47,7 @@ import { useOverlayFocus } from "./useOverlayFocus";
 import { useOverlayHistory } from "./useOverlayHistory";
 import "./siteNavMobile.css";
 
-// Сколько страниц ещё помещаются вкладками. Локация (5) и итоги (2) видны
+// Сколько страниц ещё помещаются вкладками. Локация (6) и итоги (2) видны
 // целиком; кабинет (8), чужой профиль (7), организатор (12) и рейтинги (14) —
 // уже нет.
 const TABS_LIMIT = 6;

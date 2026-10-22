@@ -130,6 +130,7 @@ export function NotificationsPromptModal() {
               Разрешение занимает пару секунд: откроется {action?.channel === "vk" ? "диалог с сообществом" : "бот"},
               нужно нажать кнопку подтверждения. После этого уведомления заработают сами.
             </p>
+            <div className="notify-intro-footer">
             <div className="modal-actions notify-intro-actions">
               <button type="button" className="btn secondary modal-btn" onClick={later}>
                 Не сейчас
@@ -153,6 +154,7 @@ export function NotificationsPromptModal() {
             <a className="link-button notify-intro-never" href={PORTAL_NOTIFICATIONS_SETTINGS_HREF} onClick={close}>
               Настройки уведомлений
             </a>
+            </div>
           </>
         ) : (
           <>
@@ -200,17 +202,19 @@ export function NotificationsPromptModal() {
               Приходят туда, где вы вошли на сайт: Telegram, VK или почта. Отписка — в один клик из любого
               сообщения.
             </p>
-            <div className="modal-actions notify-intro-actions">
-              <button type="button" className="btn secondary modal-btn" onClick={later}>
-                Не сейчас
+            <div className="notify-intro-footer">
+              <div className="modal-actions notify-intro-actions">
+                <button type="button" className="btn secondary modal-btn" onClick={later}>
+                  Не сейчас
+                </button>
+                <a className="btn primary modal-btn" href={PORTAL_NOTIFICATIONS_SETTINGS_HREF} onClick={close}>
+                  Включить в настройках
+                </a>
+              </div>
+              <button type="button" className="link-button notify-intro-never" onClick={never}>
+                Больше не напоминать
               </button>
-              <a className="btn primary modal-btn" href={PORTAL_NOTIFICATIONS_SETTINGS_HREF} onClick={close}>
-                Включить в настройках
-              </a>
             </div>
-            <button type="button" className="link-button notify-intro-never" onClick={never}>
-              Больше не напоминать
-            </button>
           </>
         )}
       </div>

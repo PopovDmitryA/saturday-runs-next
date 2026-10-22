@@ -45,6 +45,7 @@ from app.services.page_analytics_service import (
         ("/locations/kuzminki/events", ("location_events", "kuzminki")),
         ("/locations/kuzminki/participants", ("location_participants", "kuzminki")),
         ("/locations/kuzminki/weather", ("location_weather", "kuzminki")),
+        ("/locations/kuzminki/rate", ("location_rate", "kuzminki")),
         ("/ratings", ("ratings_hub", "")),
         ("/ratings/runs", ("ratings_runs", "")),
         ("/ratings/wins", ("ratings_wins", "")),

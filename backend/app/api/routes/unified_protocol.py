@@ -44,7 +44,9 @@ def protocol_week(
     gender: Annotated[str | None, Query()] = None,
     age_group: Annotated[str | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=128)] = None,
+    sort: Annotated[str | None, Query(max_length=16)] = None,
     page: Annotated[int, Query(ge=1)] = 1,
+    place: Annotated[int | None, Query(ge=1)] = None,
     per_page: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ) -> UnifiedProtocolResponse:
     """Единый протокол недели: все площадки всех систем в порядке финиша.
@@ -52,6 +54,9 @@ def protocol_week(
     Дата в адресе — любой день недели; неделя всегда подписывается своей
     субботой (воскресный RunPark и пятничные 5 вёрст входят в ту же неделю).
     Без даты отдаём последнюю неделю с данными.
+
+    sort=slow — медленные сверху (мусор — обычный порядок, как и с platform);
+    place=N — открыть страницу, где стоит место N, вместо номера страницы.
     """
     if event_date is None:
         latest = latest_protocol_saturday(db)
@@ -66,7 +71,9 @@ def protocol_week(
         gender=gender,
         age_group=age_group,
         query=q,
+        sort=sort,
         page=page,
+        place=place,
         per_page=per_page,
         viewer=user,
     )

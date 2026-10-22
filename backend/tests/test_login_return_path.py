@@ -82,6 +82,8 @@ def client(
         ("/", "/"),
         ("/ratings/fastest?gender=f&page=2#top", "/ratings/fastest?gender=f&page=2#top"),
         ("/users/12/runs#2026", "/users/12/runs#2026"),
+        # Вкладка «Оценка»: «Войти и оценить» возвращает на неё же.
+        ("/locations/bitsa/rate", "/locations/bitsa/rate"),
         # Кириллица в фильтре — кодируется, а не отбрасывается.
         ("/locations?q=Москва", "/locations?q=%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0"),
         # Уже закодированное не кодируется второй раз.

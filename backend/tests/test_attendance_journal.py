@@ -122,17 +122,17 @@ def test_row_items_volunteering_carries_role_label() -> None:
 
 def test_location_attendance_cache_key_normalizes_slug() -> None:
     assert location_attendance_cache_key(" Meshchersky ", 2026, "all", 0, 50) == (
-        "locations:attendance:v2:meshchersky:2026:all:o0:l50"
+        "locations:attendance:v3:meshchersky:2026:all:o0:l50"
     )
 
 
 def test_location_attendance_cache_key_separates_months() -> None:
     # Без месяца ключ прежний — кэш годового журнала не сбрасывается.
     assert location_attendance_cache_key("meshchersky", 2026, "volunteers", 0, 50, None) == (
-        "locations:attendance:v2:meshchersky:2026:volunteers:o0:l50"
+        "locations:attendance:v3:meshchersky:2026:volunteers:o0:l50"
     )
     assert location_attendance_cache_key("meshchersky", 2026, "volunteers", 0, 50, "2026-09") == (
-        "locations:attendance:v2:meshchersky:2026:volunteers:m2026-09:o0:l50"
+        "locations:attendance:v3:meshchersky:2026:volunteers:m2026-09:o0:l50"
     )
 
 
@@ -173,7 +173,8 @@ def test_attendance_month_puts_month_volunteers_first() -> None:
 
     by_month = sorted(people, key=lambda person: _attendance_sort_key(person, "volunteers", "2026-09"))
     # Пробежка в сентябре в волонтёрском срезе не считается — бегун ниже
-    # ветерана, но из журнала не пропадает.
+    # ветерана. В строки «Волонтёров» он с 21.10.2026 не попадает вовсе
+    # (_attendance_listed); здесь проверяется только порядок.
     assert by_month == [newcomer, veteran, runner]
 
 

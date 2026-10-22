@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import date, datetime, timedelta, timezone
 from typing import cast
 from uuid import UUID
@@ -17,7 +18,10 @@ from app.models import (
     Participant,
     Platform,
     PlatformLink,
+    PlatformLinkSyncStatus,
     RunResult,
+    SyncJob,
+    SyncJobStatus,
     User,
     VolunteerResult,
 )
@@ -228,15 +232,30 @@ def _rating_to_dict(
     }
 
 
-def _rated_location_keys(db: Session, user_id: UUID) -> set[str]:
-    """Локации, где пользователь уже хоть раз оценивал (канонические ключи)."""
+def _rated_location_keys(
+    db: Session, user_id: UUID, catalog_index: LocationCatalogIndex
+) -> set[str]:
+    """Локации, где пользователь уже хоть раз оценивал (канонические ключи).
+
+    Ключ, записанный в оценку, мог устареть: локацию связали в каталоге уже
+    после оценки (был «location:<id>», стал «catalog:<id>») или узел каталога
+    пересобрали. Поэтому к записанному ключу добавляем нынешний ключ локации
+    оценки — тот же, которым list_eligible_runs группирует старты, как и
+    _latest_rated_entry ищет оценку по ключу ИЛИ по location_id. Иначе слот
+    добора открылся бы заново, и человеку предложили бы «давний старт там, где
+    вы ещё не оценивали» на локации, которую он оценивал (ревью 21.10.2026).
+    """
     rows = (
-        db.query(LocationRating.location_key)
+        db.query(LocationRating.location_key, LocationRating.platform_code, Location)
+        .join(Location, LocationRating.location_id == Location.id)
         .filter(LocationRating.user_id == user_id)
-        .distinct()
         .all()
     )
-    return {row[0] for row in rows}
+    keys: set[str] = set()
+    for stored_key, platform_code, location in rows:
+        keys.add(stored_key)
+        keys.add(catalog_index.canonical_identity_key(location, platform_code))
+    return keys
 
 
 def _select_legacy_entries(
@@ -390,7 +409,7 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
     # на локацию, где пользователь ещё не оценивал.
     recent = [e for e in by_key.values() if cast(date, e["event_date"]) >= since]
     older = [e for e in by_key.values() if cast(date, e["event_date"]) < since]
-    legacy = _select_legacy_entries(older, _rated_location_keys(db, user_id))
+    legacy = _select_legacy_entries(older, _rated_location_keys(db, user_id, catalog_index))
     for entry in recent:
         entry["is_legacy"] = False
     for entry in legacy:
@@ -467,6 +486,254 @@ def list_eligible_runs(db: Session, user_id: UUID) -> dict[str, object]:
         "window_days": RATING_WINDOW_DAYS,
         "runs": entries,
     }
+
+
+# Ответ вкладке «Оценка» локации (/locations/<slug>/rate): что показать
+# человеку, который пришёл по ссылке из чата локации. Здесь — только код и
+# цифры, тексты собирает страница: правила живут в list_eligible_runs, а не в
+# двух местах.
+RATE_LINK_CAN_RATE = "can_rate"  # есть неоценённый старт — его и оценивать
+RATE_LINK_RATED = "rated"  # последний старт здесь уже оценён
+RATE_LINK_TOO_OLD = "too_old"  # был здесь давно, а своя оценка здесь уже есть
+RATE_LINK_PARKRUN_HISTORY = "parkrun_history"  # был давно и только на parkrun
+RATE_LINK_NOT_HERE = "not_here"  # ни пробежек, ни волонтёрства на локации
+RATE_LINK_FEW_RUNS = "few_runs"  # меньше MIN_RUNS_TO_RATE пробежек в истории
+RATE_LINK_NO_PROFILE = "no_profile"  # нет ни одной привязки — стартов не найти
+RATE_LINK_SYNCING = "syncing"  # профиль только что привязан, история ещё грузится
+
+# Свежая привязка, по которой история ещё не загружена: синк по кнопке у
+# 5 вёрст и S95 идёт минуты, очередь parkrun — часы. Новичок из чата входит,
+# привязывает профиль в онбординге и возвращается по той же ссылке раньше,
+# чем доехали его старты, — «у вас 0 пробежек» для него была бы неправдой.
+# Дольше пары суток это уже не загрузка: на проде есть привязки, застрявшие
+# в syncing с сентября, им честнее «мы не нашли».
+RATE_LINK_SYNC_GRACE = timedelta(days=2)
+_ACTIVE_SYNC_JOB_STATUSES = (SyncJobStatus.queued, SyncJobStatus.running)
+# Старт последней недели — тот, которого человек и ждёт. Более давний значит,
+# что протокол сегодняшнего старта ещё не загружен (ссылку кидают в чат сразу
+# после субботы) или человек давно здесь не был: вкладка помечает такой старт
+# и подсказывает зайти позже.
+RATE_LINK_RECENT_DAYS = 6
+
+
+def _last_visits(
+    db: Session, user_id: UUID, location_ids: Collection[UUID]
+) -> tuple[date | None, date | None]:
+    """Последний старт человека на локации: (в любой системе, не на parkrun).
+
+    Те же условия, что у list_eligible_runs: своя привязка в системе события,
+    без тестовых стартов и без будущих дат — иначе «последний раз вы были
+    здесь» разошлось бы с тем, что вообще можно оценить.
+    """
+    if not location_ids:
+        return None, None
+    today = date.today()
+    last_by_platform: dict[str, date] = {}
+    for model in (RunResult, VolunteerResult):
+        rows = (
+            db.query(Platform.code, func.max(Event.event_date))
+            .select_from(model)
+            .join(Event, model.event_id == Event.id)
+            .join(Platform, Event.platform_id == Platform.id)
+            .join(PlatformLink, PlatformLink.participant_id == model.participant_id)
+            .filter(
+                PlatformLink.user_id == user_id,
+                PlatformLink.platform_id == Platform.id,
+                Event.location_id.in_(list(location_ids)),
+                Event.is_test_event.is_(False),
+                Event.event_date <= today,
+            )
+            .group_by(Platform.code)
+            .all()
+        )
+        for code, last in rows:
+            if last is not None and (code not in last_by_platform or last > last_by_platform[code]):
+                last_by_platform[code] = last
+    last_any = max(last_by_platform.values(), default=None)
+    last_not_parkrun = max(
+        (last for code, last in last_by_platform.items() if code not in LEGACY_EXCLUDED_PLATFORMS),
+        default=None,
+    )
+    return last_any, last_not_parkrun
+
+
+def _history_loading(db: Session, user_id: UUID) -> bool:
+    """Есть свежая привязка, история по которой ещё ни разу не загружена и
+    грузится прямо сейчас.
+
+    «Грузится» — синк идёт (syncing) или его задача ждёт воркера: привязка
+    ставит её, не трогая статус. Без синка и без задачи ждать нечего: так
+    живут привязки из поиска, которым хватило данных протоколов, и привязки
+    с ошибкой синка — сама она не пройдёт.
+    """
+    since = datetime.now(timezone.utc) - RATE_LINK_SYNC_GRACE
+    active_job = (
+        db.query(SyncJob.id)
+        .filter(
+            SyncJob.platform_link_id == PlatformLink.id,
+            SyncJob.status.in_(_ACTIVE_SYNC_JOB_STATUSES),
+        )
+        .exists()
+    )
+    return (
+        db.query(PlatformLink.id)
+        .filter(
+            PlatformLink.user_id == user_id,
+            PlatformLink.last_user_sync_at.is_(None),
+            PlatformLink.linked_at >= since,
+            or_(PlatformLink.sync_status == PlatformLinkSyncStatus.syncing, active_job),
+        )
+        .first()
+        is not None
+    )
+
+
+def _latest_rated_entry(
+    db: Session,
+    user_id: UUID,
+    *,
+    identity_key: str,
+    location_ids: Collection[UUID],
+    here: list[dict[str, object]],
+) -> dict[str, object] | None:
+    """Самая свежая своя оценка на локации — карточкой старта для окна оценки.
+
+    Старт из окна создания уже лежит в here с полной карточкой (роль волонтёра,
+    ссылка на страницу). Более старый собираем из «Моих оценок»: окну нужен
+    тот же набор полей, что у доступного старта, а оценку старше месяца ещё
+    можно исправить (RATING_EDIT_WINDOW_DAYS) или хотя бы посмотреть.
+    """
+    conditions = [LocationRating.location_key == identity_key]
+    if location_ids:
+        conditions.append(LocationRating.location_id.in_(list(location_ids)))
+    rating = (
+        db.query(LocationRating)
+        .filter(LocationRating.user_id == user_id, or_(*conditions))
+        .order_by(LocationRating.event_date.desc(), LocationRating.created_at.desc())
+        .first()
+    )
+    if rating is None:
+        return None
+    for entry in here:
+        my_rating = cast("dict[str, object] | None", entry["my_rating"])
+        if my_rating is not None and my_rating["id"] == rating.id:
+            return entry
+    mine = next(
+        (
+            item
+            for item in cast(list[dict[str, object]], list_my_ratings(db, user_id)["ratings"])
+            if item["id"] == rating.id
+        ),
+        None,
+    )
+    if mine is None:
+        return None
+    return {
+        "entry_id": mine["entry_id"],
+        "participation_type": mine["participation_type"],
+        "run_result_id": mine["run_result_id"],
+        "event_date": mine["event_date"],
+        "platform_code": mine["platform_code"],
+        "location_name": mine["location_name"],
+        "location_city": mine["location_city"],
+        "location_identity_key": identity_key,
+        "location_slug": None,
+        "finish_time_display": mine["finish_time_display"],
+        "position": mine["position"],
+        "is_pr": mine["is_pr"],
+        "volunteer_role": None,
+        "event_url": mine["event_url"],
+        "is_legacy": False,
+        # Лишние поля карточки «Моих оценок» схема оценки отбросит сама.
+        "my_rating": mine,
+    }
+
+
+def _is_recent_start(entry: dict[str, object]) -> bool:
+    """Старт последней недели (RATE_LINK_RECENT_DAYS) — тот, которого ждут."""
+    return cast(date, entry["event_date"]) >= date.today() - timedelta(days=RATE_LINK_RECENT_DAYS)
+
+
+def location_rating_status(
+    db: Session,
+    user_id: UUID,
+    *,
+    identity_key: str,
+    location_ids: Collection[UUID],
+) -> dict[str, object]:
+    """Можно ли оценить ЭТУ локацию (вкладка «Оценка»), а если нет — почему.
+
+    Что доступно к оценке, решает list_eligible_runs — тот же список видит
+    карточка на странице локации и проверяет upsert_rating. Здесь только выбор
+    старта этой локации и разбор причины отказа на понятные человеку случаи.
+    Код ответа — RATE_LINK_*; в run — старт для окна оценки (новая оценка или
+    своя существующая), если показывать есть что; run_is_recent — что этот
+    старт с последней недели (RATE_LINK_RECENT_DAYS).
+    """
+    eligibility = list_eligible_runs(db, user_id)
+    here = [
+        entry
+        for entry in cast(list[dict[str, object]], eligibility["runs"])
+        if entry["location_identity_key"] == identity_key
+    ]
+    result: dict[str, object] = {
+        "status": RATE_LINK_NOT_HERE,
+        "total_runs": eligibility["total_runs"],
+        "min_runs_required": MIN_RUNS_TO_RATE,
+        "window_days": RATING_WINDOW_DAYS,
+        "last_visit_date": None,
+        "run": None,
+        "run_is_recent": False,
+    }
+
+    has_link = db.query(PlatformLink.id).filter(PlatformLink.user_id == user_id).first() is not None
+    if not has_link:
+        result["status"] = RATE_LINK_NO_PROFILE
+        return result
+
+    last_visit, last_not_parkrun = _last_visits(db, user_id, location_ids)
+    result["last_visit_date"] = last_visit
+
+    if not eligibility["can_rate"]:
+        # Пробежек мало — или они ещё едут со свежей привязки.
+        result["status"] = (
+            RATE_LINK_SYNCING if _history_loading(db, user_id) else RATE_LINK_FEW_RUNS
+        )
+        return result
+
+    # runs отсортированы от свежих: первый неоценённый — самый свежий из доступных.
+    unrated = next((entry for entry in here if entry["my_rating"] is None), None)
+    if unrated is not None:
+        result["status"] = RATE_LINK_CAN_RATE
+        result["run"] = unrated
+        result["run_is_recent"] = _is_recent_start(unrated)
+        return result
+
+    rated = _latest_rated_entry(
+        db, user_id, identity_key=identity_key, location_ids=location_ids, here=here
+    )
+    result["run"] = rated
+    # Оценил старт этой недели — подсказка «протокол ещё грузится» ему ни к чему.
+    result["run_is_recent"] = rated is not None and _is_recent_start(rated)
+    if rated is not None and (
+        last_visit is None or cast(date, rated["event_date"]) >= last_visit
+    ):
+        # Последний старт здесь уже оценён. Без last_visit — оценка пережила
+        # строку результата (пересинк унёс её), но она всё равно последняя.
+        result["status"] = RATE_LINK_RATED
+    elif last_visit is None:
+        result["status"] = (
+            RATE_LINK_SYNCING if _history_loading(db, user_id) else RATE_LINK_NOT_HERE
+        )
+    elif rated is None and last_not_parkrun is None:
+        # Здесь бегали только на parkrun и давно: его историю в добор не берём.
+        result["status"] = RATE_LINK_PARKRUN_HISTORY
+    else:
+        # Последний старт вне окна, а добор истории даёт старый старт только
+        # там, где оценок ещё нет, — здесь своя оценка уже есть (поставленная
+        # в окне или из того же добора), новую поставить некуда.
+        result["status"] = RATE_LINK_TOO_OLD
+    return result
 
 
 def _load_user_run(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -534,6 +534,23 @@ def participant_link_state(db: Session, user: User, participant: Participant) ->
     return ("taken" if taken is not None else "can_link"), None
 
 
+# Привязка без синка (complete_link_without_sync: участник уже в базе, в
+# источник не ходили) ставит last_user_sync_at в том же запросе — на проде
+# меньше секунды после linked_at. Данные при этом не обновлялись, и такая
+# отметка показала бы «обновлено только что» у профиля parkrun, пролежавшего в
+# базе с весны, — а для parkrun кнопка единственный путь к новым пробежкам.
+# Привязка с синком тоже попадает в окно, но тот синк уже сдвинул fetched_at.
+_LINK_STAMP_TOLERANCE = timedelta(minutes=1)
+
+
+def _user_sync_stamp(link: PlatformLink) -> datetime | None:
+    """last_user_sync_at, если его поставил синк, а не сама привязка."""
+    stamp = link.last_user_sync_at
+    if stamp is not None and link.linked_at is not None and abs(stamp - link.linked_at) <= _LINK_STAMP_TOLERANCE:
+        return None
+    return stamp
+
+
 def list_user_profile_links(db: Session, user: User) -> list[dict[str, object]]:
     links = (
         db.query(PlatformLink, Platform, Participant)
@@ -545,7 +562,15 @@ def list_user_profile_links(db: Session, user: User) -> list[dict[str, object]]:
     )
     items: list[dict[str, object]] = []
     for link, platform, participant in links:
-        data_updated_at = None
+        # data_updated_at — дата у кнопки «Обновить» в кабинете: когда данные
+        # системы на сайте обновлялись ЛЮБЫМ путём. Одна last_user_sync_at
+        # (кнопка) стояла месяцами: пробежки из протоколов по расписанию её не
+        # двигают, и человек с субботним стартом на сайте видел август
+        # (карточка бэклога 06.10.2026). Одних fetched_at тоже мало: синк
+        # RunPark по кнопке пропускает неизменное и ставит только
+        # last_user_sync_at, а «проверили — нового нет» — тоже свежесть.
+        sync_stamp = _user_sync_stamp(link)
+        data_updated_at = sync_stamp
         data_through_date = None
         if participant is not None:
             freshness = get_participant_data_freshness(
@@ -554,7 +579,10 @@ def list_user_profile_links(db: Session, user: User) -> list[dict[str, object]]:
                 platform_code=platform.code,
                 platform_id=platform.id,
             )
-            data_updated_at = freshness.data_updated_at
+            data_updated_at = max(
+                (stamp for stamp in (freshness.data_updated_at, sync_stamp) if stamp is not None),
+                default=None,
+            )
             data_through_date = freshness.data_through_date
         items.append(
             {

@@ -27,7 +27,10 @@ const OVERLAY_STEP_FIELD = "srsOverlayStep";
 export type EntryChange = {
   /** Запись, которую покидаем: под этим ключом сохраняется её снимок. */
   from: string;
-  /** Запись, на которую перешли. */
+  /**
+   * Запись, на которую перешли. Совпадает с from у шага внутри одной
+   * страницы: заглушка окна, replaceAppPath, pushSameEntry.
+   */
   to: string;
   /** «pop» — движение по истории (назад/вперёд), «push» — новый переход. */
   reason: "push" | "pop";
@@ -79,6 +82,34 @@ export function currentEntryKey(): string {
 export function onEntryChange(listener: (change: EntryChange) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/**
+ * Новая запись истории с ключом ТЕКУЩЕЙ — шаг внутри одной страницы.
+ *
+ * Обычный pushState даёт записи новый ключ, и App пересобирает страницу с нуля
+ * (Fragment key=entryKey). Для листания длинной таблицы это лишнее: переход на
+ * соседнюю страницу единого протокола пересобирал бы плитки, погоду и колонки
+ * и на время запроса оставлял пустой экран. Запись с тем же ключом — «та же
+ * страница, другой адрес»: «Назад» приходит обычным popstate, ключ не меняется
+ * (lib/scrollMemory такой шаг не трогает), и страница сама перечитывает адрес.
+ * Тот же приём, что у заглушек окон (nav/useOverlayHistory). Снимок записи
+ * (entryMemory) у таких шагов общий — всё, что различается между ними, обязано
+ * жить в адресе.
+ *
+ * Слушатели о шаге всё равно узнают — переходом «push» с from === to. Без
+ * этого роутер (hooks/useAppPath) не заметил бы смены пути, а
+ * nav/useOverlayHistory считал бы, что мы ещё стоим на заглушке окна,
+ * оставшейся после F5, и следующее «Назад» шагнуло бы дважды (ревью
+ * 21.10.2026). Путь менять можно только в пределах той же страницы (/protocol →
+ * /protocol/{дата}): запись чужой страницы с этим ключом делила бы с ней
+ * снимок. Вызывающие перечислены в tests/test_app_path_router_guard.py.
+ */
+export function pushSameEntry(url: string): void {
+  const key = currentEntryKey();
+  // History.prototype — исходный метод: обёртка висит на самом window.history.
+  History.prototype.pushState.call(window.history, withKey(null, key), "", url);
+  emit({ from: key, to: key, reason: "push" });
 }
 
 export function installHistoryEntries(): void {

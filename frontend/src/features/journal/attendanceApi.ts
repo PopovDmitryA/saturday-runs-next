@@ -79,7 +79,20 @@ export type LocationAttendance = {
   limit: number;
   total_rows: number;
   columns: { date: string; platforms: string[] }[];
-  date_totals: Record<string, { runners: number; volunteers: number; people?: number }>;
+  // unidentified_* — сколько из этих чисел неопознанные (безымянные строки
+  // протокола: «НЕИЗВЕСТНЫЙ», без штрихкода, «Unknown #…»): в итоговой строке
+  // они учтены, а своих строк в таблице у них нет.
+  date_totals: Record<
+    string,
+    {
+      runners: number;
+      volunteers: number;
+      people?: number;
+      unidentified_runners?: number;
+      unidentified_volunteers?: number;
+      unidentified_people?: number;
+    }
+  >;
   rows: LocationAttendanceRow[];
   me: LocationAttendanceRow | null;
 };

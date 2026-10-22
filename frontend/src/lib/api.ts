@@ -2399,6 +2399,36 @@ export function getEligibleRuns() {
   return apiFetch<RatingEligibility>("/ratings/eligible-runs");
 }
 
+// Ответ вкладке «Оценка» локации (/locations/<slug>/rate). Правила — на
+// сервере (rating_service.location_rating_status), здесь только код причины
+// и цифры к нему.
+export type LocationRateStatusCode =
+  | "can_rate" // есть неоценённый старт — его и предлагаем оценить
+  | "rated" // последний старт здесь уже оценён
+  | "too_old" // был давно, старый старт этой локации уже оценён
+  | "parkrun_history" // был давно и только на parkrun
+  | "not_here" // ни пробежек, ни волонтёрства здесь
+  | "few_runs" // пробежек в истории меньше порога
+  | "syncing" // профиль только что привязан, история ещё загружается
+  | "no_profile"; // нет ни одной привязки
+
+export type LocationRateStatus = {
+  status: LocationRateStatusCode;
+  total_runs: number;
+  min_runs_required: number;
+  window_days: number;
+  last_visit_date: string | null;
+  // Старт для окна оценки: новая оценка (can_rate) или своя существующая.
+  run: EligibleRun | null;
+  // run — старт последней недели. Более давний вкладка помечает: протокол
+  // сегодняшнего старта мог ещё не загрузиться, и человек ждёт другую дату.
+  run_is_recent: boolean;
+};
+
+export function getLocationRateStatus(slug: string) {
+  return apiFetch<LocationRateStatus>(`/ratings/location/${encodeURIComponent(slug)}`);
+}
+
 // Опаковый id старта для оценки бегуна (для волонтёра приходит с бэка).
 export function runEntryId(runResultId: string) {
   return `run:${runResultId}`;
@@ -3512,6 +3542,10 @@ export type UnifiedProtocol = {
   gender: "male" | "female" | null;
   age_group: string | null;
   query: string | null;
+  /** Порядок показа; места от него не зависят. */
+  sort: UnifiedProtocolSort;
+  /** Место, к которому просили перейти (?place=N), — точное или ближайшее. */
+  focus_place: number | null;
   platforms: UnifiedProtocolPlatform[];
   summary: UnifiedProtocolSummary;
   gender_counts: UnifiedProtocolGenderCounts;
@@ -3535,12 +3569,18 @@ export type UnifiedProtocolWeeks = {
   latest_saturday: string | null;
 };
 
+/** «fast» — быстрые сверху (по умолчанию), «slow» — медленные сверху. */
+export type UnifiedProtocolSort = "fast" | "slow";
+
 export type UnifiedProtocolQuery = {
   platform?: string | null;
   gender?: string | null;
   ageGroup?: string | null;
   q?: string | null;
+  sort?: UnifiedProtocolSort;
   page?: number;
+  /** «К месту N»: страницу с этим местом выбирает сервер, page тогда не нужен. */
+  place?: number | null;
   perPage?: number;
 };
 
@@ -3550,6 +3590,8 @@ export function getUnifiedProtocol(saturday: string | null, params: UnifiedProto
   if (params.gender) search.set("gender", params.gender);
   if (params.ageGroup) search.set("age_group", params.ageGroup);
   if (params.q) search.set("q", params.q);
+  if (params.sort && params.sort !== "fast") search.set("sort", params.sort);
+  if (params.place) search.set("place", String(params.place));
   if (params.page && params.page > 1) search.set("page", String(params.page));
   if (params.perPage) search.set("per_page", String(params.perPage));
   const suffix = search.toString();

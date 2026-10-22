@@ -495,6 +495,12 @@ class LocationAttendanceDateTotalsResponse(BaseModel):
     # Люди без повторов: бежал и волонтёрил в один день — один человек.
     # 0 у кэшированных ответов, записанных до появления поля.
     people: int = 0
+    # Сколько из чисел выше — неопознанные (заглушки протокола, см.
+    # app/participant_identity.py): в итоговой строке они учтены, а строк в
+    # таблице у них нет.
+    unidentified_runners: int = 0
+    unidentified_volunteers: int = 0
+    unidentified_people: int = 0
 
 
 class LocationAttendanceResponse(BaseModel):

@@ -11,12 +11,14 @@ from app.core.image_processing import MAX_UPLOAD_BYTES
 from app.db.session import get_db
 from app.models import LocationRating, LocationRatingPhoto, User
 from app.schemas.rating import (
+    LocationRatingStatusResponse,
     MyRatingsResponse,
     PhotoResponse,
     RatingEligibilityResponse,
     RatingResponse,
     RatingUpsertRequest,
 )
+from app.services.location_page_service import resolve_location_identity
 from app.services.photo_service import (
     PhotoError,
     add_rating_photo,
@@ -29,6 +31,7 @@ from app.services.rating_service import (
     list_eligible_runs,
     list_my_ratings,
     load_editable_rating,
+    location_rating_status,
     upsert_rating,
 )
 
@@ -41,6 +44,26 @@ def get_eligible_runs(
     user: Annotated[User, Depends(get_current_user)],
 ) -> RatingEligibilityResponse:
     return RatingEligibilityResponse.model_validate(list_eligible_runs(db, user.id))
+
+
+@router.get("/location/{slug}", response_model=LocationRatingStatusResponse)
+def get_location_rating_status(
+    slug: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> LocationRatingStatusResponse:
+    """Вкладка «Оценка» локации (/locations/<slug>/rate): можно ли оценить
+    эту локацию и какой старт показать, а если нельзя — почему."""
+    identity = resolve_location_identity(db, slug)
+    if identity is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Локация не найдена")
+    payload = location_rating_status(
+        db,
+        user.id,
+        identity_key=identity.identity_key,
+        location_ids=[location.id for location, _code in identity.locations],
+    )
+    return LocationRatingStatusResponse.model_validate(payload)
 
 
 @router.get("/mine", response_model=MyRatingsResponse)

@@ -287,6 +287,10 @@ _LOCATION_PARTICIPANTS_RE = re.compile(r"^/locations/([^/]+)/participants$")
 # чате работает, а в выдачу они не просятся.
 _LOCATION_TOPS_RE = re.compile(r"^/locations/([^/]+)/tops$")
 _LOCATION_WEATHER_RE = re.compile(r"^/locations/([^/]+)/weather$")
+# Вкладка «Оценка» (решение Дмитрия 22.10.2026): ссылку на неё кидают в чат
+# локации, поэтому роботу и мессенджеру — 200 с превью. Но страница личная
+# (у каждого свой старт) и тонкая: в выдачу не просится, в sitemap её нет.
+_LOCATION_RATE_RE = re.compile(r"^/locations/([^/]+)/rate$")
 # Единый протокол конкретной недели: /protocol/{дата-субботы}.
 _UNIFIED_PROTOCOL_RE = re.compile(r"^/protocol/(\d{4}-\d{2}-\d{2})$")
 
@@ -387,6 +391,11 @@ def resolve_page_meta(raw_path: str) -> PageMeta:
         return _meta(
             "Погода на стартах локации — run5k.run",
             "Какая погода была на субботних стартах площадки и какую обещают к ближайшему.",
+        )
+    if _LOCATION_RATE_RE.match(path):
+        return _meta(
+            "Оценка старта на локации — run5k.run",
+            "Оцените свой старт на локации: организацию, трассу и атмосферу.",
         )
     if _LOCATION_RE.match(path):
         return _meta(
@@ -578,6 +587,7 @@ def build_location_meta(
     participants: bool = False,
     tops: bool = False,
     weather: bool = False,
+    rate: bool = False,
 ) -> PageMeta:
     """Мета-теги конкретной локации — по данным её страницы.
 
@@ -631,6 +641,18 @@ def build_location_meta(
             f"{name} — погода на стартах — {SITE_NAME}",
             f"Какая погода бывает на старте «{name}» по месяцам: температура в час старта, "
             "дождь и снег, рекорды и явка.",
+        )
+    if rate:
+        # Это превью ссылки в чате локации — зовём оценить, а не пересказываем
+        # цифры. noindex: у каждого на странице свой старт, искать нечего.
+        return _meta(
+            _fit_title(f"{where}: оценка старта"),
+            _describe(
+                f"Были на старте «{name}»? Оцените организацию, трассу и атмосферу",
+                "",
+                " — по ссылке откроется ваш последний старт здесь.",
+                ".",
+            ),
         )
     if participants:
         # indexable здесь не выставляется сознательно — см. page_meta_for_path.
@@ -1121,6 +1143,12 @@ def build_robots_txt() -> str:
         # next — страница возврата после входа (?next= у /login): у каждой
         # ссылки «Войти» свой, а страница одна.
         "Clean-param: oauth_error&link_error&next /login",
+        # Единый протокол: страница, порядок, «к месту» и фильтры. Фильтры, как
+        # у рейтингов, закрывает canonical (он у недели без строки запроса), но
+        # здесь номера страниц — настоящие ссылки, до ~140 на неделю и столько
+        # же с фильтрами: без этой строки Яндекс (в том числе по обходу
+        # Метрики) копил бы их в «Исключённых», как было с /organizer.
+        "Clean-param: page&sort&place&platform&gender&age&q /protocol",
         "",
         f"Sitemap: {base}/sitemap.xml",
         "",
@@ -2068,6 +2096,7 @@ def is_known_path(raw_path: str) -> bool:
         _LOCATION_PARTICIPANTS_RE,
         _LOCATION_TOPS_RE,
         _LOCATION_WEATHER_RE,
+        _LOCATION_RATE_RE,
         _LOCATION_RE,
     ):
         if pattern.match(path):
@@ -2197,6 +2226,7 @@ _LOCATION_SUBPAGES: tuple[tuple[re.Pattern[str], str], ...] = (
     (_LOCATION_PARTICIPANTS_RE, "/participants"),
     (_LOCATION_TOPS_RE, "/tops"),
     (_LOCATION_WEATHER_RE, "/weather"),
+    (_LOCATION_RATE_RE, "/rate"),
     (_LOCATION_RE, ""),
 )
 
@@ -2270,9 +2300,10 @@ def _render_location_family(db: Session, path: str) -> Prerendered | None:
         "participants": suffix == "/participants",
         "tops": suffix == "/tops",
         "weather": suffix == "/weather",
+        "rate": suffix == "/rate",
     }
     meta = build_location_meta(payload, **flags)
-    if flags["tops"] or flags["weather"]:
+    if flags["tops"] or flags["weather"] or flags["rate"]:
         body = _location_tab_body(payload, meta)
     else:
         body = _location_body(payload, events_log=flags["events_log"])
@@ -2290,7 +2321,7 @@ def _render_location_family(db: Session, path: str) -> Prerendered | None:
 
 
 def _location_tab_body(payload: dict[str, Any], meta: PageMeta) -> str:
-    """Топы и погода для робота: заголовок, описание и дорога к локации.
+    """Топы, погода и оценка для робота: заголовок, описание и дорога к локации.
 
     Страницы закрыты noindex — им нужно только честное 200 и превью ссылки в
     чате; полный текст площадки живёт на её основной странице.

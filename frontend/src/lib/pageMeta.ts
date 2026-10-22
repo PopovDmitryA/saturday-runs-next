@@ -246,6 +246,7 @@ const LOCATION_EVENTS_RE = /^\/locations\/([^/]+)\/events$/;
 const LOCATION_PARTICIPANTS_RE = /^\/locations\/([^/]+)\/participants$/;
 const LOCATION_TOPS_RE = /^\/locations\/([^/]+)\/tops$/;
 const LOCATION_WEATHER_RE = /^\/locations\/([^/]+)\/weather$/;
+const LOCATION_RATE_RE = /^\/locations\/([^/]+)\/rate$/;
 const LOCATION_PROTOCOL_RE = /^\/locations\/([^/]+)\/protocol\/([^/]+)\/\d{4}-\d{2}-\d{2}$/;
 const LOCATION_RE = /^\/locations\/([^/]+)$/;
 
@@ -260,7 +261,8 @@ export function isLocationEntityPath(rawPath: string): boolean {
     LOCATION_EVENTS_RE.test(path) ||
     LOCATION_PARTICIPANTS_RE.test(path) ||
     LOCATION_TOPS_RE.test(path) ||
-    LOCATION_WEATHER_RE.test(path)
+    LOCATION_WEATHER_RE.test(path) ||
+    LOCATION_RATE_RE.test(path)
   );
 }
 
@@ -354,6 +356,12 @@ export function resolvePageMeta(rawPath: string): PageMeta {
       title: "Погода на стартах локации — run5k.run",
       description:
         "Какая погода была на субботних стартах площадки и какую обещают к ближайшему.",
+    };
+  }
+  if (LOCATION_RATE_RE.test(path)) {
+    return {
+      title: "Оценка старта на локации — run5k.run",
+      description: "Оцените свой старт на локации: организацию, трассу и атмосферу.",
     };
   }
   if (LOCATION_RE.test(path)) {
@@ -522,7 +530,7 @@ function lastEventPhrase(stats: LocationMetaSource["stats"]): string | null {
  */
 export function locationPageMeta(
   payload: LocationMetaSource,
-  options: { eventsLog?: boolean; participants?: boolean; tops?: boolean } = {},
+  options: { eventsLog?: boolean; participants?: boolean; tops?: boolean; rate?: boolean } = {},
 ): PageMeta {
   const name = payload.name || "Локация";
   const city = payload.city ?? null;
@@ -557,6 +565,19 @@ export function locationPageMeta(
         numbers,
         ". Лучшее время каждого участника и число побед в абсолюте и среди женщин.",
         ". Лучшее время каждого и число побед.",
+      ),
+    };
+  }
+  if (options.rate) {
+    // Вкладка «Оценка»: это превью ссылки в чате локации — зовём оценить, а не
+    // пересказываем цифры. indexable не выставляем: у каждого там свой старт.
+    return {
+      title: fitTitle(`${where}: оценка старта`),
+      description: describe(
+        `Были на старте «${name}»? Оцените организацию, трассу и атмосферу`,
+        "",
+        " — по ссылке откроется ваш последний старт здесь.",
+        ".",
       ),
     };
   }

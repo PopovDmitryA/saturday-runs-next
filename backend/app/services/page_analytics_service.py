@@ -51,6 +51,9 @@ _LOCATION_PARTICIPANTS_RE = re.compile(r"^/locations/([^/]+)/participants$")
 # журнала и состава: просмотры копятся к локации.
 _LOCATION_TOPS_RE = re.compile(r"^/locations/([^/]+)/tops$")
 _LOCATION_WEATHER_RE = re.compile(r"^/locations/([^/]+)/weather$")
+# Вкладка «Оценка» локации (решение Дмитрия 22.10.2026): ссылку на неё кидают
+# в чат локации. entity_key — slug: видно, где ссылкой правда пользуются.
+_LOCATION_RATE_RE = re.compile(r"^/locations/([^/]+)/rate$")
 # Единый протокол недели: /protocol/{дата-субботы}. В entity_key едет дата —
 # по ней видно, какие недели открывают (свежая суббота или архив).
 _UNIFIED_PROTOCOL_RE = re.compile(r"^/protocol/(\d{4}-\d{2}-\d{2})$")
@@ -197,6 +200,10 @@ def classify_page(path: str) -> tuple[str, str]:
     location_weather = _LOCATION_WEATHER_RE.match(normalized)
     if location_weather:
         return "location_weather", location_weather.group(1)[:128]
+
+    location_rate = _LOCATION_RATE_RE.match(normalized)
+    if location_rate:
+        return "location_rate", location_rate.group(1)[:128]
 
     location = _LOCATION_RE.match(normalized)
     if location:

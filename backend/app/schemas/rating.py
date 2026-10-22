@@ -173,3 +173,22 @@ class RatingEligibilityResponse(BaseModel):
     min_runs_required: int
     window_days: int
     runs: list[EligibleRunResponse] = Field(default_factory=list)
+
+
+class LocationRatingStatusResponse(BaseModel):
+    """Ответ вкладке «Оценка» локации: какой старт оценить или почему нельзя.
+
+    status — один из RATE_LINK_* (rating_service); тексты собирает страница.
+    """
+
+    status: str
+    total_runs: int
+    min_runs_required: int
+    window_days: int
+    # Последний свой старт на локации (пробежка или волонтёрство).
+    last_visit_date: date | None = None
+    # Старт для окна оценки: новая оценка (can_rate) или своя существующая.
+    run: EligibleRunResponse | None = None
+    # run — старт последней недели. Более давний вкладка помечает: свежий
+    # протокол мог ещё не загрузиться, и человек ждёт другую дату.
+    run_is_recent: bool = False

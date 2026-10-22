@@ -110,7 +110,30 @@ def test_primary_slug_renders_with_canonical(location_page: dict[str, Any]) -> N
     assert 'content="index,follow"' in page.html
 
 
-@pytest.mark.parametrize("suffix", ["/tops", "/weather"])
+def test_rate_tab_is_a_chat_preview_not_a_search_page(location_page: dict[str, Any]) -> None:
+    """Вкладка «Оценка»: ссылку на неё кидают в чат локации (решение 22.10.2026).
+
+    Превью мессенджера обязано развернуться — с названием локации и призывом
+    оценить, а не с цифрами. В выдачу страница не просится: на ней у каждого
+    свой старт. Адрес — основной слаг, со второстепенного 301, чужой — 404.
+    """
+    page = _render("/locations/kuzminki/rate")
+    assert page.status == 200
+    assert 'content="noindex,follow"' in page.html
+    assert '/locations/kuzminki/rate">' in page.html
+    assert "оценка старта" in page.html
+    assert "Оцените организацию, трассу и атмосферу" in page.html
+    assert '<a href="/locations/kuzminki">' in page.html
+
+    alias = _render("/locations/kuzminki-park/rate")
+    assert alias.status == 301
+    assert alias.location is not None and alias.location.endswith("/locations/kuzminki/rate")
+
+    location_page["payload"] = None
+    assert _render("/locations/nowhere/rate").status == 404
+
+
+@pytest.mark.parametrize("suffix", ["/tops", "/weather", "/rate"])
 def test_location_tabs_are_200_noindex(location_page: dict[str, Any], suffix: str) -> None:
     """Живые вкладки локации: роботу больше не 404, но и в выдачу не просятся."""
     assert is_known_path(f"/locations/kuzminki{suffix}")
@@ -162,6 +185,23 @@ def test_unified_protocol_friday_redirects_to_saturday() -> None:
     assert page.location is not None and page.location.endswith("/protocol/2026-09-19")
 
 
+def test_unified_protocol_navigation_params_share_one_canonical() -> None:
+    """Страница, порядок, «к месту» и фильтры протокола — не отдельные адреса.
+
+    Их закрывает canonical на неделю, как фильтры рейтингов, — сотня страниц
+    недели не плодит дублей. Для Яндекса то же говорит Clean-param (см.
+    test_robots_closes_service_sections_and_cleans_params).
+    """
+    page = _render("/protocol/2026-09-19?sort=slow&page=37&platform=s95&gender=female&age=35%E2%80%9339&q=x")
+    assert page.status == 200
+    assert '<link rel="canonical" href="' in page.html
+    assert '/protocol/2026-09-19">' in page.html
+    assert "?sort=" not in page.html and "page=37" not in page.html
+    assert 'content="index,follow"' in page.html
+    jump = _render("/protocol/2026-09-19?place=1000")
+    assert '/protocol/2026-09-19">' in jump.html and "place=" not in jump.html
+
+
 def test_profile_number_redirects_to_nickname(monkeypatch: pytest.MonkeyPatch) -> None:
     user = SimpleNamespace(public_slug="ivan", serial_id=None, display_name="Иван Петров", profile_private=False)
     monkeypatch.setattr("app.services.profile_slug_service.resolve_profile_handle", lambda _db, _h: user)
@@ -205,6 +245,11 @@ def test_robots_closes_service_sections_and_cleans_params() -> None:
     for closed in ("/organizer", "/auth/", "/welcome", "/backlog", "/demo", "/d/"):
         assert f"Disallow: {closed}\n" in robots
     assert "Clean-param: oauth_error&link_error&next /login" in robots
+    # Номера страниц и срезы единого протокола — один адрес недели. Все
+    # параметры страницы (UnifiedProtocolPage.viewSearch) — в одной строке.
+    protocol_line = next(line for line in robots.splitlines() if line.endswith(" /protocol"))
+    cleaned = set(protocol_line.removeprefix("Clean-param: ").removesuffix(" /protocol").split("&"))
+    assert cleaned == {"page", "sort", "place", "platform", "gender", "age", "q"}
     assert "utm_source" in robots
     # Посадочная под «личный кабинет» по-прежнему открыта.
     assert "Disallow: /login" not in robots
@@ -332,6 +377,8 @@ def test_sitemap_keeps_cancelled_and_sets_lastmod(monkeypatch: pytest.MonkeyPatc
     assert "<lastmod>2026-10-03</lastmod>" in xml
     assert "/locations/bs</loc>" not in xml
     assert "/protocol/five_verst/2026-10-03</loc>" in xml
+    # Личные вкладки локации в sitemap не попадают.
+    assert "/rate</loc>" not in xml
 
 
 def _loc(key: str, official: bool = True) -> SimpleNamespace:
@@ -349,3 +396,13 @@ def test_identity_primary_slug_matches_catalog_rule() -> None:
 
 def test_weather_meta_is_known_but_not_indexable() -> None:
     assert resolve_page_meta("/locations/kuzminki/weather").indexable is False
+
+
+def test_rate_tab_meta_is_known_but_not_indexable() -> None:
+    """Вкладка «Оценка» — известный адрес без индекса (sitemap — см. выше)."""
+    assert is_known_path("/locations/kuzminki/rate")
+    assert resolve_page_meta("/locations/kuzminki/rate").indexable is False
+    meta = build_location_meta(_payload(), rate=True)
+    assert meta.indexable is False
+    assert meta.title.startswith("5 вёрст Кузьминки, Москва: оценка старта")
+    assert len(meta.description) <= 160

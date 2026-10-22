@@ -128,6 +128,12 @@ class UnifiedProtocolResponse(BaseModel):
     gender: str | None = None
     age_group: str | None = None
     query: str | None = None
+    # Порядок показа: «fast» — быстрые сверху, «slow» — медленные сверху.
+    # Места от него не зависят.
+    sort: str = "fast"
+    # Место, к которому просили перейти (?place=N), — точное или ближайшее
+    # существующее. Строку с этим местом страница подсвечивает.
+    focus_place: int | None = None
     platforms: list[UnifiedProtocolPlatform] = Field(default_factory=list)
     summary: UnifiedProtocolSummary
     gender_counts: UnifiedProtocolGenderCounts
