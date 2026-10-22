@@ -251,18 +251,23 @@ class LocationCatalogIndex:
                 self._index_platform_slug(platform.code, location.external_key, catalog)
             if location is not None and location.latitude is not None and location.longitude is not None:
                 self._set_coords(catalog, platform.code, (location.latitude, location.longitude))
-            if location is not None and not getattr(location, "is_cancelled", False):
+            if location is not None:
+                has_events = location.id in locations_with_events
+                is_cancelled = bool(getattr(location, "is_cancelled", False))
+                # Отменённая строка голосует «действует» и даёт узлу имя: отмена —
+                # пропуск одной субботы, площадка в системе живая (так же и в
+                # is_paused ниже). До 23.10.2026 она выпадала и отсюда, и из
+                # имени: у Жуковского с Мытищами отмена в 5 вёрст оставляла узел
+                # без бегающих голосов — правило «хоть одна на паузе» по
+                # исторической runpark-строке гасило всю локацию в «Не
+                # действует», — а Парк Лесоводов на неделю отмены снова
+                # становился «Ufa Botanichesky Sad» из canonical_name.
                 self._add_pause_vote(
                     catalog.id,
-                    has_events=location.id in locations_with_events,
-                    is_paused=bool(getattr(location, "is_paused", False)),
+                    has_events=has_events,
+                    is_paused=bool(getattr(location, "is_paused", False)) and not is_cancelled,
                 )
-                self._set_active_name(
-                    catalog,
-                    platform.code,
-                    location,
-                    has_events=location.id in locations_with_events,
-                )
+                self._set_active_name(catalog, platform.code, location, has_events=has_events)
 
     def get_for_location(self, location: Location, platform_code: str) -> LocationCatalog | None:
         return self.get_for_location_key(location.id, location.external_key, platform_code)

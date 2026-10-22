@@ -560,3 +560,86 @@ def test_pause_falls_back_to_any_link_without_events(db_session) -> None:
     index = LocationCatalogIndex(db_session)
     assert index.is_paused(locations["five_verst"], "five_verst") is True
     assert index.is_paused(locations["parkrun"], "parkrun") is True
+
+
+def test_cancelled_active_platform_does_not_pause_catalog(db_session) -> None:
+    """Жуковский: отмена субботы в 5 вёрст не гасит узел исторической runpark-строкой.
+
+    Отменённая строка раньше не голосовала вовсе: бегающих голосов не оставалось,
+    и правило «хоть одна на паузе» по runpark-строке выдавало «Не действует» —
+    страница локации прятала ближайший старт, а карта показывала точку живой.
+    """
+    from app.services.location_map_service import list_catalog_map_locations
+    from app.services.location_page_service import _identity_status
+
+    try:
+        catalog, locations = _catalog_with_links(
+            db_session,
+            [
+                ("five_verst", "Жуковский", False, True),
+                ("runpark", "Жуковский", True, False),
+                ("parkrun", "Zhukovsky", False, False),
+            ],
+        )
+    except Exception:
+        pytest.skip("Database not available")
+    five_verst = locations["five_verst"]
+    five_verst.is_cancelled = True
+    for location in (five_verst, locations["runpark"]):
+        location.latitude, location.longitude = 55.6, 38.1
+        location.is_official_map = True
+    db_session.commit()
+
+    index = LocationCatalogIndex(db_session)
+    identity_key = f"catalog:{catalog.id}"
+    assert index.is_paused_identity_key(identity_key) is False
+    rows = [(location, code) for code, location in locations.items()]
+    is_paused, _is_cancelled = _identity_status(index, rows)
+    assert is_paused is False
+
+    points = list_catalog_map_locations(db_session)["points"]
+    point = next(point for point in points if point["catalog_identity_key"] == identity_key)
+    assert point["is_paused"] is False
+    assert point["is_cancelled"] is True
+
+
+def test_cancelled_new_platform_does_not_pause_moved_location(db_session) -> None:
+    """Раменское ушло из 5 вёрст в S95: отмена в S95 не оставляет голос одной старой системе."""
+    try:
+        _catalog, locations = _catalog_with_links(
+            db_session,
+            [
+                ("five_verst", "Раменское", True, True),
+                ("s95", "Раменское", False, True),
+            ],
+        )
+    except Exception:
+        pytest.skip("Database not available")
+    locations["s95"].is_cancelled = True
+    db_session.commit()
+
+    index = LocationCatalogIndex(db_session)
+    assert index.is_paused(locations["five_verst"], "five_verst") is False
+    assert index.is_paused(locations["s95"], "s95") is False
+
+
+def test_cancelled_active_platform_keeps_current_name(db_session) -> None:
+    """Парк Лесоводов: в неделю отмены имя узла не откатывается к легаси canonical_name."""
+    try:
+        catalog, locations = _catalog_with_links(
+            db_session,
+            [
+                ("five_verst", "Парк Лесоводов", False, True),
+                ("parkrun", "Ufa Botanichesky Sad", False, False),
+            ],
+        )
+    except Exception:
+        pytest.skip("Database not available")
+    catalog.canonical_name = "Ufa Botanichesky Sad"
+    locations["five_verst"].is_cancelled = True
+    db_session.commit()
+
+    index = LocationCatalogIndex(db_session)
+    assert index.active_platform_name(catalog) == "Парк Лесоводов"
+    assert index.display_name(locations["five_verst"], "five_verst") == "Парк Лесоводов"
+    assert index.display_name(locations["parkrun"], "parkrun") == "Парк Лесоводов"
