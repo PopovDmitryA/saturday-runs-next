@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import UUID
 
@@ -358,6 +359,53 @@ def get_admin_user_preview_dashboard(db: Session, user_id: UUID) -> dict[str, ob
         "stats": payload["stats"],
         "computed_at": payload["computed_at"],
         "platform_links": links,
+    }
+
+
+_RUNPARK_ACCOUNT_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
+def _public_link_brief(link: dict[str, object]) -> dict[str, object]:
+    """Привязка для бейджа на публичном профиле — только то, из чего
+    lib/platformProfileUrl.ts собирает ссылку. У RunPark адрес строится из GUID
+    аккаунта, а в external_url лежит штрихкод; у остальных систем — наоборот."""
+    external_user_id = str(link["external_user_id"] or "")
+    external_url = str(link["external_url"] or "")
+    if link["platform_code"] == "runpark":
+        external_url = ""
+        if not _RUNPARK_ACCOUNT_ID.match(external_user_id):
+            external_user_id = ""
+    else:
+        external_user_id = ""
+        if not external_url.startswith("http"):
+            external_url = ""
+    return {
+        "platform_code": link["platform_code"],
+        "external_user_id": external_user_id,
+        "external_url": external_url,
+        "run_count": link["run_count"],
+        "volunteer_count": link["volunteer_count"],
+    }
+
+
+def get_public_profile_dashboard(db: Session, user_id: UUID) -> dict[str, object] | None:
+    """Шапка публичного профиля для гостя. В отличие от предпросмотра в
+    админке — без способов входа, Telegram, штрихкодов и имени из протокола:
+    до 23.10.2026 публичная ручка отдавала админскую версию целиком."""
+    user = get_admin_user(db, user_id)
+    if user is None:
+        return None
+    payload = get_dashboard_payload(db, user)
+    links = _load_user_links(db, [user.id]).get(user.id, [])
+    return {
+        "user": {
+            "display_name": user.display_name,
+            "avatar_url": user.avatar_url,
+            "avatar_full_url": user.avatar_full_url,
+        },
+        "stats": payload["stats"],
+        "computed_at": payload["computed_at"],
+        "platform_links": [_public_link_brief(link) for link in links],
     }
 
 

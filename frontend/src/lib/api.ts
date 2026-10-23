@@ -4135,20 +4135,27 @@ export type AdminUserListResponse = {
   query: string | null;
 };
 
-export type AdminUserPreviewDashboard = {
+// Привязка на публичном профиле: только то, из чего собирается ссылка
+// бейджа системы (schemas/public_profiles.py).
+export type PublicProfilePlatformLink = {
+  platform_code: string;
+  external_user_id: string;
+  external_url: string;
+  run_count: number;
+  volunteer_count: number;
+};
+
+// Шапка публичного профиля — её видит любой гость, поэтому без почты,
+// Telegram и штрихкодов (до 23.10.2026 сюда приходила схема админки).
+export type PublicProfileDashboard = {
   user: {
-    id: string;
-    telegram_id: number | null;
-    telegram_username: string | null;
     display_name: string | null;
-    news_subscribed: boolean;
     avatar_url: string | null;
     avatar_full_url: string | null;
-    auth_logins: AdminUserAuthBrief[];
   };
   stats: DashboardStats;
   computed_at: string | null;
-  platform_links: AdminPlatformLinkBrief[];
+  platform_links: PublicProfilePlatformLink[];
 };
 
 export type AdminLoginEventItem = {
@@ -5022,7 +5029,7 @@ export function getProfileCompareLocations(serialId: number) {
 }
 
 export function getPublicProfileDashboard(serialId: number) {
-  return apiFetch<AdminUserPreviewDashboard>(`/users/${serialId}/profile/dashboard`);
+  return apiFetch<PublicProfileDashboard>(`/users/${serialId}/profile/dashboard`);
 }
 
 export function getPublicProfileRuns(serialId: number, limit = 200, offset = 0, includeTest = false) {

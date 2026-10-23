@@ -38,8 +38,8 @@ import {
   getCatalogLocationsMap,
   resolveProfileHandle,
   type AchievementsResponse,
-  type AdminPlatformLinkBrief,
-  type AdminUserPreviewDashboard,
+  type PublicProfileDashboard,
+  type PublicProfilePlatformLink,
   type User,
 } from "../../lib/api";
 import { platformCodeLabel, runsCapLabel, volunteeringCapLabel } from "../../lib/format";
@@ -74,9 +74,8 @@ const PROFILE_TABS: readonly { key: ProfileTab; label: string; icon: React.React
   icon: tab.icon,
 }));
 
-function profileDisplayName(user: AdminUserPreviewDashboard["user"]): string {
-  if (user.display_name) return user.display_name;
-  return `Участник ${user.id.slice(0, 8)}`;
+function profileDisplayName(user: PublicProfileDashboard["user"]): string {
+  return user.display_name || "Участник";
 }
 
 // Порядок платформ в шапке — как везде на сайте (кабинет, админка).
@@ -90,7 +89,7 @@ const PLATFORM_ORDER: Record<string, number> = { five_verst: 0, s95: 1, parkrun:
  * который сам зарегистрировался и сам привязал эти профили, так что ссылка на
  * них — его собственные данные, а не чужие.
  */
-function ProfilePlatformLinks({ links }: { links: AdminPlatformLinkBrief[] }) {
+function ProfilePlatformLinks({ links }: { links: PublicProfilePlatformLink[] }) {
   const sorted = [...links].sort(
     (a, b) => (PLATFORM_ORDER[a.platform_code] ?? 99) - (PLATFORM_ORDER[b.platform_code] ?? 99),
   );
@@ -126,7 +125,7 @@ function ProfileShell({
   /** Оригинал аватарки участника — раскрывается по клику на неё. */
   profileAvatarFullUrl?: string | null;
   /** Привязанные системы — метки под именем участника. */
-  platformLinks?: AdminPlatformLinkBrief[];
+  platformLinks?: PublicProfilePlatformLink[];
   /** Вкладки профиля для единого сайдбара (группа с именем участника). */
   tabsGroup?: SidebarExtraGroup;
   /** Те же вкладки для липкой полосы на телефоне. */
@@ -246,8 +245,8 @@ function PublicProfileContent({
   // Сводка профиля — из кэша вкладки, свежая подъезжает следом: «назад» на
   // чужой профиль не должен начинаться с пустого экрана (см. lib/dataCache).
   const dashboardCacheKey = `profile:${serialId}:dashboard`;
-  const [dashboard, setDashboard] = useState<AdminUserPreviewDashboard | null>(
-    () => readCached<AdminUserPreviewDashboard>(dashboardCacheKey) ?? null,
+  const [dashboard, setDashboard] = useState<PublicProfileDashboard | null>(
+    () => readCached<PublicProfileDashboard>(dashboardCacheKey) ?? null,
   );
   const [loading, setLoading] = useState(() => readCached(dashboardCacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
@@ -278,7 +277,7 @@ function PublicProfileContent({
   }, []);
 
   const loadDashboard = useCallback(async () => {
-    const cached = readCached<AdminUserPreviewDashboard>(dashboardCacheKey);
+    const cached = readCached<PublicProfileDashboard>(dashboardCacheKey);
     if (cached) {
       setDashboard(cached);
       setLoading(false);

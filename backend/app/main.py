@@ -9,11 +9,13 @@ from fastapi.responses import JSONResponse
 from app.api.router import api_router
 from app.api.routes import health, seo
 from app.config import get_settings
+from app.core.log_hygiene import quiet_http_client_logs
 from app.core.playwright_executor import shutdown_playwright_executor
 from app.middleware.abuse_middleware import AbuseProtectionMiddleware
 from app.platform_adapters.registry import ensure_adapters_registered
 
 logger = logging.getLogger(__name__)
+quiet_http_client_logs()
 
 
 @asynccontextmanager

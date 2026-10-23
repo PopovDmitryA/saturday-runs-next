@@ -2031,9 +2031,9 @@ def _render_profile(db: Session, *, user: Any, canonical: str) -> str | None:
         return _render_html(meta=hidden, canonical=canonical, body_html=_generic_body(hidden))
 
     try:
-        from app.services.admin_users_service import get_admin_user_preview_dashboard
+        from app.services.admin_users_service import get_public_profile_dashboard
 
-        payload = get_admin_user_preview_dashboard(db, user.id)
+        payload = get_public_profile_dashboard(db, user.id)
     except Exception:  # noqa: BLE001
         payload = None
     if payload is None:

@@ -12,7 +12,6 @@ from app.config import Settings, get_settings
 from app.core.admin import is_admin_user
 from app.models import User
 from app.schemas.achievements import AchievementsResponse
-from app.schemas.admin import AdminUserPreviewDashboardResponse
 from app.schemas.dashboard import (
     CoRunnerMeetingResponse,
     CoRunnerResponse,
@@ -27,13 +26,14 @@ from app.schemas.locations import (
     UniqueLocationsDetailResponse,
 )
 from app.schemas.profiles import ProfileCompareLocationsResponse
+from app.schemas.public_profiles import PublicProfileDashboardResponse
 from app.services.achievements_service import compute_challenges
 from app.services.admin_users_service import (
     get_admin_user_preview_best_results,
-    get_admin_user_preview_dashboard,
     get_admin_user_preview_personal_records,
     get_admin_user_preview_volunteer_role_stats,
     get_admin_user_preview_wins,
+    get_public_profile_dashboard,
 )
 from app.services.co_runners_service import (
     list_co_runner_meetings,
@@ -108,16 +108,16 @@ def _get_user_uuid(serial_id: int, db: Session, requester: User | None, settings
     return _get_user(serial_id, db, requester, settings).id
 
 
-@router.get("/{serial_id}/profile/dashboard", response_model=AdminUserPreviewDashboardResponse)
+@router.get("/{serial_id}/profile/dashboard", response_model=PublicProfileDashboardResponse)
 def public_profile_dashboard(
     serial_id: int,
     db: Annotated[Session, Depends(get_db)],
     requester: Annotated[User | None, Depends(get_optional_user)],
     settings: Annotated[Settings, Depends(get_settings)],
-) -> AdminUserPreviewDashboardResponse:
+) -> PublicProfileDashboardResponse:
     user_id = _get_user_uuid(serial_id, db, requester, settings)
-    payload = get_admin_user_preview_dashboard(db, user_id)
-    return AdminUserPreviewDashboardResponse.model_validate(payload)
+    payload = get_public_profile_dashboard(db, user_id)
+    return PublicProfileDashboardResponse.model_validate(payload)
 
 
 @router.get("/{serial_id}/profile/runs", response_model=list[RunItemResponse])

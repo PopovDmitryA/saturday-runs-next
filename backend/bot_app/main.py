@@ -22,6 +22,7 @@ from aiogram.types import (
     ReplyKeyboardRemove,
 )
 
+from app.core.log_hygiene import quiet_http_client_logs
 from app.legal.consent_text import consent_bot_message
 from bot_app import admin_ops, nearby
 from bot_app.broadcast import (
@@ -37,6 +38,7 @@ from bot_app.broadcast import (
 from bot_app.settings import BotSettings, bot_headers
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+quiet_http_client_logs()
 logger = logging.getLogger(__name__)
 
 # Кнопки под сообщением «откуда вход». Согласие и подтверждение — одна кнопка:

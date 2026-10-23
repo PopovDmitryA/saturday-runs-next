@@ -6,6 +6,7 @@ from celery import Celery
 from celery.schedules import crontab
 
 from app.config import get_settings
+from app.core.log_hygiene import quiet_http_client_logs
 from app.platform_adapters.registry import ensure_adapters_registered
 from app.workers.queues import FIVE_VERST_BATCH_QUEUE, FIVE_VERST_FRESH_QUEUE, WARM_QUEUE
 from app.workers.time_limits import (
@@ -15,6 +16,8 @@ from app.workers.time_limits import (
 )
 
 settings = get_settings()
+# Токен бота — часть адреса запросов к Telegram; httpx пишет адрес на INFO.
+quiet_http_client_logs()
 
 celery_app = Celery("saturday_runs", broker=settings.redis_url, backend=settings.redis_url)
 ensure_adapters_registered()
