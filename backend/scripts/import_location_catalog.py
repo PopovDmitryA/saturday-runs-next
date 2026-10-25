@@ -284,6 +284,68 @@ def _match_existing_nodes(
     return matches
 
 
+def _ensure_backend_on_path() -> None:
+    backend_path = str(BACKEND_ROOT)
+    if backend_path not in sys.path and (BACKEND_ROOT / "app").is_dir():
+        sys.path.insert(0, backend_path)
+
+
+def _catalog_snapshot(db) -> tuple[dict, set]:
+    """Узлы (id → поля) и связки (система, slug, id узла) — для сухого прогона."""
+    from app.models import LocationCatalog, LocationCatalogLink, Platform
+
+    nodes = {
+        node.id: (node.canonical_name, node.legacy_parkrun_slug, node.active_platform, node.is_closed, node.notes)
+        for node in db.query(LocationCatalog)
+    }
+    links = {
+        (code, link.external_key, link.catalog_id)
+        for link, code in db.query(LocationCatalogLink, Platform.code).join(
+            Platform, LocationCatalogLink.platform_id == Platform.id
+        )
+    }
+    return nodes, links
+
+
+def dry_run(entries: list[CatalogEntry], *, force: bool = False) -> dict[str, int]:
+    """Прогнать импорт в транзакции, напечатать, что он сделает, и откатить.
+
+    Перед импортом на проде: id узлов — личность локаций, и увидеть заранее,
+    что ни один узел не удаляется и не пересоздаётся, дешевле, чем потом
+    восстанавливать гранты по дампу, как 29.09.2026.
+    """
+    _ensure_backend_on_path()
+    from app.db.session import get_session_factory
+
+    db = get_session_factory()()
+    try:
+        nodes_before, links_before = _catalog_snapshot(db)
+        stats = import_to_db(entries, force=force, db=db)
+        nodes_after, links_after = _catalog_snapshot(db)
+    finally:
+        db.rollback()
+        db.close()
+
+    def name(node_id) -> str:
+        return (nodes_after.get(node_id) or nodes_before.get(node_id) or ("?",))[0]
+
+    for node_id in sorted(set(nodes_before) - set(nodes_after), key=str):
+        print(f"  узел удалится: {name(node_id)} ({node_id})")
+    for node_id in sorted(set(nodes_after) - set(nodes_before), key=str):
+        print(f"  узел появится: {name(node_id)}")
+    fields = ("canonical_name", "legacy_parkrun_slug", "active_platform", "is_closed", "notes")
+    for node_id in sorted(set(nodes_before) & set(nodes_after), key=str):
+        before, after = nodes_before[node_id], nodes_after[node_id]
+        changed = [field for field, old, new in zip(fields, before, after, strict=True) if old != new]
+        if changed:
+            print(f"  узел изменится: {name(node_id)} — {', '.join(changed)}")
+    for code, key, node_id in sorted(links_before - links_after, key=str):
+        print(f"  связка уйдёт: {code}/{key} из «{name(node_id)}»")
+    for code, key, node_id in sorted(links_after - links_before, key=str):
+        print(f"  связка появится: {code}/{key} в «{name(node_id)}»")
+    return stats
+
+
 def import_to_db(
     entries: list[CatalogEntry],
     *,
@@ -300,17 +362,20 @@ def import_to_db(
     Теперь узлы обновляются на месте, а удаление узла, на который кто-то
     ссылается, без --force отказывается.
 
+    Локация, впервые вошедшая в узел, меняет ключ «location:<id>» на
+    «catalog:<id узла>» — её оценки, гранты и дом переезжают на новый ключ
+    здесь же (rekey_linked_location_references).
+
     replace=False — только добавить/обновить, узлы вне `entries` не трогать.
     """
-    backend_path = str(BACKEND_ROOT)
-    if backend_path not in sys.path and (BACKEND_ROOT / "app").is_dir():
-        sys.path.insert(0, backend_path)
+    _ensure_backend_on_path()
 
     from app.db.session import get_session_factory
     from app.models import Location, LocationCatalog, LocationCatalogLink, Platform
     from app.services.location_catalog_service import (
         catalog_key_reference_counts,
         normalize_platform_code,
+        rekey_linked_location_references,
     )
 
     own_session = db is None
@@ -323,6 +388,7 @@ def import_to_db(
         "catalog_created": 0,
         "catalog_updated": 0,
         "catalog_removed": 0,
+        "keys_rekeyed": 0,
     }
     try:
         platforms = {p.code: p for p in db.query(Platform).all()}
@@ -455,6 +521,12 @@ def import_to_db(
                 if location:
                     stats["linked_locations"] += 1
 
+        db.flush()
+        rekeyed = rekey_linked_location_references(db)
+        stats["keys_rekeyed"] = sum(rekeyed.values())
+        for reference, count in sorted(rekeyed.items()):
+            print(f"  ключи location: → catalog: {reference}: {count}")
+
         if own_session:
             db.commit()
         else:
@@ -475,6 +547,11 @@ def main() -> int:
     parser.add_argument("--json", type=Path, default=DEFAULT_JSON)
     parser.add_argument("--import-db", action="store_true", help="Load into PostgreSQL")
     parser.add_argument("--from-json", action="store_true", help="Import from JSON instead of XLSX")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run the DB import in a transaction, print what would change, roll back",
+    )
     parser.add_argument(
         "--force",
         action="store_true",
@@ -497,6 +574,15 @@ def main() -> int:
     print(f"  five_verst: {sum(1 for e in entries if e.active_platform == 'five_verst')}")
     print(f"  s95: {sum(1 for e in entries if e.active_platform == 's95')}")
     print(f"JSON: {args.json}")
+
+    if args.dry_run:
+        try:
+            stats = dry_run(entries, force=args.force)
+        except (StaleImportError, ReferencedNodeRemovalError) as exc:
+            print(f"DB import ABORTED: {exc}", file=sys.stderr)
+            return 1
+        print(f"DRY RUN, rolled back: {stats}")
+        return 0
 
     if args.import_db:
         try:

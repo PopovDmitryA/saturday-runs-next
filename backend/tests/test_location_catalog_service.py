@@ -643,3 +643,56 @@ def test_cancelled_active_platform_keeps_current_name(db_session) -> None:
     assert index.active_platform_name(catalog) == "Парк Лесоводов"
     assert index.display_name(locations["five_verst"], "five_verst") == "Парк Лесоводов"
     assert index.display_name(locations["parkrun"], "parkrun") == "Парк Лесоводов"
+
+
+def test_moved_location_stays_active_before_first_start_in_new_system(db_session) -> None:
+    """Черкизовский пруд ушёл из 5 вёрст в S95: «не действует» у 5 вёрст не гасит узел.
+
+    Первого старта в S95 ещё не было, и строка S95 раньше голосовала только
+    в запасном пуле — единственный бегающий голос, пауза 5 вёрст, выдавал
+    «Не действует» всей локации до первого протокола S95.
+    """
+    from app.services.location_page_service import _identity_status, _identity_status_by_system
+
+    try:
+        catalog, locations = _catalog_with_links(
+            db_session,
+            [
+                ("five_verst", "Черкизовский пруд", True, True),
+                ("s95", "Черкизовский пруд", False, False),
+            ],
+        )
+    except Exception:
+        pytest.skip("Database not available")
+    catalog.active_platform = "s95"
+    db_session.commit()
+
+    index = LocationCatalogIndex(db_session)
+    assert index.is_paused(locations["five_verst"], "five_verst") is False
+    assert index.is_paused(locations["s95"], "s95") is False
+    assert index.active_platform_name(catalog) == "Черкизовский пруд"
+    rows = [(location, code) for code, location in locations.items()]
+    status = _identity_status(index, rows)
+    assert status == (False, False)
+    by_system = _identity_status_by_system(index, rows, status)
+    assert by_system["five_verst"]["is_paused"] is True
+    assert by_system["s95"]["is_paused"] is False
+
+
+def test_paused_new_system_without_starts_still_pauses_moved_location(db_session) -> None:
+    """Обе системы на паузе — узел на паузе, хоть в новой стартов и не было."""
+    try:
+        catalog, locations = _catalog_with_links(
+            db_session,
+            [
+                ("five_verst", "Переезд в никуда", True, True),
+                ("s95", "Переезд в никуда", True, False),
+            ],
+        )
+    except Exception:
+        pytest.skip("Database not available")
+    catalog.active_platform = "s95"
+    db_session.commit()
+
+    index = LocationCatalogIndex(db_session)
+    assert index.is_paused(locations["s95"], "s95") is True

@@ -32,6 +32,89 @@ CATALOG_KEY_REFERENCES: tuple[tuple[str, str], ...] = (
     ("user_cancellation_places", "place_key"),
 )
 
+# Колонки из CATALOG_KEY_REFERENCES, где ключ уникален в паре с другой
+# колонкой: один грант и одно место отмен на человека. Два ключа «location:»
+# одного человека, ставшие одним «catalog:», здесь не переписать оба —
+# второй удаляется. Сторож — tests/test_import_location_catalog.py.
+CATALOG_KEY_UNIQUE_WITH: dict[tuple[str, str], str] = {
+    ("location_organizer_access", "location_key"): "user_id",
+    ("user_cancellation_places", "place_key"): "user_id",
+}
+
+
+def rekey_linked_location_references(db: Session) -> dict[str, int]:
+    """Ключи «location:<id>» локаций, вошедших в узел каталога, → «catalog:<id узла>».
+
+    Локация без узла каталога живёт под ключом «location:<её id>»
+    (canonical_identity_key), и под ним же ей ставят оценки и выбирают её
+    домом. Связали её в каталоге — ключ сменился, а записанные строки остались
+    при старом и из витрин выпали: так висела оценка Иркутска (остров Юность
+    связан с parkrun 01.08.2026), так повисли бы девять оценок Черкизовского
+    пруда (ушёл из 5 вёрст в S95 в октябре 2026). Зовётся импортом каталога
+    после записи связок; повторный вызов ничего не меняет.
+
+    Возвращает «таблица.колонка» → сколько строк переписано или удалено как дубль.
+    """
+    catalog_ids_by_location: dict[UUID, set[UUID]] = {}
+    for location_id, catalog_id in db.query(LocationCatalogLink.location_id, LocationCatalogLink.catalog_id).filter(
+        LocationCatalogLink.location_id.isnot(None)
+    ):
+        catalog_ids_by_location.setdefault(location_id, set()).add(catalog_id)
+    # Локация в двух узлах сразу — ошибка каталога; гадать, чей она, не будем.
+    new_by_old = {
+        f"location:{location_id}": f"{CATALOG_KEY_PREFIX}{next(iter(catalog_ids))}"
+        for location_id, catalog_ids in catalog_ids_by_location.items()
+        if len(catalog_ids) == 1
+    }
+    if not new_by_old:
+        return {}
+    old_keys = list(new_by_old)
+    counts: dict[str, int] = {}
+    for table, column in CATALOG_KEY_REFERENCES:
+        scope = CATALOG_KEY_UNIQUE_WITH.get((table, column))
+        if scope is None:
+            moved = db.execute(
+                text(
+                    f'UPDATE "{table}" t SET "{column}" = m.new_key '
+                    "FROM unnest(CAST(:old AS text[]), CAST(:new AS text[])) AS m(old_key, new_key) "
+                    f'WHERE t."{column}" = m.old_key'
+                ),
+                {"old": old_keys, "new": [new_by_old[key] for key in old_keys]},
+            ).rowcount
+        else:
+            moved = _rekey_unique_scoped(db, table, column, scope, new_by_old)
+        if moved:
+            counts[f"{table}.{column}"] = int(moved)
+    return counts
+
+
+def _rekey_unique_scoped(db: Session, table: str, column: str, scope: str, new_by_old: dict[str, str]) -> int:
+    rows = db.execute(
+        text(f'SELECT "{scope}", "{column}" FROM "{table}" WHERE "{column}" = ANY(:old)'),
+        {"old": list(new_by_old)},
+    ).all()
+    if not rows:
+        return 0
+    taken = {
+        (scope_value, key)
+        for scope_value, key in db.execute(
+            text(f'SELECT "{scope}", "{column}" FROM "{table}" WHERE "{column}" = ANY(:new)'),
+            {"new": sorted({new_by_old[old_key] for _scope_value, old_key in rows})},
+        )
+    }
+    for scope_value, old_key in sorted(rows, key=lambda row: (str(row[0]), row[1])):
+        new_key = new_by_old[old_key]
+        params = {"scope": scope_value, "old": old_key, "new": new_key}
+        if (scope_value, new_key) in taken:
+            db.execute(text(f'DELETE FROM "{table}" WHERE "{scope}" = :scope AND "{column}" = :old'), params)
+            continue
+        db.execute(
+            text(f'UPDATE "{table}" SET "{column}" = :new WHERE "{scope}" = :scope AND "{column}" = :old'),
+            params,
+        )
+        taken.add((scope_value, new_key))
+    return len(rows)
+
 
 def catalog_key_reference_counts(db: Session, catalog_ids: list[UUID]) -> dict[str, int]:
     """«таблица.колонка» → сколько строк ссылается на эти узлы каталога."""
@@ -262,9 +345,16 @@ class LocationCatalogIndex:
                 # исторической runpark-строке гасило всю локацию в «Не
                 # действует», — а Парк Лесоводов на неделю отмены снова
                 # становился «Ufa Botanichesky Sad» из canonical_name.
+                #
+                # Строка действующей системы узла голосует наравне с бегающими,
+                # даже если первого старта в ней ещё не было: локация переехала
+                # и вот-вот побежит там. Черкизовский пруд ушёл из 5 вёрст в S95
+                # в октябре 2026 — без этого «не действует» у 5 вёрст гасило бы
+                # всю локацию до первого протокола S95.
+                is_active_platform = normalize_platform_code(catalog.active_platform) == platform.code
                 self._add_pause_vote(
                     catalog.id,
-                    has_events=has_events,
+                    has_events=has_events or is_active_platform,
                     is_paused=bool(getattr(location, "is_paused", False)) and not is_cancelled,
                 )
                 self._set_active_name(catalog, platform.code, location, has_events=has_events)
@@ -329,7 +419,8 @@ class LocationCatalogIndex:
         return coords
 
     def _catalog_is_paused(self, catalog: LocationCatalog) -> bool:
-        """Узел на паузе, только если на паузе все платформы, где вообще есть забеги.
+        """Узел на паузе, только если на паузе все платформы, где вообще есть забеги
+        (и действующая система узла, даже если в ней ещё не бегали — см. _load).
 
         Иначе одна остановленная связка (напр. историческая runpark-строка без
         событий) гасила бы локацию, где по другой платформе забеги идут еженедельно.

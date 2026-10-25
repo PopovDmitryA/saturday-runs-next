@@ -2268,5 +2268,23 @@
         "external_key": "ostrovyunost"
       }
     ]
+  },
+  {
+    "parkrun_location": "",
+    "canonical_name": "Черкизовский пруд",
+    "active_platform": "s95",
+    "legacy_parkrun_slug": "",
+    "is_closed": false,
+    "notes": "Москва. Октябрь 2026: локация перешла из 5 вёрст (5verst.ru/cherkizovsky, последний старт №132 — 24.10.2026) в S95 (s95.ru/events/cherkizovo), основная система — S95. Связаны так же, как Раменское: страница — /locations/cherkizovo, история 5 вёрст остаётся на ней.",
+    "links": [
+      {
+        "platform": "five_verst",
+        "external_key": "cherkizovsky"
+      },
+      {
+        "platform": "s95",
+        "external_key": "cherkizovo"
+      }
+    ]
   }
 ]
