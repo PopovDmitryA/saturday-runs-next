@@ -19,7 +19,7 @@ from app.core.admin import user_response
 from app.core.bot_heartbeat import is_bot_alive
 from app.core.redis_client import get_redis_client
 from app.core.return_path import sanitize_return_path
-from app.core.security import generate_token
+from app.core.security import generate_token, secret_matches
 from app.core.session import delete_session
 from app.core.signup_guard import SignupContext, ensure_device_cookie, read_device_id
 from app.core.site_stats import record_login
@@ -147,7 +147,7 @@ def _verify_bot_secret(
 ) -> None:
     if not settings.telegram_bot_internal_secret:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Bot auth not configured")
-    if x_bot_secret != settings.telegram_bot_internal_secret:
+    if not secret_matches(x_bot_secret, settings.telegram_bot_internal_secret):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid bot secret")
 
 

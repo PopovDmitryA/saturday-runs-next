@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.core.admin import is_admin_telegram_id
 from app.core.bot_heartbeat import mark_bot_alive
+from app.core.security import secret_matches
 from app.db.session import get_db
 from app.schemas.admin_stats import AdminSiteStatsResponse
 from app.services.admin_pipeline_status_service import get_admin_pipeline_status
@@ -45,7 +46,7 @@ def _verify_bot_secret(
 ) -> Settings:
     if not settings.telegram_bot_internal_secret:
         raise HTTPException(status_code=503, detail="Bot internal API disabled")
-    if x_bot_secret != settings.telegram_bot_internal_secret:
+    if not secret_matches(x_bot_secret, settings.telegram_bot_internal_secret):
         raise HTTPException(status_code=403, detail="Invalid bot secret")
     return settings
 

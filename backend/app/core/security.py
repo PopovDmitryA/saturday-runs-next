@@ -13,6 +13,14 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def secret_matches(given: str | None, expected: str) -> bool:
+    """Сверка присланного секрета за постоянное время: `!=` по времени ответа
+    выдаёт, сколько первых символов угадано (SEC-08, аудит 23.10.2026)."""
+    if not given or not expected:
+        return False
+    return hmac.compare_digest(given.encode(), expected.encode())
+
+
 def generate_session_id() -> str:
     return secrets.token_urlsafe(32)
 

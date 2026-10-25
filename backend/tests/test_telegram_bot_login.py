@@ -88,6 +88,16 @@ def test_config_bot_login_follows_heartbeat(client: TestClient) -> None:
 
 def test_heartbeat_requires_bot_secret(client: TestClient) -> None:
     assert client.post("/api/internal/bot/heartbeat", headers={"X-Bot-Secret": "wrong"}).status_code == 403
+    assert client.post("/api/internal/bot/heartbeat").status_code == 403
+
+
+def test_bot_auth_routes_require_bot_secret(client: TestClient) -> None:
+    body = {"request_token": "x", "telegram_id": 555000111}
+    assert client.post("/api/auth/bot/login-context", json=body).status_code == 403
+    assert (
+        client.post("/api/auth/bot/login-context", json=body, headers={"X-Bot-Secret": "bot-secre"}).status_code
+        == 403
+    )
 
 
 def test_login_context_describes_request(client: TestClient) -> None:
