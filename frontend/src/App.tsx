@@ -8,6 +8,7 @@ import { PortalBlogPage } from "./features/portal/PortalBlogPage";
 import { PortalHomePage } from "./features/portal/PortalHomePage";
 import { PortalLoginPage } from "./features/portal/PortalLoginPage";
 import { PortalUpdatesPage } from "./features/portal/PortalUpdatesPage";
+import { SystemRegistrationPage } from "./features/portal/SystemRegistrationPage";
 import {
   cabinetTabHref,
   profileBaseHref,
@@ -25,6 +26,7 @@ import {
   PORTAL_CABINET_VOLUNTEERING_HREF,
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
+  PORTAL_REGISTRATION_HREF,
   PORTAL_UPDATES_HREF,
 } from "./lib/portalRoutes";
 import { NotFoundPage } from "./features/NotFoundPage";
@@ -229,6 +231,9 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   [PORTAL_BLOG_HREF]: () => <PortalBlogPage />,
   // История релизов сайта — публичная, ссылки в футере (раздел + номер версии).
   [PORTAL_UPDATES_HREF]: () => <PortalUpdatesPage />,
+  // Как зарегистрироваться в беговых системах и привязать профиль — сюда
+  // ведут призывы карты и главной.
+  [PORTAL_REGISTRATION_HREF]: () => <SystemRegistrationPage />,
   "/new/map-lab": () => <PortalMapLab />,
   // Личный кабинет в портальном дизайне — тёмный запуск под /new/*, рядом со
   // старым кабинетом на канонических адресах. Превью на демо-данных (без

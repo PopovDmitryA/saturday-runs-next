@@ -36,6 +36,7 @@ import {
   PORTAL_CABINET_SHARE_HREF,
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
+  PORTAL_REGISTRATION_HREF,
   PORTAL_UPDATES_HREF,
 } from "../../../lib/portalRoutes";
 
@@ -156,7 +157,7 @@ export const SECTION_PATH_PREFIXES: Record<NavSectionKey, readonly string[]> = {
   results: ["/results", "/protocol"],
   locations: ["/locations"],
   ratings: ["/ratings"],
-  project: [PORTAL_ABOUT_HREF, PORTAL_BLOG_HREF, PORTAL_UPDATES_HREF, "/backlog"],
+  project: [PORTAL_ABOUT_HREF, PORTAL_REGISTRATION_HREF, PORTAL_BLOG_HREF, PORTAL_UPDATES_HREF, "/backlog"],
   account: [PORTAL_CABINET_SETTINGS_HREF, "/admin"],
 };
 
@@ -720,6 +721,24 @@ function projectSection(): NavSection {
       href: PORTAL_ABOUT_HREF,
       matches: (pathname) => pathname === PORTAL_ABOUT_HREF,
       keywords: ["о сайте", "контакты", "автор", "приватность", "данные", "политика", "связаться", "поддержка"],
+    },
+    {
+      key: "registration",
+      label: "Регистрация в системах",
+      icon: I.FLAG_ICON,
+      chipLabel: "Регистрация",
+      href: PORTAL_REGISTRATION_HREF,
+      keywords: [
+        "зарегистрироваться",
+        "регистрация",
+        "штрихкод",
+        "получить штрихкод",
+        "qr код",
+        "как начать бегать",
+        "первый старт",
+        "новичок",
+        "нет аккаунта",
+      ],
     },
     {
       key: "blog",

@@ -1,0 +1,419 @@
+/* «Регистрация в беговых системах» (/registration) и короткие призывы
+   зарегистрироваться на других страницах (.signup-hint). */
+
+.sysreg-page {
+  max-width: 980px;
+}
+
+.sysreg-header h1 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0 0 6px;
+}
+
+.sysreg-lead {
+  color: var(--text-3);
+  font-size: 14px;
+  margin: 0 0 12px;
+  max-width: 760px;
+}
+
+/* Каждая система — строка на всю ширину; подробности и кнопка регистрации —
+   по нажатию (просьбы Дмитрия 25.10.2026). Основная — обычная, остальные и
+   привязанные — серые. */
+.sysreg-rows {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.portal-section .card.sysreg-row {
+  padding: 0;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+.sysreg-row-title {
+  margin: 0;
+  font-size: inherit;
+}
+
+.sysreg-row-toggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 14px 18px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sysreg-row-toggle:hover {
+  background: var(--bg-muted);
+}
+
+.sysreg-row-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.sysreg-row-summary {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.sysreg-row-more {
+  margin-left: auto;
+  color: var(--link);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sysreg-row-chevron {
+  color: var(--link);
+  transition: transform 0.15s ease;
+}
+
+.sysreg-row-open .sysreg-row-chevron {
+  transform: rotate(180deg);
+}
+
+.sysreg-row-body {
+  display: grid;
+  gap: 12px;
+  padding: 2px 18px 18px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 14px;
+}
+
+.sysreg-row-body[hidden] {
+  display: none;
+}
+
+.sysreg-row-body p {
+  margin: 0;
+}
+
+.sysreg-row-body h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.sysreg-intro {
+  color: var(--text);
+  font-size: 15px;
+}
+
+/* Три вопроса — три блока: что нужно, что получите, как привязать. */
+.sysreg-blocks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sysreg-block {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-muted);
+  color: var(--text-2);
+  line-height: 1.45;
+}
+
+.sysreg-important {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--tint-amber-bg);
+  border: 1px solid var(--tint-amber-border);
+}
+
+.sysreg-important h3 {
+  color: var(--tint-amber-text);
+}
+
+.sysreg-important ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+
+.sysreg-important li + li {
+  margin-top: 4px;
+}
+
+.sysreg-important a,
+.sysreg-action-note a {
+  color: var(--link);
+  font-weight: 600;
+}
+
+.sysreg-action {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.sysreg-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.sysreg-action .btn {
+  display: inline-flex;
+  width: auto;
+}
+
+.sysreg-row-body .sysreg-action-note {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.sysreg-action-linked {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Не основная система: серая, но живая — можно раскрыть и зарегистрироваться. */
+.portal-section .card.sysreg-row-muted,
+.portal-section .card.sysreg-row-linked {
+  background: var(--bg-muted);
+  box-shadow: none;
+}
+
+.sysreg-row-muted .sysreg-block,
+.sysreg-row-linked .sysreg-block {
+  background: var(--surface);
+}
+
+.sysreg-row-muted .sysreg-row-name,
+.sysreg-row-linked .sysreg-row-name {
+  font-size: 15px;
+  color: var(--text-3);
+}
+
+.sysreg-row-muted .portal-system-dot,
+.sysreg-row-linked .portal-system-dot {
+  opacity: 0.55;
+}
+
+.sysreg-row-muted .sysreg-row-more,
+.sysreg-row-linked .sysreg-row-more,
+.sysreg-row-muted .sysreg-row-chevron,
+.sysreg-row-linked .sysreg-row-chevron {
+  color: var(--text-muted);
+}
+
+.portal-section .card.sysreg-row-linked {
+  border-style: dashed;
+}
+
+.sysreg-row-linked .sysreg-row-summary {
+  font-weight: 600;
+}
+
+.portal-section .card.sysreg-row-main {
+  border-color: var(--border-strong);
+}
+
+.sysreg-all-linked {
+  margin: 0 0 12px;
+  color: var(--text-2);
+}
+
+
+/* «Ждём номер после регистрации»: вкладка, откуда ушли на сайт системы. */
+.sysreg-await {
+  scroll-margin-top: 90px;
+  scroll-margin-bottom: 24px;
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 2px solid var(--tint-blue-border-strong);
+  background: var(--tint-blue-bg);
+}
+
+.sysreg-await p {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.sysreg-row-body .sysreg-await-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text);
+}
+
+.sysreg-await-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sysreg-await-form .input {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.sysreg-await-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.sysreg-await-actions .btn,
+.sysreg-await-form .btn {
+  display: inline-flex;
+  width: auto;
+}
+
+.sysreg-await-preview {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.sysreg-await-preview b {
+  font-size: 16px;
+}
+
+.sysreg-await-preview span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.sysreg-await-hint {
+  font-size: 13px;
+}
+
+.sysreg-await-close {
+  justify-self: start;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Короткий призыв на чужих страницах: строка текста со ссылкой. */
+.signup-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.signup-hint a {
+  color: var(--link);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Онбординг: под плитками систем с отметкой «нет аккаунта». */
+.onboarding-signup {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--tint-blue-bg);
+  border: 1px solid var(--tint-blue-border);
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.onboarding-signup p {
+  margin: 0;
+}
+
+.onboarding-signup ul {
+  margin: 8px 0;
+  padding-left: 18px;
+}
+
+.onboarding-signup li + li {
+  margin-top: 4px;
+}
+
+.onboarding-signup a {
+  font-weight: 600;
+}
+
+.portal-teaser-signup {
+  margin-top: 8px;
+}
+
+/* Попап точки карты: «Профиля в С95 нет? Как зарегистрироваться». */
+.map-popup-signup {
+  color: var(--text-2);
+}
+
+/* Шапка локации: строка под вводной фразой. */
+.loc-signup-hint {
+  margin: 6px 0 10px;
+}
+
+/* Телефон — в самом конце файла: иначе базовые правила панели номера,
+   стоящие ниже, перебивали бы мобильные (та же специфичность). */
+@media (max-width: 760px) {
+  .sysreg-header h1 {
+    font-size: 20px;
+  }
+
+  .sysreg-lead {
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+
+  .sysreg-row-toggle {
+    padding: 12px 14px;
+  }
+
+  /* На телефоне подпись уходит под название, «Подробнее» — справа от него. */
+  .sysreg-row-summary {
+    order: 3;
+    flex-basis: 100%;
+    font-size: 12.5px;
+  }
+
+  .sysreg-row-body {
+    padding: 12px 14px 14px;
+    font-size: 13.5px;
+  }
+
+  .sysreg-blocks {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .sysreg-intro {
+    font-size: 14px;
+  }
+
+  .sysreg-action .btn,
+  .sysreg-await-actions .btn,
+  .sysreg-await-form .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}

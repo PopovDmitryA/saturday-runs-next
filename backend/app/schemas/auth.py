@@ -142,6 +142,9 @@ class UserResponse(BaseModel):
     home_location: HomeLocationBrief | None = None
     # Онбординг: системы, где человек отметил «у меня там нет аккаунта».
     onboarding_no_account_platforms: list[str] = Field(default_factory=list)
+    # Коды привязанных систем — призыв зарегистрироваться показывается только
+    # там, где профиля в системе нет (страница локации, точка карты).
+    linked_platform_codes: list[str] = Field(default_factory=list)
 
     @field_validator("onboarding_no_account_platforms", mode="before")
     @classmethod

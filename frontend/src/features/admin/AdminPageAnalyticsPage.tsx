@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AdminShell } from "./AdminShell";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { getAdminPageAnalytics, type PageAnalyticsEntity, type PageAnalyticsResponse } from "../../lib/api";
-import { formatDate, formatDateTime } from "../../lib/format";
+import { formatDate, formatDateTime, platformCodeLabel } from "../../lib/format";
 import { AdminSubnav } from "./AdminSubnav";
 import { pageTypeLabel } from "./pageTypeLabels";
 
@@ -16,6 +16,25 @@ const PERIODS = [
 ] as const;
 
 // Ярлыки событий шаринга. Канон значений — frontend/src/features/sharing/.
+// Место клика «Зарегистрироваться» (value события signup_click после «:»).
+// "page:<откуда>" — клик на /registration, куда человек пришёл с карты или главной.
+const SIGNUP_PLACE_LABELS: Record<string, string> = {
+  page: "Страница регистрации",
+  onboarding: "Онбординг",
+  cabinet: "Карточка системы в кабинете",
+  location: "Страница локации",
+  teaser: "Тизер на главной",
+  search: "Поиск",
+  map: "Карта",
+  home: "Главная",
+};
+
+function signupPlaceLabel(place: string): string {
+  const [head, from] = place.split(":", 2);
+  const label = SIGNUP_PLACE_LABELS[head] ?? place;
+  return from ? `${label} ← ${SIGNUP_PLACE_LABELS[from] ?? from}` : label;
+}
+
 const SHARE_FUNNEL_LABELS: Record<string, string> = {
   share_moment_shown: "Показы приглашений",
   share_open: "Открытия шторки",
@@ -363,6 +382,47 @@ function AdminPageAnalyticsContent() {
                         </td>
                         <td>{row.clicks}</td>
                         <td>{row.visitors}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          {(data.signup_clicks ?? []).length > 0 && (
+            <section className="card">
+              <h2 className="section-title">Переходы на регистрацию в системах</h2>
+              <p className="muted">
+                Клики по ссылкам «Зарегистрироваться» (пишутся с 25.10.2026, клики админа не
+                считаются). «Привязали» — вошедшие, у которых эта система привязана позже клика
+                (после клика можно найти и старый профиль). «Зарегистрировались через сайт» — из них
+                те, кто привязал номер из формы после регистрации, и у профиля не было пробежек и
+                волонтёрства до клика.
+              </p>
+              <div className="table-scroll">
+                <table className="data-table page-analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Система</th>
+                      <th>Где нажали</th>
+                      <th>Клики</th>
+                      <th>Посетители</th>
+                      <th>Из них с профилем на сайте</th>
+                      <th>Привязали</th>
+                      <th>Зарегистрировались через сайт</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data.signup_clicks ?? []).map((row) => (
+                      <tr key={`${row.platform_code}:${row.place}`}>
+                        <td>{platformCodeLabel(row.platform_code)}</td>
+                        <td className="muted">{signupPlaceLabel(row.place)}</td>
+                        <td>{row.clicks}</td>
+                        <td>{row.visitors}</td>
+                        <td>{row.users}</td>
+                        <td>{row.linked_users}</td>
+                        <td>{row.signup_users ?? 0}</td>
                       </tr>
                     ))}
                   </tbody>

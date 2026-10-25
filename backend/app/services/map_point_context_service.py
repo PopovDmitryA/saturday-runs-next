@@ -15,6 +15,10 @@
   автоматически и человек с ней не согласен.
 
 Всё, кроме прогноза номера, — личные данные: анониму отдаётся только он.
+
+Сверху — системы точки, куда звать зарегистрироваться (решение Дмитрия
+25.10.2026): у вошедшего — только те, где профиля у него нет; аноним видит
+все действующие системы точки.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.models import Event, Location, LocationCatalogLink, Platform, User
+from app.models import Event, Location, LocationCatalogLink, Platform, PlatformLink, User
 from app.services.achievements_service import START_NUMBER_RANGES, START_NUMBER_TITLES
 from app.services.home_distance_service import location_distance_from_home
 from app.services.location_catalog_service import LocationCatalogIndex
@@ -204,6 +208,37 @@ def _coordinates_for_point(
     return None, None
 
 
+def _signup_platform_codes(
+    db: Session,
+    user: User | None,
+    rows: list[tuple[Location, str]],
+) -> list[str]:
+    """Действующие системы точки без профиля у зрителя — для ссылки
+    «Зарегистрировать аккаунт С95» в попапе.
+
+    parkrun не предлагаем: на карте он исторический (из России ушёл в 2022), и
+    звать регистрироваться ради старой точки в Москве — вводить в заблуждение.
+    Не действующую площадку тоже: бегать там негде. Отмена ближайшего старта —
+    не повод: через неделю там снова бегут.
+    """
+    codes: list[str] = []
+    for location, platform_code in rows:
+        if platform_code == MAP_HISTORIC_PLATFORM or location.is_paused:
+            continue
+        if platform_code not in codes:
+            codes.append(platform_code)
+    if not codes or user is None:
+        return codes
+    linked = {
+        code
+        for (code,) in db.query(Platform.code)
+        .join(PlatformLink, PlatformLink.platform_id == Platform.id)
+        .filter(PlatformLink.user_id == user.id)
+        .all()
+    }
+    return [code for code in codes if code not in linked]
+
+
 def build_map_point_context(
     db: Session,
     user: User | None,
@@ -258,4 +293,5 @@ def build_map_point_context(
         "authenticated": user is not None,
         "next_starts": next_starts,
         "home_distance": home,
+        "signup_platform_codes": _signup_platform_codes(db, user, rows),
     }

@@ -35,7 +35,9 @@ from app.schemas.profiles import (
 )
 from app.services.participant_search_service import ParticipantSearchError, search_participants
 from app.services.profile_linking_service import (
+    LINK_METHOD_SIGNUP,
     LINK_METHOD_SITE_SEARCH,
+    LINK_METHOD_URL,
     ProfileLinkingError,
     claim_profile_by_athlete_id,
     confirm_profile_link,
@@ -121,7 +123,14 @@ def five_verst_confirm(
     user: Annotated[User, Depends(get_current_user)],
 ) -> ProfileLinkConfirmResponse:
     try:
-        link = confirm_profile_link(db, user, FIVE_VERST_CODE, body.profile_url)
+        link = confirm_profile_link(
+            db,
+            user,
+            FIVE_VERST_CODE,
+            body.profile_url,
+            method=LINK_METHOD_SIGNUP if body.signup else LINK_METHOD_URL,
+            signup_started_at=body.signup_started_at,
+        )
     except ProfileLinkingError as exc:
         raise _handle_linking_error(exc) from exc
 
@@ -175,6 +184,8 @@ def s95_confirm(
             user,
             body.profile_url,
             link_parkrun=body.link_parkrun,
+            method=LINK_METHOD_SIGNUP if body.signup else LINK_METHOD_URL,
+            signup_started_at=body.signup_started_at,
         )
     except ProfileLinkingError as exc:
         raise _handle_linking_error(exc) from exc

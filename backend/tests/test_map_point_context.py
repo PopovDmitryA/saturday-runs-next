@@ -258,3 +258,39 @@ def test_home_distance_counts_from_the_home_location(db_session: Session) -> Non
 def test_garbage_identity_key_returns_an_empty_context(db_session: Session) -> None:
     context = build_map_point_context(db_session, None, "не-ключ", today=TODAY)
     assert context["next_starts"] == []
+
+
+def test_signup_codes_skip_linked_systems(db_session: Session) -> None:
+    """«Профиля в S95 нет? Как зарегистрироваться» — только туда, где профиля
+    у человека нет; аноним видит все действующие системы точки."""
+    user = _user(db_session)
+    _participant(db_session, user, "five_verst")
+    park = _location(db_session, "MPC Регистрация", MOSCOW)
+    _event(db_session, park, number=100, event_date=date(2026, 8, 15))
+    identity = _identity(db_session, park, "five_verst")
+
+    linked = build_map_point_context(db_session, user, identity, today=TODAY)
+    anonymous = build_map_point_context(db_session, None, identity, today=TODAY)
+
+    assert linked["signup_platform_codes"] == []
+    assert anonymous["signup_platform_codes"] == ["five_verst"]
+
+
+def test_signup_codes_skip_paused_and_historic_parkrun(db_session: Session) -> None:
+    """Не действующая площадка и исторический parkrun регистрации не просят:
+    бегать там негде."""
+    paused = _location(db_session, "MPC Регистрация пауза", MOSCOW, is_paused=True)
+    parkrun = _location(db_session, "MPC Регистрация parkrun", NEARBY, platform_code="parkrun")
+
+    assert (
+        build_map_point_context(
+            db_session, None, _identity(db_session, paused, "five_verst"), today=TODAY
+        )["signup_platform_codes"]
+        == []
+    )
+    assert (
+        build_map_point_context(
+            db_session, None, _identity(db_session, parkrun, "parkrun"), today=TODAY
+        )["signup_platform_codes"]
+        == []
+    )

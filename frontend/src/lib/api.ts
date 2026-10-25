@@ -62,6 +62,9 @@ export type User = {
   home_location?: { slug: string; name: string } | null;
   auth_identities: AuthIdentity[];
   onboarding_no_account_platforms: string[];
+  // Коды привязанных систем: призыв зарегистрироваться — только туда, где
+  // профиля нет. Может отсутствовать в ответе старого сервера.
+  linked_platform_codes?: string[];
 };
 
 export type AuthIdentity = {
@@ -1130,10 +1133,23 @@ export function previewFiveVerstProfile(profileUrl: string, signal?: AbortSignal
   });
 }
 
-export function confirmFiveVerstProfile(profileUrl: string) {
+// signup — привязка из формы «введите полученный номер» на /registration:
+// сервер запишет способ привязки «регистрация через сайт».
+// signupStartedAt — когда нажали «Зарегистрироваться»: у профиля с активностью
+// до этого дня сервер способ «регистрация через сайт» не ставит.
+type SignupConfirmOptions = { signup?: boolean; signupStartedAt?: number | null };
+
+function signupFields(options: SignupConfirmOptions) {
+  return {
+    signup: Boolean(options.signup),
+    signup_started_at: options.signupStartedAt ? new Date(options.signupStartedAt).toISOString() : null,
+  };
+}
+
+export function confirmFiveVerstProfile(profileUrl: string, options: SignupConfirmOptions = {}) {
   return apiFetch<{ link: PlatformLink; message: string }>("/profiles/five-verst/confirm", {
     method: "POST",
-    body: JSON.stringify({ profile_url: profileUrl }),
+    body: JSON.stringify({ profile_url: profileUrl, ...signupFields(options) }),
   });
 }
 
@@ -1162,14 +1178,18 @@ export function previewS95Profile(profileUrl: string, signal?: AbortSignal) {
   });
 }
 
-export function confirmS95Profile(profileUrl: string, linkParkrun = false) {
+export function confirmS95Profile(profileUrl: string, linkParkrun = false, options: SignupConfirmOptions = {}) {
   return apiFetch<{
     link: PlatformLink;
     parkrun_link: PlatformLink | null;
     message: string;
   }>("/profiles/s95/confirm", {
     method: "POST",
-    body: JSON.stringify({ profile_url: profileUrl, link_parkrun: linkParkrun }),
+    body: JSON.stringify({
+      profile_url: profileUrl,
+      link_parkrun: linkParkrun,
+      ...signupFields(options),
+    }),
   });
 }
 
@@ -2746,6 +2766,9 @@ export type MapPointContext = {
   authenticated: boolean;
   next_starts: MapPointNextStart[];
   home_distance: LocationHomeDistance | null;
+  // Действующие системы точки без профиля у зрителя — строка «как
+  // зарегистрироваться». Может отсутствовать в ответе старого сервера.
+  signup_platform_codes?: string[];
 };
 
 /**
@@ -5462,6 +5485,19 @@ export type HomeLinkClickStats = {
   visitors: number;
 };
 
+/** Переходы на регистрацию в беговой системе с одного места сайта. */
+export type SignupClickRow = {
+  platform_code: string;
+  place: string;
+  clicks: number;
+  visitors: number;
+  // Вошедшие, кликнувшие в периоде; из них — привязали систему после клика.
+  users: number;
+  linked_users: number;
+  // Из привязавших — засчитано регистрацией через сайт (link_method=signup).
+  signup_users?: number;
+};
+
 export type ShareFunnelRow = { event_type: string; events: number; visitors: number };
 export type SharePairRow = { subject: string; entry: string; shown: number; opens: number };
 export type ShareChannelRow = { channel: string; successes: number };
@@ -5501,6 +5537,8 @@ export type PageAnalyticsResponse = {
   funnel: FunnelStepStats[];
   home_ab: HomeAbVariantStats[];
   home_links: HomeLinkClickStats[];
+  // Может отсутствовать в ответе старого сервера.
+  signup_clicks?: SignupClickRow[];
   share: ShareStats;
   og_fetches: OgFetchRow[];
   sections: PageAnalyticsSection[];

@@ -10,6 +10,8 @@ export const PORTAL_ABOUT_PRIVACY_HREF = `${PORTAL_ABOUT_HREF}#privacy`;
 export const PORTAL_LOGIN_HREF = "/login";
 export const PORTAL_BLOG_HREF = "/blog";
 export const PORTAL_UPDATES_HREF = "/updates";
+// Как зарегистрироваться в беговых системах и привязать профиль (25.10.2026).
+export const PORTAL_REGISTRATION_HREF = "/registration";
 
 /**
  * Личный кабинет в портальном дизайне — пока тёмный запуск под /new/*, рядом

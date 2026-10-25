@@ -1023,6 +1023,14 @@ main[tabindex="-1"]:focus {
   font-variant-numeric: tabular-nums;
 }
 
+.portal-system-signup {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--link);
+}
+
 /* ---------- вау-факты ---------- */
 
 .portal-facts {

@@ -16,6 +16,7 @@ import { forgetOrganizer } from "../features/portal/nav/organizerMemory";
 import { forgetSearchClaim } from "../features/portal/nav/searchClaim";
 import { forgetEntryMemory } from "./entryMemory";
 import { forgetLoginNext } from "./loginReturn";
+import { forgetSignupIntent } from "./signupIntent";
 import { clearCachedUser } from "./useOptionalUser";
 
 // Ключи, у владельцев которых нет своей функции «забыть». Имя — ровно как в
@@ -76,6 +77,7 @@ export function forgetSessionBrowserState(): void {
   clearCachedUser();
   forgetOrganizer();
   forgetSearchClaim();
+  forgetSignupIntent();
   forgetLoginNext();
 }
 

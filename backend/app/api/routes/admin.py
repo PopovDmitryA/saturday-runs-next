@@ -173,6 +173,7 @@ from app.services.page_analytics_service import (
     build_og_fetch_stats,
     build_page_analytics,
     build_share_stats,
+    build_signup_click_stats,
     resolve_period,
 )
 from app.services.rating_service import (
@@ -692,6 +693,7 @@ def admin_page_analytics(
     payload["funnel"] = build_funnel_stats(db, start=start, end=end)
     payload["home_ab"] = build_home_ab_stats(db, start=start, end=end)
     payload["home_links"] = build_home_link_clicks(db, start=start, end=end)
+    payload["signup_clicks"] = build_signup_click_stats(db, start=start, end=end)
     payload["share"] = build_share_stats(db, start=start, end=end)
     payload["og_fetches"] = build_og_fetch_stats(db, start=start, end=end)
     payload["generated_at"] = datetime.now(timezone.utc)

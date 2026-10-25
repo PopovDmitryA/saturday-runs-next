@@ -1,10 +1,21 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import DashboardCache, Participant, Platform, PlatformLink, User
+from app.models import (
+    DashboardCache,
+    Event,
+    Participant,
+    Platform,
+    PlatformLink,
+    RunResult,
+    User,
+    VolunteerResult,
+)
 from app.platform_adapters.canonical import ProfilePreview
 from app.platform_adapters.five_verst.parser import ProfileNotFoundError as FvProfileNotFoundError
 from app.platform_adapters.five_verst.parser import ProfileParseError as FvProfileParseError
@@ -36,6 +47,12 @@ LINK_METHOD_S95_PAIR = "s95_pair"
 # часто ещё гостем, и привязал её после входа. LINK_METHOD_SEARCH — поиск по
 # ФИО в онбординге и в кабинете.
 LINK_METHOD_SITE_SEARCH = "site_search"
+# Номер, полученный при регистрации в системе по кнопке с /registration
+# (25.10.2026): человек вернулся во вкладку и привязал свежий профиль. По этой
+# отметке и считается «зарегистрировались через сайт».
+LINK_METHOD_SIGNUP = "signup"
+
+_MOSCOW = ZoneInfo("Europe/Moscow")
 
 
 class ProfileLinkingError(Exception):
@@ -251,8 +268,11 @@ def confirm_s95_profile_link(
     *,
     link_parkrun: bool = False,
     method: str = LINK_METHOD_URL,
+    signup_started_at: datetime | None = None,
 ) -> tuple[PlatformLink, PlatformLink | None]:
-    s95_link = confirm_profile_link(db, user, "s95", profile_url, method=method)
+    s95_link = confirm_profile_link(
+        db, user, "s95", profile_url, method=method, signup_started_at=signup_started_at
+    )
     if not link_parkrun:
         return s95_link, None
 
@@ -312,6 +332,52 @@ def preview_runpark_profile_link(
     return preview
 
 
+def _had_activity_before(
+    db: Session,
+    participant: Participant,
+    preview: ProfilePreview,
+    started_at: datetime | None,
+) -> bool:
+    """Была ли у профиля активность до того, как человек нажал у нас
+    «Зарегистрироваться».
+
+    Такой профиль не новый: регистрацией через сайт его не считаем (решение
+    Дмитрия 25.10.2026), привязка пишется обычной ссылкой. Граница — день
+    клика по Москве: забеги идут по субботам, у протоколов только дата.
+    Смотрим и наши протоколы, и счётчики самого профиля — у свежепривязанного
+    участника протоколов в нашей базе может ещё не быть, а счётчик на сайте
+    системы уже говорит, что он бегал. Финиши в день клика и позже (зарегистрировался
+    утром и сразу пробежал) из счётчика вычитаем.
+    """
+    # Время клика присылает клиент — доверяем ему в пределах жизни намерения
+    # (2 часа, signupIntent.ts) с запасом. Будущее, слишком старое или пустое
+    # время — «сейчас»: иначе старой датой можно было бы обойти правило, а
+    # крайней — уронить astimezone.
+    now = datetime.now(timezone.utc)
+    moment = started_at
+    if moment is not None and moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    if moment is None or moment > now or moment < now - timedelta(hours=3):
+        moment = now
+    click_day: date = moment.astimezone(_MOSCOW).date()
+
+    def _count(model: type[RunResult] | type[VolunteerResult], *, before: bool) -> int:
+        day_filter = Event.event_date < click_day if before else Event.event_date >= click_day
+        return int(
+            db.query(func.count(model.id))
+            .join(Event, Event.id == model.event_id)
+            .filter(model.participant_id == participant.id, Event.is_test_event.is_(False), day_filter)
+            .scalar()
+            or 0
+        )
+
+    if _count(RunResult, before=True) or _count(VolunteerResult, before=True):
+        return True
+    reported = (preview.total_runs or 0) + (preview.total_volunteering or 0)
+    since_click = _count(RunResult, before=False) + _count(VolunteerResult, before=False)
+    return reported > since_click
+
+
 def confirm_profile_link(
     db: Session,
     user: User,
@@ -319,6 +385,7 @@ def confirm_profile_link(
     profile_url: str,
     *,
     method: str = LINK_METHOD_URL,
+    signup_started_at: datetime | None = None,
 ) -> PlatformLink:
     _require_personal_data_consent(user)
     ensure_adapters_registered()
@@ -367,6 +434,11 @@ def confirm_profile_link(
         raise ProfileLinkingError("Этот профиль уже привязан к другому аккаунту", 409)
 
     participant = _upsert_participant(db, platform, preview, adapter.parser_version)
+
+    # Номер «по нашей кнопке», но профиль уже бегал или волонтёрил до клика —
+    # это старый аккаунт, а не регистрация через сайт.
+    if method == LINK_METHOD_SIGNUP and _had_activity_before(db, participant, preview, signup_started_at):
+        method = LINK_METHOD_URL
 
     if existing_external_link is not None:
         link = existing_external_link

@@ -10,14 +10,16 @@ import { getOrCreateVisitorId } from "./siteVisitor";
  * Раскладки 50/50, форса ?ab= и поэлементной инструментовки эксперимента
  * больше нет — вместо них постоянный счётчик воронки.
  *
- * Три живых потребителя:
+ * Живые потребители:
  * - воронка регистрации (канал "funnel") — useFunnelHomeView/trackCtaClick/
  *   trackAuthStart/reportAuthDoneOnce, сводка в админке «Популярность»;
  * - trackHomeLinkClick — «куда уводит главная» (канал "home_v1");
+ * - trackSignupClick — переход на регистрацию в беговой системе (канал "signup");
  * - abVisitorKey — общий ключ посетителя, им же пользуется фича «Поделиться».
  */
 const FUNNEL_CHANNEL = "funnel";
 const HOME_CHANNEL = "home_v1";
+const SIGNUP_CHANNEL = "signup";
 
 // Вариантов больше нет: пишем "-", как канал "share". Заодно в SQL видно, где
 // кончился эксперимент главной.
@@ -101,4 +103,13 @@ export function reportAuthDoneOnce(userId: string): void {
  */
 export function trackHomeLinkClick(kind: "location" | "runner", target: string): void {
   sendEvent(HOME_CHANNEL, "home_link_click", `${kind}:${target}`);
+}
+
+/**
+ * Переход на регистрацию в беговой системе (канал "signup"): value —
+ * "<система>:<место>". Саму регистрацию система нам не сообщает; дошёл ли
+ * человек до конца, сводка смотрит по привязке этой системы после клика.
+ */
+export function trackSignupClick(platformCode: string, place: string): void {
+  sendEvent(SIGNUP_CHANNEL, "signup_click", `${platformCode}:${place}`);
 }

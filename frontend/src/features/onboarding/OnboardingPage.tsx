@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ParticipantNameSearch } from "../../components/ParticipantNameSearch";
 import { RequireAuth } from "../../components/RequireAuth";
+import { SignupCta } from "../../components/SystemSignupLink";
 import {
   completeOnboarding,
   listProfileLinks,
@@ -10,8 +11,12 @@ import {
 } from "../../lib/api";
 import { platformCodeLabel } from "../../lib/format";
 import { loginHref, readLoginNext } from "../../lib/loginReturn";
+import { PORTAL_REGISTRATION_HREF } from "../../lib/portalRoutes";
 import { useProfileLinksChanged } from "../../lib/profileLinksEvents";
+import { readSignupIntent } from "../../lib/signupIntent";
+import { SIGNUP_LINK_HOWTO, isSignupPlatform } from "../../lib/systemSignup";
 import { PortalHeader } from "../portal/PortalHeader";
+import "../portal/systemRegistration.css";
 
 const ONBOARDING_PLATFORMS = ["five_verst", "s95", "parkrun", "runpark"] as const;
 
@@ -105,6 +110,12 @@ function OnboardingContent({ user, returnTo }: { user: User; returnTo: string | 
   ).length;
   const doneCount = linkedCount + skippedCount;
   const total = ONBOARDING_PLATFORMS.length;
+  // «Нет аккаунта» — повод предложить регистрацию. Но отметка часто неправда:
+  // из привязавших потом 5 вёрст большинство бегали там и раньше (разбор
+  // 23.10.2026), поэтому рядом — «найдите себя по имени».
+  const signupCodes = ONBOARDING_PLATFORMS.filter(
+    (code) => !linkedCodes.has(code) && noAccountCodes.has(code),
+  ).filter(isSignupPlatform);
 
   const toggleNoAccount = async (code: string) => {
     const next = !noAccountCodes.has(code);
@@ -205,6 +216,25 @@ function OnboardingContent({ user, returnTo }: { user: User; returnTo: string | 
               {doneCount} из {total}
             </span>
           </div>
+          {signupCodes.length > 0 && (
+            <div className="onboarding-signup">
+              <p>
+                Профиль заводится на сайте системы, это бесплатно. Зарегистрируйтесь и вернитесь
+                сюда:
+              </p>
+              <ul>
+                {signupCodes.map((code) => (
+                  <li key={code}>
+                    <SignupCta code={code} place="onboarding" withName /> — потом{" "}
+                    {SIGNUP_LINK_HOWTO[code]}.
+                  </li>
+                ))}
+              </ul>
+              <p className="muted">
+                Уже бегали, но не помните номер? Найдите себя по имени из протокола в поле ниже.
+              </p>
+            </div>
+          )}
         </section>
 
         <section className="card onboarding-search-card">
@@ -257,9 +287,25 @@ function OnboardingContent({ user, returnTo }: { user: User; returnTo: string | 
   );
 }
 
+// Вошли, чтобы привязать номер, полученный при регистрации в системе: человек
+// уже знает, какой профиль его, — онбординг пропускаем и сразу возвращаем на
+// /registration, где форма покажет «Это ваш профиль?» (lib/signupIntent).
+function shouldSkipToSignupLink(returnTo: string | null): boolean {
+  return Boolean(returnTo?.startsWith(PORTAL_REGISTRATION_HREF) && readSignupIntent()?.input);
+}
+
 export function OnboardingPage() {
   // Страница, откуда начинали вход: /welcome?next=… (onboarding_service).
   const [returnTo] = useState<string | null>(() => readLoginNext());
+  const [skip] = useState(() => shouldSkipToSignupLink(returnTo));
+  useEffect(() => {
+    if (skip && returnTo) {
+      window.location.replace(returnTo);
+    }
+  }, [skip, returnTo]);
+  if (skip) {
+    return null;
+  }
   return (
     // Сессия пропала прямо на онбординге — после входа вернём туда же, куда
     // онбординг вёл бы и сам: сам /welcome адресом возврата не бывает.

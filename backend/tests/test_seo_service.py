@@ -783,3 +783,19 @@ def test_releases_body_renders_history_with_neighbour_links() -> None:
     # Со второй страницы «назад» ведёт на чистый /updates, а не на ?page=1.
     assert 'href="/updates" rel="prev"' in html
     assert 'href="/updates?page=3" rel="next"' in html
+
+
+def test_registration_prerender_links_every_system() -> None:
+    """Робот на /registration видит по разделу на систему со ссылкой на её
+    регистрацию — это посадочная под «5 вёрст регистрация»."""
+    from app.services.seo_service import _registration_body
+
+    body = _registration_body()
+    for url in (
+        "https://5verst.ru/register/",
+        "https://s95.ru/user/sign_up",
+        "https://runpark.ru/Auth/Register",
+        "https://www.parkrun.org.uk/register/",
+    ):
+        assert f'href="{url}"' in body
+    assert STATIC_PAGE_META["/registration"].indexable

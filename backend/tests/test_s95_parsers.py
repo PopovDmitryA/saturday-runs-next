@@ -75,6 +75,24 @@ def test_parse_athlete_html_allows_profile_without_barcode() -> None:
     assert profile.total_runs == 5
 
 
+def test_parse_athlete_html_allows_fresh_profile_without_starts() -> None:
+    """Только что зарегистрированный участник С95: профиль публичный, но ни
+    стартов, ни счётчиков ещё нет. Привязка из формы «введите полученный номер»
+    на /registration грузит именно такую страницу — она не должна падать."""
+    html = """
+    <html><head><title>Иван НОВИЧКОВ | S95</title></head>
+    <body>
+      <h1>Иван НОВИЧКОВ</h1>
+      <h5 id="barcodeModalLabel">A770033001</h5>
+    </body></html>
+    """
+    profile = parse_athlete_html(html, "https://s95.ru/athletes/33001", "33001")
+    assert profile.display_name == "Иван НОВИЧКОВ"
+    assert profile.barcode_id == "A770033001"
+    assert profile.total_runs is None
+    assert profile.total_volunteering is None
+
+
 def test_parse_athlete_runs_modern_table_columns() -> None:
     html = """
     <table>

@@ -3,6 +3,7 @@ import { PlatformBadge } from "../../components/PlatformBadge";
 import { trackCtaClick, trackHomeLinkClick, useFunnelHomeView } from "../../lib/abTest";
 import { cabinetTabHref, PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
+import { isSignupPlatform, registrationPageHref } from "../../lib/systemSignup";
 import { CountUpNumber } from "./CountUpNumber";
 import { PortalBlogSection } from "./PortalBlogSection";
 import { PortalHomeAnchors } from "./PortalHomeAnchors";
@@ -917,6 +918,11 @@ export function PortalHomePage() {
                   <a className="btn primary" href={ctaHref} onClick={() => trackCtaClick("hero")}>
                     {me?.linked === false ? "Привязать профиль" : "Открыть кабинет"}
                   </a>
+                  {me?.linked === false && (
+                    <span className="portal-hero-proof">
+                      <a href={registrationPageHref(null, "home")}>Зарегистрироваться</a>
+                    </span>
+                  )}
                 </div>
               </section>
             ) : (
@@ -998,6 +1004,18 @@ export function PortalHomePage() {
                       </>
                     )}
                   </div>
+                  {/* Регистрация — только в действующие системы и только тем,
+                      у кого профиля в системе ещё нет. */}
+                  {system.is_active &&
+                    isSignupPlatform(system.code) &&
+                    !optionalUser?.linked_platform_codes?.includes(system.code) && (
+                      <a
+                        className="portal-system-signup"
+                        href={registrationPageHref(system.code, "home")}
+                      >
+                        Зарегистрироваться
+                      </a>
+                    )}
                 </div>
               ))}
             </section>

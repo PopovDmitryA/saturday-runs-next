@@ -770,6 +770,9 @@ class MapPointContextResponse(BaseModel):
     authenticated: bool = False
     next_starts: list[MapPointNextStartResponse] = Field(default_factory=list)
     home_distance: LocationHomeDistanceResponse | None = None
+    # Действующие системы точки без профиля у зрителя: строка «как
+    # зарегистрироваться» в попапе. Аноним получает все действующие системы.
+    signup_platform_codes: list[str] = Field(default_factory=list)
 
 
 class MapGeoPingRequest(BaseModel):

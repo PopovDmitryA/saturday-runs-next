@@ -42,6 +42,14 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
       "локаций, необычные достижения участников.",
     indexable: true,
   },
+  // Как зарегистрироваться в системах (25.10.2026) — зеркало seo_service.
+  "/registration": {
+    title: "Регистрация в 5 вёрст, С95 (S95), RunPark и parkrun — run5k.run",
+    description:
+      "Где зарегистрироваться на субботние забеги 5 вёрст, С95, RunPark и parkrun, что " +
+      "понадобится, когда придёт штрихкод и как потом привязать профиль на run5k.run.",
+    indexable: true,
+  },
   "/updates": {
     title: "Обновления сайта — run5k.run",
     description: "История релизов run5k.run: что появилось на сайте и когда.",

@@ -45,6 +45,7 @@ import { LocationFinishHistogram } from "./LocationFinishHistogram";
 import { lazyPage } from "../../lib/lazyPage";
 import { LocationRouteButton } from "./LocationRouteButton";
 import { LocationRatingPrompt } from "./LocationRatingPrompt";
+import { LocationSignupHint } from "./LocationSignupHint";
 import {
   LocationForecastTile,
   LocationWeatherSection,
@@ -1319,6 +1320,7 @@ function LocationPageContent({ slug }: { slug: string }) {
           isCancelled={page.is_cancelled}
           reason={page.cancel_reason}
         />
+        <LocationSignupHint platforms={page.platforms} isPaused={page.is_paused} />
         {/* Навигация по разделам локации одним рядом (редизайн 24.08.2026):
             раньше журнал жил текстовой ссылкой в плитке, а кабинет — кнопкой
             в середине страницы, и оба терялись. Кнопка кабинета появляется

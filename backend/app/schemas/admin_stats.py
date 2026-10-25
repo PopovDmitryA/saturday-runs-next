@@ -188,6 +188,20 @@ class HomeLinkClickStats(BaseModel):
     visitors: int
 
 
+class SignupClickRow(BaseModel):
+    """Переходы на регистрацию в беговой системе с одного места сайта."""
+
+    platform_code: str
+    place: str
+    clicks: int
+    visitors: int
+    # Вошедшие, кликнувшие в периоде; из них — привязали систему после клика.
+    users: int
+    linked_users: int
+    # Из привязавших — засчитано регистрацией через сайт (link_method=signup).
+    signup_users: int = 0
+
+
 class ShareFunnelRow(BaseModel):
     """Ступень воронки шаринга: событие, сколько раз и сколько посетителей."""
 
@@ -256,6 +270,7 @@ class PageAnalyticsResponse(BaseModel):
     funnel: list[FunnelStepStats] = Field(default_factory=list)
     home_ab: list[HomeAbVariantStats] = Field(default_factory=list)
     home_links: list[HomeLinkClickStats] = Field(default_factory=list)
+    signup_clicks: list[SignupClickRow] = Field(default_factory=list)
     share: ShareStats = Field(default_factory=ShareStats)
     og_fetches: list[OgFetchRow] = Field(default_factory=list)
     top_profiles: list[PageAnalyticsEntity]

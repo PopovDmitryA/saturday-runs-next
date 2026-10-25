@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -16,6 +16,12 @@ class ProfilePreviewActivityResponse(BaseModel):
 class ProfileUrlRequest(BaseModel):
     # Короткие штрихкоды parkrun (например A7035519) тоже допустимы.
     profile_url: str = Field(min_length=2, max_length=1024)
+    # Привязка из формы «введите полученный номер» на /registration: способ
+    # привязки запишется как signup. Предпросмотр поле не читает.
+    signup: bool = False
+    # Когда человек нажал «Зарегистрироваться»: активность профиля до этого
+    # дня означает старый аккаунт — тогда signup не ставится.
+    signup_started_at: datetime | None = None
 
 
 class ProfilePreviewResponse(BaseModel):
@@ -44,6 +50,9 @@ class S95ProfilePreviewResponse(ProfilePreviewResponse):
 class S95ConfirmRequest(BaseModel):
     profile_url: str = Field(min_length=2, max_length=1024)
     link_parkrun: bool = False
+    # См. ProfileUrlRequest.signup и signup_started_at.
+    signup: bool = False
+    signup_started_at: datetime | None = None
 
 
 class PlatformLinkResponse(BaseModel):

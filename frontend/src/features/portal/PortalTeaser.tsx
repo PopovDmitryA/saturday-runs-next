@@ -4,6 +4,10 @@ import { PORTAL_LOGIN_HREF } from "../../lib/portalRoutes";
 import { fetchPortalTeaser, PortalHomeError, type PortalTeaser } from "./portalTypes";
 import { COUNT_FORMS, formatInt, pluralFormRu } from "../../lib/format";
 import { rememberTeaserClaim } from "./teaserClaim";
+import { SignupCta } from "../../components/SystemSignupLink";
+import { isSignupPlatform } from "../../lib/systemSignup";
+import { useOptionalUser } from "../../lib/useOptionalUser";
+import "./systemRegistration.css";
 
 /**
  * Тизер главной: посетитель выбирает свою систему, вводит ID — и
@@ -32,6 +36,7 @@ function formatDateShort(iso: string): string {
 }
 
 export function PortalTeaserCard() {
+  const user = useOptionalUser();
   const [platform, setPlatform] = useState(TEASER_PLATFORMS[0]);
   const [athleteId, setAthleteId] = useState("");
   const [teaser, setTeaser] = useState<PortalTeaser | null>(null);
@@ -102,6 +107,20 @@ export function PortalTeaserCard() {
       </div>
 
       {error && <p className="portal-teaser-error">{error}</p>}
+
+      {/* После «не нашли такой ID» не зовём: тизер видит только тех, у кого
+          есть финиши, и свежий номер не найдёт никогда — а 5 вёрст просят не
+          регистрироваться повторно. */}
+      {!teaser &&
+        !error &&
+        isSignupPlatform(platform.code) &&
+        !user?.linked_platform_codes?.includes(platform.code) && (
+          <p className="signup-hint portal-teaser-signup">
+            <SignupCta code={platform.code} place="teaser">
+              Зарегистрироваться
+            </SignupCta>
+          </p>
+        )}
 
       {teaser && (
         <div className="portal-teaser-result">

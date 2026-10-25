@@ -16,6 +16,8 @@ import {
 } from "../lib/mapGeolocation";
 import type { MapViewportRef } from "../lib/mapViewport";
 import { addZoomControl } from "../lib/mapZoomControl";
+import { isSignupPlatform, registrationPageHref } from "../lib/systemSignup";
+import "../features/portal/systemRegistration.css";
 import { MapFullscreenButton } from "./MapFullscreenButton";
 import { MapMyLocationButton } from "./MapMyLocationButton";
 
@@ -386,11 +388,32 @@ function homeDistanceHtml(home: NonNullable<MapPointContext["home_distance"]>): 
   );
 }
 
+/**
+ * «Зарегистрировать аккаунт С95» — ссылкой, без вопроса (просьба Дмитрия
+ * 25.10.2026), по одной на каждую систему точки, где у зрителя нет профиля
+ * (аноним видит все действующие). Ведёт на нашу страницу регистрации, где эта
+ * система первая и раскрыта, а не на сайт системы: внешних ссылок в попапе нет
+ * (решение Дмитрия 15.08.2026).
+ */
+function signupHintHtml(context: MapPointContext): string {
+  const codes = (context.signup_platform_codes ?? []).filter(isSignupPlatform);
+  if (codes.length === 0) {
+    return "";
+  }
+  const links = codes.map(
+    (code) =>
+      `<a class="map-popup-link" href="${escapeHtml(registrationPageHref(code, "map"))}">` +
+      `Зарегистрировать аккаунт ${escapeHtml(platformCodeLabel(code))}</a>`,
+  );
+  return `<div class="map-popup-line map-popup-signup">${links.join(" · ")}</div>`;
+}
+
 function pointContextHtml(context: MapPointContext): string {
   const lines = context.next_starts.map(nextStartHtml);
   if (context.home_distance) {
     lines.push(homeDistanceHtml(context.home_distance));
   }
+  lines.push(signupHintHtml(context));
   return lines.join("");
 }
 

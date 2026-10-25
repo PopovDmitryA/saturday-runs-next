@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.models import AuthIdentity, AuthProvider, User
+from app.models import AuthIdentity, AuthProvider, Platform, PlatformLink, User
 from app.schemas.auth import AuthIdentityResponse, UserResponse
 from app.services.auth_identity_service import identity_response_payload
 
@@ -57,7 +58,14 @@ def is_admin_telegram_id(telegram_id: int, settings: Settings) -> bool:
 
 
 # Поля ответа, которых нет в модели User: их передают отдельно.
-_COMPUTED_USER_FIELDS = {"is_admin", "is_organizer", "auth_identities", "display_name_suggestion", "home_location"}
+_COMPUTED_USER_FIELDS = {
+    "is_admin",
+    "is_organizer",
+    "auth_identities",
+    "display_name_suggestion",
+    "home_location",
+    "linked_platform_codes",
+}
 
 
 
@@ -80,6 +88,7 @@ def user_response(
     }
     is_organizer = False
     home_location = None
+    linked_platform_codes: list[str] = []
     if db is not None:
         from app.services.home_location_brief_service import home_location_brief
         from app.services.organizer_access_service import user_is_organizer
@@ -88,6 +97,7 @@ def user_response(
         # Дешёвая версия домашней локации (см. home_location_brief_service):
         # /me зовут на каждой загрузке страницы.
         home_location = home_location_brief(db, user)
+        linked_platform_codes = _linked_platform_codes(db, user)
     return UserResponse(
         **scalar_fields,
         is_admin=is_admin_user(user, settings),
@@ -95,4 +105,18 @@ def user_response(
         auth_identities=identity_responses,
         display_name_suggestion=display_name_suggestion,
         home_location=home_location,
+        linked_platform_codes=linked_platform_codes,
     )
+
+
+def _linked_platform_codes(db: Session, user: User) -> list[str]:
+    """Коды привязанных систем: по ним страницы зовут зарегистрироваться
+    только туда, где профиля у человека нет. Один короткий запрос по индексу
+    platform_links.user_id — /me зовут на каждой загрузке страницы."""
+    rows = db.execute(
+        select(Platform.code)
+        .join(PlatformLink, PlatformLink.platform_id == Platform.id)
+        .where(PlatformLink.user_id == user.id)
+        .order_by(Platform.code)
+    ).scalars()
+    return list(rows)

@@ -15,6 +15,7 @@ import {
   type ProfilePreviewActivity,
 } from "../lib/api";
 import { formatDate, platformCodeLabel, pluralizeRu } from "../lib/format";
+import { registrationPageHref } from "../lib/systemSignup";
 import { PlatformBadge } from "./PlatformBadge";
 
 const SEARCH_DEBOUNCE_MS = 400;
@@ -57,6 +58,32 @@ function detectUrlPlatform(value: string): UrlPlatformCode | null {
   }
   if (lower.includes("runpark.ru")) {
     return "runpark";
+  }
+  return null;
+}
+
+type FreshCode = { platformCode: "five_verst" | "s95"; url: string };
+
+/**
+ * Номер участника, которого ещё нет в нашей базе, — чаще всего свежая
+ * регистрация без стартов: участник попадает к нам с первым протоколом, а
+ * поиск по коду ищет только в базе. Такой номер можно загрузить живьём, как
+ * вставленную ссылку (25.10.2026, призывы зарегистрироваться в системах).
+ *
+ * 5 вёрст — девятизначные 79xxxxxxx. С95 — свой ряд 770000000 + id участника
+ * (так S95 печатает штрихкод тем, у кого нет кода parkrun, RunPark или 5 вёрст).
+ */
+function freshProfileCode(value: string): FreshCode | null {
+  const match = /^[AАaа]?(\d{9})$/.exec(value.replace(/\s+/g, ""));
+  if (!match) {
+    return null;
+  }
+  const number = Number(match[1]);
+  if (number >= 790_000_000 && number < 800_000_000) {
+    return { platformCode: "five_verst", url: `https://5verst.ru/userstats/${number}/` };
+  }
+  if (number > 770_000_000 && number < 790_000_000) {
+    return { platformCode: "s95", url: `https://s95.ru/athletes/${number - 770_000_000}` };
   }
   return null;
 }
@@ -126,6 +153,9 @@ export function ParticipantNameSearch({
 }: ParticipantNameSearchProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ParticipantSearchResult[] | null>(null);
+  // Запрос, к которому относятся results: пока ввод не устоялся, на экране
+  // ещё старая выдача, и «номера нет в базе» по новому номеру говорить рано.
+  const [resultsQuery, setResultsQuery] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [hiddenLinkedCodes, setHiddenLinkedCodes] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
@@ -158,6 +188,7 @@ export function ParticipantNameSearch({
         return;
       }
       setResults(response.results);
+      setResultsQuery(value);
       setTruncated(response.truncated);
       setHiddenLinkedCodes(response.hidden_linked_platform_codes ?? []);
     } catch (err) {
@@ -217,6 +248,18 @@ export function ParticipantNameSearch({
       );
     }
   }, []);
+
+  // Номер не нашёлся в базе — грузим профиль с сайта системы, как ссылку.
+  const startFreshPreview = (fresh: FreshCode) => {
+    // Отложенный поиск иначе сработает следом и оборвёт предпросмотр.
+    if (debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    setResults(null);
+    setHiddenLinkedCodes([]);
+    void runUrlPreview(fresh.platformCode, fresh.url);
+  };
 
   const handleQueryChange = (value: string) => {
     setQuery(value);
@@ -356,6 +399,13 @@ export function ParticipantNameSearch({
 
   const visibleResults = useMemo(() => results ?? [], [results]);
   const trimmedQuery = query.trim();
+  const freshCode = useMemo(() => {
+    if (resultsQuery !== trimmedQuery) {
+      return null;
+    }
+    const fresh = freshProfileCode(trimmedQuery);
+    return fresh && !linkedPlatformCodes.has(fresh.platformCode) ? fresh : null;
+  }, [resultsQuery, trimmedQuery, linkedPlatformCodes]);
   const urlPreview = urlState?.preview ?? null;
   const showParkrunPair =
     urlState?.platformCode === "s95" &&
@@ -515,14 +565,41 @@ export function ParticipantNameSearch({
             </p>
           ) : (
             <>
-              <p>
-                По запросу «{trimmedQuery}» никого не нашли. Проверьте написание — имя должно
-                совпадать с протоколами пробежек.
-              </p>
-              <p className="muted">
-                Ещё можно вставить в это же поле ссылку на профиль с сайта системы — например,
-                https://5verst.ru/userstats/….
-              </p>
+              {freshCode ? (
+                <>
+                  <p>
+                    Номера «{trimmedQuery}» пока нет в нашей базе — участник появляется у нас с
+                    первым стартом. Только что зарегистрировались? Профиль можно привязать уже
+                    сейчас.
+                  </p>
+                  <p>
+                    <button
+                      type="button"
+                      className="btn secondary btn-sm"
+                      onClick={() => startFreshPreview(freshCode)}
+                    >
+                      Загрузить профиль {platformCodeLabel(freshCode.platformCode)} с сайта системы
+                    </button>
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>
+                    По запросу «{trimmedQuery}» никого не нашли. Проверьте написание — имя должно
+                    совпадать с протоколами пробежек.
+                  </p>
+                  <p className="muted">
+                    Ещё не зарегистрированы в беговой системе?{" "}
+                    <a href={registrationPageHref(null, "search")}>Зарегистрироваться</a>
+                  </p>
+                </>
+              )}
+              {!freshCode && (
+                <p className="muted">
+                  Ещё можно вставить в это же поле ссылку на профиль с сайта системы — например,
+                  https://5verst.ru/userstats/….
+                </p>
+              )}
             </>
           )}
         </div>

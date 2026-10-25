@@ -29,6 +29,7 @@ export type SiteSidebarActive =
   | "organizer"
   | "ratings"
   | "backlog"
+  | "registration"
   | null;
 
 function isCabinetTab(active: SiteSidebarActive | undefined): active is CabinetTabKey {
@@ -41,7 +42,7 @@ function sectionFromActive(active: SiteSidebarActive | undefined): NavSectionKey
   if (active === "settings") return "account";
   if (isCabinetTab(active)) return "me";
   if (active === "results" || active === "last-results" || active === "unified-protocol") return "results";
-  if (active === "backlog") return "project";
+  if (active === "backlog" || active === "registration") return "project";
   return active;
 }
 

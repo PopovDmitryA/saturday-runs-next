@@ -241,6 +241,8 @@ const LINK_METHOD_LABELS: Record<string, string> = {
   url: "ссылка",
   claim: "тизер главной",
   s95_pair: "parkrun с С95",
+  // Номер из формы на /registration: зарегистрировался в системе по нашей кнопке.
+  signup: "регистрация через сайт",
   legacy: "до отметки",
 };
 
@@ -275,7 +277,7 @@ function OnboardingFunnel({
       }
     }
     // Порядок фиксирован: сначала интересное (поиск), «до отметки» — в конец.
-    const order = ["search", "site_search", "url", "claim", "s95_pair", "legacy"];
+    const order = ["search", "site_search", "url", "claim", "signup", "s95_pair", "legacy"];
     return [...codes].sort((a, b) => order.indexOf(a) - order.indexOf(b));
   }, [methods]);
 

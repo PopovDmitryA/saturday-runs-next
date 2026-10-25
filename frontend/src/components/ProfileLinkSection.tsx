@@ -4,6 +4,7 @@ import { ParticipantNameSearch } from "./ParticipantNameSearch";
 import { PlatformBadge } from "./PlatformBadge";
 import { QrCodeModal } from "./QrCodeModal";
 import { Snackbar } from "./Snackbar";
+import { SignupCta } from "./SystemSignupLink";
 import {
   ApiError,
   listProfileLinks,
@@ -21,6 +22,8 @@ import {
 } from "../lib/format";
 import { platformProfileUrl } from "../lib/platformProfileUrl";
 import { useProfileLinksChanged } from "../lib/profileLinksEvents";
+import { SIGNUP_LINK_HOWTO, isSignupPlatform } from "../lib/systemSignup";
+import "../features/portal/systemRegistration.css";
 
 type ParticipantIdConfig = {
   label: string;
@@ -224,10 +227,18 @@ function PlatformCard({
           {isSyncing && <p className="muted profile-platform-card-syncing">Дождитесь окончания синхронизации</p>}
         </>
       ) : (
-        <p className="profile-platform-card-cta-hint muted">
-          Найдите себя в поиске выше — по имени, коду участника или ссылке на профиль{" "}
-          {platformCodeLabel(config.code)}.
-        </p>
+        <>
+          <p className="profile-platform-card-cta-hint muted">
+            Найдите себя в поиске выше — по имени, коду участника или ссылке на профиль{" "}
+            {platformCodeLabel(config.code)}.
+          </p>
+          {isSignupPlatform(config.code) && (
+            <p className="signup-hint">
+              Профиля нет? <SignupCta code={config.code} place="cabinet" /> — потом{" "}
+              {SIGNUP_LINK_HOWTO[config.code]}.
+            </p>
+          )}
+        </>
       )}
     </div>
   );

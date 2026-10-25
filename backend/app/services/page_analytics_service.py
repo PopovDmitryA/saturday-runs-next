@@ -101,6 +101,7 @@ _STATIC_PAGE_TYPES = {
     "/ratings/regions": "ratings_regions",
     "/ratings/courses": "ratings_courses",
     "/backlog": "backlog",
+    "/registration": "system_registration",
     "/organizer": "organizer_index",
     "/share": "share",
     "/settings": "settings",
@@ -700,6 +701,107 @@ def build_home_link_clicks(db: Session, *, start: date, end: date, limit: int = 
             }
         )
     return result
+
+
+# Канал переходов на регистрацию в беговых системах (см. ab_service).
+SIGNUP_EXPERIMENT = "signup"
+
+
+def build_signup_click_stats(db: Session, *, start: date, end: date) -> list[dict[str, object]]:
+    """Переходы на регистрацию в беговой системе: сколько нажали и кто потом привязал.
+
+    Строка — система × место клика (value события "<система>:<место>").
+    «Привязали» — вошедшие, кликнувшие в периоде, у которых эта система
+    привязана ПОЗЖЕ их первого клика с этого места (клик гостя, вошедшего
+    позже, приписывается ему по visitor_key); после клика можно найти и
+    старый профиль. «Зарегистрировались через сайт» — из них те, чья привязка
+    пришла из формы «введите полученный номер» с профилем без активности до
+    клика (link_method='signup', правило в profile_linking_service). Отвязка
+    стирает строку platform_links — такой человек выпадает из обеих цифр.
+    """
+    rows = db.execute(
+        text(
+            """
+            WITH raw_clicks AS (
+                SELECT split_part(value, ':', 1) AS platform_code,
+                       substr(value, length(split_part(value, ':', 1)) + 2) AS place,
+                       visitor_key,
+                       viewer_user_id,
+                       ts
+                FROM ab_events
+                WHERE experiment = :experiment
+                  AND event_type = 'signup_click'
+                  AND position(':' in value) > 1
+                  AND ts >= :start AND ts < :end_exclusive
+            ),
+            -- Гость нажал «Зарегистрироваться», а вошёл позже (основной путь
+            -- новичка): его клик без пользователя. visitor_key анонимный и
+            -- переживает вход, поэтому пользователя берём из ближайшего
+            -- следующего события того же посетителя, где он уже известен.
+            clicks AS (
+                SELECT r.platform_code, r.place, r.visitor_key, r.ts,
+                       coalesce(
+                           r.viewer_user_id,
+                           (
+                               SELECT e.viewer_user_id
+                               FROM ab_events e
+                               WHERE e.visitor_key = r.visitor_key
+                                 AND e.viewer_user_id IS NOT NULL
+                                 AND e.ts >= r.ts
+                               ORDER BY e.ts
+                               LIMIT 1
+                           )
+                       ) AS viewer_user_id
+                FROM raw_clicks r
+            ),
+            first_click AS (
+                SELECT platform_code, place, viewer_user_id, min(ts) AS first_ts
+                FROM clicks
+                WHERE viewer_user_id IS NOT NULL
+                GROUP BY platform_code, place, viewer_user_id
+            ),
+            linked AS (
+                SELECT f.platform_code, f.place,
+                       count(*) AS linked_users,
+                       count(*) FILTER (WHERE pl.link_method = 'signup') AS signup_users
+                FROM first_click f
+                JOIN platforms p ON p.code = f.platform_code
+                JOIN platform_links pl
+                  ON pl.user_id = f.viewer_user_id AND pl.platform_id = p.id
+                WHERE pl.linked_at > f.first_ts
+                GROUP BY f.platform_code, f.place
+            )
+            SELECT c.platform_code,
+                   c.place,
+                   count(*) AS clicks,
+                   count(DISTINCT c.visitor_key) AS visitors,
+                   count(DISTINCT c.viewer_user_id) AS users,
+                   coalesce(max(l.linked_users), 0) AS linked_users,
+                   coalesce(max(l.signup_users), 0) AS signup_users
+            FROM clicks c
+            LEFT JOIN linked l ON l.platform_code = c.platform_code AND l.place = c.place
+            GROUP BY c.platform_code, c.place
+            ORDER BY clicks DESC, c.platform_code, c.place
+            """
+        ),
+        {
+            "experiment": SIGNUP_EXPERIMENT,
+            "start": start,
+            "end_exclusive": end + timedelta(days=1),
+        },
+    ).all()
+    return [
+        {
+            "platform_code": row.platform_code,
+            "place": row.place,
+            "clicks": int(row.clicks or 0),
+            "visitors": int(row.visitors or 0),
+            "users": int(row.users or 0),
+            "linked_users": int(row.linked_users or 0),
+            "signup_users": int(row.signup_users or 0),
+        }
+        for row in rows
+    ]
 
 
 # Канал постоянного счётчика воронки регистрации (см. FUNNEL_EXPERIMENT в
