@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.auth.providers.base import OAuthProfile
+from app.config import Settings, get_settings
 from app.models import (
     AuthIdentity,
     AuthLoginRequest,
@@ -397,3 +398,53 @@ def test_preview_payload_matches_api_schema(db_session: Session) -> None:
     assert response.requires_choice is True
     assert response.conflicts[0].platform_code == "five_verst"
     assert response.default_strategy == "union"
+
+
+ADMIN_TELEGRAM_ID = 9_200_000_123
+ADMIN_EMAIL = "admin.check@example.com"
+
+
+def _admin_settings() -> Settings:
+    return Settings(
+        admin_telegram_id=ADMIN_TELEGRAM_ID,
+        admin_emails=ADMIN_EMAIL,
+        database_url=get_settings().database_url,
+    )
+
+
+def test_admin_profile_cannot_be_absorbed_by_telegram(db_session: Session) -> None:
+    """Ссылку на подтверждение привязки в боте можно переслать админу (SEC-02):
+    его профиль не должен уйти к тому, кто начал привязку."""
+    survivor, merged = _merge_pair(db_session)
+    merged.telegram_id = ADMIN_TELEGRAM_ID
+    db_session.commit()
+
+    with pytest.raises(AccountMergeError) as exc:
+        merge_users(db_session, survivor.id, merged.id, settings=_admin_settings())
+
+    assert exc.value.status_code == 403
+    assert db_session.get(User, merged.id) is not None
+    assert {item.provider for item in list_user_identities(db_session, survivor.id)} == {AuthProvider.vk}
+
+
+def test_admin_profile_cannot_be_absorbed_by_email(db_session: Session) -> None:
+    survivor, merged = _merge_pair(db_session)
+    identity = list_user_identities(db_session, merged.id)[0]
+    identity.email = ADMIN_EMAIL
+    db_session.commit()
+
+    with pytest.raises(AccountMergeError):
+        merge_users(db_session, survivor.id, merged.id, settings=_admin_settings())
+
+    assert db_session.get(User, merged.id) is not None
+
+
+def test_admin_can_still_absorb_own_duplicate(db_session: Session) -> None:
+    survivor, merged = _merge_pair(db_session)
+    survivor.telegram_id = ADMIN_TELEGRAM_ID
+    db_session.commit()
+
+    result = merge_users(db_session, survivor.id, merged.id, settings=_admin_settings())
+
+    assert result.id == survivor.id
+    assert db_session.get(User, merged.id) is None

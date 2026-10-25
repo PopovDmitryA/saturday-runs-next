@@ -1,0 +1,19 @@
+# Обход плановой заглушки для админа. Скопировать рядом как maint_bypass.inc
+# (в git его нет) и заменить оба СЕКРЕТа: значение куки и путь ссылки —
+# случайные строки, например `openssl rand -hex 16`. Подхватывается при
+# перечитывании nginx. Без файла заглушку не обойти никому.
+#
+# Ссылка https://run5k.run/__maint/СЕКРЕТ_ССЫЛКИ ставит куку на два часа,
+# /__maint/leave снимает её.
+
+if ($cookie_maint_bypass = "СЕКРЕТ_КУКИ") {
+    set $maint 0;
+}
+
+location = /__maint/СЕКРЕТ_ССЫЛКИ {
+    # absolute_redirect off — иначе nginx собирает абсолютный адрес из $host
+    # и теряет схему с портом: за TLS-слоем это давало бы http:// вместо https://.
+    absolute_redirect off;
+    add_header Set-Cookie "maint_bypass=СЕКРЕТ_КУКИ; Path=/; Max-Age=7200; SameSite=Lax; Secure; HttpOnly" always;
+    return 302 /;
+}

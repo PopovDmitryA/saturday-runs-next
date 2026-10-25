@@ -74,3 +74,6 @@ deploy/nginx/maintenance_current.html
 deploy/tg-proxy/config.json
 data/og/
 deploy/nginx/maintenance_on
+
+# Секрет обхода заглушки (кука и путь ссылки). Образец — maint_bypass.inc.example.
+nginx/conf.d/maint_bypass.inc

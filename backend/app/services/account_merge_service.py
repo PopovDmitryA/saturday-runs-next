@@ -5,6 +5,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.config import Settings, get_settings
+from app.core.admin import is_admin_user
 from app.models import (
     AuthIdentity,
     AuthOneTimeToken,
@@ -307,6 +309,7 @@ def merge_users(
     *,
     strategy: str = MERGE_STRATEGY_UNION,
     conflict_choices: dict[str, str] | None = None,
+    settings: Settings | None = None,
 ) -> User:
     if survivor_id == merged_id:
         raise AccountMergeError("Нельзя объединить профиль сам с собой.")
@@ -317,6 +320,22 @@ def merge_users(
     merged = db.query(User).filter(User.id == merged_id).one_or_none()
     if survivor is None or merged is None:
         raise AccountMergeError("Профиль не найден.", 404)
+    # Поглощённый профиль отдаёт выжившему Telegram и способы входа, а по ним
+    # сайт и узнаёт админа (core/admin.py). Ссылку на подтверждение привязки
+    # в боте можно переслать: админ нажал бы «Подтвердить» — и админка ушла бы
+    # к тому, кто начал привязку (SEC-02, аудит 23.10.2026). Проверка здесь
+    # закрывает все пути объединения: бот, виджет Telegram, VK, Яндекс, почту.
+    merged_is_admin = is_admin_user(merged, settings or get_settings())
+    # Проверка загрузила merged.auth_identities. Ниже способы входа уезжают к
+    # выжившему, и при удалении профиля SQLAlchemy обнулил бы user_id у всего,
+    # что осталось в загруженной коллекции, — объединение падало бы на NOT NULL.
+    db.expire(merged, ["auth_identities"])
+    if merged_is_admin:
+        raise AccountMergeError(
+            "Профиль администратора нельзя присоединить к другому профилю. "
+            "Войдите как администратор и привяжите этот способ входа из его профиля.",
+            403,
+        )
 
     try:
         _resolve_platform_links(
