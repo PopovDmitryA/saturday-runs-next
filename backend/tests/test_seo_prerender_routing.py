@@ -236,7 +236,7 @@ def test_strip_email(raw: str | None, expected: str | None) -> None:
 
 
 def test_has_email() -> None:
-    assert has_email("a.kor90@mail.ru")
+    assert has_email("ivan.p88@example.com")
     assert not has_email("Анна Корнеева")
 
 

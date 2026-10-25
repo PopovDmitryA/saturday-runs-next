@@ -43,10 +43,10 @@ def test_valid_name_accepts_real_names() -> None:
 
 def test_valid_name_rejects_logins_and_junk() -> None:
     # Логины и почты от VK/Яндекса — из-за них всё и затевалось.
-    assert not is_valid_person_name("a.kor90")
-    assert not is_valid_person_name("pele1985")
-    assert not is_valid_person_name("leo1973@spartak.ru")
-    assert not is_valid_person_name("790194133")
+    assert not is_valid_person_name("ivan.p88")
+    assert not is_valid_person_name("sokol1985")
+    assert not is_valid_person_name("ivan.petrov@example.com")
+    assert not is_valid_person_name("123456789")
     # Одно слово — не ФИО.
     assert not is_valid_person_name("Андрей")
     # Реальный мусор из прод-БД: артефакт парсера 5 вёрст и штрихкод parkrun.
@@ -205,7 +205,7 @@ def _link(db: Session, user: User, code: str, name: str) -> Participant:
 
 
 def test_refresh_replaces_login_with_profile_name(db_session: Session) -> None:
-    user = _user(db_session, display_name="pele1985")
+    user = _user(db_session, display_name="sokol1985")
     _link(db_session, user, "five_verst", "Дмитрий ПЕЛЕЗНЕВ")
 
     # Источник ещё не зафиксирован — пересчёт его и зафиксирует.
@@ -217,10 +217,10 @@ def test_refresh_replaces_login_with_profile_name(db_session: Session) -> None:
 
 def test_refresh_keeps_provider_name_without_links(db_session: Session) -> None:
     """Непривязанному менять нечего: имя от провайдера остаётся как было."""
-    user = _user(db_session, display_name="a.kor90")
+    user = _user(db_session, display_name="ivan.p88")
     name, chosen = compute_display_name(db_session, user)
     assert chosen is None
-    assert name == "a.kor90"
+    assert name == "ivan.p88"
 
 
 def test_junk_profile_name_is_skipped(db_session: Session) -> None:
@@ -386,8 +386,8 @@ def test_preferences_reject_unlinked_platform(db_session: Session) -> None:
 
 
 def test_setting_preferences_clears_notice(db_session: Session) -> None:
-    user = _user(db_session, display_name="pele1985")
-    user.display_name_notice = "pele1985"
+    user = _user(db_session, display_name="sokol1985")
+    user.display_name_notice = "sokol1985"
     _link(db_session, user, "five_verst", "Дмитрий ПЕЛЕЗНЕВ")
 
     set_display_name_preferences(db_session, user, style=STYLE_AUTO, platform_code=None)

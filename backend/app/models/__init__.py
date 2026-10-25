@@ -1211,7 +1211,7 @@ class User(Base):
     display_name_source_manual: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
-    # Прежнее имя для одноразовой плашки в кабинете («было pele1985»). Ставится
+    # Прежнее имя для одноразовой плашки в кабинете («было sokol1985»). Ставится
     # только бэкфиллом при переходе на имена из профилей; NULL — плашка не нужна
     # либо человек её закрыл.
     display_name_notice: Mapped[str | None] = mapped_column(String(128))
