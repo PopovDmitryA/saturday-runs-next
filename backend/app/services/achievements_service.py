@@ -33,6 +33,19 @@ from uuid import UUID
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.challenge_growth import (
+    best_year_growth,
+    calendar_day_key,
+    first_dates,
+    hirsch_growth,
+    hirsch_shortfall,
+    position_key,
+    seconds_key,
+    start_number_key,
+    streak_growth,
+    wilson_floating_growth,
+    wilson_growth,
+)
 from app.geo.country_names import normalize_country_name
 from app.models import (
     Event,
@@ -824,7 +837,7 @@ def _seconds_challenge(rows: list[RunRow]) -> dict[str, object]:
     cells = [
         _cell(f":{second:02d}", first_by_second.get(second), count=count_by_second.get(second)) for second in range(60)
     ]
-    sorted_dates = sorted(row.event_date for row in first_by_second.values())
+    sorted_dates = first_dates((seconds_key(row.finish_time_sec), row.event_date) for row in rows)
     return _challenge(
         code="seconds",
         title="60 секунд",
@@ -864,7 +877,7 @@ def _positions_challenge(rows: list[RunRow]) -> dict[str, object]:
         if row.position is not None and row.position > 0:
             first_by_position.setdefault(row.position % 100, row)
     cells = [_cell(f"{position:02d}", first_by_position.get(position)) for position in range(100)]
-    sorted_dates = sorted(row.event_date for row in first_by_position.values())
+    sorted_dates = first_dates((position_key(row.position), row.event_date) for row in rows)
     return _challenge(
         code="positions",
         title="Бинго позиций",
@@ -1028,7 +1041,7 @@ def _calendar_days_challenge(rows: list[RunRow]) -> dict[str, object]:
         for key, row in sorted(first_by_day.items())
     ]
     # hard-золото = 366 (весь календарь, включая 29 февраля) — больше дат физически не бывает.
-    sorted_dates = sorted(row.event_date for row in first_by_day.values())
+    sorted_dates = first_dates((calendar_day_key(row.event_date), row.event_date) for row in rows)
     return _challenge(
         code="calendar_days",
         title="Круглый год",
@@ -1226,7 +1239,7 @@ def _start_numbers_range_challenge(
         )
         for number in range(low, high + 1)
     ]
-    sorted_dates = sorted(row.event_date for row in first_by_number.values())
+    sorted_dates = first_dates((start_number_key(row.event_number, low, high), row.event_date) for row in rows)
     return _challenge(
         code=code,
         title=title,
@@ -1582,19 +1595,7 @@ def _wilson_chains(numbers: set[int]) -> tuple[int, int, int]:
 
 
 def _wilson_level_dates(rows: list[RunRow], levels: dict[str, int]) -> dict[str, str | None]:
-    numbers: set[int] = set()
-    classic = 0
-    achieved: dict[str, date | None] = {level: None for level in LEVEL_ORDER}
-    for row in rows:
-        if row.event_number is None or row.event_number <= 0:
-            continue
-        numbers.add(row.event_number)
-        while classic + 1 in numbers:
-            classic += 1
-        for level in LEVEL_ORDER:
-            if achieved[level] is None and classic >= levels[level]:
-                achieved[level] = row.event_date
-    return {level: (value.isoformat() if value else None) for level, value in achieved.items()}
+    return _level_dates(wilson_growth((row.event_date, row.event_number) for row in rows), levels)
 
 
 def _wilson_challenge(rows: list[RunRow], planned: dict[tuple[str, int], list[tuple[date, str]]]) -> dict[str, object]:
@@ -1612,7 +1613,15 @@ def _wilson_challenge(rows: list[RunRow], planned: dict[tuple[str, int], list[tu
         if row.event_number is not None and row.event_number > 0:
             first_by_number.setdefault(row.event_number, row)
     numbers = set(first_by_number)
-    classic, floating, floating_start = _wilson_chains(numbers)
+    classic, _floating, _start = _wilson_chains(numbers)
+    # Плавающая цепочка — по тому же правилу, что в рейтинге: из цепочек равной
+    # длины та, что набрала её раньше (app.challenge_growth). Иначе «№от–№до»
+    # в карточке и в таблице рейтинга расходились бы у ~7% людей.
+    floating_growth, floating_start_or_none = wilson_floating_growth(
+        (row.event_date, row.event_number) for row in rows
+    )
+    floating = len(floating_growth)
+    floating_start = floating_start_or_none or 0
 
     classic_range = range(1, classic + 1)
     floating_range = range(floating_start, floating_start + floating) if floating else range(0)
@@ -1818,29 +1827,13 @@ def _primes_challenge(rows: list[RunRow], planned: dict[tuple[str, int], list[tu
 def _runs_needed_for_p(counts: list[int], target_p: int) -> int:
     """Минимум добежек до p-индекса target_p: добиваем target_p самых
     «наполненных» локаций до target_p финишей (новые локации считаем с нуля)."""
-    top = sorted(counts, reverse=True)[:target_p]
-    top += [0] * (target_p - len(top))
-    return sum(max(0, target_p - count) for count in top)
+    return hirsch_shortfall(counts, target_p)
 
 
 def _p_index_level_dates(rows: list[RunRow], levels: dict[str, int]) -> dict[str, str | None]:
-    """Реплей истории в хронологическом порядке: после каждого финиша
-    пересчитываем p-индекс и запоминаем первую дату, когда он достиг порога."""
-    counts: Counter[str] = Counter()
-    achieved: dict[str, date | None] = {level: None for level in LEVEL_ORDER}
-    for row in rows:
-        counts[row.location_key] += 1
-        sorted_counts = sorted(counts.values(), reverse=True)
-        p_index = 0
-        for index, count in enumerate(sorted_counts, start=1):
-            if count >= index:
-                p_index = index
-            else:
-                break
-        for level in LEVEL_ORDER:
-            if achieved[level] is None and p_index >= levels[level]:
-                achieved[level] = row.event_date
-    return {level: (value.isoformat() if value else None) for level, value in achieved.items()}
+    """Реплей истории в хронологическом порядке — общий с рейтингом p-индекса
+    (app.challenge_growth): k-я дата лестницы — день, когда индекс достиг k."""
+    return _level_dates(hirsch_growth((row.event_date, row.location_key) for row in rows), levels)
 
 
 def _p_index_challenge(rows: list[RunRow]) -> dict[str, object]:
@@ -1990,15 +1983,11 @@ def _v_index_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
         shifts.add((row.event_date, row.location_key))
         labels.setdefault(row.location_key, row.location_name)
 
-    counts: Counter[str] = Counter()
-    growth_dates: list[date | None] = []
-    current = 0
-    for event_date, location_key in sorted(shifts):
-        counts[location_key] += 1
-        updated = _v_index(counts)
-        while updated > current:
-            growth_dates.append(event_date)
-            current += 1
+    ordered_shifts = sorted(shifts)
+    counts: Counter[str] = Counter(location_key for _event_date, location_key in ordered_shifts)
+    # Лестница общая с рейтингом V-индекса (app.challenge_growth).
+    growth_dates: list[date | None] = list(hirsch_growth(ordered_shifts))
+    current = len(growth_dates)
 
     def _to_next_label(levels: dict[str, int], next_level: str) -> str | None:
         needed = _volunteerings_needed_for_v(counts, levels[next_level])
@@ -2029,9 +2018,7 @@ def _volunteerings_needed_for_v(counts: Counter[str], target: int) -> int:
     волонтёрств. Площадки, где человек ещё не помогал, стоят полные target
     волонтёрств каждая, поэтому недостающие позиции считаем как нули.
     """
-    have = sorted(counts.values(), reverse=True)[:target]
-    have += [0] * (target - len(have))
-    return sum(max(target - count, 0) for count in have)
+    return hirsch_shortfall(counts.values(), target)
 
 
 def _role_master_challenge(rows: list[VolunteerRoleRow]) -> dict[str, object]:
@@ -2134,17 +2121,7 @@ def _streak_level_dates(activity_dates: set[date], levels: dict[str, int]) -> di
     """Идём по субботам-с-активностью по порядку; в момент, когда текущая
     (не обязательно ещё финальная) серия впервые достигает порога — это и есть
     дата уровня, даже если серия потом прервётся."""
-    saturdays = sorted(saturday_weeks(activity_dates))
-    achieved: dict[str, date | None] = {level: None for level in LEVEL_ORDER}
-    current_run = 0
-    previous: date | None = None
-    for value in saturdays:
-        current_run = current_run + 1 if previous is not None and value - previous == timedelta(days=7) else 1
-        previous = value
-        for level in LEVEL_ORDER:
-            if achieved[level] is None and current_run >= levels[level]:
-                achieved[level] = value
-    return {level: (value.isoformat() if value else None) for level, value in achieved.items()}
+    return _level_dates(streak_growth(activity_dates), levels)
 
 
 def _streak_challenge(rows: list[RunRow], vol_rows: dict[str, list[tuple[date, str]]]) -> dict[str, object]:
@@ -2163,32 +2140,21 @@ def _streak_challenge(rows: list[RunRow], vol_rows: dict[str, list[tuple[date, s
         code="streak",
         title="Серийный бегун",
         icon="🔥",
-        description="Лучшая серия суббот подряд — пробежкой или волонтёрством, без пропусков.",
+        description="Лучшая серия недель подряд — пробежкой или волонтёрством, без пропусков.",
         category="scale",
         current=streak,
-        unit="суббот",
+        # «Недель», а не «суббот»: старт, перенесённый на воскресенье или будний
+        # праздник, серию не рвёт — счёт идёт по неделям (решение Дмитрия
+        # 27.10.2026, то же слово в рейтинге «Серийный бегун»).
+        unit="недель",
         level_dates_fn=lambda levels: _streak_level_dates(activity_dates, levels),
     )
 
 
 def _best_year_level_dates(rows: list[RunRow], levels: dict[str, int]) -> dict[str, str | None]:
-    """Для каждого года — дата, когда счётчик пробежек В ЭТОМ году впервые
-    достиг порога; уровень "получен", как только хоть один год его достиг —
-    берём самую раннюю такую дату среди всех лет."""
-    dates_by_year: dict[int, list[date]] = {}
-    for row in rows:
-        dates_by_year.setdefault(row.event_date.year, []).append(row.event_date)
-    best_date: dict[str, date | None] = {level: None for level in LEVEL_ORDER}
-    for year_dates in dates_by_year.values():
-        year_dates.sort()
-        for level in LEVEL_ORDER:
-            threshold = levels[level]
-            if len(year_dates) >= threshold:
-                candidate = year_dates[threshold - 1]
-                current_best = best_date[level]
-                if current_best is None or candidate < current_best:
-                    best_date[level] = candidate
-    return {level: (value.isoformat() if value else None) for level, value in best_date.items()}
+    """Уровень «получен», как только хоть один год достиг порога: проходом по
+    пробежкам по порядку — день, когда рекорд года впервые дорос до порога."""
+    return _level_dates(best_year_growth(row.event_date for row in rows), levels)
 
 
 def _best_year_challenge(rows: list[RunRow]) -> dict[str, object]:

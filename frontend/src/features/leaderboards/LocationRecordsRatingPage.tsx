@@ -10,6 +10,7 @@ import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import { formatDate } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import {
   LOCATION_RECORDS_PLATFORM_LABELS,
@@ -544,6 +545,9 @@ export function LocationRecordsRatingPage() {
             )}
           </div>
         )}
+        {/* Общая кнопка «наверх», как у остальных рейтингов: таблица здесь
+            тоже на сотни строк. */}
+        <ScrollToTopButton />
       </div>
     </PortalSectionShell>
   );

@@ -8,6 +8,7 @@ from app.api.routes import (
     avatars,
     backlog,
     blog,
+    challenge_ratings,
     courses,
     dashboard,
     fastest,
@@ -47,6 +48,7 @@ api_router.include_router(courses.router)
 api_router.include_router(runs.router)
 api_router.include_router(leaderboards.router)
 api_router.include_router(fastest.router)
+api_router.include_router(challenge_ratings.router)
 api_router.include_router(location_ratings.router)
 api_router.include_router(location_records.router)
 api_router.include_router(location_regions.router)

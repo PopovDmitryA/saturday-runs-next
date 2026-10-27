@@ -56,6 +56,7 @@ celery_app.conf.update(
         "app.workers.tasks.parkrun_sync",
         "app.workers.tasks.runpark_sync",
         "app.workers.tasks.leaderboards_warm",
+        "app.workers.tasks.challenge_ratings",
         "app.workers.tasks.portal_cache",
         "app.workers.tasks.locations_status",
         "app.workers.tasks.locations_warm",
@@ -91,6 +92,7 @@ celery_app.conf.update(
         # Прогревы кэша — своя очередь рядом с базой, см. app/workers/queues.py.
         "leaderboards.warm_cache": {"queue": WARM_QUEUE},
         "locations.warm_cache": {"queue": WARM_QUEUE},
+        "challenge_ratings.rebuild": {"queue": WARM_QUEUE},
         # OG-картинки рендерит Playwright — Chromium есть только в образе
         # worker-parkrun (Dockerfile.parkrun), поэтому очередь parkrun.
         "og_render.*": {"queue": "parkrun"},
@@ -468,6 +470,14 @@ celery_app.conf.update(
         "leaderboards-warm-cache": {
             "task": "leaderboards.warm_cache",
             "schedule": crontab(minute=20, hour="*/2"),
+            "options": {"queue": WARM_QUEUE},
+        },
+        # Рейтинги челленджей (p-индекс, V-индекс…): вся сетка одним проходом
+        # по протоколам, ~1.5 мин. Тот же срок обещания, что у остальных
+        # рейтингов (REFRESH_INTERVAL_HOURS), и сдвиг от их прогревов (:20, :40).
+        "challenge-ratings-rebuild": {
+            "task": "challenge_ratings.rebuild",
+            "schedule": crontab(minute=50, hour="*/2"),
             "options": {"queue": WARM_QUEUE},
         },
         # Прогрев кэша локаций (TTL 3ч): каждые 2 часа, со сдвигом от рейтингов

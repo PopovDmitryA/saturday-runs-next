@@ -2414,3 +2414,31 @@ class ParkrunEventChange(Base):
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ChallengeRatingSnapshot(Base):
+    """Готовый снимок рейтинга челленджа: челлендж × вариант × срез по системе.
+
+    Сетку пересчитывает фоновая задача целиком (challenge_rating_service):
+    посчитать всех участников протоколов — несколько минут, в запросе так не
+    сделать. rows — верх таблицы, site_rows — строки зарегистрированных на сайте
+    по user_id (для «Вы»; ключ — строка UUID).
+    """
+
+    __tablename__ = "challenge_rating_snapshots"
+
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # Вариант счёта: main у большинства, any/runs/volunteering у серии,
+    # base/pro у «Нумератора», classic/floating у Уилсона, best/this_year у
+    # «Ударного года», any/runs/volunteering/current у серии.
+    variant: Mapped[str] = mapped_column(String(16), primary_key=True)
+    # all | five_verst | s95 | runpark | parkrun
+    platform: Mapped[str] = mapped_column(String(16), primary_key=True)
+    # all | active — только выходившие на старт за последний год.
+    activity: Mapped[str] = mapped_column(String(8), primary_key=True)
+    rows: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    site_rows: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    entrants: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    latest_event_date: Mapped[date | None] = mapped_column(Date)
+    week_start: Mapped[date | None] = mapped_column(Date)
+    built_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

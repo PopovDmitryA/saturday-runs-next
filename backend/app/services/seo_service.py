@@ -227,6 +227,57 @@ STATIC_PAGE_META: dict[str, PageMeta] = {
         "RunPark в одной таблице, зарубежье — по странам.",
         indexable=True,
     ),
+    # Рейтинги челленджей — по одному на челлендж, как пункты меню.
+    "/ratings/p-index": _meta(
+        "p-индекс — рейтинги run5k.run",
+        "Рейтинг p-индекса участников субботних пятёрок: p локаций, на каждой минимум p финишей. 5 вёрст, S95, RunPark и parkrun.",
+        indexable=True,
+    ),
+    "/ratings/v-index": _meta(
+        "V-индекс — рейтинги run5k.run",
+        "Рейтинг V-индекса волонтёров субботних пятёрок: V локаций, на каждой минимум V волонтёрств.",
+        indexable=True,
+    ),
+    "/ratings/wilson": _meta(
+        "Индекс Уилсона — рейтинги run5k.run",
+        "Рейтинг индекса Уилсона: самая длинная цепочка номеров стартов подряд с №1 у участников субботних пятёрок.",
+        indexable=True,
+    ),
+    "/ratings/streak": _meta(
+        "Серийный бегун — рейтинги run5k.run",
+        "Самые длинные серии недель подряд с пробежкой или волонтёрством на субботних пятёрках.",
+        indexable=True,
+    ),
+    "/ratings/best-year": _meta(
+        "Ударный год — рейтинги run5k.run",
+        "Больше всего пробежек за один календарный год: рейтинг участников субботних пятёрок.",
+        indexable=True,
+    ),
+    "/ratings/seconds": _meta(
+        "60 секунд — рейтинги run5k.run",
+        "Кто собрал больше разных секунд на часах финиша, от :00 до :59: рейтинг челленджа «60 секунд».",
+        indexable=True,
+    ),
+    "/ratings/positions": _meta(
+        "Бинго позиций — рейтинги run5k.run",
+        "Кто собрал больше окончаний места на финише, от 00 до 99: рейтинг челленджа «Бинго позиций».",
+        indexable=True,
+    ),
+    "/ratings/calendar-days": _meta(
+        "Круглый год — рейтинги run5k.run",
+        "Кто закрыл больше дат календаря пробежками, из 366: рейтинг челленджа «Круглый год».",
+        indexable=True,
+    ),
+    "/ratings/alphabet": _meta(
+        "Алфавит — рейтинги run5k.run",
+        "Кто собрал больше букв алфавита первыми буквами названий локаций, где финишировал: рейтинг челленджа «Алфавит».",
+        indexable=True,
+    ),
+    "/ratings/start-numbers": _meta(
+        "Нумератор — рейтинги run5k.run",
+        "Кто собрал больше номеров стартов от №1 до №200 в любой системе: рейтинг челленджа «Нумератор».",
+        indexable=True,
+    ),
     # Трассы по трекам участников: пока фича закрыта (видит только админ),
     # поэтому в поиск не отдаём.
     "/ratings/courses": _meta(
@@ -944,6 +995,16 @@ _SITEMAP_STATIC: tuple[tuple[str, str], ...] = (
     ("/ratings/home-distance", "0.6"),
     ("/ratings/location-records", "0.7"),
     ("/ratings/regions", "0.7"),
+    ("/ratings/p-index", "0.6"),
+    ("/ratings/v-index", "0.6"),
+    ("/ratings/wilson", "0.6"),
+    ("/ratings/streak", "0.6"),
+    ("/ratings/best-year", "0.6"),
+    ("/ratings/seconds", "0.6"),
+    ("/ratings/positions", "0.6"),
+    ("/ratings/calendar-days", "0.6"),
+    ("/ratings/alphabet", "0.6"),
+    ("/ratings/start-numbers", "0.6"),
     ("/blog", "0.7"),
     ("/about", "0.6"),
     ("/registration", "0.6"),

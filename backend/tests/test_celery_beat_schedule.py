@@ -278,7 +278,7 @@ def test_cache_warmups_do_not_share_a_queue_with_syncs() -> None:
     в хвосте за ними. Плюс прогрев считал агрегаты через WAN до базы.
     """
     schedule = celery_app.conf.beat_schedule
-    for key in ("leaderboards-warm-cache", "locations-warm-cache"):
+    for key in ("leaderboards-warm-cache", "locations-warm-cache", "challenge-ratings-rebuild"):
         assert beat_queue(schedule[key]) == WARM_QUEUE, key
     assert beat_queue({"task": "runpark_sync.user_sync"}) == "runpark"
     command = _worker_command("worker-warm")
@@ -423,6 +423,8 @@ AGREED_LIMITS_MINUTES: dict[str, tuple[int, int]] = {
     "parkrun_sync.run_user_sync": (20, 25),
     "leaderboards.warm_cache": (90, 95),
     "locations.warm_cache": (60, 65),
+    # Рейтинги челленджей: вся сетка за ~1.5 мин на проде (26.10.2026).
+    "challenge_ratings.rebuild": (20, 25),
     "portal_cache.warm_home": (40, 45),
     "dashboard_warm.after_sync": (40, 45),
     "og_render.render_location_images": (120, 125),

@@ -49,6 +49,15 @@ def schedule_leaderboards_warm() -> bool:
     """
     from app.config import get_settings
 
+    # Рейтинги челленджей обновляются от тех же протоколов — будим и их, со
+    # своей склейкой: иначе таблица отставала бы от карточки до двух часов.
+    try:
+        from app.workers.tasks.challenge_ratings import schedule_challenge_ratings_rebuild
+
+        schedule_challenge_ratings_rebuild()
+    except Exception:
+        logger.exception("challenge ratings: failed to schedule rebuild")
+
     settings = get_settings()
     window = settings.leaderboards_warm_debounce_seconds
     try:

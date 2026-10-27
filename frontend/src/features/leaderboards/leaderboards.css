@@ -2674,3 +2674,94 @@ a.lb-hub-card:hover {
     transition: none;
   }
 }
+
+/* ─── Рейтинги челленджей (/ratings/p-index и соседи) ──────────────────────
+   Справа от значения — остаток до следующего индекса, дата (или год) и то,
+   чего не хватает: узкие колонки в одну строку, кроме «Не хватает» — она
+   переносится, когда человек раскрыл весь список. Остаток ширины, как в
+   остальных рейтингах, забирает имя. */
+.lb-table.lb-challenge-table .lb-col-date,
+.lb-table.lb-challenge-table .lb-col-chain,
+.lb-table.lb-challenge-table .lb-col-to-next {
+  width: 7rem;
+  white-space: nowrap;
+}
+
+/* Ширина — под строку свёрнутого списка: шесть секунд или четыре даты и
+   «ещё N». Раскрытый список переносится. */
+.lb-table.lb-challenge-table .lb-col-missing {
+  width: 21rem;
+  min-width: 21rem;
+}
+
+.lb-challenge-missing {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.lb-challenge-chip {
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.lb-challenge-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lb-challenge-more:hover {
+  text-decoration: underline;
+}
+
+.lb-challenge-rest {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.lb-challenge-complete {
+  font-size: 0.85rem;
+  color: var(--accent-green-text);
+}
+
+.lb-challenge-value {
+  font-weight: 600;
+}
+
+/* «🔥» у серии, которая ещё идёт, — рядом с числом, не сдвигая колонку. */
+.lb-challenge-ongoing {
+  margin-left: 0.15rem;
+  font-size: 0.8rem;
+}
+
+/* «последний старт: 2019» — тихая пометка под именем у давно не бегающих. */
+.lb-challenge-stale {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.lb-table.lb-challenge-table .lb-col-this-year {
+  width: 6rem;
+  white-space: nowrap;
+}
+
+/* «Осталось» у p- и V-индекса в кратком виде на телефоне — по содержимому,
+   как «Место» и значение: число короткое, а ширину забирает имя. */
+@media (max-width: 480px) {
+  .lb-table.lb-challenge-table.lb-table-short .lb-col-to-next {
+    width: 1px;
+  }
+}

@@ -663,6 +663,25 @@ export const RATING_GROUPS: readonly { key: string; title: string; items: readon
       { key: "home-distance", label: "Дальность от дома", icon: I.DISTANCE_ICON, chipLabel: "Дальность", href: "/ratings/home-distance", keywords: ["далеко от дома", "километры", "путешествия"] },
     ],
   },
+  // Рейтинги челленджей из «Моих достижений» — каждый отдельным пунктом, как
+  // остальные рейтинги (решение Дмитрия 26.10.2026). Ключ — сегмент адреса и
+  // slug челленджа в backend/app/services/challenge_rating_service.py.
+  {
+    key: "challenges",
+    title: "Челленджи",
+    items: [
+      { key: "p-index", label: "p-индекс", icon: I.P_INDEX_ICON, href: "/ratings/p-index", keywords: ["п-индекс", "индекс хирша", "челлендж", "челленджи"] },
+      { key: "v-index", label: "V-индекс", icon: I.V_INDEX_ICON, href: "/ratings/v-index", keywords: ["в-индекс", "индекс волонтера", "челлендж", "челленджи"] },
+      { key: "wilson", label: "Индекс Уилсона", colLabel: "Уилсон", chipLabel: "Уилсон", icon: I.CHAIN_ICON, href: "/ratings/wilson", keywords: ["уилсон", "вилсон", "номера подряд", "цепочка номеров", "челлендж"] },
+      { key: "streak", label: "Серийный бегун", chipLabel: "Серия", icon: I.FLAME_ICON, href: "/ratings/streak", keywords: ["серия", "субботы подряд", "без пропусков", "челлендж"] },
+      { key: "best-year", label: "Ударный год", icon: I.TREND_ICON, href: "/ratings/best-year", keywords: ["пробежек за год", "лучший год", "челлендж"] },
+      { key: "seconds", label: "60 секунд", icon: I.STOPWATCH_ICON, href: "/ratings/seconds", keywords: ["секунды", "секунды финиша", "челлендж"] },
+      { key: "positions", label: "Бинго позиций", chipLabel: "Позиции", icon: I.TARGET_ICON, href: "/ratings/positions", keywords: ["позиции", "места", "бинго", "челлендж"] },
+      { key: "calendar-days", label: "Круглый год", icon: I.CALENDAR_DAYS_ICON, href: "/ratings/calendar-days", keywords: ["даты", "календарь", "все дни года", "челлендж"] },
+      { key: "alphabet", label: "Алфавит", icon: I.LETTERS_ICON, href: "/ratings/alphabet", keywords: ["буквы", "алфавит локаций", "первые буквы", "челлендж"] },
+      { key: "start-numbers", label: "Нумератор", icon: I.HASH_ICON, href: "/ratings/start-numbers", keywords: ["номера стартов", "номера забегов", "челлендж"] },
+    ],
+  },
   {
     key: "places",
     title: "Локации",

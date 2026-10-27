@@ -25,6 +25,7 @@ import {
 import { formatFinishTime } from "./formatFinishTime";
 import { getFastestRating, type FastestRatingResponse } from "./fastestApi";
 import { getRegionsRating, type RegionRatingRow, type RegionsPlatform } from "./regionsApi";
+import { getChallengeHub, type ChallengeHubCard } from "./challengeRatingsApi";
 import {
   COURSE_METRIC_HUB_LABELS,
   COURSE_METRIC_LABELS,
@@ -435,6 +436,96 @@ function RegionsHubCard({ platform }: { platform: PlatformFilter }) {
   );
 }
 
+/**
+ * Секция «Челленджи»: топ-3 и «Вы» у всех рейтингов челленджей одним запросом
+ * — снимки лежат готовыми на сервере, девять отдельных запросов были бы
+ * девятью одинаковыми походами в одну таблицу.
+ */
+function ChallengesHubSection({ platform }: { platform: PlatformFilter }) {
+  const [cards, setCards] = useState<ChallengeHubCard[] | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setError(false);
+    getChallengeHub(platform, controller.signal)
+      .then((payload) => setCards(payload.cards))
+      .catch((loadError) => {
+        if (!(loadError instanceof DOMException && loadError.name === "AbortError")) {
+          setError(true);
+        }
+      });
+    return () => controller.abort();
+  }, [platform]);
+
+  return (
+    <section className="lb-hub-section">
+      <h2>
+        <span aria-hidden>🏅</span> {ratingGroupTitle("challenges")}
+      </h2>
+      {cards === null && !error && <p className="lb-hub-loading muted">Считаем…</p>}
+      {error && <p className="lb-hub-loading muted">Не удалось загрузить</p>}
+      {cards && (
+        <div className="lb-hub-cards">
+          {cards.map((card) => (
+            <ChallengeHubCardView key={card.code} card={card} requested={platform} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ChallengeHubCardView({ card, requested }: { card: ChallengeHubCard; requested: PlatformFilter }) {
+  const fellBackToAll = requested !== "all" && card.platform === "all";
+  const href = card.platform !== "all" ? `/ratings/${card.slug}?platform=${card.platform}` : `/ratings/${card.slug}`;
+  return (
+    <a className="lb-hub-card lb-hub-card-live" href={href}>
+      <div className="lb-hub-card-top">
+        <span className="lb-hub-card-title">{ratingName(card.slug, { label: card.title, group: "" }).label}</span>
+      </div>
+      {fellBackToAll && (
+        <p className="lb-hub-card-fallback muted">
+          {HUB_PLATFORM_TAB_LABELS[requested]} не участвует — показан общий зачёт
+        </p>
+      )}
+      {card.rows.length === 0 && <p className="lb-hub-loading muted">Таблица ещё считается</p>}
+      {card.rows.length > 0 && (
+        <div className="lb-hub-top3">
+          <p className="lb-hub-top3-label">Топ-3</p>
+          {card.rows.map((row) => (
+            <div className="lb-hub-rank-row" key={row.row_key}>
+              {/* Цвет — по месту, а не по позиции в тройке: при равенстве
+                  значения и даты двое делят первое место, и обоим золото. */}
+              <span className={`lb-hub-rank-chip lb-hub-rank-${RANK_TIER[row.rank - 1] ?? "silver"}`}>
+                {row.rank}
+              </span>
+              <span className="lb-hub-rank-name">{surnameFirst(row.display_name) || "Участник"}</span>
+              <span className="lb-hub-rank-value">
+                {formatInt(row.value)}
+                <DeltaSlot delta={row.value_delta} />
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {card.me && (
+        <div className="lb-hub-me">
+          <div className="lb-hub-rank-row lb-hub-rank-row-me">
+            <span className="lb-hub-rank-chip lb-hub-rank-me">{formatInt(card.me.rank)}</span>
+            <span className="lb-hub-rank-name">Вы</span>
+            <span className="lb-hub-rank-value">
+              {formatInt(card.me.value)}
+              <DeltaSlot delta={card.me.value_delta} />
+            </span>
+          </div>
+        </div>
+      )}
+      <span className="lb-hub-see-all">Смотреть топ →</span>
+    </a>
+  );
+}
+
 /** Как показываем значение метрики трассы в тройке лидеров. */
 const COURSE_HUB_VALUE: Record<CourseRatingMetric, (item: CourseRatingItem) => string> = {
   elevation: (item) => (item.value == null ? "—" : `${item.value.toFixed(1).replace(".", ",")} м`),
@@ -565,6 +656,8 @@ export function LeaderboardsHubPage() {
             </div>
           </section>
         ))}
+
+        <ChallengesHubSection platform={platform} />
 
         {/* Секция «Локации»: здесь рейтингуются сами площадки и их география, а
             не люди (Р18/Р19 из бэклога ещё в плане). */}

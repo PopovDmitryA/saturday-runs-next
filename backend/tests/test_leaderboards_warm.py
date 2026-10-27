@@ -115,11 +115,19 @@ def test_sync_schedules_warm_once_per_debounce_window(
     В субботу протоколы приезжают ежечасно и сразу тремя системами (5 вёрст,
     S95, RunPark) — без склейки каждый синк уводил бы воркер на полную сетку.
     """
+    from app.workers.tasks import challenge_ratings
+
     sent: list[dict[str, Any]] = []
+    challenge_sent: list[dict[str, Any]] = []
     monkeypatch.setattr(
         leaderboards_warm.warm_leaderboards_cache,
         "apply_async",
         lambda **kwargs: sent.append(kwargs),
+    )
+    monkeypatch.setattr(
+        challenge_ratings.rebuild_challenge_ratings_task,
+        "apply_async",
+        lambda **kwargs: challenge_sent.append(kwargs),
     )
 
     assert leaderboards_warm.schedule_leaderboards_warm() is True
@@ -129,6 +137,10 @@ def test_sync_schedules_warm_once_per_debounce_window(
     assert sent[0]["queue"] == WARM_QUEUE
     # Пауза перед стартом — чтобы протоколы соседних систем попали в тот же прогон.
     assert sent[0]["countdown"] > 0
+    # Рейтинги челленджей синк будит тем же вызовом и с той же склейкой
+    # (аудит 27.10.2026: до этого они ждали расписания до двух часов).
+    assert len(challenge_sent) == 1
+    assert challenge_sent[0]["queue"] == WARM_QUEUE
 
 
 def test_warm_skips_when_another_run_holds_lock(

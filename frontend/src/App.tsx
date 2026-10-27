@@ -107,6 +107,7 @@ const OrganizerLocationHubPage = lazyPage(() => import("./features/organizer/Org
 const OrganizerLocationPage = lazyPage(() => import("./features/organizer/OrganizerLocationPage"), (m) => m.OrganizerLocationPage);
 const LocationRecordsRatingPage = lazyPage(() => import("./features/leaderboards/LocationRecordsRatingPage"), (m) => m.LocationRecordsRatingPage);
 const RegionsRatingPage = lazyPage(() => import("./features/leaderboards/RegionsRatingPage"), (m) => m.RegionsRatingPage);
+const ChallengeRatingPage = lazyPage(() => import("./features/leaderboards/ChallengeRatingPage"), (m) => m.ChallengeRatingPage);
 const QueuePage = lazyPage(() => import("./features/queue/QueuePage"), (m) => m.QueuePage);
 const PortalCabinetSettingsPage = lazyPage(() => import("./features/portal/cabinet/PortalCabinetPages"), (m) => m.PortalCabinetSettingsPage);
 const PortalCabinetSharePage = lazyPage(() => import("./features/portal/cabinet/PortalCabinetPages"), (m) => m.PortalCabinetSharePage);
@@ -288,6 +289,16 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/ratings/home-distance": () => <LeaderboardPage metric="home_distance" />,
   "/ratings/location-records": () => <LocationRecordsRatingPage />,
   "/ratings/regions": () => <RegionsRatingPage />,
+  "/ratings/p-index": () => <ChallengeRatingPage slug="p-index" />,
+  "/ratings/v-index": () => <ChallengeRatingPage slug="v-index" />,
+  "/ratings/wilson": () => <ChallengeRatingPage slug="wilson" />,
+  "/ratings/streak": () => <ChallengeRatingPage slug="streak" />,
+  "/ratings/best-year": () => <ChallengeRatingPage slug="best-year" />,
+  "/ratings/seconds": () => <ChallengeRatingPage slug="seconds" />,
+  "/ratings/positions": () => <ChallengeRatingPage slug="positions" />,
+  "/ratings/calendar-days": () => <ChallengeRatingPage slug="calendar-days" />,
+  "/ratings/alphabet": () => <ChallengeRatingPage slug="alphabet" />,
+  "/ratings/start-numbers": () => <ChallengeRatingPage slug="start-numbers" />,
   "/ratings/courses": () => <CourseRatingPage />,
   // Просмотр открыт всем; писать (карточка/голос/комментарий) может только
   // залогиненный — гейт внутри самой страницы, как у /locations.

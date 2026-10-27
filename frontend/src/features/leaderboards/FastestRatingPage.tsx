@@ -6,6 +6,7 @@ import { GenderFilter } from "../../components/filters/GenderFilter";
 import { StatHintTooltip } from "../../components/StatHintTooltip";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { PinnedMeBar } from "../../components/tableUx/PinnedMeBar";
 import { TableViewToggle } from "../../components/tableUx/TableViewToggle";
 import { TableWrap } from "../../components/tableUx/TableWrap";
@@ -681,6 +682,9 @@ export function FastestRatingPage() {
             )}
           </div>
         )}
+        {/* Общая кнопка «наверх», как у остальных рейтингов: таблица здесь
+            тоже на сотни строк. */}
+        <ScrollToTopButton />
       </div>
     </PortalSectionShell>
   );

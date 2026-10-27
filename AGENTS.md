@@ -107,7 +107,7 @@ GitHub: `PopovDmitryA/saturday-runs-next`, branch `main`.
 | `postgres`, `redis` | база и брокер; наружу — только postgres на 127.0.0.1:5433 |
 | `beat` | Celery Beat (Europe/Moscow) |
 | `worker` | `-Q celery,warm --concurrency=2`: наблюдатель протоколов, прогрев главной, агрегаты популярности, погода, admin-дайджест |
-| `worker-warm` | `-Q warm --concurrency=1`: прогрев рейтингов и страниц локаций |
+| `worker-warm` | `-Q warm --concurrency=1`: прогрев рейтингов и страниц локаций, пересчёт рейтингов челленджей |
 | `worker-five-verst-user` | `-Q five_verst_user --concurrency=1` (синки по кнопке) |
 | `worker-five-verst` | `-Q five_verst --concurrency=1 --prefetch-multiplier=1` (фон: сверка, ротация, реестр, клубы) |
 | `worker-five-verst-fresh` | `-Q five_verst_fresh --concurrency=1` (свежесть: latest) — отдельный контейнер, потому что порядок очередей в `-Q` kombu не гарантирует |
@@ -323,7 +323,7 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 | `s95` | worker-s95 | остальные `s95_sync.*`: реестр, JSON-протоколы, отмены, описания |
 | `parkrun` | worker-parkrun | `parkrun_sync.*` (дома в parkrun не ходит: «Обновить» ставит заявку в `profile_fetch_pending`, разбор выключен `PARKRUN_SERVER_QUEUE_ENABLED=false`), `og_render.*` |
 | `runpark` | worker-runpark | `runpark_sync.*`: latest, кросслинки, user_sync |
-| `warm` | worker-warm, worker | `leaderboards.warm_cache`, `locations.warm_cache` |
+| `warm` | worker-warm, worker | `leaderboards.warm_cache`, `locations.warm_cache`, `challenge_ratings.rebuild` |
 | `celery` (default) | worker | наблюдатель протоколов, прогрев главной, page_stats, погода, user_names, sync_runs.close_stale, дайджест |
 
 У **каждой** записи beat есть `expires`: не взяли вовремя — задача умирает, а не
@@ -385,7 +385,8 @@ curl -s -H "Authorization: Bearer $REPORT_API_TOKEN" \
 **RunPark**: latest 3,8,13,18,23 (`:00`); backfill crosslinks 03:30.
 **parkrun**: `process_pending_queue` `:07`/`:37` — только на VPS (дома выключено, очередь разбирает `pm-site-queue.timer`, §16); og_render — выходные и понедельник.
 **Прогревы**: главная — выходные ежечасно `:15`, будни 4,9,14,19; рейтинги `:20`
-и локации `:40` каждые 2 ч. **Служебное**: page_stats `:35`, sync_runs.close_stale
+и локации `:40` каждые 2 ч; рейтинги челленджей `:50` каждые 2 ч (§12a) — плюс
+после каждого синка, записавшего протоколы. **Служебное**: page_stats `:35`, sync_runs.close_stale
 `:05`, статусы локаций 21:10, дайджест 21:50, погода 03:05/03:20 (+ пятница 8,14,20).
 
 ---
@@ -1104,6 +1105,40 @@ Telegram / HTML письма / текст VK), `services/notification_service.py
 просмотром профиля: в `entity_key` едет хендл, а не вкладка.
 
 ---
+
+## 12a. Рейтинги челленджей
+
+`/ratings/p-index` … `/ratings/start-numbers` — рейтинги по челленджам «Моих
+достижений» (p- и V-индекс, Уилсон, серия, ударный год, 60 секунд, бинго
+позиций, круглый год, алфавит, Нумератор), по одному пункту меню на челлендж
+(группа «Челленджи»). Код — `services/challenge_rating_service.py`, правила
+подсчёта — `app/challenge_growth.py`: те же функции считают и карточку
+челленджа, поэтому рейтинг и кабинет не расходятся. Новое правило челленджа —
+только туда.
+
+- **В зачёте все участники протоколов**, отсечки как у остальных рейтингов
+  (тесты, дубли кросслинков, допуск parkrun) плюс безымянные заглушки
+  (`participant_identity.is_anonymous_participant`). Системы склеиваются
+  только у зарегистрированных.
+- **Место**: значение ↓, у p/V-индекса — «осталось до следующего» ↑, затем
+  день набора ↑ и дни двух предыдущих ступеней ↑ (ключ упакован в одно
+  64-битное число, `_rank_key`). Медалей в таблицах нет.
+- **Сетка снимков** «челлендж × вариант × система × активность» (156 на
+  27.10.2026) лежит в `challenge_rating_snapshots`: топ-1000 и строки всех
+  зарегистрированных (для «Вы» и «где добрать»). Считает её задача
+  `challenge_ratings.rebuild` (очередь `warm`) — по beat `:50` каждые 2 ч и
+  после синков (`schedule_challenge_ratings_rebuild` из
+  `schedule_leaderboards_warm`, склейка и Redis-замок). Сам проход идёт
+  **отдельным процессом** (`python -m app.services.challenge_rating_service`):
+  ~3 мин и ~0,6 ГБ, которые процесс Celery иначе не отдал бы.
+- **После выката с новой миграцией таблица пуста** до первого прохода —
+  запустить руками: `$C exec -T worker-warm python -m app.services.challenge_rating_service`.
+- **Новый рейтинг челленджа**: запись в `RATING_CHALLENGES` (+ значение в
+  `_scope_metrics`), пункт в группе `challenges` (`siteNav.ts`) и иконка
+  (`navIcons.tsx`), роут в `App.tsx`, мета в `seo_service.py` и `pageMeta.ts`,
+  `_STATIC_PAGE_TYPES` и `pageTypeLabels.ts`. Сторожа:
+  `test_challenge_rating_service.py` (меню, роуты, число снимков),
+  `test_seo_service.py`, `test_page_analytics_service.py`.
 
 ## 13. Локальная разработка
 

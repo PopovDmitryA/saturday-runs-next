@@ -7,6 +7,7 @@ import { useNarrowViewport } from "../../components/tableUx/useNarrowViewport";
 import { formatInt, pluralFormRu, pluralizeRu } from "../../lib/format";
 import { useFloatingTableHead } from "../../lib/useFloatingTableHead";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
+import { ScrollToTopButton } from "../../components/ScrollToTopButton";
 import { RatingsLoginBanner } from "./RatingsLoginBanner";
 import { ratingName } from "./ratingNames";
 import { RatingBreadcrumb, RatingFilters } from "./RatingPageParts";
@@ -449,6 +450,9 @@ export function RegionsRatingPage() {
             )}
           </div>
         )}
+        {/* Общая кнопка «наверх», как у остальных рейтингов: таблица здесь
+            тоже на сотни строк. */}
+        <ScrollToTopButton />
       </div>
     </PortalSectionShell>
   );

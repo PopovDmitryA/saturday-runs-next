@@ -177,6 +177,66 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
       "RunPark в одной таблице, зарубежье — по странам.",
     indexable: true,
   },
+  "/ratings/p-index": {
+    title: "p-индекс — рейтинги run5k.run",
+    description:
+      "Рейтинг p-индекса участников субботних пятёрок: p локаций, на каждой минимум p финишей. 5 вёрст, S95, RunPark и parkrun.",
+    indexable: true,
+  },
+  "/ratings/v-index": {
+    title: "V-индекс — рейтинги run5k.run",
+    description:
+      "Рейтинг V-индекса волонтёров субботних пятёрок: V локаций, на каждой минимум V волонтёрств.",
+    indexable: true,
+  },
+  "/ratings/wilson": {
+    title: "Индекс Уилсона — рейтинги run5k.run",
+    description:
+      "Рейтинг индекса Уилсона: самая длинная цепочка номеров стартов подряд с №1 у участников субботних пятёрок.",
+    indexable: true,
+  },
+  "/ratings/streak": {
+    title: "Серийный бегун — рейтинги run5k.run",
+    description:
+      "Самые длинные серии недель подряд с пробежкой или волонтёрством на субботних пятёрках.",
+    indexable: true,
+  },
+  "/ratings/best-year": {
+    title: "Ударный год — рейтинги run5k.run",
+    description:
+      "Больше всего пробежек за один календарный год: рейтинг участников субботних пятёрок.",
+    indexable: true,
+  },
+  "/ratings/seconds": {
+    title: "60 секунд — рейтинги run5k.run",
+    description:
+      "Кто собрал больше разных секунд на часах финиша, от :00 до :59: рейтинг челленджа «60 секунд».",
+    indexable: true,
+  },
+  "/ratings/positions": {
+    title: "Бинго позиций — рейтинги run5k.run",
+    description:
+      "Кто собрал больше окончаний места на финише, от 00 до 99: рейтинг челленджа «Бинго позиций».",
+    indexable: true,
+  },
+  "/ratings/calendar-days": {
+    title: "Круглый год — рейтинги run5k.run",
+    description:
+      "Кто закрыл больше дат календаря пробежками, из 366: рейтинг челленджа «Круглый год».",
+    indexable: true,
+  },
+  "/ratings/alphabet": {
+    title: "Алфавит — рейтинги run5k.run",
+    description:
+      "Кто собрал больше букв алфавита первыми буквами названий локаций, где финишировал: рейтинг челленджа «Алфавит».",
+    indexable: true,
+  },
+  "/ratings/start-numbers": {
+    title: "Нумератор — рейтинги run5k.run",
+    description:
+      "Кто собрал больше номеров стартов от №1 до №200 в любой системе: рейтинг челленджа «Нумератор».",
+    indexable: true,
+  },
   "/ratings/courses": {
     title: "Трассы локаций — рейтинги run5k.run",
     description:
