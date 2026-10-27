@@ -17,7 +17,12 @@ import {
   type GoalsResponse,
   type UserAward,
 } from "../../lib/api";
-import { formatDate, parseIsoDate, platformCodeLabel, pluralizeRu } from "../../lib/format";
+import { formatDate, formatInt, parseIsoDate, platformCodeLabel, pluralizeRu } from "../../lib/format";
+import {
+  challengePlaceHref,
+  getMyChallengePlaces,
+  type ChallengePlace,
+} from "../leaderboards/challengeRatingsApi";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 import { AwardStamp } from "./AwardStamp";
 import { GoalCard } from "./GoalCard";
@@ -702,13 +707,30 @@ const CHALLENGE_PLAN_CODES = new Set([
   "number_match",
 ]);
 
+/** «142-е место из 213 443 →» — переход из карточки в рейтинг челленджа. */
+function ChallengeRatingLink({ place }: { place: ChallengePlace }) {
+  const label =
+    place.rank != null && place.entrants
+      ? `${formatInt(place.rank)}-е место из ${formatInt(place.entrants)}`
+      : "Рейтинг";
+  return (
+    <a className="challenge-rating-link" href={challengePlaceHref(place)}>
+      🏆 {label} →
+    </a>
+  );
+}
+
 function ChallengeCard({
   challenge,
   personal = false,
   platformFilter = null,
+  ratingPlace,
 }: {
   challenge: Challenge;
   personal?: boolean;
+  // Место в рейтинге этого челленджа (только своя страница, только у
+  // челленджей, у которых есть рейтинг).
+  ratingPlace?: ChallengePlace;
   // Фильтр систем со страницы достижений: планирование обязано показывать те же
   // системы, что и сама карточка, иначе под фильтром «5 вёрст» в таблице
   // всплывали бы старты s95 и runpark.
@@ -789,6 +811,7 @@ function ChallengeCard({
         </span>
         <span className="challenge-next muted">{nextHint}</span>
       </div>
+      {ratingPlace && <ChallengeRatingLink place={ratingPlace} />}
       {cta && (
         <a className="btn secondary btn-sm challenge-cta" href={cta.href}>
           {cta.label}
@@ -1152,6 +1175,7 @@ export function AchievementsShowcase({
   platformFilter = null,
   onPlatformFilterChange,
   platformSwitching = false,
+  ratingPlaces,
 }: {
   data: AchievementsResponse;
   // «Цели на год» — личный раздел; на публичном профиле не передаётся.
@@ -1161,6 +1185,8 @@ export function AchievementsShowcase({
   platformFilter?: string | null;
   onPlatformFilterChange?: (platform: string | null) => void;
   platformSwitching?: boolean;
+  // Места в рейтингах челленджей по коду карточки — ссылки «место → рейтинг».
+  ratingPlaces?: Record<string, ChallengePlace> | null;
 }) {
   const grouped = useMemo(() => {
     const groups: Record<Challenge["category"], Challenge[]> = {
@@ -1277,6 +1303,7 @@ export function AchievementsShowcase({
                         challenge={challenge}
                         personal={personal}
                         platformFilter={platformFilter}
+                        ratingPlace={ratingPlaces?.[challenge.code]}
                       />
                     </div>
                   ))}
@@ -1315,6 +1342,17 @@ function AchievementsContent() {
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [ratingPlaces, setRatingPlaces] = useState<Record<string, ChallengePlace> | null>(null);
+
+  // Места в рейтингах челленджей — отдельным запросом и без влияния на
+  // страницу: не ответил — карточки просто без строки «место → рейтинг».
+  useEffect(() => {
+    const controller = new AbortController();
+    getMyChallengePlaces(platformFilter ?? "all", controller.signal)
+      .then((payload) => setRatingPlaces(payload.places))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [platformFilter]);
 
   const load = useCallback(async (platform: string | null) => {
     const key = achievementsCacheKey(platform);
@@ -1367,6 +1405,7 @@ function AchievementsContent() {
             platformFilter={platformFilter}
             onPlatformFilterChange={setPlatformFilter}
             platformSwitching={switching}
+            ratingPlaces={ratingPlaces}
           />
 
           <GoalsEditModal

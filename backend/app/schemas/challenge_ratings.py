@@ -127,3 +127,19 @@ class ChallengeHubCard(BaseModel):
 class ChallengeHubResponse(BaseModel):
     platform: str
     cards: list[ChallengeHubCard]
+
+
+class ChallengePlace(BaseModel):
+    slug: str
+    # Вариант рейтинга для ссылки; None — вариант по умолчанию.
+    variant: str | None
+    platform: str
+    # None — человека в этом рейтинге нет (значение 0) или снимков ещё нет.
+    rank: int | None
+    entrants: int | None
+
+
+class MyChallengePlacesResponse(BaseModel):
+    platform: str
+    # Ключ — код карточки челленджа в «Моих достижениях».
+    places: dict[str, ChallengePlace]

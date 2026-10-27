@@ -164,3 +164,35 @@ export function getMyChallengeRow(slug: string, slice: ChallengeSlice, signal?: 
 export function getChallengeHub(platform: string, signal?: AbortSignal) {
   return challengeFetch<ChallengeHubResponse>(`/hub${platformQuery(platform)}`, signal);
 }
+
+/** Место человека в рейтинге челленджа — для ссылки с карточки «Моих достижений». */
+export type ChallengePlace = {
+  slug: string;
+  variant: string | null;
+  platform: string;
+  rank: number | null;
+  entrants: number | null;
+};
+
+export type MyChallengePlacesResponse = {
+  platform: string;
+  /** Ключ — код карточки челленджа. */
+  places: Record<string, ChallengePlace>;
+};
+
+export function getMyChallengePlaces(platform: string, signal?: AbortSignal) {
+  return challengeFetch<MyChallengePlacesResponse>(`/my-places${platformQuery(platform)}`, signal);
+}
+
+/** Адрес рейтинга с тем же вариантом и системой, что у карточки. */
+export function challengePlaceHref(place: ChallengePlace): string {
+  const params = new URLSearchParams();
+  if (place.platform !== "all") {
+    params.set("platform", place.platform);
+  }
+  if (place.variant) {
+    params.set("variant", place.variant);
+  }
+  const query = params.toString();
+  return `/ratings/${place.slug}${query ? `?${query}` : ""}`;
+}

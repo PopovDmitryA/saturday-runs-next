@@ -1353,6 +1353,70 @@ def get_challenge_hub(db: Session, user: User | None, platform: str = ALL) -> di
     return {"platform": platform, "cards": cards}
 
 
+# Карточка челленджа «Моих достижений» → рейтинг и вариант, который считает то
+# же число: Уилсон карточки — классический, серия — по любой активности,
+# «Нумератор ПРО» — вариант pro рейтинга «Нумератор».
+CARD_RATINGS: dict[str, tuple[str, str]] = {
+    "p_index": ("p_index", "main"),
+    "v_index": ("v_index", "main"),
+    "wilson": ("wilson", "classic"),
+    "streak": ("streak", "any"),
+    "best_year": ("best_year", "best"),
+    "seconds": ("seconds", "main"),
+    "positions": ("positions", "main"),
+    "calendar_days": ("calendar_days", "main"),
+    "alphabet": ("alphabet", "main"),
+    "start_numbers": ("start_numbers", "base"),
+    "start_numbers_pro": ("start_numbers", "pro"),
+}
+
+
+def get_my_challenge_places(db: Session, user: User, platform: str = ALL) -> dict[str, Any]:
+    """Места человека во всех рейтингах челленджей — для ссылок с карточек
+    «Моих достижений» одним запросом (решение Дмитрия 27.10.2026, Р30).
+
+    Срез — тот же, что выбран фильтром систем на странице достижений: карточка
+    под «5 вёрст» ведёт в рейтинг по 5 вёрстам. Системы, которой у рейтинга
+    нет (parkrun у V-индекса), — общий зачёт.
+    """
+    wanted: dict[tuple[str, str, str, str], str] = {}
+    links: dict[str, dict[str, Any]] = {}
+    for card_code, (code, variant_key) in CARD_RATINGS.items():
+        item = CHALLENGES_BY_CODE[code]
+        variant = variant_of(item, variant_key)
+        scope = normalize_platform(item, platform, variant)
+        wanted[(code, variant.key, scope, ACTIVITY_ALL)] = card_code
+        links[card_code] = {
+            "slug": item.slug,
+            "variant": variant.key if len(item.variants) > 1 and variant.key != item.variants[0].key else None,
+            "platform": scope,
+            "rank": None,
+            "entrants": None,
+        }
+    query = select(
+        ChallengeRatingSnapshot.code,
+        ChallengeRatingSnapshot.variant,
+        ChallengeRatingSnapshot.platform,
+        ChallengeRatingSnapshot.entrants,
+        ChallengeRatingSnapshot.site_rows[str(user.id)],
+    ).where(
+        tuple_(
+            ChallengeRatingSnapshot.code,
+            ChallengeRatingSnapshot.variant,
+            ChallengeRatingSnapshot.platform,
+            ChallengeRatingSnapshot.activity,
+        ).in_(list(wanted))
+    )
+    for code, variant, scope, entrants, row in db.execute(query):
+        card_code = wanted.get((code, variant, scope, ACTIVITY_ALL))
+        if card_code is None:
+            continue
+        links[card_code]["entrants"] = entrants
+        if row:
+            links[card_code]["rank"] = row.get("rank")
+    return {"platform": platform, "places": links}
+
+
 def resolve(slug: str) -> RatingChallenge | None:
     return CHALLENGES_BY_SLUG.get(slug)
 

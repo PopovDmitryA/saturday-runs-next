@@ -11,6 +11,7 @@ from app.models import User
 from app.schemas.challenge_ratings import (
     ChallengeHubResponse,
     ChallengeRatingResponse,
+    MyChallengePlacesResponse,
     MyChallengeRatingResponse,
 )
 from app.services.challenge_rating_service import (
@@ -18,6 +19,7 @@ from app.services.challenge_rating_service import (
     RatingChallenge,
     get_challenge_hub,
     get_challenge_rating,
+    get_my_challenge_places,
     get_my_challenge_row,
     resolve,
 )
@@ -40,6 +42,17 @@ def challenge_hub(
     platform: str = "all",
 ) -> ChallengeHubResponse:
     return ChallengeHubResponse.model_validate(get_challenge_hub(db, viewer, platform))
+
+
+# Места человека во всех рейтингах — для ссылок с карточек «Моих достижений».
+# Объявлено до /{slug}, иначе «my-places» ушло бы в него как slug.
+@router.get("/my-places", response_model=MyChallengePlacesResponse)
+def my_challenge_places(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    platform: str = "all",
+) -> MyChallengePlacesResponse:
+    return MyChallengePlacesResponse.model_validate(get_my_challenge_places(db, user, platform))
 
 
 # Таблицы открыты без логина — как остальные рейтинги (решение Дмитрия 25.07.2026).

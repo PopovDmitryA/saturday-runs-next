@@ -9812,6 +9812,20 @@ a.admin-system-chip:hover {
   text-decoration: underline;
 }
 
+/* «142-е место из 213 443 →» — переход из карточки в рейтинг челленджа,
+   тем же тихим видом, что «Планирование». */
+.challenge-rating-link {
+  font-size: 0.82rem;
+  color: var(--link);
+  align-self: flex-start;
+  text-decoration: none;
+}
+
+.challenge-rating-link:hover {
+  color: var(--link-strong);
+  text-decoration: underline;
+}
+
 /* --- Модалка планирования --------------------------------------------- */
 .plan-intro {
   margin: 0 0 0.5rem;

@@ -30,6 +30,7 @@ from app.services.challenge_rating_service import (
     entity_metrics,
     get_challenge_hub,
     get_challenge_rating,
+    get_my_challenge_places,
     get_my_challenge_row,
     normalize_platform,
     platform_filter_values,
@@ -438,6 +439,22 @@ def test_variant_is_read_from_its_own_snapshot(db_session: Session, snapshot_use
     base = get_challenge_rating(db_session, numbers, "all")
     assert base["variant"] == "base"
     assert base["ready"] is False
+
+
+def test_my_places_link_cards_to_their_ratings(db_session: Session, snapshot_user: User) -> None:
+    """Р30: у карточки «Моих достижений» — место и ссылка в тот рейтинг и
+    вариант, что считает её число (карточка «Нумератор ПРО» → вариант pro)."""
+    places = get_my_challenge_places(db_session, snapshot_user)["places"]
+    assert set(places) == set(challenge_rating_service.CARD_RATINGS)
+    assert (places["p_index"]["slug"], places["p_index"]["rank"], places["p_index"]["entrants"]) == ("p-index", 1, 2)
+    assert places["p_index"]["variant"] is None
+    assert places["start_numbers_pro"]["variant"] == "pro"
+    # Снимка нет или человека в нём нет — ссылка есть, места нет.
+    assert places["seconds"]["rank"] is None
+    # Фильтр систем страницы переносится в ссылку; у V-индекса parkrun нет.
+    by_parkrun = get_my_challenge_places(db_session, snapshot_user, "parkrun")["places"]
+    assert by_parkrun["p_index"]["platform"] == "parkrun"
+    assert by_parkrun["v_index"]["platform"] == ALL
 
 
 def test_parkrun_slice_is_marked_as_archive() -> None:
