@@ -934,9 +934,13 @@ def test_weekly_ratings_message_includes_challenge_ratings(
         "«Количество пробежек» — **266-е место** (=)\n\n"
         f"🏅 [**Челленджи:**]({achievements})\n"
         "«p-индекс» — **401-е место** (▲33) · +1\n"
-        "«Серийный бегун» — **342-е место** (▼3)\n"
-        "«Алфавит» — **3-е место** (=)"
+        "«Серийный бегун» — **342-е место** (▼3)"
     )
+    # Неподвижный «Алфавит» в блок не попал; не сдвинулся ни один челлендж — блока нет.
+    title, text = activity.compose_ratings_message(
+        [activity.RatingMove(metric="challenge:alphabet", label="Алфавит", rank=3, gained=0)]
+    )
+    assert text == ""
 
 
 def test_weekly_ratings_message_reads_legacy_rank_only_snapshot(

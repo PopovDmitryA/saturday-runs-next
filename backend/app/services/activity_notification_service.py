@@ -883,10 +883,14 @@ def compose_message(
 
 
 def compose_ratings_message(moves: list[RatingMove], challenges_url: str | None = None) -> tuple[str, str]:
-    """Обычные рейтинги, затем блок «🏅 Челленджи» — в том же порядке и том же
-    формате строк; в каждом — все рейтинги человека, неподвижные тоже."""
+    """Обычные рейтинги, затем блок «🏅 Челленджи» в том же формате строк.
+
+    Обычные — все, неподвижные тоже (20.10.2026); челленджи — только те, где
+    место сдвинулось: их одиннадцать, и полный список удваивал сообщение
+    (решение Дмитрия 28.10.2026). Не сдвинулся ни один — блока нет.
+    """
     regular = [m for m in moves if not m.metric.startswith(CHALLENGE_PREFIX)]
-    challenges = [m for m in moves if m.metric.startswith(CHALLENGE_PREFIX)]
+    challenges = [m for m in moves if m.metric.startswith(CHALLENGE_PREFIX) and m.gained]
     moved = [m for m in moves if m.gained]
     title = (
         "📈 Рейтинги за неделю: вы поднялись" if moved and all(m.gained > 0 for m in moved) else "📊 Рейтинги за неделю"
