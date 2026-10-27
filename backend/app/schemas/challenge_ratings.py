@@ -137,6 +137,8 @@ class ChallengePlace(BaseModel):
     # None — человека в этом рейтинге нет (значение 0) или снимков ещё нет.
     rank: int | None
     entrants: int | None
+    # Значение челленджа у человека в этом рейтинге.
+    value: int | None = None
 
 
 class MyChallengePlacesResponse(BaseModel):

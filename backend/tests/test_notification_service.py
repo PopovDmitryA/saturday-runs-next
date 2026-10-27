@@ -902,6 +902,43 @@ def test_weekly_ratings_message_lists_unchanged_ratings_too(
     )
 
 
+def _fake_challenge_places(monkeypatch: pytest.MonkeyPatch, places: dict[str, tuple[int, int]]) -> None:
+    """Места в рейтингах челленджей: {код карточки: (место, значение)}."""
+    monkeypatch.setattr(
+        activity,
+        "get_my_challenge_places",
+        lambda db, user: {
+            "places": {card: {"rank": rank, "value": value, "entrants": 1000} for card, (rank, value) in places.items()}
+        },
+    )
+
+
+def test_weekly_ratings_message_includes_challenge_ratings(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, _no_broker: list[UUID]
+) -> None:
+    """Решение Дмитрия 28.10.2026: рейтинги челленджей — в той же воскресной
+    сводке, своим блоком; сдвиг места в челлендже сам по себе повод написать."""
+    user = _make_user(db_session, chat_id=100)
+    _fake_sources(monkeypatch, levels={}, ranks={"runs": 266}, totals={"runs": 200}, milestones=[])
+    _fake_challenge_places(monkeypatch, {"p_index": (434, 4), "streak": (339, 51), "alphabet": (3, 27)})
+    _on(db_session, user)
+    prefs = notify.get_prefs(db_session, user.id)
+    assert prefs is not None and prefs.ratings_snapshot["challenge:alphabet"] == {"rank": 3, "total": 27}
+
+    # Обычный рейтинг стоит на месте, в челленджах — движение.
+    _fake_challenge_places(monkeypatch, {"p_index": (401, 5), "streak": (342, 51), "alphabet": (3, 27)})
+    assert activity.weekly_ratings_message(db_session, user.id) == {"rating_moves": 2, "queued": True}
+    delivery = db_session.query(NotificationDelivery).filter_by(user_id=user.id, kind="ratings").one()
+    achievements = f"https://run5k.test/users/{user.serial_id}/achievements"
+    assert delivery.payload["text"] == (
+        "«Количество пробежек» — **266-е место** (=)\n\n"
+        f"🏅 [**Челленджи:**]({achievements})\n"
+        "«p-индекс» — **401-е место** (▲33) · +1\n"
+        "«Серийный бегун» — **342-е место** (▼3)\n"
+        "«Алфавит» — **3-е место** (=)"
+    )
+
+
 def test_weekly_ratings_message_reads_legacy_rank_only_snapshot(
     db_session: Session, monkeypatch: pytest.MonkeyPatch, _no_broker: list[UUID]
 ) -> None:

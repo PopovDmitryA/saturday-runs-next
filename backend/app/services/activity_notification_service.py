@@ -50,6 +50,7 @@ from app.ru_plural import unit_form
 from app.services import notification_channels_service as channels
 from app.services import notification_service as notifications
 from app.services.achievements_service import TIER_LABELS, compute_challenges
+from app.services.challenge_rating_service import CARD_RATINGS, CHALLENGES_BY_CODE, get_my_challenge_places
 from app.services.leaderboard_service import get_my_leaderboard_row, metric_title, metric_unit
 from app.services.location_catalog_service import LocationCatalogIndex
 from app.services.my_history_service import get_my_history
@@ -89,6 +90,19 @@ RATING_METRICS: tuple[tuple[str, str], ...] = tuple(
         "win_locations",
     )
 )
+
+# Рейтинги челленджей в той же сводке (решение Дмитрия 28.10.2026) — ключ в
+# снимке «challenge:<код карточки>», место в общем зачёте того варианта, что
+# считает число карточки (CARD_RATINGS). Подпись — название рейтинга на сайте,
+# единица — та же, что в его таблице (у индексов её нет: «+1»).
+CHALLENGE_PREFIX = "challenge:"
+CHALLENGE_LABELS: dict[str, str] = {
+    card: ("Нумератор ПРО" if card == "start_numbers_pro" else CHALLENGES_BY_CODE[code].title)
+    for card, (code, _variant) in CARD_RATINGS.items()
+}
+CHALLENGE_UNITS: dict[str, str] = {
+    card: (CHALLENGES_BY_CODE[code].unit_forms or ("", "", ""))[2] for card, (code, _variant) in CARD_RATINGS.items()
+}
 
 _LEVEL_RANK = {None: 0, "bronze": 1, "silver": 2, "gold": 3}
 _LEVEL_LABELS = {"bronze": "бронза", "silver": "серебро", "gold": "золото"}
@@ -492,6 +506,18 @@ def ratings_snapshot(db: Session, user: User) -> dict[str, dict[str, int]]:
             if isinstance(total, int):
                 entry["total"] = total
             snapshot[metric] = entry
+    try:
+        places = get_my_challenge_places(db, user)["places"]
+    except Exception:  # noqa: BLE001 — снимки челленджей не прочитались: сводка без них
+        logger.exception("notify: challenge places failed for %s", user.id)
+        places = {}
+    for card, place in places.items():
+        rank = place.get("rank")
+        if isinstance(rank, int) and rank > 0:
+            entry = {"rank": rank}
+            if isinstance(place.get("value"), int):
+                entry["total"] = place["value"]
+            snapshot[CHALLENGE_PREFIX + card] = entry
     return snapshot
 
 
@@ -516,6 +542,7 @@ def rating_moves(previous: dict[str, Any] | None, current: dict[str, Any]) -> li
     if previous is None:
         return []
     labels = dict(RATING_METRICS)
+    labels.update({CHALLENGE_PREFIX + card: title for card, title in CHALLENGE_LABELS.items()})
     moves: list[RatingMove] = []
     for metric, value in current.items():
         rank, total = _snapshot_entry(value)
@@ -529,10 +556,16 @@ def rating_moves(previous: dict[str, Any] | None, current: dict[str, Any]) -> li
                 rank=rank,
                 gained=before_rank - rank,
                 value_gained=total - before_total if total is not None and before_total is not None else None,
-                unit=metric_unit(metric) if metric in labels else "",
+                unit=_move_unit(metric, labels),
             )
         )
     return moves
+
+
+def _move_unit(metric: str, labels: dict[str, str]) -> str:
+    if metric.startswith(CHALLENGE_PREFIX):
+        return CHALLENGE_UNITS.get(metric.removeprefix(CHALLENGE_PREFIX), "")
+    return metric_unit(metric) if metric in labels else ""
 
 
 def milestone_key(item: dict[str, Any]) -> str:
@@ -704,9 +737,13 @@ def rating_line(move: RatingMove) -> str:
     """
     arrow = f"▲{move.gained}" if move.gained > 0 else f"▼{-move.gained}" if move.gained < 0 else "="
     line = f"«{move.label}» — {bold(_ordinal(move.rank) + ' место')} ({arrow})"
-    if move.value_gained and move.unit:
+    if move.value_gained:
         sign = "+" if move.value_gained > 0 else "−"
-        line += f" · {sign}{abs(move.value_gained)} {unit_form(move.value_gained, move.unit)}"
+        if move.unit:
+            line += f" · {sign}{abs(move.value_gained)} {unit_form(move.value_gained, move.unit)}"
+        elif move.metric.startswith(CHALLENGE_PREFIX):
+            # У индексов (p, V, Уилсон) единицы нет — просто «+1».
+            line += f" · {sign}{abs(move.value_gained)}"
     return line
 
 
@@ -845,13 +882,22 @@ def compose_message(
     return title, "\n\n".join(sections)
 
 
-def compose_ratings_message(moves: list[RatingMove]) -> tuple[str, str]:
-    lines = [rating_line(m) for m in moves]
+def compose_ratings_message(moves: list[RatingMove], challenges_url: str | None = None) -> tuple[str, str]:
+    """Обычные рейтинги, затем блок «🏅 Челленджи» — в том же порядке и том же
+    формате строк; в каждом — все рейтинги человека, неподвижные тоже."""
+    regular = [m for m in moves if not m.metric.startswith(CHALLENGE_PREFIX)]
+    challenges = [m for m in moves if m.metric.startswith(CHALLENGE_PREFIX)]
     moved = [m for m in moves if m.gained]
     title = (
         "📈 Рейтинги за неделю: вы поднялись" if moved and all(m.gained > 0 for m in moved) else "📊 Рейтинги за неделю"
     )
-    return title, "\n".join(lines)
+    sections: list[str] = []
+    if regular:
+        sections.append("\n".join(rating_line(m) for m in regular))
+    if challenges:
+        heading = link(bold("Челленджи:"), challenges_url) if challenges_url else bold("Челленджи:")
+        sections.append("🏅 " + heading + "\n" + "\n".join(rating_line(m) for m in challenges))
+    return title, "\n\n".join(sections)
 
 
 def _digest(parts: list[str]) -> str:
@@ -985,8 +1031,8 @@ def weekly_ratings_message(db: Session, user_id: UUID) -> dict[str, Any]:
     db.flush()
     delivery = None
     if moved:
-        title, text = compose_ratings_message(moves)
         base = get_settings().app_base_url.rstrip("/")
+        title, text = compose_ratings_message(moves, challenges_url=f"{base}/users/{_profile_handle(user)}/achievements")
         delivery = notifications.notify_user(
             db,
             user,

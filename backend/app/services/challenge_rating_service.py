@@ -1392,6 +1392,7 @@ def get_my_challenge_places(db: Session, user: User, platform: str = ALL) -> dic
             "platform": scope,
             "rank": None,
             "entrants": None,
+            "value": None,
         }
     query = select(
         ChallengeRatingSnapshot.code,
@@ -1414,6 +1415,7 @@ def get_my_challenge_places(db: Session, user: User, platform: str = ALL) -> dic
         links[card_code]["entrants"] = entrants
         if row:
             links[card_code]["rank"] = row.get("rank")
+            links[card_code]["value"] = row.get("value")
     return {"platform": platform, "places": links}
 
 
