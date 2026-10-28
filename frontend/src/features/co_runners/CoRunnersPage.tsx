@@ -157,7 +157,7 @@ function MeetingDate({ meeting }: { meeting: CoRunnerMeetingItem }) {
   return <ActivityDateLink date={meeting.event_date} target={meeting} url={meeting.event_url} />;
 }
 
-function MeetingsDetail({ meetings }: { meetings: CoRunnerMeetingItem[] }) {
+export function MeetingsDetail({ meetings }: { meetings: CoRunnerMeetingItem[] }) {
   const narrowViewport = useNarrowViewport();
 
   // На телефоне встречи читаются строкой-карточкой: дата+локация, оба

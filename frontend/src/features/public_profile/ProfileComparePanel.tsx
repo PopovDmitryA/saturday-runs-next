@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import {
+  getCoRunnerMeetings,
   getCoRunners,
   getDashboard,
   getProfileCompareLocations,
   type CoRunnerItem,
+  type CoRunnerMeetingItem,
   type DashboardStats,
   type ProfileCompareLocationRow,
   type User,
@@ -19,6 +21,7 @@ import {
 import { userLabel } from "../../lib/userLabel";
 import { TableWrap } from "../../components/tableUx/TableWrap";
 import { HeaderHint } from "../../components/tableUx/HeaderHint";
+import { MeetingsDetail } from "../co_runners/CoRunnersPage";
 
 /** Кто выигрывает строку: у времён меньше — лучше, у профильных строк никто. */
 type Better = "more" | "less" | "none";
@@ -310,6 +313,11 @@ export function ProfileComparePanel({
   const [meeting, setMeeting] = useState<CoRunnerItem | null>(null);
   const [locations, setLocations] = useState<ProfileCompareLocationRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Раскрытый список совместных стартов — как строка на странице «Встречи»:
+  // грузится при первом раскрытии.
+  const [meetingsOpen, setMeetingsOpen] = useState(false);
+  const [meetings, setMeetings] = useState<CoRunnerMeetingItem[] | null>(null);
+  const [meetingsError, setMeetingsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -351,6 +359,20 @@ export function ProfileComparePanel({
       cancelled = true;
     };
   }, [theirSerialId]);
+
+  const toggleMeetings = () => {
+    const next = !meetingsOpen;
+    setMeetingsOpen(next);
+    if (!next || meetings !== null || !meeting) {
+      return;
+    }
+    setMeetingsError(null);
+    getCoRunnerMeetings(meeting.participant_key)
+      .then(setMeetings)
+      .catch((err) =>
+        setMeetingsError(err instanceof Error ? err.message : "Не удалось загрузить встречи"),
+      );
+  };
 
   if (error) {
     return (
@@ -416,6 +438,37 @@ export function ProfileComparePanel({
           </p>
         )}
       </section>
+
+      {meeting && (
+        <section className="card">
+          <div className="loc-section-head">
+            <h2 className="section-title">Где бегали вместе</h2>
+            <button
+              type="button"
+              className="btn secondary btn-sm"
+              aria-expanded={meetingsOpen}
+              onClick={toggleMeetings}
+            >
+              {meetingsOpen ? "Скрыть" : `Показать все (${formatInt(meeting.meetings)})`}
+            </button>
+          </div>
+          {!meetingsOpen && (
+            <p className="muted">
+              Даты, локации и результаты каждого совместного старта с {theirName}.
+            </p>
+          )}
+          {meetingsOpen && meetingsError && <p className="error">{meetingsError}</p>}
+          {meetingsOpen && !meetingsError && meetings === null && <p className="muted">Загружаем…</p>}
+          {meetingsOpen && meetings !== null && meetings.length === 0 && (
+            <p className="muted">Совместных стартов не найдено.</p>
+          )}
+          {meetingsOpen && meetings !== null && meetings.length > 0 && (
+            <TableWrap>
+              <MeetingsDetail meetings={meetings} />
+            </TableWrap>
+          )}
+        </section>
+      )}
 
       <section className="card">
         <div className="loc-section-head">
