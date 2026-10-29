@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import cast
 
 from sqlalchemy.orm import Session
@@ -70,6 +70,10 @@ class DistanceRow:
     is_paused: bool
     # Системы, в которых площадка живёт сейчас, — плашками рядом с названием.
     platform_codes: list[str]
+    # Только у строк «ещё не был»: системы, в которых человек на этой площадке
+    # уже бывал. Пусто — не бывал нигде; иначе площадка «не посещена» лишь для
+    # остальных систем (фильтр «Система» в модалке).
+    visited_platform_codes: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -84,6 +88,7 @@ class DistanceRow:
             "is_home": self.is_home,
             "is_paused": self.is_paused,
             "platform_codes": list(self.platform_codes),
+            "visited_platform_codes": list(self.visited_platform_codes),
         }
 
 
@@ -300,13 +305,29 @@ def _overview_with_unvisited(
     overview, visited_rows, home_coordinates = _overview_from_detail(detail, user)
     if overview.home is None:
         return overview, visited_rows, []
-    visited_keys = {
-        str(item["catalog_identity_key"])
+    visited_platforms: dict[str, set[str]] = {
+        str(item["catalog_identity_key"]): {
+            str(platform["platform_code"])
+            for platform in cast(list[dict[str, object]], item["platforms"])
+        }
         for item in cast(list[dict[str, object]], detail["locations"])
     }
-    unvisited_rows = _unvisited_rows(db, visited_keys, home_coordinates)
+    unvisited_rows = _unvisited_rows(db, visited_platforms, home_coordinates)
     nearest = nearest_unvisited_for_platforms(unvisited_rows, list(user.tourism_platforms or []))
     return replace(overview, nearest_unvisited=nearest), visited_rows, unvisited_rows
+
+
+def is_unvisited_for_platforms(row: DistanceRow, wanted: set[str]) -> bool:
+    """Непосещена ли площадка при фильтре систем.
+
+    Без фильтра — только если человек не бывал на ней ни в одной системе. С
+    фильтром посещение считается по выбранным системам: бегал на площадке лишь
+    в другой системе — для выбранной она остаётся непосещённой.
+    """
+    if not wanted:
+        return not row.visited_platform_codes
+    visited = set(row.visited_platform_codes)
+    return any(code not in visited for code in wanted.intersection(row.platform_codes))
 
 
 def nearest_unvisited_for_platforms(
@@ -323,7 +344,7 @@ def nearest_unvisited_for_platforms(
     for row in unvisited_rows:
         if row.distance_km is None:
             continue
-        if wanted and not wanted.intersection(row.platform_codes):
+        if not is_unvisited_for_platforms(row, wanted):
             continue
         return row
     return None
@@ -380,7 +401,7 @@ def build_home_distance_detail(
 
 def _unvisited_rows(
     db: Session,
-    visited_keys: set[str],
+    visited_platforms: dict[str, set[str]],
     home_coordinates: tuple[float, float] | None,
 ) -> list[DistanceRow]:
     """Действующие российские площадки, где человек ещё не бегал.
@@ -393,7 +414,9 @@ def _unvisited_rows(
     rows: list[DistanceRow] = []
     for point in cast(list[dict[str, object]], payload["points"]):
         identity_key = str(point["catalog_identity_key"])
-        if identity_key in visited_keys:
+        visited_codes = visited_platforms.get(identity_key, set())
+        point_codes = {str(code) for code in cast(list[str], point.get("platform_codes") or [])}
+        if visited_codes and not point_codes - visited_codes:
             continue
         if bool(point.get("is_cancelled")) or bool(point.get("is_paused")):
             continue
@@ -417,6 +440,7 @@ def _unvisited_rows(
                 platform_codes=[
                     str(code) for code in cast(list[str], point.get("platform_codes") or [])
                 ],
+                visited_platform_codes=sorted(visited_codes),
             )
         )
     rows.sort(key=lambda row: (row.distance_km is None, row.distance_km or 0.0, row.name.casefold()))

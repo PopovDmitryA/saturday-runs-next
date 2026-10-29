@@ -200,6 +200,8 @@ export type HomeDistanceLocation = {
   is_paused: boolean;
   /** Системы площадки — плашками рядом с названием. */
   platform_codes: string[];
+  /** Только у «ещё не был»: системы, где участник на площадке уже бывал. */
+  visited_platform_codes?: string[];
 };
 
 export type HomeLocationSummary = {

@@ -138,9 +138,14 @@ export function HomeDistanceModal({
   const platformCodes = useMemo(() => orderedPlatformCodes(data?.unvisited ?? []), [data]);
   const unvisitedRows = useMemo(
     () =>
-      (data?.unvisited ?? []).filter(
-        (row) => platformFilter === "all" || row.platform_codes.includes(platformFilter),
-      ),
+      (data?.unvisited ?? []).filter((row) => {
+        // Посещение считается по выбранной системе: бегал на площадке только
+        // в другой системе — для этой она не посещена.
+        const visitedIn = row.visited_platform_codes ?? [];
+        return platformFilter === "all"
+          ? visitedIn.length === 0
+          : row.platform_codes.includes(platformFilter) && !visitedIn.includes(platformFilter);
+      }),
     [data, platformFilter],
   );
   // Что сохранено для плитки: пусто — все системы.
