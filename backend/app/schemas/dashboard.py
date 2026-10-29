@@ -32,6 +32,9 @@ class HomeDistanceLocationResponse(BaseModel):
     is_paused: bool = False
     # Системы площадки — плашками рядом с названием в модалке.
     platform_codes: list[str] = Field(default_factory=list)
+    # Только у «ещё не был»: системы, где человек на площадке уже бывал, —
+    # по ним модалка решает, показывать ли строку при фильтре «Система».
+    visited_platform_codes: list[str] = Field(default_factory=list)
 
 
 class HomeLocationSummaryResponse(BaseModel):

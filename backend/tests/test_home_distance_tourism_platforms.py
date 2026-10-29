@@ -101,3 +101,13 @@ def test_unvisited_rows_keep_partly_visited_locations(monkeypatch) -> None:  # t
     assert not service.is_unvisited_for_platforms(by_key["both"], {"s95"})
     assert not service.is_unvisited_for_platforms(by_key["both"], set())
     assert service.is_unvisited_for_platforms(by_key["fresh"], set())
+
+
+def test_api_schema_keeps_visited_platform_codes() -> None:
+    # 29.10.2026 поле молча выбрасывала схема ответа: бэкенд считал верно, а
+    # модалка видела пустой список и показывала посещённые площадки.
+    from app.schemas.dashboard import HomeDistanceLocationResponse
+
+    row = DistanceRow(**{**_row("Царицыно", 5.0, "s95", "runpark").__dict__, "visited_platform_codes": ["s95"]})
+    response = HomeDistanceLocationResponse.model_validate(row.as_dict())
+    assert response.model_dump()["visited_platform_codes"] == ["s95"]
