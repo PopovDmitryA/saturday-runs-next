@@ -20,6 +20,7 @@ import {
   PORTAL_CABINET_HREF,
   PORTAL_CABINET_MAP_HREF,
   PORTAL_CABINET_MEETINGS_HREF,
+  PORTAL_CABINET_PLANS_HREF,
   PORTAL_CABINET_RUNS_HREF,
   PORTAL_CABINET_SETTINGS_HREF,
   PORTAL_CABINET_SHARE_HREF,
@@ -75,6 +76,7 @@ const OnboardingPage = lazyPage(() => import("./features/onboarding/OnboardingPa
 const PortalMapLab = lazyPage(() => import("./features/portal/PortalMapLab"), (m) => m.PortalMapLab);
 const AdminBlogPage = lazyPage(() => import("./features/admin/AdminBlogPage"), (m) => m.AdminBlogPage);
 const AdminReleasesPage = lazyPage(() => import("./features/admin/AdminReleasesPage"), (m) => m.AdminReleasesPage);
+const AdminStartDatesPage = lazyPage(() => import("./features/admin/AdminStartDatesPage"), (m) => m.AdminStartDatesPage);
 const AdminBacklogPage = lazyPage(() => import("./features/admin/AdminBacklogPage"), (m) => m.AdminBacklogPage);
 const AdminNotificationsPage = lazyPage(
   () => import("./features/admin/AdminNotificationsPage"),
@@ -100,6 +102,9 @@ const OrganizerAudiencePage = lazyPage(() => import("./features/organizer/Organi
 const OrganizerBenchPage = lazyPage(() => import("./features/organizer/OrganizerBenchPage"), (m) => m.OrganizerBenchPage);
 const OrganizerIndexPage = lazyPage(() => import("./features/organizer/OrganizerIndexPage"), (m) => m.OrganizerIndexPage);
 const OrganizerMilestonesPage = lazyPage(() => import("./features/organizer/OrganizerMilestonesPage"), (m) => m.OrganizerMilestonesPage);
+const OrganizerCalendarPage = lazyPage(() => import("./features/organizer/OrganizerCalendarPage"), (m) => m.OrganizerCalendarPage);
+const OrganizerGuestsPage = lazyPage(() => import("./features/organizer/OrganizerGuestsPage"), (m) => m.OrganizerGuestsPage);
+const OrganizerGuestPage = lazyPage(() => import("./features/organizer/OrganizerGuestPage"), (m) => m.OrganizerGuestPage);
 const OrganizerNewcomersPage = lazyPage(() => import("./features/organizer/OrganizerNewcomersPage"), (m) => m.OrganizerNewcomersPage);
 const OrganizerPostPage = lazyPage(() => import("./features/organizer/OrganizerPostPage"), (m) => m.OrganizerPostPage);
 const OrganizerTeamPage = lazyPage(() => import("./features/organizer/OrganizerTeamPage"), (m) => m.OrganizerTeamPage);
@@ -111,6 +116,7 @@ const ChallengeRatingPage = lazyPage(() => import("./features/leaderboards/Chall
 const QueuePage = lazyPage(() => import("./features/queue/QueuePage"), (m) => m.QueuePage);
 const PortalCabinetSettingsPage = lazyPage(() => import("./features/portal/cabinet/PortalCabinetPages"), (m) => m.PortalCabinetSettingsPage);
 const PortalCabinetSharePage = lazyPage(() => import("./features/portal/cabinet/PortalCabinetPages"), (m) => m.PortalCabinetSharePage);
+const PortalCabinetPlansPage = lazyPage(() => import("./features/portal/cabinet/PortalCabinetPages"), (m) => m.PortalCabinetPlansPage);
 const RenderOgDefaultPage = lazyPage(() => import("./features/sharing/RenderOgPage"), (m) => m.RenderOgDefaultPage);
 const RenderOgLocationPage = lazyPage(() => import("./features/sharing/RenderOgPage"), (m) => m.RenderOgLocationPage);
 const RenderOgUserPage = lazyPage(() => import("./features/sharing/RenderOgPage"), (m) => m.RenderOgUserPage);
@@ -247,6 +253,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   [PORTAL_CABINET_MAP_HREF]: () => <CabinetLegacyRedirect tab="map" />,
   [PORTAL_CABINET_HISTORY_HREF]: () => <CabinetLegacyRedirect tab="history" />,
   [PORTAL_CABINET_SHARE_HREF]: () => <PortalCabinetSharePage />,
+  // Планы на старты — только владельцу, поэтому не вкладка /users/{хендл}/….
+  [PORTAL_CABINET_PLANS_HREF]: () => <PortalCabinetPlansPage />,
   [PORTAL_CABINET_SETTINGS_HREF]: () => <PortalCabinetSettingsPage />,
   // Адреса тёмного запуска остаются работающими ссылками.
   "/new/share": () => <PathRedirect to={PORTAL_CABINET_SHARE_HREF} />,
@@ -327,6 +335,8 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/location-openings": () => <AdminLocationOpeningsPage />,
   "/admin/blog": () => <AdminBlogPage />,
   "/admin/releases": () => <AdminReleasesPage />,
+  // Особые даты стартов (1 января и т.п.) — даты для планов кроме суббот.
+  "/admin/start-dates": () => <AdminStartDatesPage />,
   "/admin/backlog": () => <AdminBacklogPage />,
   "/admin/notifications": () => <AdminNotificationsPage />,
   "/admin/track-imports": () => <AdminTrackImportsPage />,
@@ -413,6 +423,20 @@ function renderRoute(path: string): ReactElement {
   const organizerMilestonesMatch = path.match(/^\/organizer\/([^/]+)\/milestones$/);
   if (organizerMilestonesMatch) {
     return <OrganizerMilestonesPage slug={decodeURIComponent(organizerMilestonesMatch[1])} />;
+  }
+  const organizerCalendarMatch = path.match(/^\/organizer\/([^/]+)\/calendar$/);
+  if (organizerCalendarMatch) {
+    return <OrganizerCalendarPage slug={decodeURIComponent(organizerCalendarMatch[1])} />;
+  }
+  // «Кто у нас бежит» и страница участника: /organizer/{slug}/guests[/{хендл}].
+  const organizerGuestsMatch = path.match(/^\/organizer\/([^/]+)\/guests(?:\/([^/]+))?$/);
+  if (organizerGuestsMatch) {
+    const slug = decodeURIComponent(organizerGuestsMatch[1]);
+    return organizerGuestsMatch[2] ? (
+      <OrganizerGuestPage slug={slug} handle={decodeURIComponent(organizerGuestsMatch[2])} />
+    ) : (
+      <OrganizerGuestsPage slug={slug} />
+    );
   }
   const organizerNewcomersMatch = path.match(/^\/organizer\/([^/]+)\/newcomers$/);
   if (organizerNewcomersMatch) {

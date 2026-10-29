@@ -16,9 +16,14 @@ type StatHintTooltipProps = {
   content?: ReactNode;
   children: ReactNode;
   className?: string;
+  /**
+   * Подпись триггера-значка («i») для экранных читалок: с ней триггер —
+   * кнопка с этим именем, а не безымянный фокус на span.
+   */
+  label?: string;
 };
 
-export function StatHintTooltip({ text, content, children, className }: StatHintTooltipProps) {
+export function StatHintTooltip({ text, content, children, className, label }: StatHintTooltipProps) {
   const triggerRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(false);
@@ -48,6 +53,14 @@ export function StatHintTooltip({ text, content, children, className }: StatHint
     setVisible(false);
   };
 
+  // Уход курсора не закрывает подсказку, открытую тапом или кликом: триггер
+  // тогда в фокусе, и закроют её blur или тап мимо. Иначе на телефоне за тапом
+  // следовал синтетический mouseleave, и «i» мигала, не успев показаться.
+  const hideOnLeave = () => {
+    if (document.activeElement !== triggerRef.current) {
+      hide();
+    }
+  };
 
   // Тултип центрируется по триггеру (transform: translateX(-50%)), поэтому у
   // правого края экрана он вылезал за границу — у колонки PR подсказка
@@ -110,7 +123,7 @@ export function StatHintTooltip({ text, content, children, className }: StatHint
         ref={triggerRef}
         className={className ?? "stat-hint-tooltip-trigger"}
         onMouseEnter={show}
-        onMouseLeave={hide}
+        onMouseLeave={hideOnLeave}
         // Тап на тачскринах: mouseenter там не живёт, показываем по клику;
         // закрытие — тапом мимо (см. handleOutside). stopPropagation глушит
         // клик-сортировку на th, чтобы тап по «?» не менял сортировку.
@@ -120,7 +133,14 @@ export function StatHintTooltip({ text, content, children, className }: StatHint
         }}
         onFocus={show}
         onBlur={hide}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            hide();
+          }
+        }}
         tabIndex={0}
+        role={label ? "button" : undefined}
+        aria-label={label}
         aria-describedby={visible ? "stat-hint-tooltip" : undefined}
       >
         {children}

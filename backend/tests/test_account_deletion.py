@@ -44,6 +44,8 @@ from app.models import (
     ProfileFetchPending,
     ProfileFetchPendingReason,
     ProfileFetchPendingStatus,
+    RunPlan,
+    RunPlanSeries,
     RunTrack,
     SyncJob,
     SyncJobStatus,
@@ -389,6 +391,30 @@ def _build_world(db: Session, user: User, settings: Settings) -> World:
     )
     db.add(UserGoal(user_id=user.id, year=2026, goal_type="runs_total", target_value=30))
     db.add(LocationOrganizerAccess(user_id=user.id, location_key="catalog:999999"))
+    # Планировщик: публичный план на старт и публичное «Не бегаю» — уходят
+    # вместе с профилем, как и всё личное.
+    db.add(
+        RunPlan(
+            user_id=user.id,
+            plan_date=date(2026, 10, 31),
+            location_key=f"location:{lonely.id}",
+            location_id=lonely.id,
+            platform_code="five_verst",
+            is_public=True,
+        )
+    )
+    db.add(RunPlan(user_id=user.id, plan_date=date(2026, 11, 7), rest=True, is_public=True))
+    # Постоянный план «каждую субботу» — со сном в истории: поведение человека.
+    db.add(
+        RunPlanSeries(
+            user_id=user.id,
+            location_key=f"location:{lonely.id}",
+            location_id=lonely.id,
+            starts_on=date(2026, 9, 5),
+            is_public=True,
+            sleep_history=[{"from": "2026-09-20", "to": "2026-10-01"}],
+        )
+    )
     # Заявки на сбор профиля во всех состояниях. Каждую незавершённую очередь
     # иначе подобрала бы сама: pending — сразу, failed без метки «навсегда» —
     # reset_failed_pending, processing — requeue_stuck_processing_pending.
@@ -528,6 +554,8 @@ def test_preview_counts(client: TestClient, db_session: Session, account_setting
     assert preview["review_photos"] == 1
     assert preview["goals"] == 1
     assert preview["run_tracks"] == 2
+    assert preview["run_plans"] == 2
+    assert preview["run_plan_series"] == 1
     assert preview["backlog_cards"] == 1
     assert preview["backlog_comments"] == 1
     assert preview["backlog_votes"] == 1
@@ -604,6 +632,8 @@ def test_delete_account_end_to_end(
     assert _count(db_session, UserGoal, UserGoal.user_id == user_id) == 0
     assert _count(db_session, LocationOrganizerAccess, LocationOrganizerAccess.user_id == user_id) == 0
     assert _count(db_session, RunTrack, RunTrack.user_id == user_id) == 0
+    assert _count(db_session, RunPlan, RunPlan.user_id == user_id) == 0
+    assert _count(db_session, RunPlanSeries, RunPlanSeries.user_id == user_id) == 0
     assert db_session.get(AdminTrackImport, world.batch_id) is None
     assert _count(db_session, UserNotificationPrefs, UserNotificationPrefs.user_id == user_id) == 0
     assert _count(db_session, UserNotificationChannel, UserNotificationChannel.user_id == user_id) == 0

@@ -23,6 +23,9 @@ const KIND_LABELS: Record<string, string> = {
   backlog: "Бэклог",
   backlog_new_cards: "Новые карточки",
   volunteer_signup: "Волонтёрство",
+  plan_reminders: "Напоминания о планах",
+  plan_cancellations: "Отмены планов",
+  plan_series: "Постоянный план на паузе",
   test: "Проверка",
 };
 

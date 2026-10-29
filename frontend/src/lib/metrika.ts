@@ -33,6 +33,17 @@ declare global {
 let initialHitDone = false;
 let pendingPath: string | null = null;
 
+// Страница участника в оргкабинете — адресом списка гостей, как
+// stored_page_path в аналитике сайта: чью карточку открыл организатор, — дело
+// его и человека, не аналитики. Та же замена — у init в index.html (прямой
+// заход и referrer); содержимое страниц гостей закрыто от вебвизора классом
+// ym-hide-content.
+const ORGANIZER_GUEST_RE = /^(\/organizer\/[^/]+\/guests)\/[^/]+$/;
+
+export function metrikaPath(path: string): string {
+  return path.replace(ORGANIZER_GUEST_RE, "$1");
+}
+
 function send(path: string): void {
   if (!initialHitDone) {
     // Эту загрузку уже посчитал init из сниппета.
@@ -42,7 +53,7 @@ function send(path: string): void {
   if (typeof window === "undefined" || !window.ym) {
     return;
   }
-  window.ym(METRIKA_COUNTER_ID, "hit", path, { title: document.title });
+  window.ym(METRIKA_COUNTER_ID, "hit", metrikaPath(path), { title: document.title });
 }
 
 /** Просмотр страницы с заранее известным заголовком — шлётся сразу. */

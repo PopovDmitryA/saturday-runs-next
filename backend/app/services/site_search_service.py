@@ -472,6 +472,57 @@ def _catalog_filter_count(docs: list[_LocationDoc], text: str) -> int:
     return count
 
 
+def _ranked_location_docs(words: list[str], docs: list[_LocationDoc]) -> tuple[str | None, list[_LocationDoc]]:
+    """(место, локации по запросу в порядке выдачи) — без обрезки.
+
+    Весь запрос — место (город, регион, страна, «спб») — его локации по
+    популярности; иначе — по качеству совпадения слов, началу названия и
+    популярности."""
+    place = _resolve_place(words, docs)
+    if place is not None:
+        in_place = [doc for doc in docs if place in doc.places]
+        in_place.sort(key=lambda doc: (*_popularity(doc), doc.name))
+        return place, in_place
+
+    first = words[0]
+    folded_query = " ".join(words)
+    matched: list[tuple[tuple[Any, ...], _LocationDoc]] = []
+    for doc in docs:
+        quality = min(_match_level(word, doc) for word in words)
+        if quality == 0:
+            continue
+        # Совпадение с начала названия — выше всего («Сокольники» на
+        # «сокол»), затем с начала любого слова названия, затем остальное.
+        if doc.name.startswith(folded_query):
+            prefix_rank = 0
+        elif any(token.startswith(first) for token in doc.name_tokens):
+            prefix_rank = 1
+        else:
+            prefix_rank = 2
+        matched.append(((-quality, prefix_rank, *_popularity(doc), doc.name), doc))
+    matched.sort(key=lambda item: item[0])
+    return None, [doc for _rank, doc in matched]
+
+
+def matching_location_entries(db: Session, query_text: str) -> list[dict[str, Any]]:
+    """Записи каталога локаций по запросу — в порядке выдачи поиска по сайту и
+    без обрезки: те же слова, сокращения мест (_PLACE_ALIASES) и «е»=«ё».
+    Короткий или пустой запрос — пусто. Его зовёт «Где бежите?» планировщика:
+    он отбирает из выдачи только то, что можно запланировать на дату."""
+    if len(query_text.strip()) < LOCATION_MIN_QUERY_LENGTH:
+        return []
+    words = _significant_location_words(query_text)
+    if not words:
+        return []
+    _place, ranked = _ranked_location_docs(words, _location_docs(db))
+    return [doc.entry for doc in ranked]
+
+
+def location_entries_by_key(db: Session) -> dict[str, dict[str, Any]]:
+    """Записи каталога локаций по ключу идентичности (из того же кэша)."""
+    return {str(entry.get("identity_key")): entry for entry in _location_entries(db) if entry.get("identity_key")}
+
+
 def search_locations_page(
     db: Session, query_text: str, docs: list[_LocationDoc] | None = None
 ) -> dict[str, Any]:
@@ -485,44 +536,17 @@ def search_locations_page(
     if docs is None:
         docs = _location_docs(db)
 
-    place = _resolve_place(words, docs)
-    if place is not None:
-        in_place = [doc for doc in docs if place in doc.places]
-        in_place.sort(key=lambda doc: (*_popularity(doc), doc.name))
-        shown = in_place[:LOCATION_LIMIT]
-        all_link = None
-        if len(in_place) > len(shown):
-            value = in_place[0].places[place]
-            kind = in_place[0].place_kinds.get(place)
-            count = _catalog_filter_count(docs, value)
-            if count > len(shown):
-                label = _region_label(value) if kind == "region" else value
-                all_link = {"label": label, "query": value, "count": count}
-        return {"locations": [_location_payload(doc.entry) for doc in shown], "total": len(in_place), "all": all_link}
-
-    first = words[0]
-    folded_query = " ".join(words)
-    matched: list[tuple[tuple[Any, ...], int, _LocationDoc]] = []
-    for doc in docs:
-        levels = [_match_level(word, doc) for word in words]
-        quality = min(levels)
-        if quality == 0:
-            continue
-        # Совпадение с начала названия — выше всего («Сокольники» на
-        # «сокол»), затем с начала любого слова названия, затем остальное.
-        if doc.name.startswith(folded_query):
-            prefix_rank = 0
-        elif any(token.startswith(first) for token in doc.name_tokens):
-            prefix_rank = 1
-        else:
-            prefix_rank = 2
-        matched.append(((-quality, prefix_rank, *_popularity(doc), doc.name), quality, doc))
-    matched.sort(key=lambda item: item[0])
-    return {
-        "locations": [_location_payload(doc.entry) for _rank, _quality, doc in matched[:LOCATION_LIMIT]],
-        "total": len(matched),
-        "all": None,
-    }
+    place, ranked = _ranked_location_docs(words, docs)
+    shown = ranked[:LOCATION_LIMIT]
+    all_link = None
+    if place is not None and len(ranked) > len(shown):
+        value = ranked[0].places[place]
+        kind = ranked[0].place_kinds.get(place)
+        count = _catalog_filter_count(docs, value)
+        if count > len(shown):
+            label = _region_label(value) if kind == "region" else value
+            all_link = {"label": label, "query": value, "count": count}
+    return {"locations": [_location_payload(doc.entry) for doc in shown], "total": len(ranked), "all": all_link}
 
 
 def search_locations(db: Session, query_text: str) -> list[dict[str, Any]]:

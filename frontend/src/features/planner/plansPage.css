@@ -1,0 +1,1010 @@
+/* Страница «Планы», карточка «Ближайший план» на «Обзоре», календарь
+   оргкабинета и особые даты в админке. Только переменные темы из index.css —
+   тёмная тема получается сама. */
+
+/* ---------- «Ближайший план» на «Обзоре» ---------- */
+
+/* .card.plans-next, а не .plans-next: у .card свой display: grid, и какой из
+   двух равных селекторов победит, решал бы порядок CSS-чанков в сборке. */
+.card.plans-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+/* Значок — у первой строки: под ней бывают кнопки и тихие строки, и по
+   центру высоты он висел бы посреди карточки. */
+.plans-next-icon {
+  align-self: flex-start;
+  margin-top: 0.1rem;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+/* Текст карточки и под ним — кнопки «Планирую / Не бегаю» или тихие строки
+   «Дальше: …» и «видно в профиле». Основа 12rem: на телефоне 360 значок,
+   зазор и 16rem в карточку не влезали, и текст уезжал строкой ниже значка
+   (ревью 26.10.2026, UI-D3); «Все планы →» переносится сам. */
+.plans-next-body {
+  flex: 1 1 12rem;
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.plans-next-body > p {
+  margin: 0;
+}
+
+.plans-next-text {
+  line-height: 1.45;
+}
+
+.plans-next-later {
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.plans-next-later a:not(.location-page-link) {
+  color: var(--link);
+}
+
+.plans-next-actions {
+  margin: 0;
+}
+
+/* «Отменить» у «не бегаете» — ссылкой в строке, без кнопки-плашки. */
+.plans-next-undo {
+  font-size: inherit;
+}
+
+.plans-next-when {
+  font-weight: 700;
+}
+
+.plans-next-cancel {
+  color: var(--tint-red-text);
+}
+
+.plans-next-all {
+  white-space: nowrap;
+  font-size: 0.92rem;
+  color: var(--link);
+}
+
+/* ---------- строка плана в шапке профиля ---------- */
+
+/* «📅 Ближайший план: сб 31 октября — Зеленоград · все планы» под именем участника. */
+.profile-plan-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+
+.profile-plan-icon {
+  flex: none;
+}
+
+.profile-plan-cancel {
+  color: var(--tint-red-text);
+}
+
+.profile-plan-line a.profile-plan-all {
+  color: var(--link);
+  white-space: nowrap;
+}
+
+/* ---------- вкладка «Планы» профиля ---------- */
+
+/* Свой адрес: «Так ваши планы видят другие · Все мои планы» — строкой над
+   календарём, без карточки. */
+.profile-plans-own {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--text-2);
+}
+
+.profile-plans-own .link {
+  color: var(--link);
+  white-space: nowrap;
+}
+
+/* ---------- календарь месяца ---------- */
+
+.plans-cal {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.plans-cal-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.plans-cal-title {
+  margin: 0;
+  min-width: 9.5rem;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.plans-cal-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.plans-cal-nav:hover:not(:disabled) {
+  background: var(--bg-muted);
+}
+
+.plans-cal-nav:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.plans-cal-today {
+  margin-left: auto;
+}
+
+.plans-cal-weekdays,
+.plans-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.plans-cal-weekdays span {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.plans-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.2rem;
+  min-width: 0;
+  min-height: 3.4rem;
+  padding: 0.35rem 0.15rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+  /* Ширину клетки задаёт сетка, не содержимое, — по ней подпись «сегодня»
+     решает, словом ей быть или чертой. */
+  container: plans-day / inline-size;
+}
+
+button.plans-day {
+  cursor: pointer;
+}
+
+button.plans-day:hover {
+  border-color: var(--border-strong);
+}
+
+button.plans-day:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+.plans-day-out {
+  border-color: transparent;
+  background: transparent;
+}
+
+/* День без стартов в «Моих планах» и в профиле — не нажимается (решение
+   Дмитрия 27.10.2026), поэтому и не похож на кнопку: без рамки, число тише. */
+.plans-day-off {
+  border-color: transparent;
+  background: var(--bg-muted);
+}
+
+.plans-day-off .plans-day-num {
+  color: var(--text-faint);
+}
+
+.plans-day-num {
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.plans-day-past .plans-day-num {
+  color: var(--text-muted);
+}
+
+/* Субботы в кабинете и дни стартов в оргкабинете — даты, на которые
+   вообще можно планировать. */
+.plans-day-sat,
+.plans-day-start {
+  background: var(--tint-indigo-bg);
+}
+
+/* Плотный янтарный фон, а не только рамка: выбранный день рисуется обводкой
+   поверх рамки, и при бледной заливке особая дата читалась бы белой. */
+.plans-day-special {
+  background: var(--tint-amber-bg-strong);
+  border-color: var(--tint-amber-border-strong);
+}
+
+/* Сегодня — тихая отметка: число цветом ссылки и подпись «сегодня» под ним.
+   Ни рамки, ни заливки — ими говорят выбор, день старта и особая дата, и
+   сегодняшний день не должен выглядеть ни стартом, ни кнопкой. */
+.plans-day-today .plans-day-num {
+  font-weight: 700;
+  color: var(--link);
+}
+
+.plans-day-today-label {
+  margin-top: -0.2rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--link);
+  white-space: nowrap;
+}
+
+/* Узкая клетка (телефон, узкая колонка) — слово не влезает: вместо него
+   короткая черта под числом того же цвета. Слово остаётся в разметке для
+   экранного диктора. */
+@container plans-day (max-width: 3rem) {
+  .plans-day-today-label {
+    width: 0.85rem;
+    height: 2px;
+    margin-top: -0.1rem;
+    overflow: hidden;
+    border-radius: 1px;
+    background: var(--link);
+    font-size: 0;
+  }
+}
+
+/* Выбранный день — только кольцом (рамка + тень в 1px наружу, в зазор сетки):
+   заливку клетки не трогаем, цвет субботы и особой даты и отметки видны. */
+.plans-day-selected,
+button.plans-day-selected:hover {
+  border-color: var(--accent-indigo);
+  box-shadow: 0 0 0 1px var(--accent-indigo);
+}
+
+.plans-day-marks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 0.8rem;
+}
+
+/* Подпись дня — название локации плана мелким текстом (замечание Дмитрия
+   26.10.2026: вместо точек). Одной строкой с многоточием; «+1» не режется. */
+.plans-day-caption {
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 0.2rem;
+}
+
+.plans-cap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2rem;
+  max-width: 100%;
+  min-width: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.plans-cap-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plans-cap-icon,
+.plans-cap-more {
+  flex: none;
+  font-weight: 700;
+}
+
+/* Замок приватного плана — тем же цветом, что подпись, но тише: пометка, а
+   не предупреждение. */
+.plans-cap-lock {
+  flex: none;
+  display: inline-flex;
+  align-self: center;
+  opacity: 0.75;
+}
+
+.plans-lock-icon {
+  display: block;
+  width: 0.62rem;
+  height: 0.62rem;
+}
+
+.plans-legend-lock {
+  display: inline-flex;
+  align-items: center;
+}
+
+.plans-legend-lock .plans-lock-icon {
+  width: 0.78rem;
+  height: 0.78rem;
+}
+
+/* Впереди — цветом плана, сбылось — зелёным, прошло без протокола — тише
+   плана, не получилось и «не бегаю» — серым: план ни к чему не обязывал. */
+.plans-cap-plan {
+  color: var(--accent-indigo-text);
+}
+
+.plans-cap-done {
+  color: var(--accent-green-text);
+}
+
+.plans-cap-past {
+  color: var(--text-muted);
+}
+
+.plans-cap-muted {
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+/* Узкая клетка (телефон, 7 колонок на 360) — название в две строки, «+1» —
+   строкой ниже. Слово, которое не влезает в строку, переносим по слогам
+   («Зелено-/град», «Кузь-/минки»), а не где придётся: обрывок «Пушки/н» читался
+   хуже дефиса. Слоговых переносов браузер не знает — рвёт где придётся
+   (overflow-wrap). Подпись заходит на поля клетки, шрифт чуть уже: так слово
+   в шесть-семь букв («Пушкин», «Елагин», «Колпино») встаёт в строку целиком.
+   Высота строки — ровные 10px: при дробной из-под второй строки выглядывал
+   верх третьей. Значок «↻»/«✓» — в левом верхнем углу клетки: строку
+   названия он не занимает. Целиком название — в подписи дня
+   для экранного диктора и в деталях дня. */
+@container plans-day (max-width: 3.5rem) {
+  .plans-day-caption {
+    margin: 0 -0.12rem;
+    padding: 0;
+  }
+
+  .plans-cap {
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    font-size: 0.55rem;
+    letter-spacing: -0.03em;
+    line-height: 0.625rem;
+    text-align: center;
+  }
+
+  .plans-cap-icon {
+    position: absolute;
+    top: 0.2rem;
+    left: 2px;
+    font-size: 0.58rem;
+    line-height: 1;
+  }
+
+  /* Замок — в правом верхнем углу, напротив «↻»: строку названия не занимает. */
+  .plans-cap-lock {
+    position: absolute;
+    top: 0.25rem;
+    right: 2px;
+  }
+
+  .plans-lock-icon {
+    width: 0.55rem;
+    height: 0.55rem;
+  }
+
+  .plans-cap-name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    -webkit-hyphens: auto;
+    hyphens: auto;
+  }
+}
+
+/* Профиль: все локации дня строками (широкая клетка) или «Кусково +1»
+   (узкая) — видна одна из двух подписей. */
+.plans-cap-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.plans-cap-short {
+  display: none;
+}
+
+.plans-cap-line {
+  max-width: 100%;
+}
+
+/* Название-ссылка в клетке: цвет подписи, подчёркивание — по наведению. */
+.plans-cap-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.plans-cap-link:hover,
+.plans-cap-link:focus-visible {
+  text-decoration: underline;
+}
+
+.plans-cap-link:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+@container plans-day (max-width: 3.5rem) {
+  .plans-cap-list {
+    display: none;
+  }
+
+  .plans-cap-short {
+    display: inline-flex;
+  }
+}
+
+/* Образцы цвета в легенде — той же подписью, что в клетке. */
+.plans-legend-cap {
+  font-size: 0.78rem;
+}
+
+/* Число планов на день старта в оргкабинете. */
+.plans-count {
+  display: inline-block;
+  min-width: 1.3rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--accent-indigo);
+  color: var(--surface);
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+.plans-count-past {
+  background: var(--chip-bg);
+  color: var(--text-muted);
+}
+
+.plans-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.plans-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.plans-legend-sat,
+.plans-legend-start,
+.plans-legend-special {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  background: var(--tint-indigo-bg);
+}
+
+/* Тот же тон, что у клетки особого дня (.plans-day-special). */
+.plans-legend-special {
+  border-color: var(--tint-amber-border-strong);
+  background: var(--tint-amber-bg-strong);
+}
+
+/* ---------- детали дня ---------- */
+
+.plans-details {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  /* Докрутка из «Ближайших»: над деталями липкие шапка и полоса раздела. */
+  scroll-margin-top: calc(var(--portal-header-h, 61px) + 4rem);
+}
+
+.plans-details > * {
+  margin: 0;
+}
+
+.plans-details-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.plans-details-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* Крестик «Снять выбор» — то же, что повторное нажатие на день. */
+.plans-details-clear {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  margin: -0.3rem -0.3rem 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.plans-details-clear:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.plans-details-clear:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+.plans-details-when {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.plans-item-cancel {
+  color: var(--tint-red-text);
+  font-size: 0.92rem;
+}
+
+/* ---------- «Ближайшие» на телефоне ---------- */
+
+.plans-upcoming-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plans-upcoming-item {
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plans-upcoming-item:hover {
+  border-color: var(--border-strong);
+}
+
+.plans-upcoming-when {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.plans-upcoming-what {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+
+/* ---------- оргкабинет ---------- */
+
+.plans-org-summary {
+  font-weight: 600;
+}
+
+/* ---------- админка: особые даты ---------- */
+
+.plans-admin-platforms {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.plans-admin-platforms .login-consent-field {
+  margin: 0;
+}
+
+.plans-admin-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.plans-admin-past td {
+  color: var(--text-muted);
+}
+
+/* Ошибка удаления над таблицей: между заголовком и строками, а не вместо них. */
+.plans-admin-delete-error {
+  margin: 0 0 0.75rem;
+}
+
+/* ---------- телефон ---------- */
+
+@media (max-width: 640px) {
+  .plans-cal-title {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .plans-cal-weekdays,
+  .plans-cal-grid {
+    gap: 3px;
+  }
+
+  .plans-day {
+    min-height: 2.9rem;
+    padding: 0.25rem 0;
+    border-radius: 8px;
+  }
+
+  .plans-day-num {
+    font-size: 0.85rem;
+  }
+}
+
+/* ---------- постоянный план («каждую субботу») ---------- */
+
+/* Карточка над месяцем: тот же тон, что у суббот в сетке. */
+.card.plans-series-card {
+  gap: 0.4rem;
+  border-color: var(--tint-indigo-bg-strong);
+  scroll-margin-top: calc(var(--portal-header-h, 61px) + 4rem);
+}
+
+.card.plans-series-card:focus {
+  outline: none;
+}
+
+.card.plans-series-card:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.plans-series-card > p {
+  margin: 0;
+}
+
+.plans-series-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.4rem;
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.plans-series-icon {
+  color: var(--accent-indigo-text);
+}
+
+/* «на паузе» — тихая серая плашка, без тревоги: план никуда не делся. */
+.plans-series-badge {
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.plans-series-meta {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.plans-series-text {
+  font-size: 0.92rem;
+  color: var(--text-2);
+}
+
+.plans-series-skips {
+  font-size: 0.86rem;
+}
+
+.plans-series-actions {
+  margin-top: 0.2rem;
+}
+
+/* «Ближайшие»: постоянный план — одной закреплённой строкой над списком. */
+.plans-upcoming-series {
+  margin-bottom: 0.4rem;
+  border-color: var(--tint-indigo-bg-strong);
+  background: var(--tint-indigo-bg);
+}
+
+.plans-next-series {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* «↻» перед названием в строке профиля. */
+.profile-plan-regular {
+  color: var(--accent-indigo-text);
+}
+
+/* ---------- детали дня: компактная панель ----------
+   Отзыв Дмитрия 27.10.2026: «колхозно — локация, отдельным блоком «Не бегаю»,
+   ниже криво-косо заметки». Дата, планы дня строками, одна строка действий. */
+
+.pday {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.pday > * {
+  margin: 0;
+}
+
+.pday-special {
+  font-size: 0.86rem;
+  color: var(--text-3);
+}
+
+.pday-special-title {
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
+  font-weight: 600;
+}
+
+.pday-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pday-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.pday-row:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.pday-row-main {
+  flex: 1 1 auto;
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.pday-row-main > p {
+  margin: 0;
+}
+
+.pday-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.45rem;
+  min-width: 0;
+}
+
+.pday-row-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+/* «↻ постоянный», «приватно» — тихие пометки, не плашки. */
+.pday-tag {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.pday-tag-series {
+  color: var(--accent-indigo-text);
+}
+
+.pday-row-meta {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.pday-warn {
+  color: var(--tint-red-text);
+}
+
+.pday-done {
+  color: var(--accent-green-text);
+  font-weight: 600;
+}
+
+.pday-row-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  margin: -0.15rem -0.25rem 0 0;
+}
+
+.pday-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 2rem;
+  padding: 0.2rem 0.45rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.pday-act:hover {
+  background: var(--bg-muted);
+  color: var(--link);
+}
+
+.pday-act-remove:hover {
+  color: var(--tint-red-text);
+}
+
+.pday-act:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+/* На компьютере — подписи, на телефоне — значки. */
+.pday-act-icon {
+  display: none;
+}
+
+.pday-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.pday-rest,
+.pday-rest-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+}
+
+/* «Планирую пробежать» — у правого края строки «Не бегаете»; узкой панели —
+   строкой ниже, слева, как кнопки дня без отметки. */
+.pday-rest-plan {
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  .pday-rest-plan {
+    margin-left: 0;
+  }
+}
+
+.pday-rest-title {
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.pday-rest .plan-vis {
+  flex: 0 1 auto;
+}
+
+/* В строке «Не бегаете» переключатель по содержимому, без запаса ширины. */
+.pday-rest .plan-vis-compact .plan-vis-seg {
+  flex-basis: auto;
+}
+
+.pday-rest-undo {
+  font-size: 0.88rem;
+}
+
+.pday-rest-past {
+  font-size: 0.9rem;
+  color: var(--text-faint);
+}
+
+.pday-rest-past.pday-done {
+  color: var(--accent-green-text);
+}
+
+.pday-empty {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .pday-act {
+    width: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0;
+  }
+
+  .pday-act-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .pday-act-icon {
+    display: block;
+  }
+}

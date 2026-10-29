@@ -206,6 +206,30 @@ function OrganizerHubContent({ slug }: { slug: string }) {
           <span className="org-hub-meta">Юбилеи на ближайшие 4 участия</span>
         </a>
 
+        <a className="card org-hub-card" href={`/organizer/${slug}/calendar`}>
+          <span className="org-hub-emoji" aria-hidden="true">
+            📅
+          </span>
+          <h2 className="org-hub-title">Календарь локации</h2>
+          <p className="muted org-hub-text">
+            Сколько людей собирается пробежать на ближайших стартах и сколько из планировавших в итоге
+            пришли.
+          </p>
+          <span className="org-hub-meta">Планы участников по дням</span>
+        </a>
+
+        <a className="card org-hub-card" href={`/organizer/${slug}/guests`}>
+          <span className="org-hub-emoji" aria-hidden="true">
+            👋
+          </span>
+          <h2 className="org-hub-title">Кто у нас бежит</h2>
+          <p className="muted org-hub-text">
+            Кто планирует пробежать на ваших ближайших стартах: сколько у человека пробежек, бывал ли он
+            у вас, откуда приедет и какой юбилей его ждёт.
+          </p>
+          <span className="org-hub-meta">Публичные планы на 12 недель</span>
+        </a>
+
         <a className="card org-hub-card" href={`/organizer/${slug}/newcomers`}>
           <span className="org-hub-emoji" aria-hidden="true">
             🌱

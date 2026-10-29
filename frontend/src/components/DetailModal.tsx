@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
 import { lockBodyScroll } from "../lib/bodyScrollLock";
 
@@ -12,9 +12,26 @@ type DetailModalProps = {
   // для коротких списков вроде выбора навигатора: во всю страницу три строки
   // выглядят потерянными.
   width?: "wide" | "narrow";
+  /** Панель окна — для того, кто ведёт фокус внутри окна сам (nav/useOverlayFocus). */
+  panelRef?: Ref<HTMLDivElement>;
+  /**
+   * В окне личное (свои планы, в том числе приватные): вебвизор Метрики его
+   * не пишет. Окно живёт порталом в body, и ym-hide-content страницы до него
+   * не достаёт.
+   */
+  hideFromWebvisor?: boolean;
 };
 
-export function DetailModal({ open, title, children, onClose, footer, width = "wide" }: DetailModalProps) {
+export function DetailModal({
+  open,
+  title,
+  children,
+  onClose,
+  footer,
+  width = "wide",
+  panelRef,
+  hideFromWebvisor = false,
+}: DetailModalProps) {
   // Закрывать оверлей только если и mousedown, и click пришлись мимо панели —
   // иначе выделение текста мышью (drag начался внутри, отпустили за пределами)
   // закрывает модалку и сбрасывает несохранённый ввод.
@@ -72,7 +89,8 @@ export function DetailModal({ open, title, children, onClose, footer, width = "w
       }}
     >
       <div
-        className={`modal-panel ${width === "wide" ? "modal-panel-wide" : "modal-panel-narrow"}`}
+        ref={panelRef}
+        className={`modal-panel ${width === "wide" ? "modal-panel-wide" : "modal-panel-narrow"}${hideFromWebvisor ? " ym-hide-content" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="detail-modal-title"

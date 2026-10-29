@@ -150,6 +150,20 @@ def _auto_identity(db: Session, user_id: UUID, known: dict[str, dict[str, str]])
     return min(totals, key=lambda key: (-totals[key][0], totals[key][1].isoformat() if totals[key][1] else "9999"))
 
 
+def home_identity_key(db: Session, user: User) -> str | None:
+    """Ключ идентичности домашней локации теми же дешёвыми шагами, что
+    home_location_brief: выбранная вручную — как есть, иначе по пробежкам среди
+    локаций каталога. Каталог не прогрет — только выбранная вручную."""
+    if user.home_location_key:
+        return user.home_location_key
+    try:
+        known = _identity_map()
+        return _auto_identity(db, user.id, known) if known else None
+    except Exception:  # noqa: BLE001 — подсказка, не данные
+        logger.exception("home identity key failed for user %s", user.id)
+        return None
+
+
 def home_location_brief(db: Session, user: User) -> dict[str, str] | None:
     """{slug, name} домашней локации или None. Сбой — тоже None: это подсказка, не данные."""
     try:

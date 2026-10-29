@@ -51,6 +51,24 @@ def test_record_ab_event_keeps_viewer(db_session: Session) -> None:
     assert event.viewer_user_id == user.id
 
 
+def test_record_ab_event_drops_guest_handle_from_path(db_session: Session) -> None:
+    """auth_done приходит с адресом страницы и с тем, кто вошёл: со страницы
+    участника в оргкабинете — только адрес списка гостей, как в
+    page_view_events (stored_page_path)."""
+    user = _make_user(db_session)
+    event = record_ab_event(
+        db_session,
+        experiment="funnel",
+        variant="-",
+        visitor_key="a:abc",
+        event_type="auth_done",
+        path="/organizer/kuzminki/guests/secret-runner",
+        viewer=user,
+    )
+    assert event is not None
+    assert event.path == "/organizer/kuzminki/guests"
+
+
 def test_record_ab_event_rejects_unknown_experiment_and_type(db_session: Session) -> None:
     before = db_session.query(AbEvent).count()
     assert (

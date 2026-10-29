@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { lockBodyScroll } from "../lib/bodyScrollLock";
 
@@ -12,6 +12,12 @@ type ConfirmModalProps = {
   // Подтверждение недоступно, пока в теле модалки не сделан обязательный выбор.
   confirmDisabled?: boolean;
   variant?: "default" | "danger";
+  // Окно открыто не нажатием (команда из ссылки сообщения): фокус на
+  // подтверждение, иначе клавиатура и читалка остаются под затемнением.
+  autoFocusConfirm?: boolean;
+  // Личное в тексте (свои планы): вебвизор Метрики окно не пишет — оно
+  // порталом в body, ym-hide-content страницы до него не достаёт.
+  hideFromWebvisor?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -25,9 +31,18 @@ export function ConfirmModal({
   confirmLoading = false,
   confirmDisabled = false,
   variant = "default",
+  autoFocusConfirm = false,
+  hideFromWebvisor = false,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (open && autoFocusConfirm) {
+      confirmRef.current?.focus();
+    }
+  }, [open, autoFocusConfirm]);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -54,7 +69,7 @@ export function ConfirmModal({
   return createPortal(
     <div className="modal-overlay" onClick={confirmLoading ? undefined : onCancel}>
       <div
-        className="modal-panel"
+        className={`modal-panel${hideFromWebvisor ? " ym-hide-content" : ""}`}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-modal-title"
@@ -84,6 +99,7 @@ export function ConfirmModal({
             {cancelLabel}
           </button>
           <button
+            ref={confirmRef}
             type="button"
             className={`btn modal-btn ${variant === "danger" ? "btn-danger-confirm" : "primary"}`}
             onClick={onConfirm}

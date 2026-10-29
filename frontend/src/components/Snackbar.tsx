@@ -8,6 +8,8 @@ type SnackbarProps = {
   children: ReactNode;
   onDismiss: () => void;
   autoHideMs?: number;
+  /** Личное в тексте (свой план): вебвизор Метрики не пишет — снэкбар порталом в body. */
+  hideFromWebvisor?: boolean;
 };
 
 export function Snackbar({
@@ -17,6 +19,7 @@ export function Snackbar({
   children,
   onDismiss,
   autoHideMs = 8000,
+  hideFromWebvisor = false,
 }: SnackbarProps) {
   useEffect(() => {
     if (!open) {
@@ -32,7 +35,9 @@ export function Snackbar({
 
   return createPortal(
     <div className="snackbar" role={variant === "error" ? "alert" : "status"} aria-live="polite">
-      <div className={`snackbar-panel${variant === "error" ? " snackbar-panel-error" : ""}`}>
+      <div
+        className={`snackbar-panel${variant === "error" ? " snackbar-panel-error" : ""}${hideFromWebvisor ? " ym-hide-content" : ""}`}
+      >
         <div className={`snackbar-panel-header${variant === "error" ? " snackbar-panel-header-error" : ""}`}>
           <span className={`snackbar-panel-title${variant === "error" ? " snackbar-panel-title-error" : ""}`}>
             {title}

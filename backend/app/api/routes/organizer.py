@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -34,6 +35,7 @@ from app.schemas.organizer import (
     SvodResponse,
     TeamLoadResponse,
 )
+from app.schemas.planner import OrganizerCalendarResponse, OrganizerGuestCardResponse, OrganizerGuestsResponse
 from app.services.admin_event_report_service import build_event_svod
 from app.services.location_page_service import LocationIdentity, resolve_location_identity
 from app.services.organizer_access_service import (
@@ -71,6 +73,15 @@ from app.services.organizer_service import (
     build_location_volunteer_bench,
     list_identity_event_dates,
 )
+from app.services.planner_guests_service import (
+    GUESTS_WEEKS_DEFAULT,
+    GUESTS_WEEKS_MAX,
+    GuestNotFound,
+    organizer_guest_card,
+    organizer_guests,
+)
+from app.services.run_plan_service import PlanError, organizer_calendar
+from app.services.start_calendar_service import moscow_today
 
 router = APIRouter(prefix="/organizer", tags=["organizer"])
 
@@ -268,6 +279,61 @@ def organizer_milestones(
     return MilestonesResponse.model_validate(
         build_location_milestones(db, identity, absence_weeks=absence_weeks)
     )
+
+
+@router.get("/{slug}/calendar", response_model=OrganizerCalendarResponse)
+def organizer_location_calendar(
+    slug: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    month: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
+) -> OrganizerCalendarResponse:
+    """Календарь локации: старты месяца и кто их планирует (имена — только публичных)."""
+    identity = _require_identity_access(db, user, settings, slug)
+    if month is None:
+        first = moscow_today().replace(day=1)
+    else:
+        try:
+            first = date(int(month[:4]), int(month[5:7]), 1)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Месяц — в виде ГГГГ-ММ") from exc
+    try:
+        payload = organizer_calendar(db, identity, first)
+    except PlanError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return OrganizerCalendarResponse.model_validate(payload)
+
+
+@router.get("/{slug}/guests", response_model=OrganizerGuestsResponse)
+def organizer_location_guests(
+    slug: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    weeks: Annotated[int, Query(ge=1, le=GUESTS_WEEKS_MAX)] = GUESTS_WEEKS_DEFAULT,
+) -> OrganizerGuestsResponse:
+    """«Кто у нас бежит»: будущие старты с планами — публичные гости с цифрами
+    и домом, приватные и дети числом."""
+    identity = _require_identity_access(db, user, settings, slug)
+    return OrganizerGuestsResponse.model_validate(organizer_guests(db, identity, weeks))
+
+
+@router.get("/{slug}/guests/{handle}", response_model=OrganizerGuestCardResponse)
+def organizer_location_guest(
+    slug: str,
+    handle: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> OrganizerGuestCardResponse:
+    """Страница гостя: только человек с будущим публичным планом сюда, иначе 404."""
+    identity = _require_identity_access(db, user, settings, slug)
+    try:
+        payload = organizer_guest_card(db, identity, handle)
+    except GuestNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Участник не найден") from exc
+    return OrganizerGuestCardResponse.model_validate(payload)
 
 
 @router.get("/{slug}/newcomers", response_model=NewcomersResponse)

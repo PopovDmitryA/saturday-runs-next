@@ -22,6 +22,7 @@ from app.models import (
     LocationOrganizerAccess,
     LocationRating,
     Platform,
+    RunPlan,
     User,
 )
 from app.services.location_catalog_service import CATALOG_KEY_REFERENCES, CATALOG_KEY_UNIQUE_WITH
@@ -75,7 +76,7 @@ def test_unique_catalog_key_columns_declare_their_pair() -> None:
         for group in groups:
             if column in group:
                 found[(table_name, column)] = [name for name in group if name != column]
-    assert found == {key: [pair] for key, pair in CATALOG_KEY_UNIQUE_WITH.items()}
+    assert found == {key: list(pair) for key, pair in CATALOG_KEY_UNIQUE_WITH.items()}
 
 
 def _platform(db, code: str) -> Platform:
@@ -279,6 +280,53 @@ def test_linking_locations_moves_their_keys_to_the_node(db_session) -> None:
 
     # Повторный импорт того же каталога ключей не трогает.
     assert import_to_db(entries, db=db_session)["keys_rekeyed"] == 0
+
+
+def test_linking_locations_keeps_one_plan_of_the_day(db_session) -> None:
+    """У человека планы на обе строки на одну особую дату (лимит дня — три),
+    строки связали в один узел: план дня на точке один, второй уходит как
+    дубль, а не роняет импорт уникальностью (ревью 28.10.2026, MIG-2)."""
+    fv_slug, s95_slug = _slug("plan-fv"), _slug("plan-s95")
+    five_verst = _location(db_session, "five_verst", fv_slug)
+    s95 = _location(db_session, "s95", s95_slug)
+    runner = _user(db_session)
+    new_year, saturday = date(2027, 1, 1), date(2027, 1, 2)
+    db_session.add_all(
+        [
+            RunPlan(
+                user_id=runner.id,
+                plan_date=new_year,
+                location_key=f"location:{location.id}",
+                location_id=location.id,
+                platform_code=code,
+            )
+            for location, code in ((five_verst, "five_verst"), (s95, "s95"))
+        ]
+        + [
+            RunPlan(
+                user_id=runner.id,
+                plan_date=saturday,
+                location_key=f"location:{s95.id}",
+                location_id=s95.id,
+                platform_code="s95",
+            )
+        ]
+    )
+    db_session.flush()
+
+    entries = [
+        *_existing_entries(db_session),
+        _entry("Узел планов", "", [("five_verst", fv_slug), ("s95", s95_slug)], "s95"),
+    ]
+    import_to_db(entries, db=db_session)
+
+    node_id = db_session.query(LocationCatalogLink.catalog_id).filter(LocationCatalogLink.external_key == fv_slug).scalar()
+    db_session.expire_all()
+    plans = sorted(
+        (plan.plan_date, plan.location_key)
+        for plan in db_session.query(RunPlan).filter(RunPlan.user_id == runner.id)
+    )
+    assert plans == [(new_year, f"catalog:{node_id}"), (saturday, f"catalog:{node_id}")]
 
 
 def test_dry_run_reports_changes_and_rolls_back(db_session, capsys) -> None:

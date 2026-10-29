@@ -71,6 +71,12 @@ from app.services.page_analytics_service import (
         ("/demo", ("demo", "")),
         ("/demo/runs", ("demo", "runs")),
         ("/admin/users", ("admin", "users")),
+        # Оргкабинет — одной строкой на локацию, подстраница в entity_key.
+        ("/organizer/kuzminki", ("organizer_location", "kuzminki")),
+        ("/organizer/kuzminki/guests", ("organizer_location", "kuzminki/guests")),
+        # Страница участника копится к списку гостей: чью карточку открыли — не пишем.
+        ("/organizer/kuzminki/guests/ivan", ("organizer_location", "kuzminki/guests")),
+        ("/organizer/kuzminki/guests/12345/?from=list", ("organizer_location", "kuzminki/guests")),
         ("/admin", ("redirect", "/admin")),
         ("/sync", ("redirect", "/sync")),
         ("/oauth/vk/callback", ("oauth_callback", "")),
@@ -345,6 +351,37 @@ def test_record_profile_view_resolves_owner_and_self(db_session: Session) -> Non
     assert len(events) == 2
     assert events[0].is_self is False
     assert events[1].is_self is True
+
+
+def test_organizer_guest_view_keeps_no_handle(db_session: Session) -> None:
+    """Журнал визитов в админке показывает path: хендл участника, чью карточку
+    смотрел организатор, не должен остаться ни там, ни в entity_key."""
+    organizer = _make_user(db_session)
+    view_id = uuid4()
+    record_page_view(
+        db_session,
+        view_id=view_id,
+        path="/organizer/kuzminki/guests/secret-runner?from=list",
+        visitor_key=f"u:{organizer.id}",
+        viewer_user_id=organizer.id,
+    )
+    event = db_session.query(PageViewEvent).filter(PageViewEvent.view_id == view_id).one()
+    assert (event.page_type, event.entity_key, event.path) == (
+        "organizer_location",
+        "kuzminki/guests",
+        "/organizer/kuzminki/guests",
+    )
+    # Остальные адреса пишутся как пришли.
+    other_id = uuid4()
+    record_page_view(
+        db_session,
+        view_id=other_id,
+        path="/organizer/kuzminki/guests?weeks=24",
+        visitor_key=f"u:{organizer.id}",
+        viewer_user_id=organizer.id,
+    )
+    other = db_session.query(PageViewEvent).filter(PageViewEvent.view_id == other_id).one()
+    assert (other.entity_key, other.path) == ("kuzminki/guests", "/organizer/kuzminki/guests?weeks=24")
 
 
 def test_record_duplicate_view_id_is_ignored(db_session: Session) -> None:

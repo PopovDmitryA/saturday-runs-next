@@ -39,6 +39,7 @@
  * (history.go(-2)). У окон без подшагов всё как раньше: одна запись, один шаг.
  */
 import { useCallback, useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import { flushSync } from "react-dom";
 import { normalizeAppPath } from "../../../hooks/useAppPath";
 import { onEntryChange } from "../../../lib/historyEntry";
 import { scrollForNavigation, stopScrollRestore } from "../../../lib/scrollMemory";
@@ -270,10 +271,19 @@ export function useOverlayHistory(open: boolean, onClose: () => void): OverlayHi
     tokenRef.current = null;
     leavingRef.current = false;
     resetStep();
-    closeRef.current();
     const after = afterRef.current;
     afterRef.current = null;
-    after?.();
+    if (!after) {
+      closeRef.current();
+      return;
+    }
+    // Дальше переход — окно снимаем синхронно, вместе с уборкой его эффектов:
+    // DetailModal держит body в position: fixed, и до своей уборки
+    // window.scrollY у него 0. Переход записал бы странице прокрутку 0, и
+    // «Назад» с профиля, открытого из окна, возвращал на самый верх (ревью
+    // 26.10.2026, UI-1).
+    flushSync(() => closeRef.current());
+    after();
   }, [resetStep]);
 
   const dismiss = useCallback(() => {

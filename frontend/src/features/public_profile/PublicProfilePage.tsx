@@ -8,9 +8,10 @@ import { ImageLightbox } from "../../components/ImageLightbox";
 import { PortalFooter } from "../portal/PortalFooter";
 import { PortalHeader } from "../portal/PortalHeader";
 import { NotFoundPage } from "../NotFoundPage";
-import { CABINET_TAB_SEGMENTS, profileTabHref } from "../../lib/portalRoutes";
+import { CABINET_TAB_SEGMENTS, PROFILE_PLANS_SEGMENT, profilePlansHref, profileTabHref } from "../../lib/portalRoutes";
 import { SiteSidebar, type SidebarExtraGroup } from "../portal/SiteSidebar";
 import { SectionSubnav, type SectionSubnavCustom } from "../portal/nav/SectionSubnav";
+import { CABINET_ICONS } from "../portal/nav/navIcons";
 import { CABINET_TABS, type NavLink } from "../portal/nav/siteNav";
 import { usePageLeadToggle } from "../portal/nav/usePageLeadToggle";
 import "../portal/portal.css";
@@ -23,6 +24,10 @@ import { VolunteeringContent } from "../volunteering/VolunteeringPage";
 import { HistoryContent } from "../history/HistoryPage";
 import { CoRunnersContent } from "../co_runners/CoRunnersPage";
 import { ProfileComparePanel } from "./ProfileComparePanel";
+import { ProfilePlanLine } from "../planner/ProfilePlanLine";
+import { ProfilePlansContent } from "../planner/ProfilePlansTab";
+import { getProfilePlansTab } from "../planner/plannerApi";
+import { useCachedResource } from "../../hooks/useCachedResource";
 import { platformProfileUrl } from "../../lib/platformProfileUrl";
 import { PlatformBadge } from "../../components/PlatformBadge";
 import {
@@ -47,15 +52,24 @@ import { platformCodeLabel, runsCapLabel, volunteeringCapLabel } from "../../lib
 // Карта (leaflet) нужна только на вкладке «карта» — грузится по обращению.
 const UserMapPanel = lazyPage(() => import("../maps/UserMapPanel"), (m) => m.UserMapPanel);
 
-type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "achievements" | "history" | "meetings";
+type ProfileTab = "dashboard" | "runs" | "volunteering" | "map" | "achievements" | "history" | "meetings" | "plans";
 
 // Сегмент адреса → вкладка. Сегменты те же, что у кабинета (CABINET_TAB_SEGMENTS),
-// чтобы свой и чужой профиль имели одинаковые адреса вкладок.
-const PROFILE_SEGMENT_TO_TAB: Record<string, ProfileTab> = Object.fromEntries(
-  Object.entries(CABINET_TAB_SEGMENTS)
-    .filter(([, segment]) => segment)
-    .map(([tab, segment]) => [segment, tab as ProfileTab]),
-);
+// чтобы свой и чужой профиль имели одинаковые адреса вкладок; «Планы» — своя
+// вкладка профиля (у кабинета планы живут на /plans).
+const PROFILE_SEGMENT_TO_TAB: Record<string, ProfileTab> = {
+  ...Object.fromEntries(
+    Object.entries(CABINET_TAB_SEGMENTS)
+      .filter(([, segment]) => segment)
+      .map(([tab, segment]) => [segment, tab as ProfileTab]),
+  ),
+  [PROFILE_PLANS_SEGMENT]: "plans",
+};
+
+/** Адрес вкладки чужого профиля. */
+function profileTabPath(handle: string, tab: ProfileTab): string {
+  return tab === "plans" ? profilePlansHref(handle) : profileTabHref(handle, tab);
+}
 
 /**
  * Вкладки чужого профиля — те же, что у своего кабинета, в том же порядке и
@@ -64,15 +78,19 @@ const PROFILE_SEGMENT_TO_TAB: Record<string, ProfileTab> = Object.fromEntries(
  * при переходе из своего кабинета в профиль знакомого рука промахивалась
  * (ревью 25.09.2026: ia-5, desk-7, code-6). Отличие одно: «История» без
  * «Моя» — история не моя. «Поделиться» — действие над своей статистикой,
- * у чужого профиля его нет.
+ * у чужого профиля его нет. «Планы» — календарь публичных планов (решение
+ * Дмитрия 27.10.2026), последней вкладкой, как у кабинета.
  */
-const PROFILE_TABS: readonly { key: ProfileTab; label: string; icon: React.ReactNode }[] = CABINET_TABS.filter(
-  (tab): tab is (typeof CABINET_TABS)[number] & { key: ProfileTab } => tab.key in CABINET_TAB_SEGMENTS,
-).map((tab) => ({
-  key: tab.key,
-  label: tab.key === "history" ? "История" : tab.label,
-  icon: tab.icon,
-}));
+const PROFILE_TABS: readonly { key: ProfileTab; label: string; icon: React.ReactNode }[] = [
+  ...CABINET_TABS.filter(
+    (tab): tab is (typeof CABINET_TABS)[number] & { key: ProfileTab } => tab.key in CABINET_TAB_SEGMENTS,
+  ).map((tab) => ({
+    key: tab.key,
+    label: tab.key === "history" ? "История" : tab.label,
+    icon: tab.icon,
+  })),
+  { key: "plans", label: "Планы", icon: CABINET_ICONS.plans },
+];
 
 function profileDisplayName(user: PublicProfileDashboard["user"]): string {
   return user.display_name || "Участник";
@@ -117,10 +135,16 @@ function ProfileShell({
   tabsGroup,
   subnav,
   currentUser,
+  planHandle,
+  onPlansTab = false,
 }: {
   children: React.ReactNode;
   currentUser: User | null;
   profileName: string | null;
+  /** Хендл из адреса — для строки «Ближайший план: …» под именем. */
+  planHandle?: string;
+  /** Открыта вкладка «Планы» — в строке под именем ссылка «все планы» не нужна. */
+  onPlansTab?: boolean;
   profileAvatarUrl?: string | null;
   /** Оригинал аватарки участника — раскрывается по клику на неё. */
   profileAvatarFullUrl?: string | null;
@@ -156,6 +180,7 @@ function ProfileShell({
                 <div className="public-profile-head-main">
                   <h1 className="public-profile-name">{profileName}</h1>
                   {platformLinks && <ProfilePlatformLinks links={platformLinks} />}
+                  {planHandle && <ProfilePlanLine handle={planHandle} onPlansTab={onPlansTab} />}
                 </div>
               </div>
             )}
@@ -224,7 +249,7 @@ function PublicProfileContent({
   const setTab = useCallback(
     (next: ProfileTab) => {
       setTabState(next);
-      const href = profileTabHref(handle, next);
+      const href = profileTabPath(handle, next);
       if (window.location.pathname !== href) {
         window.history.pushState({ tab: next }, "", href);
       }
@@ -370,6 +395,26 @@ function PublicProfileContent({
   // посчитан (заявка из бэклога сайта «Добавление в друзья, сравнения»).
   // Гостю сравнивать не с чем, себя с собой — тем более.
   const canCompare = Boolean(currentUser) && currentUser?.serial_id !== serialId;
+  // «Планы» неактивны, если показывать нечего (правка Дмитрия 27.10.2026):
+  // нет будущих публичных планов и публичных «Не бегаю» — «Публичных планов
+  // нет», закрытый профиль — «Профиль закрыт». Хозяину — активны всегда.
+  // Лёгкий запрос, кэш — с остальными ответами планировщика («planner:»
+  // сбрасывается после любой правки плана).
+  const { data: plansTab } = useCachedResource(
+    `planner:profile-tab:${handle}`,
+    () => getProfilePlansTab(handle),
+    [handle],
+  );
+  const ownProfile = Boolean(currentUser) && currentUser?.serial_id === serialId;
+  const plansDisabledHint =
+    ownProfile || !plansTab
+      ? null
+      : plansTab.state === "closed"
+        ? "Профиль закрыт"
+        : plansTab.state === "empty"
+          ? "Публичных планов нет"
+          : null;
+  const tabDisabledHint = (key: ProfileTab) => (key === "plans" ? plansDisabledHint : null);
   // Группу вкладок отдаём всегда, а не только когда загружено имя: имя приезжает
   // вместе с дашбордом, а он грузится лишь на вкладке «Главная». Из-за этого
   // заход по прямой ссылке на карту или достижения оставлял сайдбар без вкладок
@@ -388,7 +433,8 @@ function PublicProfileContent({
       label: item.label,
       icon: item.icon,
       active: tab === item.key,
-      href: profileTabHref(handle, item.key),
+      href: profileTabPath(handle, item.key),
+      disabledHint: tabDisabledHint(item.key),
     })),
   };
 
@@ -407,8 +453,9 @@ function PublicProfileContent({
             key: item.key,
             label: item.label,
             icon: item.icon,
-            href: profileTabHref(handle, item.key),
+            href: profileTabPath(handle, item.key),
             matches: () => tab === item.key,
+            disabledHint: tabDisabledHint(item.key),
           }),
         ),
       },
@@ -452,6 +499,8 @@ function PublicProfileContent({
       platformLinks={dashboard?.platform_links}
       tabsGroup={tabsGroup}
       subnav={subnav}
+      planHandle={handle}
+      onPlansTab={tab === "plans"}
     >
       {currentUser === null && (
         <PromoLoginCard
@@ -548,6 +597,8 @@ function PublicProfileContent({
           emptyText="У этого участника пока нет вех."
         />
       )}
+
+      {tab === "plans" && <ProfilePlansContent handle={handle} />}
 
       {tab === "meetings" && (
         <>

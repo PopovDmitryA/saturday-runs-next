@@ -1,0 +1,1150 @@
+/* Планировщик стартов: окно плана, блок «Планируют пробежать» на странице
+   локации и уведомления о планах в «Моих планах». Отдельный файл, а не index.css:
+   фича самостоятельная, стили уезжают вместе с ней. Цвета — только
+   переменные темы из index.css :root, поэтому тёмная тема получается сама. */
+
+/* ===== Окно плана (PlanModal, DetailModal width="narrow") ===== */
+
+/* У узкой панели нет предела высоты, а дат на год — полсотни: панель не выше
+   экрана, прокручивается тело окна. Чуть шире 24rem — чипам дат нужны две
+   колонки (так живёт и окно «Убрать план?» у поездки). */
+.modal-panel-narrow:has(.plan-modal) {
+  width: min(100%, 26rem);
+  max-height: calc(100dvh - 2.5rem);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Само окно плана на компьютере — широкое, а не телефонная колонка посреди
+   экрана (замечание Дмитрия 26.10.2026: «занимает дай бог 20–25% ширины»):
+   даты по четыре в ряд, дата и «Один раз | Каждую субботу» одной строкой.
+   На телефоне ширину и так задаёт экран. */
+.modal-panel-narrow:has(.plan-modal-form) {
+  width: min(100%, 47.5rem);
+}
+
+.plan-modal {
+  display: grid;
+  /* Колонка — по ширине окна, а не по самому широкому неразрывному куску:
+     иначе узкое окно распирало вбок (на телефоне — переключатель вида). */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.9rem;
+  color: var(--text-2);
+}
+
+/* Раскладку окна решает его ширина, а не экрана: панель уже окна на
+   планшете и при открытом сайдбаре. */
+.plan-modal-form {
+  container: plan-modal / inline-size;
+}
+
+/* Дата и «Один раз | ↻ Каждую субботу» — одной строкой (решение Дмитрия
+   27.10.2026: переключатель — на уровне даты, а не у локации); узко —
+   переключатель уходит под дату во всю ширину. */
+.plan-modal-when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+}
+
+.plan-modal-when > .plan-date-step {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.plan-modal-when > .plan-mode-seg {
+  flex: 0 1 20rem;
+  margin-left: auto;
+}
+
+@container plan-modal (max-width: 30rem) {
+  .plan-modal-when > .plan-mode-seg {
+    flex-basis: 100%;
+  }
+}
+
+/* Узкое окно (телефон; в кабинете — ещё и с его отступами): переключатели и
+   чипы дат помельче, чтобы «↻ Каждую субботу» и «сб 31 октября» не
+   переносились на вторую строку. Совсем узко (телефон 360 в кабинете) —
+   подписи переключателя переносятся, а не вылезают за край. */
+@container plan-modal (max-width: 17.5rem) {
+  .plan-modal .plan-mode-seg button {
+    padding-inline: 0.2rem;
+    font-size: 0.82rem;
+  }
+
+  .plan-modal .plan-date-chip {
+    padding-inline: 0.5rem;
+    font-size: 0.82rem;
+  }
+}
+
+@container plan-modal (max-width: 14.75rem) {
+  .plan-modal .plan-mode-seg button {
+    white-space: normal;
+  }
+}
+
+.plan-modal p {
+  margin: 0;
+}
+
+.plan-modal-place {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.plan-modal-load-error {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+}
+
+.plan-modal-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.plan-modal-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.plan-modal-hint {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.plan-modal-hint-warn {
+  color: var(--tint-red-text);
+}
+
+.plan-date-chips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+/* Широкое окно — даты по четыре в ряд: восемь ближайших — два ряда. */
+@container plan-modal (min-width: 34rem) {
+  .plan-date-chips {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .plan-date-chips > .plan-date-chip-special {
+    grid-column: span 2;
+  }
+}
+
+.plan-date-chip {
+  appearance: none;
+  display: grid;
+  gap: 0.1rem;
+  align-content: start;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plan-date-chip:hover:not(:disabled) {
+  border-color: var(--border-heavy);
+}
+
+.plan-date-chip:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+.plan-date-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Особая дата — во всю ширину и тёплым тоном: она редкая, ради неё и планируют. */
+.plan-date-chip-special {
+  grid-column: 1 / -1;
+  border-color: var(--tint-amber-border-strong);
+  background: var(--tint-amber-bg);
+}
+
+.plan-date-chip-selected,
+.plan-date-chip-special.plan-date-chip-selected {
+  border-color: var(--link);
+  background: var(--tint-blue-bg);
+  box-shadow: inset 0 0 0 1px var(--link);
+}
+
+.plan-date-chip-day {
+  font-weight: 600;
+}
+
+.plan-date-chip-title {
+  font-weight: 600;
+  color: var(--tint-amber-text);
+}
+
+.plan-date-chip-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.plan-date-chip-cancel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--tint-red-text);
+}
+
+.plan-date-chip-mine {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-green-text);
+}
+
+.plan-dates-more {
+  justify-self: start;
+  font-size: 0.85rem;
+  color: var(--link);
+}
+
+/* «Оставить и постоянный план» на особую дату — галочка под датой. */
+.plan-keep-series {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.plan-keep-series input {
+  flex: none;
+  margin: 0.2rem 0 0;
+}
+
+/* «Публично | Приватно ⓘ» — та же плашка, что «Один раз | Каждую субботу»,
+   но по содержимому: выбор короткий, во всю ширину он кричал бы. */
+.plan-vis {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.plan-vis-seg {
+  flex: 0 1 16rem;
+}
+
+.plan-mode-seg button:disabled {
+  cursor: not-allowed;
+  color: var(--text-faint);
+}
+
+.plan-mode-seg button[aria-pressed="true"]:disabled {
+  color: var(--text-muted);
+}
+
+.plan-vis-hint {
+  flex: none;
+}
+
+/* Маленький — в деталях дня «Моих планов», у отметки «Не бегаю». */
+.plan-vis-compact .plan-vis-seg {
+  flex-basis: 12rem;
+  padding: 2px;
+  border-radius: 10px;
+}
+
+.plan-vis-compact .plan-mode-seg button {
+  padding: 0.25rem 0.5rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
+/* Подвал окна (footer DetailModal): кнопки и подпись всегда на виду, над ними
+   прокручивается тело с датами. */
+.plan-modal-footer {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.plan-modal-footer p {
+  margin: 0;
+}
+
+.plan-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* «Ни к чему не обязывает, но…» — своей строкой над кнопками: в две строки
+   рядом с кнопками ей тесно. */
+.plan-modal-footnote {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+@media (max-width: 480px) {
+  /* Подвал на телефоне закреплён — подпись в нём помельче, чтобы не съедала
+     прокручиваемое тело окна. */
+  .plan-modal-footnote {
+    font-size: 0.76rem;
+    line-height: 1.35;
+  }
+
+  /* На телефоне кнопки — во всю строку: по ним попадают пальцем. */
+  .plan-modal-actions .btn {
+    flex: 1 1 auto;
+  }
+}
+
+/* ===== Окно «от даты»: день и «Где бежите?» ===== */
+
+/* «‹ Сб 14 ноября ›» — дата окна, стрелки шагают по дням стартов. */
+.plan-date-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.plan-date-step-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.plan-date-step-btn:hover:not(:disabled) {
+  background: var(--bg-muted);
+}
+
+.plan-date-step-btn:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.plan-date-step-btn:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+.plan-date-step-day {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.5rem;
+  min-width: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.plan-date-step-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--tint-amber-text);
+}
+
+/* Выбранная локация — плашкой с «изменить». */
+.plan-place-chip {
+  flex: 1 1 14rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--link);
+  border-radius: 12px;
+  background: var(--tint-blue-bg);
+}
+
+.plan-place-chip-icon {
+  flex: none;
+}
+
+.plan-place-chip-body {
+  flex: 1 1 auto;
+  display: grid;
+  min-width: 0;
+}
+
+.plan-place-chip-name {
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.plan-place-chip-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.plan-place-chip-change {
+  flex: none;
+  font-size: 0.88rem;
+  color: var(--link);
+}
+
+/* Поле и список подсказок под ним — прямо в окне, не всплывающим слоем: на
+   телефоне его листают, как обычный список. */
+.plan-place {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.plan-place p {
+  margin: 0;
+}
+
+.plan-place-input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+}
+
+.plan-place-head {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.plan-place-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Строка локации: название, ниже — город, системы и ≈№; метка справа. */
+.plan-place-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name tag"
+    "meta tag";
+  align-items: center;
+  column-gap: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.plan-place-option:hover,
+.plan-place-option-active {
+  border-color: var(--link);
+  background: var(--tint-blue-bg);
+}
+
+.plan-place-option-active {
+  box-shadow: inset 0 0 0 1px var(--link);
+}
+
+.plan-place-option[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.plan-place-option[aria-disabled="true"]:hover {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.plan-place-name {
+  grid-area: name;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.plan-place-regular {
+  color: var(--accent-indigo-text);
+}
+
+.plan-place-meta {
+  grid-area: meta;
+  min-width: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.plan-place-tag {
+  grid-area: tag;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.plan-place-tag-mine {
+  color: var(--accent-green-text);
+}
+
+.plan-place-tag-cancel {
+  color: var(--tint-red-text);
+}
+
+/* Широкое окно — подсказки в две колонки: восемь строк не уводят подвал за
+   экран. */
+@container plan-modal (min-width: 34rem) {
+  .plan-place-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ===== Блок «Планируют пробежать» на странице локации ===== */
+
+/* Блок второстепенный — плотнее обычной карточки: шапка, имена и строка
+   своего плана идут почти вплотную. */
+.card.plan-loc {
+  gap: 0.55rem;
+}
+
+/* Шапка: заголовок, вкладки дат и «Планирую» (замечание Дмитрия 25.10.2026:
+   вкладки своей строкой под заголовком занимали лишнюю высоту). Ширину меряем
+   у самого блока, а не у экрана: карточка бывает и уже окна. */
+.plan-loc-top {
+  container: plan-loc-top / inline-size;
+  min-width: 0;
+}
+
+/* Узкий блок: заголовок и «Планирую» — одной строкой, вкладки — второй под
+   ними. Заголовку тесно (360) — он переносится сам, кнопка под него не
+   уезжает. Зазор между ними меньше общего: на 390 они рядом впритык
+   (193 + 8 + 106 ≤ 308). */
+.plan-loc-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title add"
+    "tabs tabs";
+  align-items: center;
+  gap: 0.6rem 0.5rem;
+}
+
+.plan-loc-title {
+  grid-area: title;
+}
+
+.plan-loc-add {
+  grid-area: add;
+  justify-self: end;
+}
+
+/* Место под блок, пока едет ответ (PlansPlaceholder): кнопка держит высоту
+   шапки, но её не видно и не нажать. */
+.plan-loc-placeholder {
+  visibility: hidden;
+}
+
+.plan-loc-add-icon {
+  margin-right: 0.3rem;
+}
+
+/* «Планируют пробежать» и «📅 Планирую» на 390 не влезали в строку на 15px
+   (209 + 8 + 106 > 308), и заголовок уходил на вторую строку. Без значка
+   кнопка короче на четверть — строка одна, блок ниже. */
+@container plan-loc-top (max-width: 20.25rem) {
+  .plan-loc-add-icon {
+    display: none;
+  }
+}
+
+/* Широкий блок — всё одной строкой: вкладки сразу за заголовком, занимают
+   оставшееся место и прокручиваются внутри себя, «Планирую» у правого края.
+   Порог — чтобы между заголовком и кнопкой влезали две вкладки с половиной
+   (≈245px): тающий край третьей сам говорит, что дат больше. С порогом на
+   три вкладки (38rem) блок на 1024 — сайдбар сужает его до 596px — снова
+   уходил в две строки, хотя вкладки просили ставить справа от заголовка. */
+@container plan-loc-top (min-width: 34rem) {
+  .plan-loc-head {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "title tabs add";
+    column-gap: 0.85rem;
+  }
+
+  .plan-loc-title {
+    white-space: nowrap;
+  }
+}
+
+/* Свой план — строкой под именами, а не плашкой в рамке: блок ниже.
+   Отличается от чужих имён тоном и тонкой чертой сверху. */
+.plan-loc-mine {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0.45rem 0 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+  font-size: 0.88rem;
+  color: var(--text-2);
+}
+
+.plan-loc-mine strong {
+  color: var(--text);
+}
+
+.plan-loc-edit {
+  color: var(--link);
+}
+
+.plan-loc-empty,
+.plan-loc-reason {
+  margin: 0;
+}
+
+.plan-loc-mine-more {
+  font-size: 0.85rem;
+  color: var(--link);
+}
+
+/* Вкладки дат (вариант 1, 25.10.2026): высота блока не зависит от числа дат.
+   Ряд не переносится: не влезает — прокручивается вбок внутри себя, страница
+   вбок не едет. Отступ в 2px — место рамке фокуса, иначе её срезает overflow. */
+.plan-loc-tabs {
+  grid-area: tabs;
+  display: flex;
+  gap: 0.4rem;
+  min-width: 0;
+  margin: -2px;
+  padding: 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* Подкрученная выбранная вкладка встаёт не вплотную к краю, а за полосой
+     таяния (.plan-loc-tabs-more-*): иначе выбранная выглядела бы бледной. */
+  scroll-padding-inline: 1.5rem;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Край, за которым есть ещё вкладки, тает (класс ставит PlanDateTabs по
+   прокрутке): без этого вкладка, обрезанная сразу за заголовком, читается
+   как оборванный текст. В маске цвет не важен — только прозрачность. */
+.plan-loc-tabs-more-start {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 1.5rem);
+  mask-image: linear-gradient(to right, transparent, #000 1.5rem);
+}
+
+.plan-loc-tabs-more-end {
+  -webkit-mask-image: linear-gradient(to left, transparent, #000 1.5rem);
+  mask-image: linear-gradient(to left, transparent, #000 1.5rem);
+}
+
+.plan-loc-tabs-more-start.plan-loc-tabs-more-end {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 1.5rem, #000 calc(100% - 1.5rem), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 1.5rem, #000 calc(100% - 1.5rem), transparent);
+}
+
+.plan-loc-tab {
+  appearance: none;
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.plan-loc-tab:hover {
+  border-color: var(--border-heavy);
+}
+
+.plan-loc-tab:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+.plan-loc-tab-count {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Выбранная обычная — акцентная, как выбранная дата в окне плана. */
+.plan-loc-tab[aria-selected="true"] {
+  border-color: var(--link);
+  background: var(--tint-blue-bg);
+  color: var(--tint-blue-text);
+  box-shadow: inset 0 0 0 1px var(--link);
+}
+
+.plan-loc-tab[aria-selected="true"] .plan-loc-tab-count {
+  color: inherit;
+}
+
+/* Особая дата — янтарная со звёздочкой всегда: ради неё и планируют.
+   Выбранная — та же янтарная, только плотнее и с обводкой. */
+.plan-loc-tab-special {
+  border-color: var(--tint-amber-border-strong);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-text);
+}
+
+.plan-loc-tab-special .plan-loc-tab-count {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.plan-loc-tab-special:hover {
+  border-color: var(--accent-amber-text);
+}
+
+.plan-loc-tab-special[aria-selected="true"] {
+  border-color: var(--accent-amber-text);
+  background: var(--tint-amber-bg-strong);
+  color: var(--tint-amber-text);
+  box-shadow: inset 0 0 0 1px var(--accent-amber-text);
+}
+
+.plan-loc-tab-star {
+  color: var(--accent-amber-text);
+}
+
+/* Панели дат — стопкой в одной клетке: высота блока — по самой высокой дате,
+   и при переключении вкладок блок не прыгает (замечание Дмитрия 25.10.2026:
+   на компьютере имена с числами переносятся у дат по-разному, блок менялся на
+   строку). Видна только выбранная; скрытые к тому же inert и aria-hidden. */
+.plan-loc-panels {
+  container: plan-loc-panels / inline-size;
+  display: grid;
+  min-width: 0;
+}
+
+.plan-loc-panel {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+.plan-loc-panel[aria-hidden="true"] {
+  visibility: hidden;
+}
+
+/* Узкий блок (телефон) — по-старому, скрытые даты места не занимают. Имён в
+   строке там помещается мало, и разница между датами — уже не строка, а
+   несколько: на 390 у Зеленограда под тремя именами 14 ноября оставалось
+   87px пустоты (174 → 261, по самой людной дате). С десятком имён на особую
+   дату и одним на ближайшую пустота была бы на пол-экрана. Порог — тот же,
+   что у шапки в одну строку. */
+@container plan-loc-panels (width < 34rem) {
+  .plan-loc-panel[aria-hidden="true"] {
+    display: none;
+  }
+}
+
+/* ===== Кто планирует (PlanPeople: локация и оргкалендарь) ===== */
+
+/* Без рамок: имена через запятую прямо под вкладками, под ними — тише —
+   дети и приватные числом. */
+.plan-people {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.plan-people p {
+  margin: 0;
+}
+
+/* Имена — через запятую, строкой: блок не растёт на строку за человека. */
+.plan-people-names {
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+/* Под пальцем строки имён-ссылок стоят вплотную: чуть больше воздуха между
+   ними, чтобы тап по одному имени не попадал в имя строкой ниже. */
+@media (pointer: coarse) {
+  .plan-people-names {
+    line-height: 1.75;
+  }
+}
+
+/* Имя с числом пробежек переносится целиком, а не посередине; длинное, шире
+   блока, — уже внутри себя, страницу вбок не распирает. Метки за ним — своими
+   кусками (.plan-people-tag-slot): строка рвётся и между ними. */
+.plan-people-who {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.plan-people-tag-slot {
+  white-space: nowrap;
+}
+
+/* Всего пробежек в скобках — тише имени: «Анна Смирнова (132)». */
+.plan-people-runs {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Метки знакового старта («впервые у нас», «250-я пробежка») — только в
+   оргкабинете: в оргкалендаре в строку с именем, в «Кто у нас бежит» —
+   в своём столбце. Мелкие: высоту строки не раздувают и сами внутри не рвутся. */
+.plan-tag {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  vertical-align: 0.05em;
+  cursor: default;
+}
+
+.plan-tag-new {
+  border-color: var(--tint-green-border);
+  background: var(--tint-green-bg);
+  color: var(--tint-green-text);
+}
+
+.plan-tag-jubilee {
+  border-color: var(--tint-amber-border);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-text);
+}
+
+/* Дети и приватные — числом, тише имён, одной строкой. */
+.plan-people-note {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Части строки («1 ребёнок i» и «и ещё 3 — приватно i») не рвутся внутри:
+   узкому блоку строка переносится только между ними. */
+.plan-people-note-part {
+  white-space: nowrap;
+}
+
+/* «и ещё X» — в конце третьей строки имён (PlanPeopleCapped): раскрывает
+   список на месте и становится «свернуть». Не рвётся: PlanPeopleCapped
+   проверяет, что кнопка целиком влезла в третью строку. */
+.plan-people-more {
+  font-size: 0.85rem;
+  color: var(--link);
+  white-space: nowrap;
+}
+
+/* «↻» у имени постоянного — тихо, цветом субботы постоянного плана; по
+   наведению и тапу — «Бегает здесь каждую субботу». */
+.plan-people-regular {
+  color: var(--accent-indigo-text);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: help;
+}
+
+/* Значок «i» мелкий (13px, .loc-stat-info) — попадать по нему пальцем помогает
+   невидимый запас вокруг, отступ строки он не меняет. */
+.plan-people-hint {
+  display: inline-flex;
+  align-items: center;
+  margin: -0.4rem -0.3rem -0.4rem 0;
+  padding: 0.4rem 0.3rem 0.4rem 0;
+  border-radius: 6px;
+  vertical-align: middle;
+  cursor: help;
+}
+
+.plan-people-hint:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: -2px;
+}
+
+/* «Уведомления о планах» — свёрнутая карточка: заголовок-кнопка с
+   уголком. Приходим по якорю из напоминания и из настроек сайта; над
+   разделом липкие шапка сайта и, на телефоне, полоса страниц раздела. */
+.plan-notify-card {
+  scroll-margin-top: calc(var(--portal-header-h, 61px) + 4rem);
+}
+
+.plan-notify-head {
+  margin: 0;
+}
+
+.plan-notify-toggle {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plan-notify-toggle:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.plan-notify-chevron {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.plan-notify-box {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.plan-notify-box > p {
+  margin: 0;
+}
+
+.plan-notify-off {
+  font-size: 0.9rem;
+}
+
+.plan-notify-off a {
+  color: var(--link);
+}
+
+.plan-notify-list {
+  margin: 0;
+  padding: 0;
+}
+
+/* ===== Постоянный план («каждую субботу») ===== */
+
+/* «Один раз | ↻ Каждую субботу» — две половины одной плашки. */
+.plan-mode-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-muted);
+}
+
+.plan-mode-seg button {
+  appearance: none;
+  padding: 0.45rem 0.4rem;
+  white-space: nowrap;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.plan-mode-seg button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.plan-mode-seg button:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+.plan-series-lead {
+  color: var(--text);
+}
+
+/* Суббота галочкой. Отмеченная — как выбранная дата, снятая — пунктиром. */
+.plan-series-chip-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.35rem;
+  border: 1.5px solid var(--border-heavy);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--link);
+  font-size: 0.72rem;
+  line-height: 1;
+  vertical-align: -0.12em;
+}
+
+.plan-date-chip-selected .plan-series-chip-box {
+  border-color: var(--link);
+}
+
+.plan-series-chip-off {
+  border-style: dashed;
+  background: transparent;
+}
+
+.plan-series-chip-off .plan-date-chip-day {
+  color: var(--text-muted);
+}
+
+/* Подсказка «Вы пробежали здесь 9 из 10 последних стартов»: тихая плашка с
+   одной кнопкой — предложение, а не баннер. */
+.plan-series-hint {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--tint-indigo-bg-strong);
+  border-radius: 12px;
+  background: var(--tint-indigo-bg);
+  color: var(--text-2);
+}
+
+.plan-series-hint p {
+  margin: 0;
+}
+
+/* Внутри карточки «Обзора» — без своей рамки, тонкой чертой сверху. */
+.plan-series-hint-compact {
+  padding: 0.5rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.plan-series-hint-text {
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.plan-series-hint-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+}
+
+.plan-series-hint-later {
+  font-size: 0.88rem;
+  color: var(--link);
+}
+
+/* Окно «Убрать план?» у поездки: три кнопки — на телефоне столбиком. */
+.plan-trip p {
+  margin: 0;
+}
+
+/* Три кнопки с названием локации («Вернуть: Томск Сосновый Бор») в узкое
+   окно в ряд не встают — столбиком на любой ширине, главная сверху. */
+.plan-trip-actions {
+  flex-direction: column-reverse;
+  align-items: stretch;
+}
+
+/* Свой постоянный план — первой строкой своих: «↻ Вы здесь каждую субботу». */
+.plan-loc-series button:disabled {
+  opacity: 0.6;
+}
+
+/* «Убрать» у субботы постоянного плана: два выхода крупными кнопками —
+   «только этот день» и «остановить постоянный план» (красным). */
+.plan-series-remove {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.plan-series-remove p {
+  margin: 0;
+}
+
+.plan-series-remove-option {
+  display: grid;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plan-series-remove-option:hover:not(:disabled) {
+  border-color: var(--link);
+  background: var(--bg-muted);
+}
+
+.plan-series-remove-option:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.plan-series-remove-option:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.plan-series-remove-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.plan-series-remove-text {
+  font-size: 0.86rem;
+  color: var(--text-2);
+}
+
+.plan-series-remove-stop {
+  border-color: var(--tint-red-border);
+}
+
+.plan-series-remove-stop .plan-series-remove-title {
+  color: var(--tint-red-text);
+}
+
+.plan-series-remove-stop:hover:not(:disabled) {
+  border-color: var(--tint-red-text);
+  background: var(--tint-red-bg);
+}

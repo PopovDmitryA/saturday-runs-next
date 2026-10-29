@@ -67,7 +67,9 @@ def notify_cancellation_changes(changes: list[CancellationChange], db: Session |
     """Отправить одно сообщение на весь набор изменений. False — не отправляли.
 
     Админу уходит сводка по всем изменениям сразу, людям — личные уведомления
-    по их локациям (нужна сессия БД: см. cancellation_notification_service).
+    по их локациям (нужна сессия БД: см. cancellation_notification_service),
+    а тем, кто запланировал отменённый старт, — отдельное «Старт отменён»
+    (plan_notification_service).
     """
 
     if not changes:
@@ -82,6 +84,13 @@ def notify_cancellation_changes(changes: list[CancellationChange], db: Session |
         except Exception:
             # Рассылка не имеет права ронять синк и админский канал.
             logger.exception("Не удалось разослать уведомления об отмене старта")
+        try:
+            from app.services.plan_notification_service import notify_plan_cancellations
+
+            notify_plan_cancellations(db, changes)
+        except Exception:
+            # Планирующим — своё сообщение, и его сбой не трогает остальное.
+            logger.exception("Не удалось разослать отмену старта тем, кто его запланировал")
         # notify_admin — сеть (Telegram, легла прокси — ВК), а Postgres рвёт
         # соединение, простоявшее в транзакции дольше 60 с. Реестры 5 вёрст и
         # S95 и наблюдатель S95 свои правки коммитят до вызова, дальше только

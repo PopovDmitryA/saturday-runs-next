@@ -111,11 +111,23 @@ def set_profile_slug(db: Session, user: User, raw: str | None) -> None:
     user.public_slug = slug
 
 
+# Больше номера профиля не бывает: serial_id — bigint.
+_MAX_SERIAL_ID = 2**63 - 1
+
+
 def resolve_profile_handle(db: Session, handle: str) -> User | None:
-    """Резолвит хэндл из URL в пользователя: число → serial_id, иначе → slug."""
+    """Резолвит хэндл из URL в пользователя: число → serial_id, иначе → slug.
+
+    Мусор из адреса — «не найден», а не 500: NUL в тексте база не примет,
+    «²» и «١٢» str.isdigit считает цифрами, а int() — нет или переводит в
+    чужой номер, номер больше bigint не сравнить с колонкой.
+    """
     value = handle.strip()
-    if not value:
+    if not value or "\x00" in value:
         return None
-    if value.isdigit():
-        return db.query(User).filter(User.serial_id == int(value)).one_or_none()
+    if value.isascii() and value.isdigit():
+        number = int(value)
+        if number > _MAX_SERIAL_ID:
+            return None
+        return db.query(User).filter(User.serial_id == number).one_or_none()
     return _owner_of_slug(db, normalize_slug(value))

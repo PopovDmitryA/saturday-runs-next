@@ -27,6 +27,11 @@ export const PORTAL_CABINET_MEETINGS_HREF = "/new/co-runners";
 export const PORTAL_CABINET_MAP_HREF = "/new/maps";
 export const PORTAL_CABINET_HISTORY_HREF = "/new/history";
 export const PORTAL_CABINET_SHARE_HREF = "/share";
+// «Мои планы» с приватными планами и «сбылось / не получилось» видит только владелец —
+// поэтому свой адрес, как «Поделиться», а не сегмент кабинета в
+// CABINET_TAB_SEGMENTS. Публичные планы другим показывает своя вкладка
+// профиля — /users/{хендл}/plans (profilePlansHref).
+export const PORTAL_CABINET_PLANS_HREF = "/plans";
 export const PORTAL_CABINET_SETTINGS_HREF = "/settings";
 // Якорь на раздел «Имя на сайте»: из сайдбара и из плашек про смену имени ведём
 // сразу к нему, а не в начало длинных настроек. Значение после «#» совпадает с
@@ -102,6 +107,17 @@ export function profileTabHref(handle: string, tab: CabinetTabSegmentKey): strin
   const segment = CABINET_TAB_SEGMENTS[tab];
   const base = `/users/${encodeURIComponent(handle)}`;
   return segment ? `${base}/${segment}` : base;
+}
+
+/**
+ * Вкладка профиля «Планы»: календарь публичных планов (решение Дмитрия
+ * 27.10.2026). Не в CABINET_TAB_SEGMENTS: у своего кабинета планы — /plans, а
+ * свой адрес с этим сегментом показывает, как планы видят другие.
+ */
+export const PROFILE_PLANS_SEGMENT = "plans";
+
+export function profilePlansHref(handle: string): string {
+  return `/users/${encodeURIComponent(handle)}/${PROFILE_PLANS_SEGMENT}`;
 }
 
 /** Служебные адреса кабинета — вход по ним редиректит на публичный. */

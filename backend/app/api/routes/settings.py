@@ -22,6 +22,7 @@ from app.schemas.notifications import (
     NotificationSettingsUpdate,
     NotificationTestResponse,
 )
+from app.schemas.planner import PlannerSettingsResponse
 from app.schemas.settings import (
     AutoSyncPlatformPreference,
     AutoSyncSettingsResponse,
@@ -58,6 +59,7 @@ from app.services.profile_slug_service import (
     check_slug_availability,
     set_profile_slug,
 )
+from app.services.run_plan_service import planner_settings
 from app.services.user_auto_sync_service import (
     AUTO_SYNC_PLATFORM_CODES,
     get_auto_sync_preferences,
@@ -329,6 +331,17 @@ def update_privacy_settings(
     db.commit()
     db.refresh(user)
     return PrivacySettingsResponse(enabled=user.profile_private)
+
+
+@router.get("/planner", response_model=PlannerSettingsResponse)
+def get_planner_settings(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> PlannerSettingsResponse:
+    """Переключатель «Публично / Приватно» в окне плана: умолчание (как
+    профиль) и почему имя не видно при любом выборе. Сам выбор — у каждого
+    плана (POST /planner/plans, PUT /planner/series, PUT /planner/rest)."""
+    return PlannerSettingsResponse.model_validate(planner_settings(db, user))
 
 
 @router.get("/home-location", response_model=HomeLocationResponse)

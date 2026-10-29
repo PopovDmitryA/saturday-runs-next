@@ -1688,3 +1688,49 @@ a.site-search-row:hover {
     display: none;
   }
 }
+
+/* Неактивный пункт — открывать нечего («Планы» чужого профиля без публичных
+   планов): тише соседей, без наведения, курсор — подсказка. Текст подсказки —
+   в title (наведение, на телефоне — тап), в выпадающем списке — строкой. */
+.site-col-item.site-col-item-disabled,
+.site-col-item.site-col-item-disabled:hover {
+  background: transparent;
+  color: var(--text-faint);
+  cursor: help;
+}
+
+.site-col-item.site-col-item-disabled .site-col-item-icon {
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+
+.site-col-item.site-col-item-disabled:focus-visible,
+.site-tab.site-tab-disabled:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: -2px;
+}
+
+.site-tab.site-tab-disabled,
+.site-tab.site-tab-disabled:hover {
+  color: var(--text-faint);
+  cursor: help;
+}
+
+.site-subnav-dropdown-item.site-subnav-dropdown-item-disabled,
+.site-subnav-dropdown-item.site-subnav-dropdown-item-disabled:hover {
+  background: transparent;
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.site-subnav-dropdown-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.site-subnav-dropdown-hint {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}

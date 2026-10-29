@@ -11,7 +11,12 @@ import { useEffect } from "react";
 import { PortalCabinetDashboardPage } from "../portal/cabinet/PortalCabinetDashboardPage";
 import { NotFoundPage } from "../NotFoundPage";
 import { lazyPage } from "../../lib/lazyPage";
-import { CABINET_TAB_SEGMENTS, isOwnHandle, type CabinetTabSegmentKey } from "../../lib/portalRoutes";
+import {
+  CABINET_TAB_SEGMENTS,
+  isOwnHandle,
+  PROFILE_PLANS_SEGMENT,
+  type CabinetTabSegmentKey,
+} from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
 
 // Сводка кабинета — первый экран залогиненного, она в стартовом чанке.
@@ -25,6 +30,7 @@ const PortalCabinetAchievementsPage = lazyPage(cabinetPages, (m) => m.PortalCabi
 const PortalCabinetMeetingsPage = lazyPage(cabinetPages, (m) => m.PortalCabinetMeetingsPage);
 const PortalCabinetMapPage = lazyPage(cabinetPages, (m) => m.PortalCabinetMapPage);
 const PortalCabinetHistoryPage = lazyPage(cabinetPages, (m) => m.PortalCabinetHistoryPage);
+const PortalCabinetProfilePlansPage = lazyPage(cabinetPages, (m) => m.PortalCabinetProfilePlansPage);
 
 /** Сегмент адреса → вкладка кабинета. */
 const SEGMENT_TO_TAB = Object.fromEntries(
@@ -70,6 +76,10 @@ export function ProfileRoute({ handle, segment }: { handle: string; segment?: st
   const own = isOwnHandle(user, handle);
 
   if (own) {
+    // Своя вкладка «Планы» — как планы видят другие (свои целиком — /plans).
+    if (segment === PROFILE_PLANS_SEGMENT) {
+      return <PortalCabinetProfilePlansPage handle={handle} />;
+    }
     const tab = segment ? SEGMENT_TO_TAB[segment] : "dashboard";
     if (!tab) {
       return <NotFoundPage />;
@@ -79,7 +89,8 @@ export function ProfileRoute({ handle, segment }: { handle: string; segment?: st
 
   // Чужой профиль: сегмент — это вкладка. Адреса те же, что у своего кабинета,
   // поэтому ссылкой на чужую карту («/users/{хендл}/maps») можно делиться.
-  const foreignTab = segment ? SEGMENT_TO_TAB[segment] : "dashboard";
+  // «Планы» — вкладка только профиля: календарь публичных планов.
+  const foreignTab = segment === PROFILE_PLANS_SEGMENT ? "plans" : segment ? SEGMENT_TO_TAB[segment] : "dashboard";
   if (!foreignTab) {
     return <NotFoundPage />;
   }

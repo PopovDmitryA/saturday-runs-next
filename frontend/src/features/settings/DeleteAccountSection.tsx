@@ -78,6 +78,17 @@ function DeletionPreviewDetails({ preview }: { preview: AccountDeletionPreview }
   if (preview.goals) {
     removed.push(`цели на год: ${preview.goals}`);
   }
+  if (preview.run_plans) {
+    removed.push(`планы стартов и отметки «Не бегаю»: ${preview.run_plans}`);
+  }
+  if (preview.run_plan_series) {
+    // Остановленные тоже уходят: в них история прошлых суббот.
+    removed.push(
+      preview.run_plan_series === 1
+        ? "постоянный план «каждую субботу»"
+        : `постоянные планы «каждую субботу», с остановленными: ${preview.run_plan_series}`,
+    );
+  }
   if (preview.run_tracks) {
     removed.push(`${pluralizeRu(preview.run_tracks, ["трек", "трека", "треков"])} пробежек`);
   }
@@ -259,7 +270,8 @@ export function DeleteAccountSection() {
       <h2 className="section-title">Удаление профиля</h2>
       <p className="muted settings-lead">
         Удалятся профиль на сайте, способы входа, привязки к беговым системам, настройки,
-        уведомления, цели, отзывы о локациях и треки. Результаты в протоколах {PROTOCOL_SYSTEMS}{" "}
+        уведомления, цели, планы стартов, отзывы о локациях и треки. Результаты в протоколах{" "}
+        {PROTOCOL_SYSTEMS}{" "}
         останутся — они принадлежат системам, а не сайту. Восстановить профиль нельзя, но завести
         новый можно в любой момент.
       </p>
@@ -285,7 +297,7 @@ export function DeleteAccountSection() {
           {!previewLoading && preview && <DeletionPreviewDetails preview={preview} />}
           {!previewLoading && !preview && previewFailed && (
             <p>
-              Удалятся профиль, способы входа, привязки, настройки, цели, отзывы и треки. Результаты в
+              Удалятся профиль, способы входа, привязки, настройки, цели, планы, отзывы и треки. Результаты в
               протоколах {PROTOCOL_SYSTEMS} останутся.
             </p>
           )}

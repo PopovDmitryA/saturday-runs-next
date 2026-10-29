@@ -778,7 +778,9 @@ function sanitizeApiErrorMessage(message: string): string {
   return trimmed.length > 500 ? `${trimmed.slice(0, 497)}…` : trimmed;
 }
 
-async function apiFetch<T>(
+// Экспорт — для модулей API рядом с фичей (features/planner/plannerApi.ts):
+// lib/api.ts одновременно правят соседние ветки.
+export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
   options?: { timeoutMs?: number },

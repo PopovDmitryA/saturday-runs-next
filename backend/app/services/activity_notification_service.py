@@ -49,7 +49,13 @@ from app.notification_markup import bold, link
 from app.ru_plural import unit_form
 from app.services import notification_channels_service as channels
 from app.services import notification_service as notifications
-from app.services.achievements_service import TIER_LABELS, compute_challenges
+from app.services.achievements_service import (
+    LEVEL_ICONS,
+    LEVEL_LABELS,
+    LEVEL_LABELS_GENITIVE,
+    TIER_LABELS,
+    compute_challenges,
+)
 from app.services.challenge_rating_service import CARD_RATINGS, CHALLENGES_BY_CODE, get_my_challenge_places
 from app.services.leaderboard_service import get_my_leaderboard_row, metric_title, metric_unit
 from app.services.location_catalog_service import LocationCatalogIndex
@@ -105,10 +111,10 @@ CHALLENGE_UNITS: dict[str, str] = {
 }
 
 _LEVEL_RANK = {None: 0, "bronze": 1, "silver": 2, "gold": 3}
-_LEVEL_LABELS = {"bronze": "бронза", "silver": "серебро", "gold": "золото"}
-_LEVEL_ICONS = {"bronze": "🥉", "silver": "🥈", "gold": "🥇"}
+_LEVEL_LABELS = LEVEL_LABELS
+_LEVEL_ICONS = LEVEL_ICONS
 # Родительный падеж — для строки прогресса: «до серебра 7».
-_LEVEL_LABELS_GENITIVE = {"bronze": "бронзы", "silver": "серебра", "gold": "золота"}
+_LEVEL_LABELS_GENITIVE = LEVEL_LABELS_GENITIVE
 _MONTHS_GENITIVE = (
     "января", "февраля", "марта", "апреля", "мая", "июня",
     "июля", "августа", "сентября", "октября", "ноября", "декабря",

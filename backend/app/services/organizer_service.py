@@ -409,6 +409,32 @@ def _next_milestone(total: int) -> int:
     return (total // 25 + 1) * 25
 
 
+def is_milestone(number: int) -> bool:
+    """Юбилейное ли число участий — по тому же правилу, что «Календарь
+    юбилеев»: 10, дальше кратные 25. Его же спрашивает планировщик: «будет
+    100-я пробежка»."""
+    return number > 0 and _next_milestone(number - 1) == number
+
+
+def platform_result_counts(db: Session, model: type[Any], participant_ids: Any, *, timed: bool) -> dict[Any, int]:
+    """Участия в системе по участникам — как счётчик системы в «Календаре
+    юбилеев»: события без тестовых и без вторичных сторон кросслинков, у
+    пробежек (timed) — только строки со временем финиша, как в своде."""
+    secondary_events = select(EventCrosslink.secondary_event_id)
+    query = (
+        db.query(model.participant_id, func.count(func.distinct(model.event_id)))
+        .join(Event, model.event_id == Event.id)
+        .filter(
+            model.participant_id.in_(participant_ids),
+            Event.is_test_event.is_(False),
+            Event.id.notin_(secondary_events),
+        )
+    )
+    if timed:
+        query = query.filter(model.finish_time_sec.isnot(None))
+    return {pid: int(count) for pid, count in query.group_by(model.participant_id).all()}
+
+
 def milestones_cache_key(identity_key: str, absence_weeks: int) -> str:
     # v3 — волонтёрства считаются днями, а не событиями
     # (_volunteer_occasion_counts): числа поменялись, форма payload — нет.
@@ -530,23 +556,8 @@ def _compute_location_milestones(
         return base
 
     secondary_events = select(EventCrosslink.secondary_event_id)
-
-    def _platform_counts(model: type[Any], *, timed: bool) -> dict[Any, int]:
-        query = (
-            db.query(model.participant_id, func.count(func.distinct(model.event_id)))
-            .join(Event, model.event_id == Event.id)
-            .filter(
-                model.participant_id.in_(active_ids),
-                Event.is_test_event.is_(False),
-                Event.id.notin_(secondary_events),
-            )
-        )
-        if timed:
-            # Как в своде: пробежки считаем по строкам со временем финиша.
-            query = query.filter(model.finish_time_sec.isnot(None))
-        return {pid: int(count) for pid, count in query.group_by(model.participant_id).all()}
-
-    platform_runs = _platform_counts(RunResult, timed=True)
+    # Как в своде: пробежки считаем по строкам со временем финиша.
+    platform_runs = platform_result_counts(db, RunResult, active_ids, timed=True)
     platform_vols = {
         pid: total
         for pid, (total, _last) in _volunteer_occasion_counts(

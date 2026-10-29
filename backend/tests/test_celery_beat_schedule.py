@@ -460,6 +460,12 @@ AGREED_LIMITS_MINUTES: dict[str, tuple[int, int]] = {
     "notifications.flush_admin_copies": (5, 6),
     "notifications.flush_backlog_statuses": (5, 6),
     "notifications.friday_cancellations": (20, 25),
+    # Напоминание о планах на завтра: планы двух ближайших дней и подпись
+    # старта на каждого человека — проход пачкой, как пятничная сводка.
+    "notifications.plan_reminders": (20, 25),
+    # Сон постоянных планов: раз в сутки, по серии — правило трёх пропусков
+    # (события точки, присутствие, планы окна) и одно «Ещё ходите?».
+    "notifications.plan_series_sleep": (20, 25),
 }
 
 

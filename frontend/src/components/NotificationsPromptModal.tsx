@@ -184,6 +184,13 @@ export function NotificationsPromptModal() {
                 </span>
               </li>
               <li>
+                <span className="notify-intro-icon">📅</span>
+                <span>
+                  <b>Ваши планы на старты.</b> Накануне напомним, куда собрались, а если старт отменят — сразу
+                  сообщим. Напоминания и отмены выключаются по отдельности.
+                </span>
+              </li>
+              <li>
                 <span className="notify-intro-icon">📈</span>
                 <span>
                   <b>Движение в рейтингах.</b> Раз в неделю, в воскресенье, когда все протоколы субботы

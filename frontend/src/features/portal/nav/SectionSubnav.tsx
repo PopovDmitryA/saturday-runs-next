@@ -89,6 +89,20 @@ function Tabs({ links, pathname }: { links: NavLink[]; pathname: string }) {
     <div className="site-subnav-tabs" ref={rowRef} onScroll={(event) => updateFade(event.currentTarget)}>
       {links.map((link) => {
         const isCurrent = isLinkCurrent(link, pathname);
+        if (link.disabledHint && !isCurrent) {
+          return (
+            <span
+              key={link.key}
+              className="site-tab site-tab-disabled"
+              aria-disabled="true"
+              title={link.disabledHint}
+              tabIndex={0}
+            >
+              {link.chipLabel ?? link.label}
+              <span className="visually-hidden">: {link.disabledHint.toLowerCase()}</span>
+            </span>
+          );
+        }
         return (
           <a
             key={link.key}
@@ -139,6 +153,23 @@ function PickerDropdown({
             )}
             {group.items.map((link) => {
               const isCurrent = isLinkCurrent(link, pathname);
+              if (link.disabledHint && !isCurrent) {
+                // В выпадающем списке подсказки по наведению на телефоне не
+                // увидеть — она строкой под названием.
+                return (
+                  <span
+                    key={link.key}
+                    className="site-subnav-dropdown-item site-subnav-dropdown-item-disabled"
+                    aria-disabled="true"
+                  >
+                    {link.icon && <span className="site-subnav-dropdown-icon">{link.icon}</span>}
+                    <span className="site-subnav-dropdown-text">
+                      {link.label}
+                      <span className="site-subnav-dropdown-hint">{link.disabledHint}</span>
+                    </span>
+                  </span>
+                );
+              }
               return (
                 <a
                   key={link.key}

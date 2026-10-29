@@ -88,6 +88,7 @@ from app.schemas.location_openings import (
 )
 from app.schemas.nearby import AdminNearbyLogResponse
 from app.schemas.notifications import AdminNotificationsResponse
+from app.schemas.planner import SpecialStartDateDraft, SpecialStartDateItem, SpecialStartDateListResponse
 from app.schemas.rating import (
     AdminLocationRatingsResponse,
     AdminRatingsResponse,
@@ -189,6 +190,13 @@ from app.services.release_service import (
     list_all_releases,
     suggest_next_versions,
     update_release,
+)
+from app.services.run_plan_service import (
+    StartDateError,
+    admin_create_special_date,
+    admin_delete_special_date,
+    admin_list_special_dates,
+    admin_update_special_date,
 )
 from app.services.scheduled_run_log_service import list_runs as list_scheduled_runs
 from app.services.scheduled_run_log_service import resolve_period as resolve_runs_period
@@ -1132,6 +1140,61 @@ def admin_delete_release(
     except ReleaseError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return AbuseMessageResponse(message="release_deleted")
+
+
+# ===== Особые даты стартов (планировщик) =====
+
+
+@router.get("/start-dates", response_model=SpecialStartDateListResponse)
+def admin_list_start_dates(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> SpecialStartDateListResponse:
+    return SpecialStartDateListResponse.model_validate({"items": admin_list_special_dates(db)})
+
+
+@router.post("/start-dates", response_model=SpecialStartDateItem, status_code=status.HTTP_201_CREATED)
+def admin_create_start_date(
+    body: SpecialStartDateDraft,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> SpecialStartDateItem:
+    try:
+        item = admin_create_special_date(db, start_date=body.start_date, title=body.title, platforms=body.platforms)
+    except StartDateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    db.commit()
+    return SpecialStartDateItem.model_validate(item)
+
+
+@router.put("/start-dates/{special_id}", response_model=SpecialStartDateItem)
+def admin_update_start_date(
+    special_id: UUID,
+    body: SpecialStartDateDraft,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> SpecialStartDateItem:
+    try:
+        item = admin_update_special_date(
+            db, special_id, start_date=body.start_date, title=body.title, platforms=body.platforms
+        )
+    except StartDateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    db.commit()
+    return SpecialStartDateItem.model_validate(item)
+
+
+@router.delete("/start-dates/{special_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_delete_start_date(
+    special_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+) -> None:
+    try:
+        admin_delete_special_date(db, special_id)
+    except StartDateError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    db.commit()
 
 
 @router.get("/backlog/cards", response_model=BacklogCardAdminListResponse)

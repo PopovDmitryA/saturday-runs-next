@@ -396,8 +396,24 @@ def merge_parkrun_locations(db: Session, keep: Location, drop: Location) -> Merg
             raise ParkrunKeyConflict(f"{table}.{column}: {count} строк двойника конфликтуют с основной локацией") from exc
         report.other_rows[f"{table}.{column}"] = count
 
-    # Ключи «личности» вида `location:<uuid>` (дом, оценки, гео-пинги) — на
-    # основную. У связанных с каталогом ключ `catalog:<id>`, его слияние не меняет.
+    # План на двойника в ту же дату, что и на основную, — дубль одного плана:
+    # перепись ключа ниже упёрлась бы в уникальность (человек, дата, локация),
+    # и голый IntegrityError отравил бы всю транзакцию сверки.
+    db.execute(
+        text(
+            """
+            delete from run_plans d
+             using run_plans k
+             where d.location_key = :drop_key and k.location_key = :keep_key
+               and k.user_id = d.user_id and k.plan_date = d.plan_date
+            """
+        ),
+        {"keep_key": f"location:{keep.id}", "drop_key": f"location:{drop.id}"},
+    )
+
+    # Ключи «личности» вида `location:<uuid>` (дом, оценки, гео-пинги, планы и
+    # постоянные планы) — на основную. У связанных с каталогом ключ
+    # `catalog:<id>`, его слияние не меняет.
     for table, column in CATALOG_KEY_REFERENCES:
         db.execute(
             text(f'update "{table}" set "{column}" = :keep_key where "{column}" = :drop_key'),

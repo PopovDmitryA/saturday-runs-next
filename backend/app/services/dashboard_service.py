@@ -6,8 +6,8 @@ from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import Integer, and_, func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy import Integer, and_, func, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from app.activity_date import has_real_activity_date
 from app.activity_url import resolve_activity_url
@@ -451,7 +451,106 @@ def _count_secondary_crosslinked_results(
     return (base_run.scalar() or 0), (base_vol.scalar() or 0)
 
 
-def compute_dashboard_stats(db: Session, user_id: UUID, *, include_test_events: bool = False) -> dict[str, object]:
+def total_runs_for_users(db: Session, user_ids: list[UUID]) -> dict[UUID, int]:
+    """«Всего пробежек» пачкой — то же число, что плитка героя кабинета и профиля.
+
+    Годный dashboard_cache (та же проверка, что у get_dashboard_payload) —
+    берём из него: ровно это число профиль сейчас и показывает. Остальным —
+    тем же правилом, что compute_dashboard_stats: строки протоколов участника
+    привязки в её системе, без тестовых стартов, минус вторичные стороны
+    кросслинков, где у человека есть и первичная. Двумя group by на всех
+    сразу: блок «Планируют пробежать» зовут на каждом просмотре страницы
+    локации, а compute_dashboard_stats считает целый кабинет на одного.
+
+    В ответе нет тех, у кого ни одной привязки с участником: «0 пробежек» про
+    человека, который просто не привязал профиль, — неправда.
+    """
+    ids = list({user_id for user_id in user_ids if user_id is not None})
+    if not ids:
+        return {}
+    linked = {
+        user_id
+        for (user_id,) in db.query(PlatformLink.user_id)
+        .filter(PlatformLink.user_id.in_(ids), PlatformLink.participant_id.isnot(None))
+        .distinct()
+        .all()
+    }
+    if not linked:
+        return {}
+
+    totals: dict[UUID, int] = {}
+    for user_id, computed_at, total, version in db.query(
+        DashboardCache.user_id,
+        DashboardCache.computed_at,
+        DashboardCache.stats["total_runs"].astext,
+        DashboardCache.stats["analytics"]["analytics_version"].astext,
+    ).filter(DashboardCache.user_id.in_(list(linked))):
+        if version == str(ANALYTICS_VERSION) and not _computed_at_is_stale(computed_at) and total is not None:
+            totals[user_id] = int(total)
+
+    missing = [user_id for user_id in linked if user_id not in totals]
+    if missing:
+        totals.update(total_runs_from_protocols(db, missing))
+    return totals
+
+
+def total_runs_from_protocols(db: Session, user_ids: list[UUID]) -> dict[UUID, int]:
+    """«Всего пробежек» по протоколам, мимо dashboard_cache, — правило
+    compute_dashboard_stats двумя group by на всех сразу. Кэш кабинета живёт
+    до суток и после загрузки протокола отстаёт, пока его не сбросит прогрев
+    после синка; здесь число всегда сегодняшнее."""
+    missing = list({user_id for user_id in user_ids if user_id is not None})
+    if not missing:
+        return {}
+    gross = dict(
+        db.query(PlatformLink.user_id, func.count(RunResult.id))
+        .join(RunResult, RunResult.participant_id == PlatformLink.participant_id)
+        .join(Event, RunResult.event_id == Event.id)
+        .filter(
+            PlatformLink.user_id.in_(missing),
+            Event.platform_id == PlatformLink.platform_id,
+            Event.is_test_event.is_(False),
+        )
+        .group_by(PlatformLink.user_id)
+        .all()
+    )
+    # Дубль — как в _count_secondary_crosslinked_results: строка на вторичном
+    # событии кросслинка, если на первичном у человека тоже есть пробежка.
+    primary_run = aliased(RunResult)
+    primary_link = aliased(PlatformLink)
+    has_primary = (
+        select(primary_run.id)
+        .join(primary_link, primary_link.participant_id == primary_run.participant_id)
+        .where(
+            primary_link.user_id == PlatformLink.user_id,
+            primary_run.event_id == EventCrosslink.primary_event_id,
+        )
+        .exists()
+    )
+    duplicates = dict(
+        db.query(PlatformLink.user_id, func.count(RunResult.id))
+        .join(RunResult, RunResult.participant_id == PlatformLink.participant_id)
+        .join(Event, RunResult.event_id == Event.id)
+        .join(EventCrosslink, EventCrosslink.secondary_event_id == Event.id)
+        .filter(PlatformLink.user_id.in_(missing), Event.is_test_event.is_(False), has_primary)
+        .group_by(PlatformLink.user_id)
+        .all()
+    )
+    return {
+        user_id: max(0, int(gross.get(user_id) or 0) - int(duplicates.get(user_id) or 0)) for user_id in missing
+    }
+
+
+def _cabinet_totals(
+    db: Session, user_id: UUID, *, include_test_events: bool = False
+) -> tuple[dict[str, dict[str, int]], int, int]:
+    """Плитки «Пробежки» и «Волонтёрства» кабинета: (по системам, всего
+    пробежек, всего волонтёрств). По системам — валовые числа, итоги — без
+    вторичных сторон кросслинков, где у человека есть и первичная.
+
+    Одна функция на кабинет (compute_dashboard_stats) и на числа без кабинета
+    (cabinet_headline_stats): правило подсчёта живёт только здесь.
+    """
     links = (
         db.query(PlatformLink, Platform)
         .join(Platform, PlatformLink.platform_id == Platform.id)
@@ -531,7 +630,13 @@ def compute_dashboard_stats(db: Session, user_id: UUID, *, include_test_events: 
         if dup_runs or dup_vols:
             total_runs = max(0, total_runs - dup_runs)
             total_volunteering = max(0, total_volunteering - dup_vols)
+    return by_platform, total_runs, total_volunteering
 
+
+def compute_dashboard_stats(db: Session, user_id: UUID, *, include_test_events: bool = False) -> dict[str, object]:
+    by_platform, total_runs, total_volunteering = _cabinet_totals(
+        db, user_id, include_test_events=include_test_events
+    )
     analytics = _compute_dashboard_analytics(
         db,
         user_id,
@@ -549,23 +654,69 @@ def compute_dashboard_stats(db: Session, user_id: UUID, *, include_test_events: 
     }
 
 
-def _compute_dashboard_analytics(
-    db: Session,
-    user_id: UUID,
-    *,
-    total_runs: int,
-    total_volunteering: int,
-    by_platform: dict[str, dict[str, int]],
-    include_test_events: bool = False,
-) -> dict[str, object]:
-    from app.services.personal_record_service import (
-        run_displayed_personal_record_sql_filter,
-        user_secondary_crosslinked_run_ids,
-    )
+def cabinet_headline_stats(
+    db: Session, user_id: UUID, *, catalog_index: LocationCatalogIndex | None = None
+) -> dict[str, int] | None:
+    """Всего пробежек, волонтёрств и локаций — три числа шапки кабинета и
+    профиля без пересчёта кабинета целиком.
 
-    today = date.today()
-    twelve_months_ago = today - timedelta(days=365)
-    year_start = date(today.year, 1, 1)
+    Годный dashboard_cache (та же проверка, что у get_dashboard_payload) —
+    берём из него: ровно эти числа профиль сейчас и показывает. Иначе считаем
+    теми же функциями, что compute_dashboard_stats, — и открыв профиль (он
+    пересчитает кэш), увидим те же числа. Кабинет целиком — это ещё рекорды
+    локаций, дальность от дома, погода: у бегуна со ста локациями секунды, а
+    странице участника в оргкабинете нужны только эти три плитки.
+
+    None — у человека нет ни одной привязки с участником (как в
+    total_runs_for_users: «0 пробежек» про непривязанного — неправда).
+    catalog_index — уже построенный индекс каталога, если он есть у вызывающего.
+    """
+    has_participant = (
+        db.query(PlatformLink.id)
+        .filter(PlatformLink.user_id == user_id, PlatformLink.participant_id.isnot(None))
+        .first()
+    )
+    if has_participant is None:
+        return None
+    cached = (
+        db.query(
+            DashboardCache.computed_at,
+            DashboardCache.stats["analytics"]["analytics_version"].astext,
+            DashboardCache.stats["total_runs"].astext,
+            DashboardCache.stats["total_volunteering"].astext,
+            DashboardCache.stats["analytics"]["unique_locations"].astext,
+        )
+        .filter(DashboardCache.user_id == user_id)
+        .one_or_none()
+    )
+    if cached is not None:
+        computed_at, version, runs, volunteering, locations = cached
+        if (
+            version == str(ANALYTICS_VERSION)
+            and not _computed_at_is_stale(computed_at)
+            and None not in (runs, volunteering, locations)
+        ):
+            return {
+                "total_runs": int(runs),
+                "total_volunteering": int(volunteering),
+                "unique_locations": int(locations),
+            }
+    _by_platform, total_runs, total_volunteering = _cabinet_totals(db, user_id)
+    run_rows, vol_rows = _cabinet_location_rows(*_cabinet_activity_queries(db, user_id))
+    index = catalog_index if catalog_index is not None else LocationCatalogIndex(db)
+    return {
+        "total_runs": total_runs,
+        "total_volunteering": total_volunteering,
+        "unique_locations": count_unique_locations_from_rows(index, run_rows + vol_rows).unique_total,
+    }
+
+
+def _cabinet_activity_queries(db: Session, user_id: UUID, *, include_test_events: bool = False) -> tuple[Any, Any]:
+    """Пробежки и волонтёрства человека — основа аналитики кабинета: из них
+    считаются локации, города, время, места. Пробежки — в системе привязки и
+    без вторичных дублей кросслинков.
+    """
+    from app.services.personal_record_service import user_secondary_crosslinked_run_ids
 
     runs_query = (
         db.query(RunResult, Event, Location, Platform)
@@ -602,8 +753,35 @@ def _compute_dashboard_analytics(
     if secondary_crosslinked_ids:
         runs_query = runs_query.filter(RunResult.id.notin_(secondary_crosslinked_ids))
 
-    run_location_rows = runs_query.with_entities(Location, Platform.code).distinct().all()
-    vol_location_rows = vol_query.with_entities(Location, Platform.code).distinct().all()
+    return runs_query, vol_query
+
+
+def _cabinet_location_rows(
+    runs_query: Any, vol_query: Any
+) -> tuple[list[tuple[Location, str]], list[tuple[Location, str]]]:
+    """(локация, система) пробежек и волонтёрств — из них плитка «Локации»."""
+    run_rows = runs_query.with_entities(Location, Platform.code).distinct().all()
+    vol_rows = vol_query.with_entities(Location, Platform.code).distinct().all()
+    return [(location, code) for location, code in run_rows], [(location, code) for location, code in vol_rows]
+
+
+def _compute_dashboard_analytics(
+    db: Session,
+    user_id: UUID,
+    *,
+    total_runs: int,
+    total_volunteering: int,
+    by_platform: dict[str, dict[str, int]],
+    include_test_events: bool = False,
+) -> dict[str, object]:
+    from app.services.personal_record_service import run_displayed_personal_record_sql_filter
+
+    today = date.today()
+    twelve_months_ago = today - timedelta(days=365)
+    year_start = date(today.year, 1, 1)
+
+    runs_query, vol_query = _cabinet_activity_queries(db, user_id, include_test_events=include_test_events)
+    run_location_rows, vol_location_rows = _cabinet_location_rows(runs_query, vol_query)
 
     catalog_index = LocationCatalogIndex(db)
 
@@ -2107,10 +2285,13 @@ def _dashboard_cache_is_stale(cache: DashboardCache) -> bool:
     ANALYTICS_VERSION, и пропущенное окно прогрева означало «плитки Обзора не
     обновятся никогда» — так у 27 человек неделями не хватало забегов S95.
     """
+    return _computed_at_is_stale(cache.computed_at)
+
+
+def _computed_at_is_stale(computed_at: datetime | None) -> bool:
     from app.config import get_settings
 
     max_age = timedelta(hours=get_settings().dashboard_cache_max_age_hours)
-    computed_at = cache.computed_at
     if computed_at is None:
         return True
     if computed_at.tzinfo is None:

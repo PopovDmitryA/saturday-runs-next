@@ -533,8 +533,10 @@ def deliver_now(db: Session, delivery_id: UUID) -> str:
             # Подпись — до коммита: после него поля пользователя протухнут, и их
             # чтение держало бы транзакцию открытой, пока уходит копия админу.
             recipient = recipient_label(user)
+            copy = delivery.kind not in ADMIN_COPY_SKIP_KINDS
             db.commit()
-            _admin_copy(recipient, target.channel, message)
+            if copy:
+                _admin_copy(recipient, target.channel, message)
             return STATUS_SENT
         errors.append(f"{target.channel}: {outcome.error}")
         transient = transient or not outcome.permanent
@@ -555,6 +557,15 @@ def recipient_label(user: User) -> str:
         return f"@{user.telegram_username}"
     name = (user.display_name or "").strip() or "без имени"
     return f"{name} (№{user.serial_id})"
+
+
+# Виды, копий которых админу не шлём. Сейчас пусто: копии напоминаний о планах
+# (plan_reminders) Дмитрий оставил себе — смотреть, кто и сколько пользуется
+# планировщиком (решение 29.10.2026). Это одна сводка на человека на дату: в
+# пятничный вечер у постоянных их может быть сто пятьдесят и больше, поток
+# упирается в лимит частоты Telegram — если копии начнут теряться, вернуть
+# вид сюда.
+ADMIN_COPY_SKIP_KINDS: frozenset[str] = frozenset()
 
 
 def _admin_copy(recipient: str, channel: str, message: OutgoingMessage) -> None:

@@ -32,12 +32,15 @@ import {
   type CabinetTabSegmentKey,
   PORTAL_ABOUT_HREF,
   PORTAL_BLOG_HREF,
+  PORTAL_CABINET_PLANS_HREF,
   PORTAL_CABINET_SETTINGS_HREF,
   PORTAL_CABINET_SHARE_HREF,
   PORTAL_HOME_HREF,
   PORTAL_LOGIN_HREF,
   PORTAL_REGISTRATION_HREF,
   PORTAL_UPDATES_HREF,
+  PROFILE_PLANS_SEGMENT,
+  profileBaseHref,
 } from "../../../lib/portalRoutes";
 
 export type NavSectionKey =
@@ -70,6 +73,11 @@ export type NavLink = {
   matches?: (pathname: string) => boolean;
   /** Служебный пункт (админка) — подсвечивается янтарным. */
   tone?: "admin";
+  /**
+   * Пункт неактивен — открывать нечего (вкладка «Планы» чужого профиля без
+   * публичных планов); текст — подсказка по наведению и тапу.
+   */
+  disabledHint?: string | null;
 };
 
 export type NavGroup = {
@@ -122,8 +130,8 @@ export type NavContext = {
   inOrganizer?: boolean;
 };
 
-// Ключи вкладок кабинета; "share" и "settings" живут на своих адресах.
-export type CabinetTabKey = CabinetTabSegmentKey | "share" | "settings";
+// Ключи вкладок кабинета; "share", "plans" и "settings" живут на своих адресах.
+export type CabinetTabKey = CabinetTabSegmentKey | "share" | "plans" | "settings";
 
 function normalizePath(path: string): string {
   const trimmed = path.replace(/\/+$/, "");
@@ -152,7 +160,7 @@ export const SECTION_PATH_PREFIXES: Record<NavSectionKey, readonly string[]> = {
   // Главная — один адрес «/», префиксом его не выразить (он покрыл бы весь
   // сайт); её узнаёт sectionKeyFromPath отдельной проверкой.
   home: [],
-  me: [PORTAL_CABINET_SHARE_HREF, "/new/"],
+  me: [PORTAL_CABINET_SHARE_HREF, PORTAL_CABINET_PLANS_HREF, "/new/"],
   organizer: ["/organizer"],
   results: ["/results", "/protocol"],
   locations: ["/locations"],
@@ -241,9 +249,30 @@ const CABINET_SHARE: CabinetDef = {
   keywords: ["сторис", "картинка", "постер", "поделиться результатом"],
 };
 
+// «Планы» — отдельной константой, а не в CABINET_TABS: из того списка
+// строятся вкладки чужого профиля по сегментам кабинета, а «Мои планы» живут
+// на своём адресе /plans. У чужого профиля «Планы» — своя вкладка с
+// публичными планами (/users/{хендл}/plans, PublicProfilePage).
+const CABINET_PLANS: CabinetDef = {
+  key: "plans",
+  label: "Планы",
+  icon: I.CABINET_ICONS.plans,
+  keywords: [
+    "планы",
+    "календарь",
+    "календарь стартов",
+    "запланировать",
+    "планирую",
+    "куда поеду",
+    "напоминание о старте",
+    "не бегаю",
+  ],
+};
+
 /** Все ключи страниц кабинета — из того же списка, что и сами вкладки. */
 export const CABINET_TAB_KEYS: readonly CabinetTabKey[] = [
   ...CABINET_TABS.map((tab) => tab.key),
+  CABINET_PLANS.key,
   CABINET_SHARE.key,
   "settings",
 ];
@@ -280,6 +309,7 @@ const SETTINGS_DEF: CabinetDef = {
 
 export function cabinetHref(user: User | null | undefined, key: CabinetTabKey): string {
   if (key === "share") return PORTAL_CABINET_SHARE_HREF;
+  if (key === "plans") return PORTAL_CABINET_PLANS_HREF;
   if (key === "settings") return PORTAL_CABINET_SETTINGS_HREF;
   return cabinetTabHref(user ?? null, key);
 }
@@ -288,12 +318,23 @@ export const CABINET_LABEL = "Кабинет";
 
 function meSection(ctx: NavContext): NavSection {
   const anon = ctx.user === null;
+  // «Планы» подсвечены и на своём адресе вкладки профиля
+  // (/users/{хендл}/plans — «как планы видят другие»): страница в кабинете,
+  // и без этого в колонке не было бы ни одного текущего пункта.
+  const ownBase = ctx.user ? profileBaseHref(ctx.user) : null;
+  const plansMatches = ownBase
+    ? (pathname: string) => {
+        const path = normalizePath(pathname);
+        return path === PORTAL_CABINET_PLANS_HREF || path === `${ownBase}/${PROFILE_PLANS_SEGMENT}`;
+      }
+    : undefined;
   const link = (def: CabinetDef): NavLink => ({
     key: def.key,
     label: def.label,
     icon: def.icon,
     href: cabinetHref(ctx.user, def.key),
     keywords: def.keywords,
+    matches: def.key === "plans" ? plansMatches : undefined,
   });
   return {
     key: "me",
@@ -306,7 +347,7 @@ function meSection(ctx: NavContext): NavSection {
     groups: anon
       ? []
       : [
-          { key: "tabs", items: [...CABINET_TABS, CABINET_SHARE].map(link) },
+          { key: "tabs", items: [...CABINET_TABS, CABINET_PLANS, CABINET_SHARE].map(link) },
         ],
   };
 }
@@ -321,6 +362,8 @@ type ToolDef = {
   icon: ReactNode;
   path: string;
   keywords: readonly string[];
+  /** У инструмента есть подстраницы (/guests/{хендл}) — на них пункт тоже текущий. */
+  subpages?: boolean;
 };
 
 // Группы — по тому, зачем организатор приходит: собрать отчёт о субботе,
@@ -341,6 +384,8 @@ const ORGANIZER_TOOL_GROUPS: readonly { key: string; title: string; tools: reado
     title: "Люди",
     tools: [
       { key: "milestones", label: "Календарь юбилеев", icon: I.MILESTONES_ICON, chipLabel: "Юбилеи", path: "milestones", keywords: ["юбилеи", "клуб 50", "клуб 100", "поздравить"] },
+      { key: "calendar", label: "Календарь локации", icon: I.LOCATION_CALENDAR_ICON, chipLabel: "Календарь", path: "calendar", keywords: ["календарь", "планы участников", "сколько придет", "планируют", "кто побежит"] },
+      { key: "guests", label: "Кто у нас бежит", icon: I.GUESTS_ICON, chipLabel: "Кто бежит", path: "guests", subpages: true, keywords: ["кто бежит", "кто к нам едет", "кто едет", "кто приедет", "гости", "кто планирует", "откуда едут", "впервые у нас", "юбилей на старте", "страница участника"] },
       { key: "newcomers", label: "Удержание новичков", icon: I.NEWCOMERS_ICON, chipLabel: "Новички", path: "newcomers", keywords: ["новички", "дебютанты", "первый старт", "вернулись"] },
       { key: "absence", label: "Долгая пауза", icon: I.PAUSE_ICON, chipLabel: "Пауза", path: "absence", keywords: ["пропали", "давно не было", "пауза", "вернуть участников"] },
       { key: "audience", label: "Портрет участника", icon: I.AUDIENCE_ICON, chipLabel: "Портрет", path: "audience", keywords: ["аудитория", "возраст", "пол", "клубы участников"] },
@@ -398,15 +443,23 @@ function organizerSection(ctx: NavContext): NavSection {
     key: group.key,
     title: group.title,
     context: true,
-    items: group.tools.map((tool) => ({
-      key: tool.key,
-      label: tool.label,
-      chipLabel: tool.chipLabel,
-      colLabel: tool.colLabel,
-      icon: tool.icon,
-      href: `/organizer/${place.slug}${tool.path ? `/${tool.path}` : ""}`,
-      keywords: tool.keywords,
-    })),
+    items: group.tools.map((tool) => {
+      const href = `/organizer/${place.slug}${tool.path ? `/${tool.path}` : ""}`;
+      return {
+        key: tool.key,
+        label: tool.label,
+        chipLabel: tool.chipLabel,
+        colLabel: tool.colLabel,
+        icon: tool.icon,
+        href,
+        keywords: tool.keywords,
+        // Страница участника — внутри «Кто у нас бежит»: в колонке и полосе
+        // подсвечен этот пункт, а не ни один.
+        matches: tool.subpages
+          ? (pathname: string) => pathHasPrefix(normalizePath(pathname), normalizePath(href))
+          : undefined,
+      };
+    }),
   }));
   // «Мои локации» рядом с инструментами — только когда есть из чего выбирать:
   // больше одной своей локации или админ. При одной список сразу вернул бы в

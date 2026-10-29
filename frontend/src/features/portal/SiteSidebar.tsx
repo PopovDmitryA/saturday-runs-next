@@ -108,7 +108,19 @@ export type SidebarExtraGroup = {
    * вкладке, а диктор читает его как навигацию, а не как кнопку. Без адреса —
    * кнопка с `onClick`.
    */
-  items: { key: string; label: string; icon?: ReactNode; active: boolean; href?: string; onClick?: () => void }[];
+  items: {
+    key: string;
+    label: string;
+    icon?: ReactNode;
+    active: boolean;
+    href?: string;
+    onClick?: () => void;
+    /**
+     * Пункт неактивен — открывать нечего; текст — подсказка по наведению
+     * (на телефоне — по тапу): «Публичных планов нет», «Профиль закрыт».
+     */
+    disabledHint?: string | null;
+  }[];
 };
 
 export type SiteSidebarProps = {
@@ -479,6 +491,22 @@ function ExtraGroupBlock({ group }: { group: SidebarExtraGroup }) {
             <span className="site-col-item-label">{item.label}</span>
           </>
         );
+        if (item.disabledHint && !item.active) {
+          // Не ссылка и не кнопка: перейти некуда. В порядке Tab остаётся —
+          // клавиатуре и диктору подсказка нужна так же, как мыши.
+          return (
+            <span
+              key={item.key}
+              className={`${className} site-col-item-disabled`}
+              aria-disabled="true"
+              title={item.disabledHint}
+              tabIndex={0}
+            >
+              {body}
+              <span className="visually-hidden">: {item.disabledHint.toLowerCase()}</span>
+            </span>
+          );
+        }
         return item.href ? (
           <a
             key={item.key}

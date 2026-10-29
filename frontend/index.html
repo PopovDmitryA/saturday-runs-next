@@ -25,7 +25,13 @@
             k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
         })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=111350728', 'ym');
 
-        ym(111350728, 'init', {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+        // Страница участника в оргкабинете — адресом списка гостей, как и
+        // переходы роутера (metrikaPath в src/lib/metrika.ts): хендл человека
+        // в Метрику не уходит ни с прямого захода, ни в referrer.
+        var srsMetrikaUrl = function (url) {
+          return url ? url.replace(/^([^?#]*\/organizer\/[^/?#]+\/guests)\/[^/?#]+\/?(?:[?#].*)?$/, "$1") : url;
+        };
+        ym(111350728, 'init', {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", referrer: srsMetrikaUrl(document.referrer), url: srsMetrikaUrl(location.href), accurateTrackBounce:true, trackLinks:true});
     </script>
     <!-- /Yandex.Metrika counter (noscript-пиксель — в body: div внутри noscript в head невалиден) -->
     <script>

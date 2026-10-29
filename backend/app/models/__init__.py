@@ -24,7 +24,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -1299,6 +1299,11 @@ class User(Base):
     # Согласие на обработку GPS-треков: спрашиваем один раз перед первой
     # загрузкой, дальше только показываем в настройках.
     track_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # «Не сейчас» у подсказки «Вы пробежали здесь 9 из 10 последних стартов —
+    # планировать каждую субботу?»: до этого момента подсказка молчит на всех
+    # устройствах. Ставят и «Остановить» постоянного плана, и «Отменить» после
+    # одного нажатия — иначе подсказка вернулась бы сразу (plan_series_service).
+    plans_hint_snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     platform_links: Mapped[list["PlatformLink"]] = relationship(back_populates="user")
     dashboard_cache: Mapped["DashboardCache | None"] = relationship(back_populates="user", uselist=False)
@@ -2304,6 +2309,167 @@ class BacklogCardSubscription(Base):
     card_id: Mapped[UUID] = mapped_column(ForeignKey("backlog_cards.id", ondelete="CASCADE"), primary_key=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class RunPlan(Base):
+    """План на старт или отметка «Не бегаю» на день (миграция 116).
+
+    План: человек × локация × дата — «планирую пробежать». Волонтёров
+    планировщик не ведёт: они записываются в кабинетах систем (решение
+    Дмитрия 25.10.2026). Локация — ключ идентичности (`catalog:<id>` /
+    `location:<id>`), поэтому таблица — в CATALOG_KEY_REFERENCES; рядом —
+    опорная строка `location_id` (система, пояс, ≈№): ключ дрейфует, когда
+    локацию заводят в каталог, и чтение ищет план по ключу ИЛИ по строкам
+    идентичности.
+
+    Строка дня — строка без локации, одна на дату: отметка «Не бегаю»
+    (`rest`). Строка дня без отметки не живёт, у плана с локацией отметки не
+    бывает (CHECK). Заметок нет — ни к плану, ни на день (решение Дмитрия
+    27.10.2026: перегружали интерфейс).
+
+    `is_public` — выбор человека для этой строки (решение Дмитрия 27.10.2026:
+    «эту неделю публично, следующую приватно»): у плана — имя на странице
+    локации и план в календаре профиля, у строки дня — отметка «Не бегаю» в
+    календаре профиля. Это
+    только выбор — итог считается при чтении (run_plan_service.plan_audience):
+    закрытый профиль и возраст до 15 лет имя прячут поверх него.
+
+    Лимит планов на дату (1 на обычную, до 3 на особую) держит сервис, а не
+    база. Уходит вместе с профилем (CASCADE), при объединении переезжает к
+    выжившему.
+    """
+
+    __tablename__ = "run_plans"
+    __table_args__ = (
+        CheckConstraint(
+            "(location_key IS NULL AND rest) OR (location_key IS NOT NULL AND NOT rest)",
+            name="ck_run_plans_kind",
+        ),
+        Index(
+            "uq_run_plans_user_date_location",
+            "user_id",
+            "plan_date",
+            "location_key",
+            unique=True,
+            postgresql_where=text("location_key IS NOT NULL"),
+        ),
+        Index(
+            "uq_run_plans_user_date_day",
+            "user_id",
+            "plan_date",
+            unique=True,
+            postgresql_where=text("location_key IS NULL"),
+        ),
+        Index("ix_run_plans_location_date", "location_key", "plan_date"),
+        Index("ix_run_plans_location_id_date", "location_id", "plan_date"),
+        Index("ix_run_plans_user_date", "user_id", "plan_date"),
+        Index("ix_run_plans_date", "plan_date"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    plan_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # NULL — строка дня («Не бегаю»).
+    location_key: Mapped[str | None] = mapped_column(String(255))
+    location_id: Mapped[UUID | None] = mapped_column(ForeignKey("locations.id", ondelete="SET NULL"))
+    # Система старта этой даты (у смешанной точки — та, что проводит старт).
+    platform_code: Mapped[str | None] = mapped_column(String(32))
+    # «Не бегаю» — только у строки дня (location_key IS NULL) и только на день старта.
+    rest: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Публичный план (у строки дня — публичная отметка «Не бегаю»). Умолчание
+    # пишет сервис: как профиль — открыт или закрыт; база по умолчанию молчит.
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class RunPlanSeries(Base):
+    """Постоянный план — «каждую субботу» на одной локации (миграция 116).
+
+    Правило и исключения, как повторяющаяся встреча в календаре (решение
+    Дмитрия 25.10.2026): строка серии одна, строк run_plans на каждую неделю
+    нет. Вхождения — даты календаря точки в [starts_on; until] — считает при
+    чтении planned_starts_service, исключения — обычные строки run_plans:
+    «Не бегаю» на день убирает вхождение, разовый план в другой локации его
+    вытесняет. Активная серия (`stopped_at IS NULL`) у человека одна.
+
+    Остановленная не удаляется: прошлые субботы остаются в истории «Планов» и
+    в «пришли M из N» оргкалендаря. Сон — после трёх стартов дома без человека
+    (plan_series_service.check_series_sleep): `sleeping_since` — с какой даты
+    вхождений нет, `sleep_missed` — старты, на которых правило решило
+    «пропуск» (результат за любой из них, пришедший позже, отменяет сон),
+    `sleep_history` — закрытые сны [{"from": "YYYY-MM-DD", "to": …}]. Колонки
+    сна — поведение человека, report_ro их не читает.
+
+    `is_public` — один выбор на весь план: его вхождения и разовые планы на
+    его же точку в его даты для чужих глаз публичны или приватны вместе.
+
+    Ключ локации — как у run_plans (`catalog:<id>` / `location:<id>`, таблица
+    в CATALOG_KEY_REFERENCES), рядом опорная строка `location_id`. Уходит с
+    профилем (CASCADE), при объединении переезжает к выжившему
+    (account_merge_service._reassign_run_plan_series).
+    """
+
+    __tablename__ = "run_plan_series"
+    __table_args__ = (
+        CheckConstraint("until IS NULL OR until >= starts_on", name="ck_run_plan_series_until"),
+        Index(
+            "uq_run_plan_series_user_active",
+            "user_id",
+            unique=True,
+            postgresql_where=text("stopped_at IS NULL"),
+        ),
+        Index("ix_run_plan_series_location", "location_key"),
+        Index("ix_run_plan_series_location_id", "location_id"),
+        Index("ix_run_plan_series_user", "user_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    location_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    location_id: Mapped[UUID | None] = mapped_column(ForeignKey("locations.id", ondelete="SET NULL"))
+    starts_on: Mapped[date] = mapped_column(Date, nullable=False)
+    # Последняя дата правила включительно; NULL — «пока не остановлю».
+    until: Mapped[date | None] = mapped_column(Date)
+    # «Остановить», замена серией на другой локации, объединение профилей.
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # «Продолжить» или пробуждение: старты не позже этой даты сон не считает.
+    resumed_on: Mapped[date | None] = mapped_column(Date)
+    sleeping_since: Mapped[date | None] = mapped_column(Date)
+    sleep_missed: Mapped[list[date] | None] = mapped_column(ARRAY(Date))
+    sleep_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sleep_history: Mapped[list[dict[str, str]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class StartSpecialDate(Base):
+    """Особая дата старта вне суббот: Новый год, праздники в будни.
+
+    Ведёт админ (/admin/start-dates). Даты календаря локации для планировщика —
+    субботы плюс эти, если система локации есть в `platforms`. Сид миграции
+    116: 01.01.2027 «Новогодний старт» для 5 вёрст, S95 и RunPark.
+    """
+
+    __tablename__ = "start_special_dates"
+    __table_args__ = (UniqueConstraint("start_date", name="uq_start_special_dates_date"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    title: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Коды систем: five_verst, s95, runpark.
+    platforms: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
 
 # ---------------------------------------------------------------- каталог parkrun

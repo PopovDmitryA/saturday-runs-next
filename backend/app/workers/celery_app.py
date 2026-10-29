@@ -253,6 +253,24 @@ celery_app.conf.update(
             "schedule": crontab(minute=0, day_of_week="fri,sat"),
             "options": {"queue": "celery", "expires": 50 * 60},
         },
+        # Напоминание о запланированном старте — вечером накануне по поясу
+        # локации плана (18:00–21:00 местного). Особые даты бывают в любой
+        # день недели, поэтому заход каждый час, без дня недели.
+        "notifications-plan-reminders": {
+            "task": "notifications.plan_reminders",
+            "schedule": crontab(minute=0),
+            "options": {"queue": "celery", "expires": 50 * 60},
+        },
+        # Сон постоянных планов — раз в сутки: субботние протоколы 5 вёрст,
+        # S95 (23:00) и RunPark к утру воскресенья загружены; 10:40 — «Ещё
+        # ходите?» приходит днём, а не ночью. Сегодняшние старты правило не
+        # считает (протоколы ещё догружаются), поэтому заход в субботу утром
+        # смотрит прошлую неделю.
+        "notifications-plan-series-sleep": {
+            "task": "notifications.plan_series_sleep",
+            "schedule": crontab(minute=40, hour=10),
+            "options": {"queue": "celery", "expires": 3 * 60 * 60},
+        },
         "five-verst-registry-daily": {
             "task": "five_verst_sync.sync_locations_registry",
             # 20:50 — после latest 20:00; до сводки 21:50 успевает (~1.5 мин).

@@ -14,6 +14,10 @@ class AccountDeletionPreviewResponse(BaseModel):
     review_photos: int
     goals: int
     run_tracks: int
+    # Планы на старты и отметки «Не бегаю» (планировщик).
+    run_plans: int
+    # Постоянные планы («каждую субботу»), включая остановленные — их история.
+    run_plan_series: int
     # Карточки и комментарии бэклога остаются без автора, голоса снимаются.
     backlog_cards: int
     backlog_comments: int

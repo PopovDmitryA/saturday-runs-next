@@ -30,15 +30,24 @@ CATALOG_KEY_REFERENCES: tuple[tuple[str, str], ...] = (
     ("user_geo_pings", "home_identity_key"),
     ("nearby_query_log", "nearest_identity_key"),
     ("user_cancellation_places", "place_key"),
+    # Планы на старты (планировщик, миграция 116): узел с планами — «занятый»,
+    # импорт без --force его не удалит. Прошедшие планы копятся бессрочно.
+    ("run_plans", "location_key"),
+    # Постоянные планы («каждую субботу») — та же точка ключом; остановленные
+    # хранят историю прошлых суббот.
+    ("run_plan_series", "location_key"),
 )
 
-# Колонки из CATALOG_KEY_REFERENCES, где ключ уникален в паре с другой
-# колонкой: один грант и одно место отмен на человека. Два ключа «location:»
-# одного человека, ставшие одним «catalog:», здесь не переписать оба —
-# второй удаляется. Сторож — tests/test_import_location_catalog.py.
-CATALOG_KEY_UNIQUE_WITH: dict[tuple[str, str], str] = {
-    ("location_organizer_access", "location_key"): "user_id",
-    ("user_cancellation_places", "place_key"): "user_id",
+# Колонки из CATALOG_KEY_REFERENCES, где ключ уникален вместе с другими
+# колонками: один грант и одно место отмен на человека, один план на точку в
+# день. Два ключа «location:» одного человека, ставшие одним «catalog:», здесь
+# не переписать оба — второй удаляется. Сторож — tests/test_import_location_catalog.py.
+CATALOG_KEY_UNIQUE_WITH: dict[tuple[str, str], tuple[str, ...]] = {
+    ("location_organizer_access", "location_key"): ("user_id",),
+    ("user_cancellation_places", "place_key"): ("user_id",),
+    # uq_run_plans_user_date_location: на особую дату у человека до трёх
+    # планов, и две локации дня, связанные в один узел, стали бы дублем.
+    ("run_plans", "location_key"): ("user_id", "plan_date"),
 }
 
 
@@ -88,31 +97,32 @@ def rekey_linked_location_references(db: Session) -> dict[str, int]:
     return counts
 
 
-def _rekey_unique_scoped(db: Session, table: str, column: str, scope: str, new_by_old: dict[str, str]) -> int:
+def _rekey_unique_scoped(
+    db: Session, table: str, column: str, scope: tuple[str, ...], new_by_old: dict[str, str]
+) -> int:
+    columns = ", ".join(f'"{name}"' for name in scope)
     rows = db.execute(
-        text(f'SELECT "{scope}", "{column}" FROM "{table}" WHERE "{column}" = ANY(:old)'),
+        text(f'SELECT {columns}, "{column}" FROM "{table}" WHERE "{column}" = ANY(:old)'),
         {"old": list(new_by_old)},
     ).all()
     if not rows:
         return 0
     taken = {
-        (scope_value, key)
-        for scope_value, key in db.execute(
-            text(f'SELECT "{scope}", "{column}" FROM "{table}" WHERE "{column}" = ANY(:new)'),
-            {"new": sorted({new_by_old[old_key] for _scope_value, old_key in rows})},
+        tuple(row)
+        for row in db.execute(
+            text(f'SELECT {columns}, "{column}" FROM "{table}" WHERE "{column}" = ANY(:new)'),
+            {"new": sorted({new_by_old[row[-1]] for row in rows})},
         )
     }
-    for scope_value, old_key in sorted(rows, key=lambda row: (str(row[0]), row[1])):
+    where = " AND ".join(f'"{name}" = :scope{index}' for index, name in enumerate(scope))
+    for *values, old_key in sorted(rows, key=lambda row: tuple(str(value) for value in row)):
         new_key = new_by_old[old_key]
-        params = {"scope": scope_value, "old": old_key, "new": new_key}
-        if (scope_value, new_key) in taken:
-            db.execute(text(f'DELETE FROM "{table}" WHERE "{scope}" = :scope AND "{column}" = :old'), params)
+        params = {**{f"scope{index}": value for index, value in enumerate(values)}, "old": old_key, "new": new_key}
+        if (*values, new_key) in taken:
+            db.execute(text(f'DELETE FROM "{table}" WHERE {where} AND "{column}" = :old'), params)
             continue
-        db.execute(
-            text(f'UPDATE "{table}" SET "{column}" = :new WHERE "{scope}" = :scope AND "{column}" = :old'),
-            params,
-        )
-        taken.add((scope_value, new_key))
+        db.execute(text(f'UPDATE "{table}" SET "{column}" = :new WHERE {where} AND "{column}" = :old'), params)
+        taken.add((*values, new_key))
     return len(rows)
 
 

@@ -7,6 +7,7 @@ import { PlatformBadge } from "../../../components/PlatformBadge";
 import { ProfileLinkSection } from "../../../components/ProfileLinkSection";
 import { RequireAuth } from "../../../components/RequireAuth";
 import { GoalsTeaser } from "../../dashboard/GoalsTeaser";
+import { NextPlanCard } from "../../planner/NextPlanCard";
 import {
   getDashboard,
   getOnThisDay,
@@ -372,6 +373,10 @@ function PortalDashboardContent({ user }: { user: User }) {
               historyHref={cabinetTabHref(user, "history")}
             />
           )}
+
+          {/* Ближайший план — после субботы: прошлая неделя, потом следующая.
+              Плана нет — карточки нет. */}
+          <NextPlanCard />
 
           <OnThisDayCard load={getOnThisDay} />
 

@@ -1,0 +1,469 @@
+/* ===== Оргкабинет: «Кто у нас бежит» и страница участника ===== */
+
+/* Вкладки дат сверху, под ними — люди выбранной даты. */
+.org-guests-card {
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+/* Ряд вкладок взят из блока на странице локации, там он встаёт в область
+   «tabs» шапки. Здесь шапки нет — обычная строка карточки, иначе ряд уезжал
+   вниз и вправо в неявную область сетки. */
+.org-guests-card > .plan-loc-tabs {
+  grid-area: auto;
+}
+
+.org-guests-panel {
+  container: org-guests-panel / inline-size;
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.org-guests-panel p {
+  margin: 0;
+}
+
+.org-guests-day {
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+/* Строка даты и справа «Кратко | Полно» — сегмент есть, только когда
+   краткий вид что-то прячет (TableViewToggle). */
+.org-guests-day-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+  min-width: 0;
+}
+
+/* Таблица людей — внутри карточки: рамка обёртки была бы рамкой в рамке.
+   Тени у краёв при прокрутке вбок (TableWrap) остаются. */
+.org-guests-wrap.table-wrap {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.org-guests-table {
+  font-size: 0.9rem;
+  /* Столбцы — по colgroup: у разовых и у постоянных (вторая таблица ниже)
+     они совпадают при любом содержимом. Числа — по минимумам GUEST_COLUMNS,
+     «Участник» и «Знаковый старт» — долей ширины, остаток — «Откуда». */
+  table-layout: fixed;
+}
+
+.org-guests-col-runs {
+  width: 98px;
+}
+
+.org-guests-col-here {
+  width: 66px;
+}
+
+.org-guests-col-marks {
+  width: 16%;
+}
+
+.org-guests-col-gains {
+  width: 19%;
+}
+
+.org-guests-col-name-fixed {
+  width: 23%;
+}
+
+.org-guests-table th,
+.org-guests-table td {
+  padding: 0.5rem 0.45rem;
+  vertical-align: baseline;
+  word-break: normal;
+}
+
+.org-guests-table th:first-child,
+.org-guests-table td:first-child {
+  padding-left: 0;
+}
+
+.org-guests-table th:last-child,
+.org-guests-table td:last-child {
+  padding-right: 0;
+}
+
+/* Шапка — тише строк и без плашки: таблица короткая, читается как список
+   с подписанными столбцами. Липкий «Участник» в полном виде (прокрутка
+   вбок) — тем же фоном, а не серой плашкой общих таблиц. */
+.org-guests-table thead th,
+.table-sticky-first .org-guests-table thead th:first-child {
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  vertical-align: bottom;
+}
+
+.org-guests-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Минимумы столбцов (с отступами ячеек) — те же числа, что GUEST_COLUMNS в
+   OrganizerGuestsPage: краткий вид набирает столбцы по ним. Имя — по
+   длинной фамилии целиком («Краснокутский» — 133px с отступом): на телефоне
+   до ~430 в краткий вид влезают «Участник» и «Пробежек», метки — под именем;
+   шире — и столбец «Знаковый старт». */
+.org-guests-table th:first-child,
+.org-guests-name {
+  min-width: 7.75rem;
+}
+
+/* break-word, а не anywhere: anywhere ужимает минимум столбца до одной
+   буквы, и автораскладка таблицы рвала фамилии посреди слова даже на 1024
+   («Фархутди|нова», ревью 26.10.2026, UI-2). break-word рвёт только слово,
+   которое не влезает и в самый широкий столбец. */
+.org-guests-name {
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
+/* Краткий вид без столбца «Знаковый старт» — метки строкой под именем. */
+.org-guests-name-marks {
+  display: flex;
+  margin-top: 0.2rem;
+}
+
+.org-guests-name-marks .plan-tag {
+  white-space: normal;
+  border-radius: 0.6rem;
+}
+
+/* Числа — вправо, разряд под разрядом; заголовок-кнопка сортировки — тоже. */
+.org-guests-table .org-guests-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.org-guests-sort {
+  margin-left: auto;
+  font-size: inherit;
+  color: inherit;
+  white-space: nowrap;
+}
+
+.org-guests-none-value {
+  color: var(--text-muted);
+}
+
+.org-guests-table .org-guests-unlinked {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: right;
+}
+
+/* На широкой таблице «профиль не привязан» — одной строкой: в двух столбцах
+   чисел он ломался «профиль не / привязан», хотя место у таблицы есть. На
+   1024 и уже — переносится: лишние пиксели вывели бы таблицу за карточку. */
+@container org-guests-panel (min-width: 48rem) {
+  .org-guests-table .org-guests-unlinked {
+    white-space: nowrap;
+  }
+}
+
+/* «Знаковый старт» с «i»: на узком столбце подпись переносится после
+   «Знаковый», а «i» остаётся при «старт», а не уезжает к краю столбца. */
+.org-guests-th-hint {
+  white-space: nowrap;
+}
+
+/* Запас под палец у «i» здесь — без хвоста справа: в последнем столбце
+   (краткий вид на телефоне) он вылезал за таблицу и включал прокрутку вбок. */
+.org-guests-th-hint .plan-people-hint {
+  margin-right: 0;
+  padding-right: 0;
+}
+
+.org-guests-marks {
+  min-width: 5.5rem;
+}
+
+/* Несколько меток — друг под другом, когда рядом не влезают. */
+.org-guests-mark-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+/* Метка с рамкой выше строки текста на пару пикселей: строка с юбиляром
+   выходила выше соседних, и ритм таблицы сбивался. Отрицательный отступ
+   прячет этот запас — все строки одной высоты, метка по центру имени. */
+.org-guests-marks .org-guests-mark-list {
+  vertical-align: top;
+  margin-block: -0.1rem;
+}
+
+/* В узком столбце (телефон, краткий вид) метка переносится внутри себя
+   («250-я / пробежка»), а не распирает таблицу вбок. Скругление не
+   «таблеткой»: в две строки полукруглые края смотрелись бы каплей; в одну
+   строку она и так круглая. */
+.org-guests-marks .plan-tag {
+  white-space: normal;
+  border-radius: 0.6rem;
+  vertical-align: baseline;
+}
+
+/* Где место есть, метка — одной строкой: иначе распределение ширины
+   таблицы отдавало лишнее «Откуда», а «впервые у нас» ломалось надвое.
+   Порог — как у «профиль не привязан»: на 1024 столбец «Знаковый старт»
+   ~100px, и метка одной строкой залезала на «Челленджи». */
+@container org-guests-panel (min-width: 48rem) {
+  .org-guests-marks .plan-tag {
+    white-space: nowrap;
+  }
+}
+
+/* «Челленджи» — по находке в строку, тише имени: «новая локация (31-я)»,
+   «буква «К»». Полный текст — в подсказке (наведение, на телефоне — тап). */
+.org-guests-gains {
+  min-width: 6.5rem;
+  color: var(--text-2);
+  font-size: 0.85rem;
+}
+
+.org-guests-gain-list {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.org-guests-gain-list li {
+  cursor: help;
+  line-height: 1.3;
+}
+
+/* 9rem, а не 11rem: на 1024 с целыми фамилиями таблица иначе выходила
+   за карточку на 20px. Длинное «Откуда» переносится — по слогам, где браузер
+   знает русские переносы («Интернационали-стов»), иначе где придётся. */
+.org-guests-home {
+  min-width: 9rem;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+/* Ссылки на домашнюю локацию и профиль — синим ссылок сайта, как имена.
+   Без класса браузер красил их своим #00e (посещённые — фиолетовым), и в
+   одной строке с именем стояли два разных синих. */
+.org-guests-home a,
+.org-guest-fact dd a,
+.org-guest-profile a {
+  color: var(--link);
+}
+
+.org-guests-none {
+  font-size: 0.88rem;
+}
+
+/* ===== Страница участника ===== */
+
+.org-guest-profile {
+  margin: 0.35rem 0 0;
+  font-size: 0.92rem;
+}
+
+.org-guest-page {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.org-guest-section {
+  gap: 0.55rem;
+  min-width: 0;
+  align-content: start;
+}
+
+.org-guest-section p {
+  margin: 0;
+}
+
+.org-guest-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.6rem;
+}
+
+.org-guest-lead {
+  font-size: 0.92rem;
+}
+
+.org-guest-note {
+  font-size: 0.82rem;
+}
+
+/* Даты плана — чипами в строку; особая — янтарная со звёздочкой, как вкладка
+   на странице локации. */
+.org-guest-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Скругление не «таблеткой»: особый старт на телефоне встаёт в две строки, и
+   полукруглые края такого чипа смотрелись кривой каплей. В одну строку чип
+   всё равно круглится до конца. */
+.org-guest-date {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 1rem;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.org-guest-date-part {
+  white-space: nowrap;
+}
+
+.org-guest-date-special {
+  border-color: var(--tint-amber-border-strong);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-text);
+}
+
+/* Три плитки в ряд и на телефоне: числа короткие, подписи — одно слово. */
+.org-guest-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+/* Селекторы с .portal-section: общий рескин плиток кабинета (cabinet.css)
+   задаёт отступы и подпись с той же силой, и одиночный класс ему проигрывал. */
+.portal-section .stat-card.org-guest-stat {
+  min-width: 0;
+}
+
+.portal-section .org-guest-stat .stat-label {
+  hyphens: auto;
+}
+
+/* На телефоне плитка ~100–110px: с обычными отступами «волонтёрств» не
+   влезало и рвалось переносом «волон-тёрств» (на 390 — тоже). */
+@media (max-width: 440px) {
+  .org-guest-stats {
+    gap: 0.5rem;
+  }
+
+  .portal-section .stat-card.org-guest-stat {
+    padding: 10px 8px;
+  }
+
+  .portal-section .org-guest-stat .stat-value {
+    font-size: 1.35rem;
+  }
+
+  .portal-section .org-guest-stat .stat-label {
+    font-size: 11.5px;
+  }
+}
+
+/* Карточки по две в ряд, на узком — столбиком. min() — чтобы минимум колонки
+   не распирал страницу вбок на телефоне. */
+.org-guest-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+/* «Пробежек здесь — 5»: подпись слева, значение справа, строки через черту. */
+.org-guest-facts {
+  display: grid;
+  margin: 0;
+}
+
+.org-guest-fact {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.org-guest-fact:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* Подпись не рвём: на телефоне «Домашняя / локация» и «Балашиха / Заречная»
+   ломались обе в две строки; переносится только значение, если оно длинное. */
+.org-guest-fact dt {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.org-guest-fact dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text);
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.org-guest-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.92rem;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* Челлендж — название и под ним что даст: «Новая локация» / «Станет 58-й
+   локацией». Текст с сервера начинается с заглавной, после тире он смотрелся бы криво. */
+.org-guest-challenges li {
+  display: grid;
+  gap: 0.05rem;
+}
+
+.org-guest-challenges .muted {
+  font-size: 0.88rem;
+}
+
+/* Следующие даты сюда в «Что даст визит» — подпись даты над своим списком. */
+.org-guest-later-visit {
+  margin-top: 0.85rem;
+}
+
+.org-guest-later-date {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* «↻ Каждую субботу с 31 октября» на странице участника. */
+.org-guest-series {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+  color: var(--text-2);
+}

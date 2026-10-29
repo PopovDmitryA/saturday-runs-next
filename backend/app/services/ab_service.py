@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models import AbEvent, User
+from app.services.page_analytics_service import stored_page_path
 
 # Что каждому каналу разрешено писать. Список пер-канальный, а не общий: иначе
 # событие с именем из чужого канала (например cta_click из давно открытой
@@ -121,7 +122,9 @@ def record_ab_event(
         visitor_key=visitor_key[:80],
         event_type=event_type,
         value=value[:128],
-        path=path[:256],
+        # Адрес — как в page_view_events: от страницы участника в оргкабинете
+        # остаётся список гостей, чью карточку открыли — не дело аналитики.
+        path=stored_page_path(path) if path else "",
         cohort=cohort,
         viewer_user_id=viewer.id if viewer is not None else None,
     )

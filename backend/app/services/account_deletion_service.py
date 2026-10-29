@@ -3,8 +3,9 @@
 Что уходит, а что остаётся (решения Дмитрия 12.10.2026):
   * профиль, способы входа, привязки к беговым системам, настройки,
     уведомления, цели, отзывы о локациях вместе с фото, треки, ручные гранты
-    организатора, особые награды, журнал входов и гео-отметки — всё это
-    личное и удаляется:
+    организатора, особые награды, планы на старты, постоянный план
+    («каждую субботу», с историей) и отметки «Не бегаю»,
+    журнал входов и гео-отметки — всё это личное и удаляется:
     часть явными шагами ниже, остальное ON DELETE CASCADE базы;
   * протоколы (participants, run_results, volunteer_results) — общие данные
     систем, а не человека: остаются, человек снова виден под именем из
@@ -62,6 +63,8 @@ from app.models import (
     ProfileFetchPending,
     ProfileFetchPendingReason,
     ProfileFetchPendingStatus,
+    RunPlan,
+    RunPlanSeries,
     RunTrack,
     SyncJob,
     User,
@@ -206,6 +209,10 @@ def deletion_preview(db: Session, user: User) -> AccountDeletionPreviewResponse:
         review_photos=len(_review_photo_keys(db, user.id)),
         goals=_count(db, UserGoal, UserGoal.user_id == user.id),
         run_tracks=_count(db, RunTrack, RunTrack.user_id == user.id),
+        # Планы и «Не бегаю» одной строкой: всё уходит вместе с профилем.
+        run_plans=_count(db, RunPlan, RunPlan.user_id == user.id),
+        # Постоянный план отдельной строкой: «правило» не то же, что планы на даты.
+        run_plan_series=_count(db, RunPlanSeries, RunPlanSeries.user_id == user.id),
         backlog_cards=_count(db, BacklogCard, BacklogCard.author_user_id == user.id),
         backlog_comments=_count(db, BacklogComment, BacklogComment.author_user_id == user.id),
         backlog_votes=_count(db, BacklogVote, BacklogVote.user_id == user.id),
@@ -452,6 +459,8 @@ def finalize_account_deletion(settings: Settings, receipt: AccountDeletionReceip
     from app.services.admin_track_import_service import _cleanup_staging
     from app.services.location_records_service import user_location_records_cache_key
     from app.services.organizer_access_service import invalidate_organizer_locations_cache
+    from app.services.plan_series_service import _HINT_CACHE_PREFIX
+    from app.services.planner_guests_service import _HOME_CACHE_PREFIX, _RUNS_CACHE_PREFIX
     from app.services.profile_preview_cache import clear_profile_preview_cache
 
     user_id = receipt.user_id
@@ -476,6 +485,10 @@ def finalize_account_deletion(settings: Settings, receipt: AccountDeletionReceip
     for telegram_id in receipt.telegram_ids:
         _attempt("abuse ip", user_id, _delete_redis_key, _user_ip_key(telegram_id))
     _attempt("organizer cache", user_id, invalidate_organizer_locations_cache, user_id)
+    # Кэши планировщика по user_id: всего пробежек и дом (блок локации и
+    # «Кто у нас бежит»), подсказка «каждую субботу».
+    for prefix in (_RUNS_CACHE_PREFIX, _HOME_CACHE_PREFIX, _HINT_CACHE_PREFIX):
+        _attempt("planner cache", user_id, _delete_redis_key, f"{prefix}{user_id}")
     _attempt("location records cache", user_id, _delete_redis_key, user_location_records_cache_key(user_id))
     # Отложенные смены статусов карточек для этого человека: take() снимает
     # группу целиком (список, отметку в очереди групп и время последней смены).

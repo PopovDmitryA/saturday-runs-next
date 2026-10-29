@@ -260,6 +260,7 @@ export const STATIC_PAGE_META: Record<string, PageMeta> = {
     title: "Поделиться — run5k.run",
     description: "Картинки с личной статистикой для соцсетей.",
   },
+  "/plans": { title: "Планы — run5k.run", description: "Календарь ваших планов на старты и отметок «Не бегаю»." },
   "/settings": {
     title: "Настройки — run5k.run",
     description: "Настройки профиля и привязанных аккаунтов.",

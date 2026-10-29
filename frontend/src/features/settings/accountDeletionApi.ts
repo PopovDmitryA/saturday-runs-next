@@ -9,6 +9,10 @@ export type AccountDeletionPreview = {
   location_reviews: number;
   review_photos: number;
   goals: number;
+  /** Планы стартов и отметки «Не бегаю» вместе. */
+  run_plans: number;
+  /** Постоянные планы «каждую субботу», в том числе остановленные. */
+  run_plan_series?: number;
   run_tracks: number;
   backlog_cards: number;
   backlog_comments: number;

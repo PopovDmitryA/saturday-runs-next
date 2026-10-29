@@ -387,6 +387,23 @@ def test_deliver_sends_outside_transaction(db_session: Session, monkeypatch: pyt
     assert tg is not None and tg.last_error == "timeout"
 
 
+def test_plan_messages_are_copied_to_admin(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Копии напоминаний о планах Дмитрий оставил себе (29.10.2026): и
+    напоминание, и «Ещё ходите?» копируются, как остальные виды."""
+    user = _make_user(db_session, chat_id=301)
+    _on(db_session, user)
+    _fake_senders(monkeypatch, {"telegram": SendOutcome(ok=True)})
+    copies: list[str] = []
+    monkeypatch.setattr(admin_copy, "add_copy", lambda recipient, *_args, **_kw: copies.append(recipient))
+    reminder = notify.notify_user(db_session, user, "plan_reminders", title="Завтра старт", text="x", dedupe_key="r")
+    asleep = notify.notify_user(db_session, user, "plan_series", title="На паузе", text="y", dedupe_key="s")
+    assert reminder is not None and asleep is not None
+    assert notify.deliver_now(db_session, reminder.id) == "sent"
+    assert len(copies) == 1
+    assert notify.deliver_now(db_session, asleep.id) == "sent"
+    assert len(copies) == 2
+
+
 def test_deliver_skips_when_unsubscribed_meanwhile(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     user = _make_user(db_session, chat_id=200)
     _on(db_session, user)

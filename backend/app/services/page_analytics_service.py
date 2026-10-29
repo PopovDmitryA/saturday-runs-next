@@ -61,6 +61,10 @@ _UNIFIED_PROTOCOL_RE = re.compile(r"^/protocol/(\d{4}-\d{2}-\d{2})$")
 # едет slug — просмотры протоколов копятся к локации, как у журнала.
 _LOCATION_PROTOCOL_RE = re.compile(r"^/locations/([^/]+)/protocol/[^/]+/\d{4}-\d{2}-\d{2}$")
 _LOCATION_RE = re.compile(r"^/locations/([^/]+)$")
+# Страница участника в «Кто у нас бежит»: /organizer/{slug}/guests/{хендл}. Чью
+# карточку открыл организатор — дело его и человека, не аналитики: хендл не
+# пишется ни в entity_key, ни в path (журнал визитов в админке показывает path).
+_ORGANIZER_GUEST_RE = re.compile(r"^/organizer/([^/]+)/guests/[^/]+$")
 
 # Одна страница приложения = один page_type. Ключ — нормализованный путь;
 # канон — STATIC_ROUTES в frontend/src/App.tsx (добавили роут — добавьте строку
@@ -115,6 +119,7 @@ _STATIC_PAGE_TYPES = {
     "/organizer": "organizer_index",
     "/share": "share",
     "/settings": "settings",
+    "/plans": "plans",
 }
 
 # Страницы-заглушки: сразу редиректят на другой адрес, своего содержимого нет.
@@ -238,10 +243,26 @@ def classify_page(path: str) -> tuple[str, str]:
     if normalized.startswith("/admin/"):
         return "admin", normalized[len("/admin/") :][:128]
     # Кабинет организатора: одна строка на семейство /organizer/{slug}[/report|/absence],
-    # слаг (и подстраница) — в entity_key.
+    # слаг (и подстраница) — в entity_key. Страница участника копится к списку
+    # гостей: «{slug}/guests», без хендла.
+    organizer_guest = _ORGANIZER_GUEST_RE.match(normalized)
+    if organizer_guest:
+        return "organizer_location", f"{organizer_guest.group(1)}/guests"[:128]
     if normalized.startswith("/organizer/"):
         return "organizer_location", normalized[len("/organizer/") :][:128]
     return "other", normalized[:128]
+
+
+def stored_page_path(path: str | None) -> str:
+    """Адрес просмотра для page_view_events. Как есть — кроме страницы
+    участника в оргкабинете: от неё остаётся адрес списка гостей
+    (/organizer/{slug}/guests), хендла и строки запроса нет."""
+    raw = path or "/"
+    bare = raw.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    organizer_guest = _ORGANIZER_GUEST_RE.match(bare)
+    if organizer_guest:
+        return f"/organizer/{organizer_guest.group(1)}/guests"[:256]
+    return raw[:256]
 
 
 def record_page_view(
@@ -254,6 +275,7 @@ def record_page_view(
 ) -> None:
     """Пишет сырое событие просмотра; повторный view_id молча игнорируется."""
     page_type, entity_key = classify_page(path)
+    path = stored_page_path(path)
     is_self = False
     if page_type == "profile" and entity_key:
         owner = resolve_profile_handle(db, entity_key)
@@ -265,7 +287,7 @@ def record_page_view(
         pg_insert(PageViewEvent)
         .values(
             view_id=view_id,
-            path=(path or "/")[:256],
+            path=path,
             page_type=page_type,
             entity_key=entity_key,
             visitor_key=visitor_key,

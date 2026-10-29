@@ -19,6 +19,8 @@ from app.models import (
     LocationRating,
     Platform,
     PlatformLink,
+    RunPlan,
+    RunPlanSeries,
     SyncJob,
     User,
     UserAward,
@@ -190,8 +192,9 @@ def _reassign_user_content(db: Session, merged_id: UUID, survivor_id: UUID) -> N
     Эти таблицы висят на users с ON DELETE CASCADE, то есть удаление
     поглощаемого профиля молча унесло бы отзывы, цели, права организатора и
     особые награды. Уникальные ключи есть у целей (user+год+тип), у доступа
-    (user+локация) и у наград (user+код): там, где у выжившего уже своя
-    строка, чужую не тащим.
+    (user+локация), у наград (user+код) и у планов (user+дата+локация, у
+    отметки «Не бегаю» — user+дата): там, где у выжившего уже своя строка,
+    чужую не тащим.
     """
     # Отзыв уникален по (человек, локация, дата, тип участия) — с миграции 091
     # ключ естественный, а не по строке результата (её синк пересобирает). Один
@@ -244,7 +247,127 @@ def _reassign_user_content(db: Session, merged_id: UUID, survivor_id: UUID) -> N
             db.delete(award)
         else:
             award.user_id = survivor_id
+
+    _reassign_run_plans(db, merged_id, survivor_id)
+    _reassign_run_plan_series(db, merged_id, survivor_id)
     db.flush()
+
+
+def _reassign_run_plan_series(db: Session, merged_id: UUID, survivor_id: UUID) -> None:
+    """Постоянные планы переезжают к выжившему; активный у человека один.
+
+    Остановленные поглощённого — историей (его прошлые субботы). Активный
+    поглощённого переезжает как есть, вместе со сном, если у выжившего
+    активного нет; есть — у выжившего остаётся свой, а поглощённый
+    останавливается (будущее уходит, без прошлого — удаляется) и переезжает
+    историей. Исключение — у выжившего срок кончился, а у поглощённого план
+    живой: тогда останавливается кончившийся, иначе после объединения
+    постоянного плана не осталось бы нигде. Сначала остановка и flush, потом смена владельца: частичный
+    уникальный индекс «одна активная» не должен увидеть две активные строки
+    ни на одной инструкции. Двойное покрытие прошлой даты разруливает чтение
+    (planned_starts: серия с самым поздним starts_on).
+
+    Будущие «Не бегаю» поглощённого переезжают строками дня (_reassign_run_plans)
+    и снимают вхождения серии выжившего в эти дни — в том числе его «Пропущу»
+    к своей, теперь остановленной, серии: «Не бегаю» — отметка о дне, а не о
+    локации. «Не сейчас» у подсказки — позднее из двух. Публичность —
+    своя у каждого плана и переезжает как есть: план сделал тот же человек;
+    закрытый профиль выжившего спрячет её при чтении.
+    """
+    from app.services.plan_series_service import _stop_row, forget_series_hint
+    from app.services.run_plan_service import _lock_user
+    from app.services.start_calendar_service import moscow_today
+
+    for user_id in sorted((merged_id, survivor_id), key=str):
+        _lock_user(db, user_id)
+    today = moscow_today()
+    survivor_active = (
+        db.query(RunPlanSeries)
+        .filter(RunPlanSeries.user_id == survivor_id, RunPlanSeries.stopped_at.is_(None))
+        .one_or_none()
+    )
+    merged_series = db.query(RunPlanSeries).filter(RunPlanSeries.user_id == merged_id).all()
+
+    def live(series: RunPlanSeries) -> bool:
+        return series.until is None or series.until >= today
+
+    merged_active = next((series for series in merged_series if series.stopped_at is None), None)
+    if survivor_active is not None and merged_active is not None and not live(survivor_active) and live(merged_active):
+        # Срок выжившего кончился (держит только «Продлить», пока задача сна
+        # его не остановит), а у поглощённого план живой — остаётся живой:
+        # кончившийся тихо останавливается, как при новом плане.
+        _stop_row(db, survivor_active, today)
+        survivor_active = None
+    for series in merged_series:
+        if series.stopped_at is None and survivor_active is not None:
+            if _stop_row(db, series, today):
+                continue
+        db.flush()
+        series.user_id = survivor_id
+    db.flush()
+    survivor = db.get(User, survivor_id)
+    merged = db.get(User, merged_id)
+    if survivor is not None and merged is not None and merged.plans_hint_snoozed_until is not None:
+        if survivor.plans_hint_snoozed_until is None or survivor.plans_hint_snoozed_until < merged.plans_hint_snoozed_until:
+            survivor.plans_hint_snoozed_until = merged.plans_hint_snoozed_until
+    forget_series_hint(survivor_id)
+
+
+def _reassign_run_plans(db: Session, merged_id: UUID, survivor_id: UUID) -> None:
+    """Планы и отметки «Не бегаю» переезжают к выжившему.
+
+    Лимит дня (1 план на обычную дату) после переноса может превыситься — это
+    не беда: оба плана человек сделал сам, лишний уберёт в кабинете.
+    Публичность (`is_public`) у каждой строки своя и переезжает с ней.
+
+    Конфликт — та же дата и та же ТОЧКА, а не тот же сырой ключ: ключ плана
+    дрейфует (`location:<id>` → `catalog:<id>`, когда локацию заводят в
+    каталог), и у выжившего оставались две строки одной локации на дату — с
+    двумя одинаковыми строками в напоминании (ревью 25.10.2026, INTEG-2).
+    Точку узнаём по ключу, по опорной строке и по сегодняшнему ключу опорной
+    строки. Строка дня («Не бегаю») — одна на дату: её метка (дата, None).
+    Две отметки на одну дату сводятся в строку выжившего с его публичностью.
+    План пробежки на ту же дату сильнее «Не бегаю», как при обычном
+    «Планирую»: отметка уходит.
+    """
+    from app.services.run_plan_service import canonical_identity_keys
+    from app.services.start_calendar_service import normalize_identity_key
+
+    survivor_plans = db.query(RunPlan).filter(RunPlan.user_id == survivor_id).all()
+    merged_plans = db.query(RunPlan).filter(RunPlan.user_id == merged_id).all()
+    canonical = canonical_identity_keys(
+        db, [plan.location_id for plan in (*survivor_plans, *merged_plans) if plan.location_id is not None]
+    )
+
+    def marks(plan: RunPlan) -> set[tuple[object, str | None]]:
+        if plan.location_key is None:
+            return {(plan.plan_date, None)}
+        found: set[tuple[object, str | None]] = {
+            (plan.plan_date, plan.location_key),
+            (plan.plan_date, normalize_identity_key(plan.location_key) or plan.location_key),
+        }
+        if plan.location_id is not None:
+            found.add((plan.plan_date, f"id:{plan.location_id}"))
+            if plan.location_id in canonical:
+                found.add((plan.plan_date, canonical[plan.location_id]))
+        return found
+
+    taken: set[tuple[object, str | None]] = set()
+    for plan in survivor_plans:
+        taken |= marks(plan)
+    kept = list(survivor_plans)
+    for plan in merged_plans:
+        plan_marks = marks(plan)
+        if plan_marks & taken:
+            db.delete(plan)
+        else:
+            plan.user_id = survivor_id
+            taken |= plan_marks
+            kept.append(plan)
+    planned_dates = {plan.plan_date for plan in kept if plan.location_key is not None}
+    for plan in kept:
+        if plan.location_key is None and plan.plan_date in planned_dates:
+            db.delete(plan)
 
 
 def _resolve_platform_links(

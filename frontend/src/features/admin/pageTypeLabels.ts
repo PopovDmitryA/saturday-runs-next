@@ -50,6 +50,7 @@ export const PAGE_TYPE_LABELS: Record<string, string> = {
   ratings_start_numbers: "Рейтинг челленджа: Нумератор",
   world: "Мировое табло (/world)",
   share: "Поделиться",
+  plans: "Планы",
   settings: "Настройки",
   about: "О проекте (старый, до портала)",
   demo: "Демо (все страницы)",

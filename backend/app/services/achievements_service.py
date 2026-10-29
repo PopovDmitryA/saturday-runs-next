@@ -25,12 +25,12 @@ hard в основном воспроизводит прежние, «ветер
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.challenge_growth import (
@@ -60,6 +60,7 @@ from app.models import (
     UserGoal,
     VolunteerResult,
 )
+from app.ru_plural import unit_form
 from app.saturday_week import max_saturday_streak, saturday_weeks
 from app.services.location_catalog_service import LocationCatalogIndex, russian_parkrun_location_ids
 from app.services.start_weather_service import (
@@ -93,6 +94,12 @@ from app.volunteer_role_taxonomy import (
 from app.volunteering_occasions import count_volunteering_for_platform, is_inventory_day, volunteer_occasion_dates
 
 LEVEL_ORDER = ("bronze", "silver", "gold")
+# Названия уровней — одни на сайт: сообщение о пробежке («Нумератор — 🥈
+# серебро», «до серебра 7») и «что даст визит» в оргкабинете.
+LEVEL_LABELS = {"bronze": "бронза", "silver": "серебро", "gold": "золото"}
+LEVEL_ICONS = {"bronze": "🥉", "silver": "🥈", "gold": "🥇"}
+# Родительный падеж — для «сколько осталось»: «до серебра 7».
+LEVEL_LABELS_GENITIVE = {"bronze": "бронзы", "silver": "серебра", "gold": "золота"}
 
 # Один тир на «весь» челлендж — единственный ключ словаря должен называться
 # "solo" (сигнал фронту не рисовать вкладки сложности). Иначе три тира —
@@ -366,7 +373,9 @@ class WeatherDay:
 # Сбор данных
 
 
-def _collect_run_rows(db: Session, user_id: UUID) -> list[RunRow]:
+def _collect_run_rows(
+    db: Session, user_id: UUID, *, catalog_index: LocationCatalogIndex | None = None
+) -> list[RunRow]:
     from app.services.personal_record_service import user_secondary_crosslinked_run_ids
 
     query = (
@@ -386,7 +395,7 @@ def _collect_run_rows(db: Session, user_id: UUID) -> list[RunRow]:
     if secondary_ids:
         query = query.filter(RunResult.id.notin_(secondary_ids))
 
-    catalog_index = LocationCatalogIndex(db)
+    catalog_index = catalog_index or LocationCatalogIndex(db)
     russian_parkrun = russian_parkrun_location_ids(db, catalog_index)
     fetched = query.all()
     weather_rows = weather_rows_for_pairs(db, [(event.location_id, event.event_date) for _r, event, _l, _p in fetched])
@@ -414,7 +423,11 @@ def _collect_run_rows(db: Session, user_id: UUID) -> list[RunRow]:
                 weather_fetched_at=weather.fetched_at if weather else None,
             )
         )
-    rows.sort(key=lambda row: (row.event_date, row.location_key))
+    # Полный порядок и внутри дня: две пробежки на одной точке в один день
+    # (зеркало без кросслинка) иначе шли бы в порядке выдачи базы, и
+    # «Совпадение номеров» карточки расходилось бы со столбцом «Челленджи» в
+    # «Кто у нас бежит» (visit_histories кладёт их так же).
+    rows.sort(key=lambda row: (row.event_date, row.location_key, row.platform_code, row.event_number or 0))
     return rows
 
 
@@ -3373,3 +3386,537 @@ def save_goals(
             db.add(UserGoal(user_id=user_id, year=year, goal_type=goal_type, target_value=target_value))
     db.commit()
     return get_goals_payload(db, user_id, today=today)
+
+
+# ---------------------------------------------------------------------------
+# Что даст запланированная пробежка: карточка гостя в оргкабинете
+
+
+@dataclass(frozen=True)
+class PlannedVisit:
+    """Запланированный визит для «что даст визит»: строка и система, которой
+    ляжет пробежка, прогноз ≈№ из календаря локации (None — номерные
+    челленджи молчат), более ранние запланированные визиты (строка, система,
+    ≈№) и один ли он у человека в этот день."""
+
+    location: Location
+    platform_code: str
+    number: int | None
+    earlier: tuple[tuple[Location, str, int | None], ...] = ()
+    alone: bool = True
+
+
+def planned_visit_gains(
+    db: Session,
+    user_id: UUID,
+    visits: Sequence[PlannedVisit],
+    *,
+    catalog_index: LocationCatalogIndex | None = None,
+) -> list[list[dict[str, str]]]:
+    """Что принесёт челленджам сайта каждый из визитов — строки
+    {title, text, short, hint} для организатора, к которому человек едет;
+    нечего сказать — [] у этого визита.
+
+    Считается тем же сбором, что и сами челленджи (_collect_run_rows), и теми
+    же признаками строки: ключ идентичности, имя локации для «Алфавита»,
+    регион, страна, система, номер старта; история собирается один раз на
+    все визиты. earlier визита считаются уже случившимися, как и в юбилеях
+    страницы участника, — если сбудется план в новой локации на прошлой
+    неделе, эта станет не второй, а третьей. Не alone — других планов на
+    этот день несколько: какой по счёту станет эта пробежка, не известно, и
+    «Совпадение номеров» молчит.
+    """
+    if not visits:
+        return []
+    catalog_index = catalog_index or LocationCatalogIndex(db)
+    history = VisitHistory.from_rows(_collect_run_rows(db, user_id, catalog_index=catalog_index))
+    alphabet = _alphabet_available_names(db, None)
+    return [
+        visit_gains(
+            history,
+            location=visit.location,
+            platform_code=visit.platform_code,
+            number=visit.number,
+            catalog_index=catalog_index,
+            earlier=visit.earlier,
+            alphabet=alphabet,
+            alone=visit.alone,
+        )
+        for visit in visits
+    ]
+
+
+def _number_matches(numbers: Iterable[int | None]) -> int:
+    """«Совпадение номеров»: сколько пробежек легло на старт со своим же
+    порядковым номером — numbers по порядку пробежек, как в
+    _number_match_challenge."""
+    return sum(1 for index, number in enumerate(numbers, start=1) if number == index)
+
+
+@dataclass
+class VisitHistory:
+    """Что уже есть у человека по челленджам, о которых говорит «что даст
+    визит»: локации (ключ идентичности), регионы, страны и системы финишей,
+    буквы «Алфавита» (без parkrun), номера стартов, сколько было круглых,
+    сколько всего пробежек и сколько из них — «Совпадение номеров»."""
+
+    keys: set[str] = field(default_factory=set)
+    regions: set[str] = field(default_factory=set)
+    countries: set[str] = field(default_factory=set)
+    systems: set[str] = field(default_factory=set)
+    letters: set[str | None] = field(default_factory=set)
+    numbers: set[int] = field(default_factory=set)
+    jubilees: int = 0
+    runs: int = 0
+    matches: int = 0
+
+    @classmethod
+    def from_rows(cls, rows: Sequence[RunRow]) -> VisitHistory:
+        history = cls()
+        for row in rows:
+            history.add(
+                key=row.location_key,
+                name=row.location_name,
+                region=row.region,
+                country=row.country,
+                platform_code=row.platform_code,
+                finished=row.finish_time_sec is not None and row.finish_time_sec > 0,
+                numbers=[row.event_number] if row.event_number is not None else [],
+                jubilees=1 if row.event_number and row.event_number > 0 and row.event_number % 50 == 0 else 0,
+            )
+        history.runs = len(rows)
+        history.matches = _number_matches(row.event_number for row in rows)
+        return history
+
+    def add(
+        self,
+        *,
+        key: str,
+        name: str,
+        region: str | None,
+        country: str | None,
+        platform_code: str,
+        finished: bool,
+        numbers: Iterable[int],
+        jubilees: int,
+    ) -> None:
+        self.keys.add(key)
+        if region:
+            self.regions.add(_canonical_region(region))
+        if finished:
+            if country:
+                self.countries.add(country)
+            self.systems.add(platform_code)
+        if platform_code != MAP_HISTORIC_PLATFORM:
+            self.letters.add(_first_letter(name))
+        self.numbers.update(numbers)
+        self.jubilees += jubilees
+
+
+def visit_histories(
+    db: Session, user_ids: Sequence[UUID], *, catalog_index: LocationCatalogIndex | None = None
+) -> dict[UUID, VisitHistory]:
+    """VisitHistory нескольких людей разом — для столбца «Челленджи» в «Кто у
+    нас бежит» (сорок человек на субботу): один запрос со сводкой по
+    локациям, а не сбор челленджей на каждого.
+
+    Те же пробежки, что у _collect_run_rows: без тестовых стартов и без дублей
+    «не в зачёте» (вторичная сторона event_crosslinks, когда у того же
+    человека есть пробежка и в первичном событии —
+    user_secondary_crosslinked_run_ids). Сводка — по (человек, строка
+    локации, система): имя, ключ и регион у строки одни, а пробежек у
+    постоянного — сотни.
+
+    «Совпадение номеров» считает порядковый номер пробежки среди всех — в
+    том же порядке, что _collect_run_rows: по дате, а в один день — по ключу
+    локации, системе и номеру. Номер первой пробежки дня (place) и сколько их в этот день
+    (same_day) даёт запрос; день с одной пробежкой сверяется прямо в нём, а
+    пробежки дней, где их несколько (особые даты), приходят списком и
+    раскладываются по ключам здесь.
+    """
+    ids = list(dict.fromkeys(user_ids))
+    if not ids:
+        return {}
+    catalog_index = catalog_index or LocationCatalogIndex(db)
+    summary = db.execute(
+        text(
+            """
+            WITH runs AS (
+                SELECT pl.user_id, rr.finish_time_sec, e.id AS event_id, e.event_number, e.event_date,
+                       e.location_id, p.code AS platform_code
+                FROM run_results rr
+                JOIN events e ON e.id = rr.event_id
+                JOIN platforms p ON p.id = e.platform_id
+                JOIN platform_links pl ON pl.participant_id = rr.participant_id AND pl.platform_id = p.id
+                WHERE pl.user_id = ANY(:ids) AND NOT e.is_test_event AND e.event_date > :guard
+            ),
+            counted AS (
+                SELECT r.*,
+                       rank() OVER (PARTITION BY r.user_id ORDER BY r.event_date) AS place,
+                       count(*) OVER (PARTITION BY r.user_id, r.event_date) AS same_day
+                FROM runs r
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM event_crosslinks c
+                    JOIN run_results rr2 ON rr2.event_id = c.primary_event_id
+                    JOIN platform_links pl2 ON pl2.participant_id = rr2.participant_id
+                    WHERE c.secondary_event_id = r.event_id AND pl2.user_id = r.user_id
+                )
+            )
+            SELECT user_id, location_id, platform_code,
+                   bool_or(coalesce(finish_time_sec, 0) > 0) AS finished,
+                   array_remove(array_agg(DISTINCT event_number), NULL) AS numbers,
+                   count(*) FILTER (WHERE event_number > 0 AND event_number % 50 = 0) AS jubilees,
+                   count(*) AS runs,
+                   count(*) FILTER (WHERE same_day = 1 AND event_number = place) AS matches,
+                   array_agg(event_date) FILTER (WHERE same_day > 1) AS tie_dates,
+                   array_agg(event_number) FILTER (WHERE same_day > 1) AS tie_numbers,
+                   array_agg(place) FILTER (WHERE same_day > 1) AS tie_places
+            FROM counted
+            GROUP BY user_id, location_id, platform_code
+            """
+        ),
+        {"ids": ids, "guard": _EPOCH_GUARD},
+    ).all()
+    locations = (
+        {location.id: location for location in db.query(Location).filter(Location.id.in_({row[1] for row in summary}))}
+        if summary
+        else {}
+    )
+    russian_parkrun = russian_parkrun_location_ids(db, catalog_index)
+    # Признаки строки локации — один раз на строку: у соседей по таблице
+    # локации во многом общие.
+    traits: dict[tuple[UUID, str], tuple[str, str, str | None, str | None]] = {}
+    result = {user_id: VisitHistory() for user_id in ids}
+    # Пробежки дней, где их несколько: (человек, дата) → (ключ, система, номер, place).
+    ties: dict[tuple[UUID, date], list[tuple[str, str, int | None, int]]] = {}
+    for (
+        user_id,
+        location_id,
+        platform_code,
+        finished,
+        numbers,
+        jubilees,
+        runs,
+        matches,
+        tie_dates,
+        tie_numbers,
+        tie_places,
+    ) in summary:
+        location = locations.get(location_id)
+        if location is None:
+            continue
+        trait = traits.get((location_id, platform_code))
+        if trait is None:
+            trait = (
+                catalog_index.canonical_identity_key(location, platform_code),
+                catalog_index.display_name(location, platform_code),
+                _normalize_geo_value(location.region),
+                _row_country(location, platform_code, russian_parkrun),
+            )
+            traits[(location_id, platform_code)] = trait
+        key, name, region, country = trait
+        history = result[user_id]
+        history.add(
+            key=key,
+            name=name,
+            region=region,
+            country=country,
+            platform_code=platform_code,
+            finished=bool(finished),
+            numbers=numbers or [],
+            jubilees=int(jubilees or 0),
+        )
+        history.runs += int(runs or 0)
+        history.matches += int(matches or 0)
+        for on_date, number, place in zip(tie_dates or [], tie_numbers or [], tie_places or [], strict=True):
+            ties.setdefault((user_id, on_date), []).append((key, platform_code, number, int(place)))
+    for (user_id, _date), day in ties.items():
+        # Тот же полный порядок, что у _collect_run_rows.
+        day.sort(key=lambda run: (run[0], run[1], run[2] or 0))
+        result[user_id].matches += sum(
+            1 for offset, (_key, _code, number, place) in enumerate(day) if number == place + offset
+        )
+    return result
+
+
+def alphabet_letters(db: Session) -> dict[str, set[str]]:
+    """Буквы сквозного «Алфавита» — для visit_gains, один раз на запрос."""
+    return _alphabet_available_names(db, None)
+
+
+# Номерные челленджи — те, чей рост от визита известен заранее: номер старта
+# (≈№) даёт календарь локации (просьба Дмитрия 27.10.2026). Код → название,
+# значок и подпись счётчика — те же, что у карточек челленджей (сторож —
+# tests/test_planner_guests.py), в порядке карточек.
+NUMBER_CHALLENGES: dict[str, tuple[str, str, str]] = {
+    "start_numbers": (START_NUMBER_TITLES["start_numbers"], "🔢", "номеров"),
+    "start_numbers_pro": (START_NUMBER_TITLES["start_numbers_pro"], "🔢", "номеров"),
+    "number_match": ("Совпадение номеров", "🔗", "совпадений"),
+    "jubilee": ("Юбилейщик", "🎂", "юбилеев"),
+    "fibonacci": ("Числа Фибоначчи", "🐚", "чисел ряда"),
+    "nelson": ("Клуб Нельсона", "🏏", "нельсонов"),
+    "primes": ("Простые числа", "➗", "простых номеров"),
+    "wilson": ("Индекс Уилсона", "⛓️", ""),
+}
+
+
+def number_challenge_counts(numbers: Iterable[int], *, jubilees: int, matches: int) -> dict[str, int]:
+    """Счётчики номерных челленджей по номерам стартов человека — по тем же
+    правилам, что карточки: «Нумератор» и «ПРО» — разные номера в своём
+    диапазоне, Фибоначчи, Нельсон и простые — разные номера коллекции,
+    Уилсон — цепочка с №1. «Юбилейщик» и «Совпадение номеров» считают
+    пробежки, а не номера, — их счётчики приходят готовыми."""
+    positive = {number for number in numbers if number > 0}
+    counts = {
+        code: sum(1 for number in positive if low <= number <= high) for code, (low, high) in START_NUMBER_RANGES.items()
+    }
+    counts["number_match"] = matches
+    counts["jubilee"] = jubilees
+    counts["fibonacci"] = len(positive & set(FIBONACCI_NUMBERS))
+    counts["nelson"] = sum(1 for number in positive if number % NELSON_STEP == 0)
+    counts["primes"] = sum(1 for number in positive if number <= PRIME_STRIP_MAX and _is_prime(number))
+    wilson = 0
+    while wilson + 1 in positive:
+        wilson += 1
+    counts["wilson"] = wilson
+    return counts
+
+
+@dataclass(frozen=True)
+class NumberGain:
+    """Рост номерного челленджа от визита: счётчик before → after, уровни,
+    взятые этим визитом ((тир, уровень) — по одному на тир, высший), и что
+    дальше по тиру, который карточка челленджа покажет первым."""
+
+    code: str
+    number: int
+    before: int
+    after: int
+    ups: tuple[tuple[str, str], ...]
+    next_level: str | None
+    to_next: int | None
+
+
+def number_gains(
+    history: VisitHistory, *, number: int, earlier: Sequence[int | None], alone: bool = True
+) -> list[NumberGain]:
+    """Номерные челленджи, которые продвинет визит на старт ≈№number.
+
+    earlier — ≈№ более ранних запланированных визитов по порядку дат: они
+    считаются уже случившимися, как и в остальном «что даст визит», — и их
+    номера, и их места в счёте пробежек (визит станет не 31-й пробежкой, а
+    32-й). alone — других планов на день визита нет; иначе порядок пробежек
+    дня не известен, и «Совпадение номеров» не считается.
+    """
+    if number <= 0:
+        return []
+    numbers = set(history.numbers)
+    jubilees = history.jubilees
+    matches = history.matches
+    for index, planned in enumerate(earlier, start=history.runs + 1):
+        if planned is None:
+            continue
+        numbers.add(planned)
+        jubilees += 1 if planned > 0 and planned % 50 == 0 else 0
+        matches += 1 if planned == index else 0
+    run_index = history.runs + len(earlier) + 1 if alone else None
+    before = number_challenge_counts(numbers, jubilees=jubilees, matches=matches)
+    after = number_challenge_counts(
+        numbers | {number},
+        jubilees=jubilees + (1 if number % 50 == 0 else 0),
+        matches=matches + (1 if number == run_index else 0),
+    )
+    gains: list[NumberGain] = []
+    for code in NUMBER_CHALLENGES:
+        if after[code] <= before[code]:
+            continue
+        ups: list[tuple[str, str]] = []
+        shown: tuple[str | None, int | None] | None = None
+        for tier, thresholds in CHALLENGE_TIERS[code].items():
+            levels = dict(zip(LEVEL_ORDER, thresholds, strict=True))
+            was, _next, _left = _resolve_level(before[code], levels)
+            level, next_level, to_next = _resolve_level(after[code], levels)
+            if level is not None and level != was:
+                ups.append((tier, level))
+            # «Сколько осталось» — по тиру, который карточка покажет первым
+            # (default_tier в _challenge): первому, где золото ещё не взято.
+            if shown is None and level != "gold":
+                shown = (next_level, to_next)
+        next_level, to_next = shown or (None, None)
+        gains.append(
+            NumberGain(
+                code=code,
+                number=number,
+                before=before[code],
+                after=after[code],
+                ups=tuple(ups),
+                next_level=next_level,
+                to_next=to_next,
+            )
+        )
+    return gains
+
+
+def _number_reason(gain: NumberGain) -> str:
+    """Чем номер хорош для челленджа: «≈№222 — новый нельсон»."""
+    number = gain.number
+    return {
+        "start_numbers": f"≈№{number} — новый номер",
+        "start_numbers_pro": f"≈№{number} — новый номер",
+        "number_match": f"станет {number}-й пробежкой на старте ≈№{number}",
+        "jubilee": f"≈№{number} — юбилейный старт",
+        "fibonacci": f"≈№{number} — новое число ряда",
+        "nelson": f"≈№{number} — новый нельсон",
+        "primes": f"≈№{number} — новое простое число",
+        "wilson": f"≈№{number} продолжит цепочку с №1",
+    }[gain.code]
+
+
+def _number_progress(gain: NumberGain) -> str:
+    """«57 → 58 номеров, до серебра 2» — как строка прогресса в сообщении о
+    пробежке (activity_notification_service.progress_line)."""
+    unit = NUMBER_CHALLENGES[gain.code][2]
+    text = f"{gain.before} → {gain.after}" + (f" {unit_form(gain.after, unit)}" if unit else "")
+    if gain.next_level and gain.to_next:
+        text += f", до {LEVEL_LABELS_GENITIVE[gain.next_level]} {gain.to_next}"
+    return text
+
+
+def _level_text(tier: str, level: str) -> str:
+    """«🥈 серебро (средний уровень)» — как строка уровня в сообщении о пробежке."""
+    tier_label = TIER_LABELS.get(tier)
+    return f"{LEVEL_ICONS[level]} {LEVEL_LABELS[level]}" + (f" ({tier_label.lower()} уровень)" if tier_label else "")
+
+
+def number_gain_rows(gains: Sequence[NumberGain]) -> list[dict[str, str]]:
+    """Строки «что даст визит» по номерным челленджам: сначала взятые уровни,
+    затем рост. У каждой — title и text для страницы участника и hint —
+    полный текст подсказки.
+
+    short — подпись в столбце «Челленджи» «Кто у нас бежит» — у всех строк
+    одна: столбец узкий, и номерные челленджи визита занимают в нём одну
+    строку (одну-две строчки текста), подсказки — списком. Взят уровень —
+    медаль и название («🥈 Клуб Нельсона», уровней несколько — «… и ещё 1»):
+    это то, с чем организатор поздравит; иначе — рост одного челленджа
+    («Нумератор ПРО: 21 → 22») или «рост в 3 челленджах»."""
+    leveled = [gain for gain in gains if gain.ups]
+    steps = [gain for gain in gains if not gain.ups]
+    if leveled:
+        _tier, level = leveled[0].ups[-1]
+        short = f"{LEVEL_ICONS[level]} {NUMBER_CHALLENGES[leveled[0].code][0]}"
+        if len(leveled) > 1:
+            short += f" и ещё {len(leveled) - 1}"
+    elif len(steps) == 1:
+        short = f"{NUMBER_CHALLENGES[steps[0].code][0]}: {steps[0].before} → {steps[0].after}"
+    else:
+        short = f"рост в {len(steps)} челленджах"
+    rows: list[dict[str, str]] = []
+    for gain in leveled:
+        title = f"{NUMBER_CHALLENGES[gain.code][0]} — {', '.join(_level_text(*up) for up in gain.ups)}"
+        text = f"{_number_reason(gain)}, {_number_progress(gain)}"
+        rows.append({"title": title, "text": text, "short": short, "hint": f"{title}: {text}"})
+    for gain in steps:
+        title = f"{NUMBER_CHALLENGES[gain.code][0]}: {_number_reason(gain)}"
+        text = _number_progress(gain)
+        rows.append({"title": title, "text": text, "short": short, "hint": f"{title}, {text}"})
+    return rows
+
+
+def visit_gains(
+    history: VisitHistory,
+    *,
+    location: Location,
+    platform_code: str,
+    number: int | None,
+    catalog_index: LocationCatalogIndex,
+    earlier: Sequence[tuple[Location, str, int | None]] = (),
+    alphabet: dict[str, set[str]],
+    alone: bool = True,
+) -> list[dict[str, str]]:
+    """Сам расчёт «что даст визит» по готовой истории человека (см.
+    planned_visit_gains). У каждой строки, кроме title и text, — short:
+    пара слов для столбца «Челленджи» в «Кто у нас бежит» («новая локация
+    (31-я)», «буква «К»», «Нумератор ПРО: 21 → 22»); у номерных — ещё hint,
+    полный текст подсказки (number_gain_rows)."""
+    gains: list[dict[str, str]] = []
+
+    # «Коллекционер локаций»: локации считаются по ключу идентичности.
+    keys = set(history.keys)
+    keys |= {catalog_index.canonical_identity_key(place, code) for place, code, _number in earlier}
+    if catalog_index.canonical_identity_key(location, platform_code) not in keys:
+        gains.append(
+            {
+                "title": "Новая локация",
+                "text": f"Станет {len(keys) + 1}-й локацией в «Коллекционере локаций»",
+                "short": f"новая локация ({len(keys) + 1}-я)",
+            }
+        )
+
+    # «Путешественник»: регионы — в одном написании, как в _regions_challenge.
+    region = _normalize_geo_value(location.region)
+    regions = set(history.regions)
+    for place, _code, _number in earlier:
+        planned_region = _normalize_geo_value(place.region)
+        if planned_region:
+            regions.add(_canonical_region(planned_region))
+    if region and _canonical_region(region) not in regions:
+        gains.append(
+            {
+                "title": "Новый регион",
+                "text": f"{region} — станет {len(regions) + 1}-м в «Путешественнике»",
+                "short": "новый регион",
+            }
+        )
+
+    # «Международный турист» и «Хет-трик систем» — по финишам. Без финишей
+    # вовсе молчат: первая страна и первая система — это просто первая
+    # пробежка, а не выезд.
+    country = _row_country(location, platform_code, frozenset())
+    countries = set(history.countries)
+    countries |= {planned for place, code, _number in earlier if (planned := _row_country(place, code, frozenset()))}
+    if country and countries and country not in countries:
+        gains.append(
+            {
+                "title": "Новая страна",
+                "text": f"{country} — станет {len(countries) + 1}-й в «Международном туристе»",
+                "short": "новая страна",
+            }
+        )
+    systems = history.systems | {code for _place, code, _number in earlier}
+    if systems and platform_code not in systems:
+        title = PLATFORM_TITLES.get(platform_code, platform_code)
+        gains.append(
+            {
+                "title": "Новая система",
+                "text": f"Первый финиш в системе {title} — {len(systems) + 1}-я в «Хет-трике систем»",
+                "short": "новая система",
+            }
+        )
+
+    # «Алфавит»: parkrun в сквозном зачёте не считается (_alphabet_challenge).
+    if platform_code != MAP_HISTORIC_PLATFORM:
+        letter = _first_letter(catalog_index.display_name(location, platform_code))
+        done = (
+            history.letters
+            | {
+                _first_letter(catalog_index.display_name(place, code))
+                for place, code, _number in earlier
+                if code != MAP_HISTORIC_PLATFORM
+            }
+        ) & set(alphabet)
+        if letter is not None and letter in alphabet and letter not in done:
+            gains.append(
+                {
+                    "title": f"Алфавит: буква «{letter}»",
+                    "text": f"Новая буква — станет {len(done) + 1}-й",
+                    "short": f"буква «{letter}»",
+                }
+            )
+
+    # Номерные челленджи: прогресс с числами и взятые уровни.
+    if number is not None:
+        gains += number_gain_rows(
+            number_gains(history, number=number, earlier=[planned for _place, _code, planned in earlier], alone=alone)
+        )
+    return gains

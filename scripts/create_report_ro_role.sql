@@ -82,6 +82,26 @@ SELECT format('REVOKE ALL ON TABLE public.%I FROM report_ro', tablename)
        )
 \gexec
 
+-- 5b) Планы забегов (миграция 116, решено 28.10.2026): run_plans и
+-- run_plan_series закрыты целиком — кто, куда и когда собирается (в том числе
+-- приватные планы) и сон постоянного плана. Строки notification_deliveries
+-- видов plan_reminders / plan_cancellations / plan_series (тексты с названием
+-- локации) скрыты политикой row-level security, остальные виды роль читает.
+-- Скрипт идемпотентный: повторный запуск пересоздаёт политику.
+SELECT 'REVOKE ALL ON TABLE public.run_plans FROM report_ro'
+ WHERE to_regclass('public.run_plans') IS NOT NULL
+\gexec
+SELECT 'REVOKE ALL ON TABLE public.run_plan_series FROM report_ro'
+ WHERE to_regclass('public.run_plan_series') IS NOT NULL
+\gexec
+SELECT 'ALTER TABLE public.notification_deliveries ENABLE ROW LEVEL SECURITY'
+ WHERE to_regclass('public.notification_deliveries') IS NOT NULL
+\gexec
+DROP POLICY IF EXISTS report_ro_no_plan_messages ON public.notification_deliveries;
+CREATE POLICY report_ro_no_plan_messages ON public.notification_deliveries
+  FOR SELECT TO report_ro
+  USING (kind NOT IN ('plan_reminders', 'plan_cancellations', 'plan_series'));
+
 -- 6) Явно убрать любую возможность записи (страховка на случай прежних грантов).
 -- CREATE в public, выданный всем (PUBLIC, умолчание PG14), не трогаем —
 -- решение 24.09.2026.

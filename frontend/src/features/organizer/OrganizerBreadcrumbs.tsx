@@ -12,22 +12,31 @@ import { ORGANIZER_INDEX_HREF, ORGANIZER_LABEL } from "../portal/nav/siteNav";
  * переходит из кабинета одной к списку остальных). При одной своей локации
  * ссылки нет: список сразу вернул бы в этот же кабинет, и ссылка обещала бы
  * то, чего не показывает (a11y-10). Список локаций — общий на документ, лишнего
- * запроса крошки не делают.
+ * запроса крошки не делают; из него же — название локации, пока страница его
+ * не знает.
  */
 export function OrganizerBreadcrumbs({
   slug,
   locationName,
   tool,
+  toolHref,
+  leaf,
 }: {
   slug: string;
   locationName: string | null;
   /** Название открытого инструмента; не задано — мы в хабе кабинета. */
   tool?: string;
+  /** Адрес инструмента — когда открыта его подстраница. */
+  toolHref?: string;
+  /** Подстраница инструмента: «Кто у нас бежит / Анна Смирнова». */
+  leaf?: string;
 }) {
   const user = useOptionalUser();
   const items = useOrganizerLocations(user);
   const showIndex = Boolean(user?.is_admin) || (items !== null && items.length > 1);
-  const name = locationName ?? "Локация";
+  // Названия ещё нет (едет ответ) или не будет (404 при прямом заходе) —
+  // берём из списка своих локаций: он уже есть для «← Мои локации».
+  const name = locationName ?? items?.find((item) => item.slug === slug)?.name ?? "Локация";
   return (
     <p className="muted loc-header-breadcrumb">
       {showIndex && (
@@ -38,7 +47,14 @@ export function OrganizerBreadcrumbs({
       <a href={`/locations/${slug}`}>{name}</a> /{" "}
       {tool ? (
         <>
-          <a href={`/organizer/${slug}`}>{ORGANIZER_LABEL}</a> / {tool}
+          <a href={`/organizer/${slug}`}>{ORGANIZER_LABEL}</a> /{" "}
+          {leaf && toolHref ? (
+            <>
+              <a href={toolHref}>{tool}</a> / {leaf}
+            </>
+          ) : (
+            tool
+          )}
         </>
       ) : (
         ORGANIZER_LABEL

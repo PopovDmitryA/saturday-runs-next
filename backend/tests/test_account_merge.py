@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -14,9 +14,13 @@ from app.models import (
     AuthOneTimeToken,
     AuthProvider,
     DashboardCache,
+    Location,
+    LocationCatalog,
+    LocationCatalogLink,
     Participant,
     Platform,
     PlatformLink,
+    RunPlan,
     User,
     UserGoal,
 )
@@ -380,6 +384,124 @@ def test_merge_moves_goals_instead_of_deleting_them(db_session: Session) -> None
 
     goals = db_session.query(UserGoal).filter(UserGoal.user_id == survivor.id).all()
     assert [(goal.year, goal.goal_type, goal.target_value) for goal in goals] == [(2026, "runs", 30)]
+
+
+def test_merge_moves_plans_and_keeps_survivor_on_conflict(db_session: Session) -> None:
+    """run_plans висят на users с ON DELETE CASCADE: планы и «Не бегаю»
+    поглощаемого профиля переезжают. Та же дата и та же локация (или отметка
+    на ту же дату) у выжившего уже есть — остаётся его строка."""
+    survivor, merged = _merge_pair(db_session)
+    saturday, other_saturday, rest_day = date(2026, 10, 31), date(2026, 11, 7), date(2026, 11, 14)
+
+    def plan(user: User, on_date: date, key: str | None) -> RunPlan:
+        row = RunPlan(user_id=user.id, plan_date=on_date, location_key=key, rest=key is None)
+        db_session.add(row)
+        db_session.flush()
+        return row
+
+    kept = [
+        plan(survivor, saturday, "catalog:park").id,
+        plan(survivor, rest_day, None).id,
+    ]
+    plan(merged, saturday, "catalog:park")
+    moved = plan(merged, other_saturday, "catalog:park").id
+    plan(merged, rest_day, None)
+    moved_rest = plan(merged, date(2026, 11, 21), None).id
+    db_session.commit()
+
+    merge_users(db_session, survivor.id, merged.id)
+
+    rows = db_session.query(RunPlan).filter(RunPlan.user_id == survivor.id).order_by(RunPlan.plan_date).all()
+    assert [(row.id, row.plan_date, row.location_key) for row in rows] == [
+        (kept[0], saturday, "catalog:park"),
+        (moved, other_saturday, "catalog:park"),
+        (kept[1], rest_day, None),
+        (moved_rest, date(2026, 11, 21), None),
+    ]
+    assert db_session.query(RunPlan).filter(RunPlan.user_id == merged.id).count() == 0
+
+
+def test_merge_rest_marks(db_session: Session) -> None:
+    """«Не бегаю» при объединении: две отметки на одну дату сводятся в строку
+    выжившего с его публичностью. План пробежки на ту же дату сильнее
+    отметки, как при обычном «Планирую»: она уходит."""
+    survivor, merged = _merge_pair(db_session)
+    both_rest, rest_from_merged = date(2026, 10, 31), date(2026, 11, 7)
+    survivor_plan_day, merged_plan_day = date(2026, 11, 21), date(2026, 11, 28)
+
+    def day(user: User, on_date: date, *, is_public: bool = False) -> None:
+        db_session.add(RunPlan(user_id=user.id, plan_date=on_date, rest=True, is_public=is_public))
+
+    def plan(user: User, on_date: date) -> None:
+        db_session.add(RunPlan(user_id=user.id, plan_date=on_date, location_key="catalog:park"))
+
+    day(survivor, both_rest, is_public=True)
+    day(merged, both_rest)
+    day(merged, rest_from_merged, is_public=True)
+    # План выжившего, «Не бегаю» поглощённого — побеждает план.
+    plan(survivor, survivor_plan_day)
+    day(merged, survivor_plan_day)
+    # «Не бегаю» у выжившего, план у поглощённого — отметка уходит.
+    day(survivor, merged_plan_day)
+    plan(merged, merged_plan_day)
+    db_session.commit()
+
+    merge_users(db_session, survivor.id, merged.id)
+    db_session.expire_all()
+
+    rows = (
+        db_session.query(RunPlan)
+        .filter(RunPlan.user_id == survivor.id)
+        .order_by(RunPlan.plan_date, RunPlan.location_key.is_(None))
+        .all()
+    )
+    assert [(row.plan_date, row.location_key, row.rest, row.is_public) for row in rows] == [
+        (both_rest, None, True, True),
+        (rest_from_merged, None, True, True),
+        (survivor_plan_day, "catalog:park", False, False),
+        (merged_plan_day, "catalog:park", False, False),
+    ]
+    assert db_session.query(RunPlan).filter(RunPlan.user_id == merged.id).count() == 0
+
+
+def test_merge_plan_conflict_is_by_location_not_by_raw_key(db_session: Session) -> None:
+    """Ключ плана дрейфует: у поглощённого план записан `location:L`, у
+    выжившего на ту же дату — `catalog:X` той же точки. Это один план, и у
+    выжившего остаётся одна строка — его (INTEG-2)."""
+    survivor, merged = _merge_pair(db_session)
+    platform = db_session.query(Platform).filter(Platform.code == "five_verst").one()
+    park = Location(platform_id=platform.id, external_key=f"merge-{uuid4().hex[:8]}", name="Кузьминки")
+    db_session.add(park)
+    db_session.flush()
+    catalog = LocationCatalog(canonical_name="Кузьминки", active_platform="five_verst")
+    db_session.add(catalog)
+    db_session.flush()
+    db_session.add(
+        LocationCatalogLink(
+            catalog_id=catalog.id, platform_id=platform.id, external_key=park.external_key, location_id=park.id
+        )
+    )
+    saturday = date(2026, 10, 31)
+    rows_before = []
+    for user, key in ((survivor, f"catalog:{catalog.id}"), (merged, f"location:{park.id}")):
+        row = RunPlan(
+            user_id=user.id,
+            plan_date=saturday,
+            location_key=key,
+            location_id=park.id,
+            platform_code="five_verst",
+        )
+        db_session.add(row)
+        db_session.flush()
+        rows_before.append(row.id)
+    db_session.commit()
+
+    merge_users(db_session, survivor.id, merged.id)
+
+    rows = db_session.query(RunPlan).filter(RunPlan.user_id == survivor.id).all()
+    assert [(row.id, row.plan_date, row.location_key) for row in rows] == [
+        (rows_before[0], saturday, f"catalog:{catalog.id}")
+    ]
 
 
 def test_preview_payload_matches_api_schema(db_session: Session) -> None:

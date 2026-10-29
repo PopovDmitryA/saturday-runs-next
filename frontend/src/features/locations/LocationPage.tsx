@@ -37,6 +37,8 @@ import {
 import { PromoLoginCard } from "../../components/PromoLoginCard";
 import { cabinetTabHref } from "../../lib/portalRoutes";
 import { useOptionalUser } from "../../lib/useOptionalUser";
+import { LocationPlansSection, locationMayHavePlans } from "../planner/LocationPlansSection";
+import { planDateFromHash } from "../planner/plannerLinks";
 import { PortalSectionShell } from "../portal/PortalSectionShell";
 import { useOptionalShareSheet } from "../sharing/ShareSheetContext";
 import { locationCardSubject, locationEventSubject, locationMeSubject } from "../sharing/subjects";
@@ -1190,9 +1192,10 @@ function LocationPageContent({ slug }: { slug: string }) {
       // Родовой заголовок «Локация — run5k.run» из App.tsx уточняем именем
       // и цифрами, как только данные приехали.
       applyPageMeta(locationPageMeta(data));
-      // Канонический URL страницы — slug основной системы локации.
+      // Канонический URL страницы — slug основной системы локации. Якорь
+      // остаётся: по #plan= блок планов откроет окно плана на этот день.
       if (data.slug && data.slug !== slug) {
-        window.history.replaceState(null, "", `/locations/${data.slug}`);
+        window.history.replaceState(null, "", `/locations/${data.slug}${window.location.hash}`);
       }
     },
     // Просмотр был, пусть и неудачный — досылаем с родовым заголовком.
@@ -1209,6 +1212,9 @@ function LocationPageContent({ slug }: { slug: string }) {
   // Доступ к кабинету организатора (из личной статистики): включает кнопку
   // в навигации шапки — единственное место входа со страницы локации.
   const [organizerAccess, setOrganizerAccess] = useState(false);
+  // Пришли по ссылке с датой (#plan=дата). Запоминаем при входе: блок снимет
+  // якорь, а объяснить, почему окна нет, ему ещё предстоит.
+  const [planAnchor] = useState(() => planDateFromHash(window.location.hash) !== null);
 
   const toggleAgeGroup = useCallback((key: string) => {
     setOpenAgeGroupKey((current) => (current === key ? null : key));
@@ -1360,6 +1366,22 @@ function LocationPageContent({ slug }: { slug: string }) {
           onOrganizerAccess={setOrganizerAccess}
         />
       </div>
+
+      {/* «Планируют пробежать» — отдельной секцией, а не в ряду выше: сетка
+          ряда ставит любую лишнюю карточку во вторую колонку. Ближайшие даты
+          встают сразу за прогнозом, до истории. */}
+      {/* parkrun и серии не планируются, и блока у них нет. Но по ссылке с
+          датой (#plan=) сюда приходят и на parkrun-локацию — тогда блок нужен
+          ради объяснения, почему окна плана нет. */}
+      {(locationMayHavePlans(page) || planAnchor) && (
+        // Место под блок держим, если локация не на паузе: у планируемой блок
+        // есть всегда — хотя бы «Собираетесь к нам? Отметьте дату».
+        <LocationPlansSection
+          identityKey={page.identity_key}
+          locationName={page.name}
+          reserveSpace={locationMayHavePlans(page) && !page.is_paused}
+        />
+      )}
 
       {stats.last_event && <LastEventSection lastEvent={stats.last_event} page={page} />}
 

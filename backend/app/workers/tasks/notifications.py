@@ -248,6 +248,38 @@ def friday_cancellations() -> int:
     return queued
 
 
+@celery_app.task(name="notifications.plan_reminders", **LIMITS_MEDIUM)
+def plan_reminders() -> int:
+    """Раз в час: напоминание о завтрашнем запланированном старте тем, у
+    кого у локации плана сейчас вечер (см. plan_notification_service)."""
+    from app.services.plan_notification_service import send_plan_reminders
+
+    db = get_session_factory()()
+    try:
+        queued = send_plan_reminders(db)
+    finally:
+        db.close()
+    if queued:
+        logger.info("notify: plan reminders queued %d", queued)
+    return queued
+
+
+@celery_app.task(name="notifications.plan_series_sleep", **LIMITS_MEDIUM)
+def plan_series_sleep() -> dict[str, int]:
+    """Раз в сутки: постоянные планы — уснуть после трёх стартов без человека
+    («Ещё ходите?»), проснуться, если он снова был на точке, и остановить
+    сроки V1, кончившиеся больше месяца назад (plan_series_service)."""
+    from app.services.plan_series_service import check_series_sleep
+
+    db = get_session_factory()()
+    try:
+        summary = check_series_sleep(db)
+    finally:
+        db.close()
+    logger.info("notify: plan series sleep %s", summary)
+    return summary
+
+
 @celery_app.task(name="notifications.retry_queued", **LIMITS_MEDIUM)
 def retry_queued() -> dict[str, int]:
     """Подобрать застрявшие доставки: queued без задачи (брокер моргнул) и

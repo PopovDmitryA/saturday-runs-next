@@ -8,6 +8,8 @@ import { AchievementsContent } from "../../achievements/AchievementsPage";
 import { CoRunnersContent } from "../../co_runners/CoRunnersPage";
 import { HistoryContent, useOwnSiteUrl } from "../../history/HistoryPage";
 import { MapsContent } from "../../maps/MapsPage";
+import { PlansContent } from "../../planner/PlansPage";
+import { ProfilePlansContent } from "../../planner/ProfilePlansTab";
 import { RunsContent } from "../../runs/RunsPage";
 import { SettingsContent } from "../../settings/SettingsPage";
 import { SharingContent } from "../../sharing/SharingGalleryPage";
@@ -108,6 +110,24 @@ export function PortalCabinetSharePage() {
     "Готовые сюжеты из вашей статистики: постер для сториз или чата — в один тап.",
     () => <SharingContent />,
   );
+}
+
+export function PortalCabinetPlansPage() {
+  return cabinetPage(
+    "plans",
+    "Планы",
+    "Старты, на которые вы собираетесь, и дни, когда не бегаете.",
+    () => <PlansContent />,
+  );
+}
+
+/**
+ * Свой адрес /users/{хендл}/plans: вкладка «Планы» профиля глазами гостя —
+ * только публичные планы, со ссылкой на «Мои планы» (решение Дмитрия
+ * 27.10.2026). Туда ведёт «как видят другие» с «Обзора».
+ */
+export function PortalCabinetProfilePlansPage({ handle }: { handle: string }) {
+  return cabinetPage("plans", "Планы в профиле", undefined, () => <ProfilePlansContent handle={handle} own />);
 }
 
 export function PortalCabinetSettingsPage() {
