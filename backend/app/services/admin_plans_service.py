@@ -12,6 +12,9 @@
 Запросов — константа: сводка, динамика, локации и уведомления — по одному
 агрегату, нагрузка и факты — planned_starts на всех планирующих разом и три
 запроса протоколов.
+
+«План на дату» — тоже planned_starts, по людям, у которых на дату есть
+разовый план или постоянный, начатый не позже неё; «Не бегаю» — строки дня.
 """
 
 from __future__ import annotations
@@ -35,7 +38,8 @@ from app.models import (
     VolunteerResult,
 )
 from app.services.planned_starts_service import PlannedStart, planned_starts, sleep_states
-from app.services.run_plan_service import _Identities, canonical_identity_keys
+from app.services.planner_guests_service import cached_total_runs
+from app.services.run_plan_service import _Identities, canonical_identity_keys, entry_public
 from app.services.start_calendar_service import (
     _next_saturday,
     identity_rows,
@@ -527,6 +531,144 @@ def get_admin_plans_overview(db: Session, *, period_days: int, today: date | Non
     }
 
 
+# ---------------------------------------------------------------- план на дату
+
+
+class NotStartDay(ValueError):
+    """Дата не суббота и не особая дата — стартов в неё нет."""
+
+
+def _special_title(db: Session, on_date: date) -> tuple[bool, str | None]:
+    found = special_dates(db, on_date, on_date)
+    return bool(found), (found[0].title if found else None)
+
+
+def _neighbour_start(db: Session, on_date: date, step: int) -> date:
+    """Ближайший день старта до (step=-1) или после (step=1) даты: суббота или
+    особая дата — особые бывают только между соседними субботами."""
+    saturday = on_date + timedelta(days=step)
+    while saturday.weekday() != 5:
+        saturday += timedelta(days=step)
+    lo, hi = sorted((on_date + timedelta(days=step), saturday))
+    specials = [special.start_date for special in special_dates(db, lo, hi)]
+    if not specials:
+        return saturday
+    return min(specials) if step > 0 else max(specials)
+
+
+def get_admin_plans_day(db: Session, *, on_date: date, today: date | None = None) -> dict[str, Any]:
+    """Кто на дату запланирован и куда: локации по убыванию людей, внутри —
+    люди (всего пробежек, разовый или постоянный, публично ли), и кто отметил
+    «Не бегаю». Админ видит всех, приватных — с пометкой."""
+    today = today or moscow_today()
+    is_special, special_title = _special_title(db, on_date)
+    if on_date.weekday() != 5 and not is_special:
+        raise NotStartDay(on_date.isoformat())
+    identities = _Identities(db, today)
+    candidates = {
+        user_id
+        for (user_id,) in db.execute(
+            text(
+                """
+                SELECT user_id FROM run_plans WHERE location_key IS NOT NULL AND plan_date = :day
+                UNION SELECT user_id FROM run_plan_series WHERE starts_on <= :day
+                """
+            ),
+            {"day": on_date},
+        )
+    }
+    entries = (
+        planned_starts(db, today=today, dates=[on_date], user_ids=candidates, identities=identities)
+        if candidates
+        else []
+    )
+    rest_ids = [
+        user_id
+        for (user_id,) in db.execute(
+            text("SELECT user_id FROM run_plans WHERE location_key IS NULL AND plan_date = :day ORDER BY created_at"),
+            {"day": on_date},
+        )
+    ]
+    user_ids = list(dict.fromkeys([entry.user_id for entry in entries] + rest_ids))
+    users = {
+        row.id: row
+        for row in db.execute(
+            text("SELECT id, serial_id, telegram_username, display_name, profile_private FROM users WHERE id = ANY(:ids)"),
+            {"ids": user_ids},
+        )
+    } if user_ids else {}
+    runs = cached_total_runs(db, [entry.user_id for entry in entries])
+    fallback = {
+        location.id: location
+        for location in db.query(Location).filter(
+            Location.id.in_({entry.location_id for entry in entries if entry.location_id is not None})
+        )
+    }
+
+    def person(user_id: UUID) -> dict[str, Any]:
+        user = users[user_id]
+        return {
+            "serial_id": user.serial_id,
+            "label": _user_label(user.serial_id, user.telegram_username, user.display_name),
+            "profile_private": bool(user.profile_private),
+        }
+
+    groups: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        if entry.user_id not in users:
+            continue
+        group = groups.get(entry.key)
+        if group is None:
+            identity = identities.get(entry.key)
+            location = fallback.get(entry.location_id) if entry.location_id is not None else None
+            group = groups[entry.key] = {
+                "key": entry.key,
+                "name": (identity.name if identity else None) or (location.name if location else entry.key),
+                "slug": (identity.slug if identity else None)
+                or (location.external_key.strip().lower() if location else None),
+                "people": [],
+                "seen": set(),
+            }
+        if entry.user_id in group["seen"]:
+            continue
+        group["seen"].add(entry.user_id)
+        group["people"].append(
+            {
+                **person(entry.user_id),
+                "runs": runs.get(entry.user_id),
+                "regular": entry.regular,
+                "is_public": entry_public(entry),
+            }
+        )
+    locations: list[dict[str, Any]] = []
+    for group in groups.values():
+        # Как в блоке локации: больше пробежек — выше, без привязок — в конце;
+        # при равенстве — кто раньше отметился (порядок planned_starts).
+        group["people"].sort(key=lambda item: -(item["runs"] if item["runs"] is not None else -1))
+        locations.append(
+            {"key": group["key"], "name": group["name"], "slug": group["slug"], "people": group["people"]}
+        )
+    locations.sort(key=lambda item: (-len(item["people"]), item["name"]))
+    people = [item for location in locations for item in location["people"]]
+    return {
+        "date": on_date,
+        "special_title": special_title,
+        "is_past": on_date < today,
+        "prev_date": _neighbour_start(db, on_date, -1),
+        "next_date": _neighbour_start(db, on_date, 1),
+        "summary": {
+            "people": len({user_id for group in groups.values() for user_id in group["seen"]}),
+            "locations": len(locations),
+            "one_off": sum(1 for item in people if not item["regular"]),
+            "regular": sum(1 for item in people if item["regular"]),
+            "private": sum(1 for item in people if not item["is_public"]),
+            "rest": len(rest_ids),
+        },
+        "locations": locations,
+        "rest": [person(user_id) for user_id in rest_ids if user_id in users],
+    }
+
+
 # ---------------------------------------------------------------- лента
 
 
@@ -536,6 +678,7 @@ def get_admin_plans_feed(
     future_only: bool = False,
     location_key: str | None = None,
     person: str | None = None,
+    plan_date: date | None = None,
     limit: int = 50,
     offset: int = 0,
     today: date | None = None,
@@ -560,6 +703,15 @@ def get_admin_plans_feed(
             params["ids"] = ids
             condition = f"({condition} OR f.location_id = ANY(:ids))"
         where.append(condition)
+    if plan_date is not None:
+        # Записи, из-за которых человек в эту дату бежит или не бежит: разовые
+        # и «Не бегаю» на неё и постоянные, действовавшие в неё.
+        where.append(
+            "((f.kind IN ('plan', 'rest') AND f.on_date = :plan_date) OR (f.kind = 'series' AND f.on_date <= :plan_date"
+            " AND (f.until IS NULL OR f.until >= :plan_date)"
+            " AND (f.stopped_at IS NULL OR (f.stopped_at AT TIME ZONE 'Europe/Moscow')::date >= :plan_date)))"
+        )
+        params["plan_date"] = plan_date
     person = (person or "").strip().lstrip("@")
     if person:
         if person.isdigit():

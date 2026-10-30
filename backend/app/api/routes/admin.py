@@ -32,7 +32,7 @@ from app.schemas.admin import (
     AdminVisitItem,
     AdminVisitPageItem,
 )
-from app.schemas.admin_plans import AdminPlansFeedResponse, AdminPlansOverviewResponse
+from app.schemas.admin_plans import AdminPlansDayResponse, AdminPlansFeedResponse, AdminPlansOverviewResponse
 from app.schemas.admin_resync import (
     AdminResyncCreate,
     AdminResyncListResponse,
@@ -642,6 +642,7 @@ def admin_plans_feed(
     future_only: bool = False,
     location: Annotated[str | None, Query(max_length=255)] = None,
     person: Annotated[str | None, Query(max_length=128)] = None,
+    plan_date: date | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> AdminPlansFeedResponse:
@@ -649,9 +650,31 @@ def admin_plans_feed(
     from app.services.admin_plans_service import get_admin_plans_feed
 
     payload = get_admin_plans_feed(
-        db, future_only=future_only, location_key=location, person=person, limit=limit, offset=offset
+        db,
+        future_only=future_only,
+        location_key=location,
+        person=person,
+        plan_date=plan_date,
+        limit=limit,
+        offset=offset,
     )
     return AdminPlansFeedResponse.model_validate(payload)
+
+
+@router.get("/plans/day", response_model=AdminPlansDayResponse)
+def admin_plans_day(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    on_date: Annotated[date, Query(alias="date")],
+) -> AdminPlansDayResponse:
+    """План на дату: кто и куда запланирован (разовые и постоянные), кто «Не бегаю»."""
+    from app.services.admin_plans_service import NotStartDay, get_admin_plans_day
+
+    try:
+        payload = get_admin_plans_day(db, on_date=on_date)
+    except NotStartDay as exc:
+        raise HTTPException(status_code=400, detail="В эту дату стартов нет: нужна суббота или особая дата") from exc
+    return AdminPlansDayResponse.model_validate(payload)
 
 
 @router.get("/email-login", response_model=AdminEmailLoginResponse)

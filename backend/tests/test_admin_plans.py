@@ -28,7 +28,12 @@ from app.models import (
     User,
     VolunteerResult,
 )
-from app.services.admin_plans_service import get_admin_plans_feed, get_admin_plans_overview
+from app.services.admin_plans_service import (
+    NotStartDay,
+    get_admin_plans_day,
+    get_admin_plans_feed,
+    get_admin_plans_overview,
+)
 
 ADMIN_TELEGRAM_ID = 9311
 # Пятница; ближайшая суббота — 31.10, прошлые — 24.10 и 17.10.
@@ -215,6 +220,7 @@ def test_admin_plans_requires_admin(client: TestClient, db_session: Session) -> 
     _login(client, int(uuid4().int % 10_000_000_000))
     assert client.get("/api/admin/plans").status_code == 403
     assert client.get("/api/admin/plans/feed").status_code == 403
+    assert client.get("/api/admin/plans/day", params={"date": SAT1.isoformat()}).status_code == 403
 
 
 def test_admin_plans_api_for_admin(client: TestClient, world: dict[str, object]) -> None:
@@ -283,3 +289,54 @@ def test_feed_shows_private_plans_with_flag_and_filters(db_session: Session, wor
 
     page = get_admin_plans_feed(db_session, person="Анна Планова", limit=1, offset=1, today=TODAY)
     assert page["total"] == 2 and len(page["items"]) == 1
+
+
+def test_day_lists_people_by_location(db_session: Session, world: dict[str, object]) -> None:
+    db = db_session
+    gala = _user(db, "Галина Отдыхает", profile_private=True)
+    _plan(db, gala, None, SAT1, created=datetime(2026, 10, 29, 10, 0, tzinfo=UTC))
+    day = get_admin_plans_day(db, on_date=SAT1, today=TODAY)
+    home, away = world["home"], world["away"]
+    by_name = {location["name"]: location for location in day["locations"]}
+    # Домашняя — двое (Анна разовым, Вера постоянным), выше чужой с одним Борисом.
+    assert [location["name"] for location in day["locations"]] == [home.name, away.name]  # type: ignore[attr-defined]
+    people = {person["label"]: person for person in by_name[home.name]["people"]}  # type: ignore[attr-defined]
+    assert people["Анна Планова"]["regular"] is False and people["Анна Планова"]["is_public"] is True
+    assert people["Вера Постоянная"]["regular"] is True
+    boris = by_name[away.name]["people"][0]  # type: ignore[attr-defined]
+    assert boris["label"] == "Борис Тайный" and boris["is_public"] is False
+    assert by_name[home.name]["slug"]  # type: ignore[attr-defined]
+    assert day["summary"] == {"people": 3, "locations": 2, "one_off": 2, "regular": 1, "private": 1, "rest": 1}
+    assert [(person["label"], person["profile_private"]) for person in day["rest"]] == [("Галина Отдыхает", True)]
+    assert (day["prev_date"], day["next_date"], day["is_past"]) == (PAST2, SAT2, False)
+
+    # 07.11: у Веры «Не бегаю» — постоянный в этот день не бежит.
+    later = get_admin_plans_day(db, on_date=SAT2, today=TODAY)
+    assert later["locations"] == [] and [person["label"] for person in later["rest"]] == ["Вера Постоянная"]
+
+    # Прошедшая дата тоже открывается: 24.10 — Анна, Борис и суббота Веры.
+    past = get_admin_plans_day(db, on_date=PAST2, today=TODAY)
+    assert past["is_past"] is True and past["summary"]["people"] == 3 and past["summary"]["regular"] == 1
+
+    with pytest.raises(NotStartDay):
+        get_admin_plans_day(db, on_date=TODAY, today=TODAY)
+
+
+def test_day_api_rejects_weekday(client: TestClient, world: dict[str, object]) -> None:
+    _login(client, ADMIN_TELEGRAM_ID)
+    assert client.get("/api/admin/plans/day", params={"date": "2026-10-28"}).status_code == 400
+    ok = client.get("/api/admin/plans/day", params={"date": SAT1.isoformat()})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["summary"]["people"] == 3
+    feed = client.get("/api/admin/plans/feed", params={"plan_date": SAT1.isoformat()})
+    assert feed.status_code == 200 and feed.json()["total"] == 3
+
+
+def test_feed_filters_by_plan_date(db_session: Session, world: dict[str, object]) -> None:
+    on_sat1 = get_admin_plans_feed(db_session, plan_date=SAT1, today=TODAY)
+    # Два разовых на 31.10 и постоянный Веры, действующий с 17.10.
+    assert sorted(item["kind"] for item in on_sat1["items"]) == ["plan", "plan", "series"]
+    on_sat2 = get_admin_plans_feed(db_session, plan_date=SAT2, today=TODAY)
+    assert sorted(item["kind"] for item in on_sat2["items"]) == ["rest", "series"]
+    before = get_admin_plans_feed(db_session, plan_date=date(2026, 10, 10), today=TODAY)
+    assert before["total"] == 0

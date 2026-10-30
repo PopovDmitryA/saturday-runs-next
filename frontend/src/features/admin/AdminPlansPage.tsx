@@ -5,12 +5,23 @@ import { DailyBarChart, StatCard } from "./adminStatsWidgets";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import {
   getAdminPlans,
+  getAdminPlansDay,
   getAdminPlansFeed,
+  type AdminPlansDayPerson,
+  type AdminPlansDayResponse,
   type AdminPlansFeedItem,
   type AdminPlansFeedResponse,
   type AdminPlansOverviewResponse,
 } from "../../lib/api";
-import { formatChartDay, formatDateTime, formatInt, formatWeekdayShort } from "../../lib/format";
+import {
+  COUNT_FORMS,
+  formatChartDay,
+  formatDateLong,
+  formatDateTime,
+  formatInt,
+  formatWeekdayShort,
+  pluralizeRu,
+} from "../../lib/format";
 import "./adminPlans.css";
 
 // Админка «Планы» (§10c AGENTS.md): все планы всех людей, как их ставят и
@@ -20,6 +31,23 @@ import "./adminPlans.css";
 const PERIODS = [7, 30, 90] as const;
 const FEED_LIMIT = 50;
 const SERIES_ICON = "↻";
+const PEOPLE_FORMS = ["человек", "человека", "человек"] as const;
+const DAY_HASH = /^#day=(\d{4}-\d{2}-\d{2})$/;
+const FEED_ID = "admin-plans-feed";
+
+/** Дата из якоря #day=YYYY-MM-DD — ссылку на «План на дату» можно отправить. */
+function dayFromHash(): string | null {
+  return DAY_HASH.exec(window.location.hash)?.[1] ?? null;
+}
+
+/** «Сб 31 октября», год — только если не текущий. */
+function longDay(value: string): string {
+  const weekday = formatWeekdayShort(value);
+  const full = formatDateLong(value);
+  const year = String(new Date().getFullYear());
+  const text = full.endsWith(` ${year}`) ? full.slice(0, -year.length - 1) : full;
+  return weekday ? `${weekday[0].toUpperCase()}${weekday.slice(1)} ${text}` : text;
+}
 
 const DELIVERY_LABELS: Record<string, string> = {
   plan_reminders: "Напоминания накануне",
@@ -80,39 +108,258 @@ function SplitBar({ parts, ariaLabel }: { parts: Part[]; ariaLabel: string }) {
 }
 
 /** Горизонтальные столбики: подпись слева, число справа. */
+/** Горизонтальные столбики: подпись слева, число справа. С onSelect строка —
+ * кнопка (даты «Кто бежит на ближайших стартах» открывают «План на дату»). */
 function HBars({
   rows,
+  onSelect,
+  selectedKey,
 }: {
   rows: { key: string; label: string; hint?: string; values: { value: number; tone: string }[]; total: string }[];
+  onSelect?: (key: string) => void;
+  selectedKey?: string | null;
 }) {
   const peak = Math.max(1, ...rows.map((row) => row.values.reduce((sum, item) => sum + item.value, 0)));
   return (
-    <ul className="admin-plans-hbars">
-      {rows.map((row) => (
-        <li key={row.key}>
-          <span className="admin-plans-hbar-label">
-            {row.label}
-            {row.hint && <small>{row.hint}</small>}
-          </span>
-          <span className="admin-plans-hbar-track">
-            {row.values.map((item, index) =>
-              item.value > 0 ? (
-                <span
-                  key={index}
-                  className={`admin-plans-tone-${item.tone}`}
-                  style={{ width: `${(item.value / peak) * 100}%` }}
-                />
-              ) : null,
+    <ul className={onSelect ? "admin-plans-hbars admin-plans-hbars-select" : "admin-plans-hbars"}>
+      {rows.map((row) => {
+        const inner = (
+          <>
+            <span className="admin-plans-hbar-label">
+              {row.label}
+              {row.hint && <small>{row.hint}</small>}
+            </span>
+            <span className="admin-plans-hbar-track">
+              {row.values.map((item, index) =>
+                item.value > 0 ? (
+                  <span
+                    key={index}
+                    className={`admin-plans-tone-${item.tone}`}
+                    style={{ width: `${(item.value / peak) * 100}%` }}
+                  />
+                ) : null,
+              )}
+            </span>
+            <b className="admin-plans-hbar-value num">{row.total}</b>
+          </>
+        );
+        return (
+          <li key={row.key}>
+            {onSelect ? (
+              <button
+                type="button"
+                className="admin-plans-hbar-row"
+                aria-pressed={selectedKey === row.key}
+                onClick={() => onSelect(row.key)}
+              >
+                {inner}
+              </button>
+            ) : (
+              <div className="admin-plans-hbar-row">{inner}</div>
             )}
-          </span>
-          <b className="admin-plans-hbar-value num">{row.total}</b>
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
-function Overview({ data }: { data: AdminPlansOverviewResponse }) {
+/** Имя человека: в публичный профиль, не в /admin/users (решение Дмитрия). */
+function PersonName({ person }: { person: AdminPlansDayPerson }) {
+  return person.serial_id ? <a href={`/users/${person.serial_id}`}>{person.label}</a> : <>{person.label}</>;
+}
+
+function DayPanel({
+  isoDate,
+  onSelect,
+  onClose,
+  onShowFeed,
+}: {
+  isoDate: string;
+  onSelect: (isoDate: string) => void;
+  onClose: () => void;
+  onShowFeed: (isoDate: string) => void;
+}) {
+  const [data, setData] = useState<AdminPlansDayResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const seq = useRef(0);
+  const panel = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const current = ++seq.current;
+    setError(null);
+    getAdminPlansDay(isoDate)
+      .then((payload) => {
+        if (current === seq.current) setData(payload);
+      })
+      .catch((err: unknown) => {
+        if (current === seq.current) setError(err instanceof Error ? err.message : "Не удалось загрузить дату");
+      });
+  }, [isoDate]);
+
+  useEffect(() => {
+    panel.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [isoDate]);
+
+  const shown = data && data.date === isoDate ? data : null;
+  const summary = shown?.summary;
+  return (
+    <section ref={panel} className="card admin-plans-card admin-plans-day" aria-labelledby="admin-plans-day-title">
+      <div className="admin-plans-day-head">
+        <button
+          type="button"
+          className="btn btn-sm secondary"
+          aria-label="Предыдущий старт"
+          disabled={!shown}
+          onClick={() => shown && onSelect(shown.prev_date)}
+        >
+          ‹
+        </button>
+        <div className="admin-plans-day-title">
+          <h2 className="section-title" id="admin-plans-day-title">
+            {longDay(isoDate)}
+            {summary && (
+              <span className="admin-plans-day-totals">
+                {" · "}
+                {pluralizeRu(summary.people, PEOPLE_FORMS)}
+                {" · "}
+                {pluralizeRu(summary.locations, COUNT_FORMS.locations)}
+              </span>
+            )}
+          </h2>
+          <p className="muted admin-plans-day-sub">
+            {shown?.special_title && <span className="admin-plans-badge admin-plans-day-special">★ {shown.special_title}</span>}
+            {summary
+              ? `разовых ${summary.one_off} · ${SERIES_ICON} постоянных ${summary.regular} · 🔒 приватно ${summary.private}${
+                  shown?.is_past ? " · дата прошла" : ""
+                }`
+              : "План на дату"}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn btn-sm secondary admin-plans-day-next"
+          aria-label="Следующий старт"
+          disabled={!shown}
+          onClick={() => shown && onSelect(shown.next_date)}
+        >
+          ›
+        </button>
+        <button type="button" className="btn btn-sm secondary admin-plans-day-close" aria-label="Закрыть" onClick={onClose}>
+          ✕
+        </button>
+      </div>
+
+      {error && <p className="error-text">{error}</p>}
+      {!shown && !error && <p className="muted">Загрузка…</p>}
+      {shown && (
+        <>
+          {shown.locations.length === 0 ? (
+            <p className="muted">На эту дату никто не запланирован.</p>
+          ) : (
+            <ul className="admin-plans-day-locations">
+              {shown.locations.map((location) => (
+                <li key={location.key} className="admin-plans-day-location">
+                  <div className="admin-plans-day-location-head">
+                    {location.slug ? <a href={`/locations/${location.slug}`}>{location.name}</a> : location.name}
+                    <b className="num">{formatInt(location.people.length)}</b>
+                  </div>
+                  <ul className="admin-plans-day-people">
+                    {location.people.map((person) => (
+                      <li key={`${person.serial_id ?? person.label}`}>
+                        <PersonName person={person} />
+                        {person.runs != null && (
+                          <span className="muted num" title="Всего пробежек">
+                            {" "}
+                            {formatInt(person.runs)}
+                          </span>
+                        )}
+                        {person.regular && (
+                          <span className="admin-plans-day-mark admin-plans-day-regular" title="Постоянный план">
+                            {SERIES_ICON}
+                          </span>
+                        )}
+                        {!person.is_public && (
+                          <span className="admin-plans-day-mark" title="Приватный план">
+                            🔒
+                          </span>
+                        )}
+                        {person.profile_private && <small className="muted"> · профиль закрыт</small>}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="admin-plans-day-foot">
+            <p className="admin-plans-day-rest">
+              <b>Не бегают: {formatInt(shown.rest.length)}</b>
+              {shown.rest.length > 0 && " — "}
+              {shown.rest.map((person, index) => (
+                <span key={`${person.serial_id ?? person.label}`}>
+                  {index > 0 && ", "}
+                  <PersonName person={person} />
+                  {person.profile_private && <small className="muted"> (профиль закрыт)</small>}
+                </span>
+              ))}
+            </p>
+            <a
+              href={`#${FEED_ID}`}
+              onClick={(event) => {
+                event.preventDefault();
+                onShowFeed(shown.date);
+              }}
+            >
+              Все записи этой даты в ленте ↓
+            </a>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function DayPicker({ value, onPick }: { value: string | null; onPick: (isoDate: string) => void }) {
+  const [input, setInput] = useState(value ?? "");
+  useEffect(() => {
+    if (value) setInput(value);
+  }, [value]);
+  return (
+    <form
+      className="admin-plans-day-pick"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (input) onPick(input);
+      }}
+    >
+      <input
+        className="input"
+        type="date"
+        value={input}
+        aria-label="Дата старта"
+        onChange={(event) => setInput(event.target.value)}
+      />
+      <button type="submit" className="btn btn-sm" disabled={!input}>
+        Открыть
+      </button>
+    </form>
+  );
+}
+
+function Overview({
+  data,
+  day,
+  onSelectDay,
+  onCloseDay,
+  onShowFeed,
+}: {
+  data: AdminPlansOverviewResponse;
+  day: string | null;
+  onSelectDay: (isoDate: string) => void;
+  onCloseDay: () => void;
+  onShowFeed: (isoDate: string) => void;
+}) {
   const { summary, facts, mix } = data;
   const oneOffTotal = summary.plans_future + summary.plans_past;
   return (
@@ -184,8 +431,16 @@ function Overview({ data }: { data: AdminPlansOverviewResponse }) {
             </li>
           </ul>
         </div>
-        <p className="muted admin-plans-lead">Люди на дату — с субботами постоянных планов, минус «Не бегаю» и паузы.</p>
+        <div className="admin-plans-day-lead">
+          <p className="muted admin-plans-lead">
+            Люди на дату — с субботами постоянных планов, минус «Не бегаю» и паузы. Нажмите на дату — кто и куда
+            запланирован.
+          </p>
+          <DayPicker value={day} onPick={onSelectDay} />
+        </div>
         <HBars
+          onSelect={onSelectDay}
+          selectedKey={day}
           rows={data.load.map((day) => ({
             key: day.date,
             label: day.special_title ? `★ ${shortDate(day.date)}` : shortDate(day.date),
@@ -198,6 +453,8 @@ function Overview({ data }: { data: AdminPlansOverviewResponse }) {
           }))}
         />
       </section>
+
+      {day && <DayPanel isoDate={day} onSelect={onSelectDay} onClose={onCloseDay} onShowFeed={onShowFeed} />}
 
       <div className="admin-plans-two">
         <section className="card admin-plans-card">
@@ -364,7 +621,15 @@ function feedDate(item: AdminPlansFeedItem): string {
   return shortDate(item.on_date);
 }
 
-function Feed({ locations }: { locations: AdminPlansOverviewResponse["locations"] }) {
+function Feed({
+  locations,
+  planDate,
+  onClearPlanDate,
+}: {
+  locations: AdminPlansOverviewResponse["locations"];
+  planDate: string | null;
+  onClearPlanDate: () => void;
+}) {
   const [futureOnly, setFutureOnly] = useState(false);
   const [location, setLocation] = useState("");
   const [personInput, setPersonInput] = useState("");
@@ -375,16 +640,27 @@ function Feed({ locations }: { locations: AdminPlansOverviewResponse["locations"
   const seq = useRef(0);
 
   useEffect(() => {
+    setOffset(0);
+  }, [planDate]);
+
+  useEffect(() => {
     const current = ++seq.current;
     setError(null);
-    getAdminPlansFeed({ futureOnly, location: location || null, person: person || null, limit: FEED_LIMIT, offset })
+    getAdminPlansFeed({
+      futureOnly,
+      location: location || null,
+      person: person || null,
+      planDate,
+      limit: FEED_LIMIT,
+      offset,
+    })
       .then((payload) => {
         if (current === seq.current) setData(payload);
       })
       .catch((err: unknown) => {
         if (current === seq.current) setError(err instanceof Error ? err.message : "Не удалось загрузить ленту");
       });
-  }, [futureOnly, location, person, offset]);
+  }, [futureOnly, location, person, planDate, offset]);
 
   const submitPerson = (event: FormEvent) => {
     event.preventDefault();
@@ -396,12 +672,20 @@ function Feed({ locations }: { locations: AdminPlansOverviewResponse["locations"
   const page = Math.floor(offset / FEED_LIMIT) + 1;
 
   return (
-    <section className="card admin-plans-card">
+    <section className="card admin-plans-card" id={FEED_ID}>
       <div className="admin-plans-card-head">
         <h2 className="section-title">Все планы — как ставят</h2>
         {data && <span className="muted">{formatInt(data.total)} записей</span>}
       </div>
       <div className="admin-plans-feed-toolbar">
+        {planDate && (
+          <span className="admin-plans-chip">
+            Дата старта: {shortDate(planDate)}
+            <button type="button" aria-label="Снять фильтр даты" onClick={onClearPlanDate}>
+              ✕
+            </button>
+          </span>
+        )}
         <label className="admin-plans-check">
           <input
             type="checkbox"
@@ -545,6 +829,26 @@ function AdminPlansContent() {
   const [data, setData] = useState<AdminPlansOverviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const seq = useRef(0);
+  const [day, setDay] = useState<string | null>(dayFromHash);
+  const [feedDate, setFeedDate] = useState<string | null>(null);
+
+  // Якорь #day=… — и при открытии ссылки, и при правке адреса руками.
+  useEffect(() => {
+    const onHash = () => setDay(dayFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  const selectDay = useCallback((isoDate: string | null) => {
+    setDay(isoDate);
+    const url = `${window.location.pathname}${window.location.search}${isoDate ? `#day=${isoDate}` : ""}`;
+    window.history.replaceState(window.history.state, "", url);
+  }, []);
+
+  const showFeed = useCallback((isoDate: string) => {
+    setFeedDate(isoDate);
+    document.getElementById(FEED_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
 
   const load = useCallback(async (days: number) => {
     const current = ++seq.current;
@@ -585,8 +889,16 @@ function AdminPlansContent() {
         </div>
       )}
       {!data && !error && <p className="muted">Загрузка…</p>}
-      {data && <Overview data={data} />}
-      {data && <Feed locations={data.locations} />}
+      {data && (
+        <Overview
+          data={data}
+          day={day}
+          onSelectDay={selectDay}
+          onCloseDay={() => selectDay(null)}
+          onShowFeed={showFeed}
+        />
+      )}
+      {data && <Feed locations={data.locations} planDate={feedDate} onClearPlanDate={() => setFeedDate(null)} />}
     </AdminShell>
   );
 }

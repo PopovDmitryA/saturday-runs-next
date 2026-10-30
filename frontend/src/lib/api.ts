@@ -4077,6 +4077,7 @@ export function getAdminPlansFeed(params: {
   futureOnly?: boolean;
   location?: string | null;
   person?: string | null;
+  planDate?: string | null;
   limit?: number;
   offset?: number;
 }) {
@@ -4084,9 +4085,34 @@ export function getAdminPlansFeed(params: {
   if (params.futureOnly) query.set("future_only", "true");
   if (params.location) query.set("location", params.location);
   if (params.person) query.set("person", params.person);
+  if (params.planDate) query.set("plan_date", params.planDate);
   query.set("limit", String(params.limit ?? 50));
   query.set("offset", String(params.offset ?? 0));
   return apiFetch<AdminPlansFeedResponse>(`/admin/plans/feed?${query.toString()}`);
+}
+
+export type AdminPlansDayPerson = {
+  serial_id: number | null;
+  label: string;
+  profile_private: boolean;
+  runs: number | null;
+  regular: boolean;
+  is_public: boolean;
+};
+
+export type AdminPlansDayResponse = {
+  date: string;
+  special_title: string | null;
+  is_past: boolean;
+  prev_date: string;
+  next_date: string;
+  summary: { people: number; locations: number; one_off: number; regular: number; private: number; rest: number };
+  locations: { key: string; name: string; slug: string | null; people: AdminPlansDayPerson[] }[];
+  rest: AdminPlansDayPerson[];
+};
+
+export function getAdminPlansDay(isoDate: string) {
+  return apiFetch<AdminPlansDayResponse>(`/admin/plans/day?date=${encodeURIComponent(isoDate)}`);
 }
 
 export type PrivacySettings = {

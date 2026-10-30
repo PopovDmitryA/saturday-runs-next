@@ -122,3 +122,40 @@ class AdminPlansFeedResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class AdminPlansDayPerson(BaseModel):
+    serial_id: int | None = None
+    label: str
+    profile_private: bool = False
+    # Всего пробежек; None — привязок нет. У «Не бегаю» не считается.
+    runs: int | None = None
+    regular: bool = False
+    is_public: bool = True
+
+
+class AdminPlansDayLocation(BaseModel):
+    key: str
+    name: str
+    slug: str | None = None
+    people: list[AdminPlansDayPerson]
+
+
+class AdminPlansDaySummary(BaseModel):
+    people: int
+    locations: int
+    one_off: int
+    regular: int
+    private: int
+    rest: int
+
+
+class AdminPlansDayResponse(BaseModel):
+    date: date
+    special_title: str | None = None
+    is_past: bool
+    prev_date: date
+    next_date: date
+    summary: AdminPlansDaySummary
+    locations: list[AdminPlansDayLocation]
+    rest: list[AdminPlansDayPerson]
