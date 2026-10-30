@@ -474,7 +474,7 @@ function Feed({ locations }: { locations: AdminPlansOverviewResponse["locations"
                       <td className="num admin-plans-nowrap">{shortMoment(item.at)}</td>
                       <td>
                         {item.user_serial_id ? (
-                          <a href={`/admin/users?q=${item.user_serial_id}`}>{item.user_label}</a>
+                          <a href={`/users/${item.user_serial_id}`}>{item.user_label}</a>
                         ) : (
                           item.user_label
                         )}
