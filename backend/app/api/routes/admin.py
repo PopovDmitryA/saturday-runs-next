@@ -32,6 +32,7 @@ from app.schemas.admin import (
     AdminVisitItem,
     AdminVisitPageItem,
 )
+from app.schemas.admin_plans import AdminPlansFeedResponse, AdminPlansOverviewResponse
 from app.schemas.admin_resync import (
     AdminResyncCreate,
     AdminResyncListResponse,
@@ -620,6 +621,37 @@ def admin_notifications(
 
     payload = get_admin_notifications(db, period_days=period_days, status=status_, kind=kind, limit=limit, offset=offset)
     return AdminNotificationsResponse.model_validate(payload)
+
+
+@router.get("/plans", response_model=AdminPlansOverviewResponse)
+def admin_plans_overview(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    period_days: Annotated[int, Query(ge=7, le=365)] = 30,
+) -> AdminPlansOverviewResponse:
+    """Планировщик забегов: сводка, динамика, нагрузка по стартам, как ставят планы."""
+    from app.services.admin_plans_service import get_admin_plans_overview
+
+    return AdminPlansOverviewResponse.model_validate(get_admin_plans_overview(db, period_days=period_days))
+
+
+@router.get("/plans/feed", response_model=AdminPlansFeedResponse)
+def admin_plans_feed(
+    db: Annotated[Session, Depends(get_db)],
+    _admin: Annotated[User, Depends(get_current_admin_user)],
+    future_only: bool = False,
+    location: Annotated[str | None, Query(max_length=255)] = None,
+    person: Annotated[str | None, Query(max_length=128)] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> AdminPlansFeedResponse:
+    """Лента всех планов, отметок «Не бегаю» и событий постоянных планов — приватные тоже."""
+    from app.services.admin_plans_service import get_admin_plans_feed
+
+    payload = get_admin_plans_feed(
+        db, future_only=future_only, location_key=location, person=person, limit=limit, offset=offset
+    )
+    return AdminPlansFeedResponse.model_validate(payload)
 
 
 @router.get("/email-login", response_model=AdminEmailLoginResponse)

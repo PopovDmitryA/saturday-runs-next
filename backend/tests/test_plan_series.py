@@ -1620,6 +1620,9 @@ _ALLOWED_SERIES_FILES = {
     "app/services/plan_series_service.py",
     "app/services/account_deletion_service.py",
     "app/services/account_merge_service.py",
+    # Админка «Планы»: пауза действующих — тем же sleep_states; кто планирует
+    # на дату (нагрузка, план → факт) — через planned_starts.
+    "app/services/admin_plans_service.py",
 }
 
 

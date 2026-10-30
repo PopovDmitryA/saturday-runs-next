@@ -3999,6 +3999,96 @@ export function getAdminNotifications(params: {
   return apiFetch<AdminNotificationsResponse>(`/admin/notifications?${query.toString()}`);
 }
 
+export type AdminPlansLocation = {
+  key: string;
+  name: string;
+  slug: string | null;
+  upcoming: boolean;
+  plans: number;
+  series: number;
+  people: number;
+  next_weeks: number;
+  count: number;
+};
+
+export type AdminPlansOverviewResponse = {
+  generated_at: string;
+  today: string;
+  period_days: number;
+  summary: {
+    people_total: number;
+    people_future: number;
+    plans_future: number;
+    plans_past: number;
+    plans_public: number;
+    series_active: number;
+    series_sleeping: number;
+    series_stopped: number;
+    series_public: number;
+    series_total: number;
+    rest_total: number;
+    rest_future: number;
+    rest_people: number;
+  };
+  facts: { total: number; ran: number; volunteered: number; missed: number; unknown: number };
+  daily: { date: string; plans: number; series: number; people: number; people_total: number }[];
+  load: { date: string; special_title: string | null; people: number; one_off: number; regular: number; locations: number }[];
+  lead_times: { label: string; count: number }[];
+  lead_median_days: number | null;
+  mix: {
+    only_one_off: number;
+    only_regular: number;
+    both: number;
+    one_off_plans: number;
+    series: number;
+    public_plans: number;
+    private_plans: number;
+    public_series: number;
+    private_series: number;
+  };
+  top_locations: AdminPlansLocation[];
+  locations: AdminPlansLocation[];
+  upcoming_locations: AdminPlansLocation[];
+  deliveries: { kind: string; total: number; period: number; by_status: Record<string, number> }[];
+};
+
+export type AdminPlansFeedItem = {
+  id: string;
+  kind: "plan" | "rest" | "series" | "series_stop" | "series_sleep";
+  at: string | null;
+  user_serial_id: number | null;
+  user_label: string;
+  profile_private: boolean;
+  on_date: string | null;
+  until: string | null;
+  location_name: string | null;
+  location_slug: string | null;
+  is_public: boolean;
+  series_status: "active" | "sleeping" | "stopped" | null;
+};
+
+export type AdminPlansFeedResponse = { items: AdminPlansFeedItem[]; total: number; limit: number; offset: number };
+
+export function getAdminPlans(periodDays: number) {
+  return apiFetch<AdminPlansOverviewResponse>(`/admin/plans?period_days=${periodDays}`);
+}
+
+export function getAdminPlansFeed(params: {
+  futureOnly?: boolean;
+  location?: string | null;
+  person?: string | null;
+  limit?: number;
+  offset?: number;
+}) {
+  const query = new URLSearchParams();
+  if (params.futureOnly) query.set("future_only", "true");
+  if (params.location) query.set("location", params.location);
+  if (params.person) query.set("person", params.person);
+  query.set("limit", String(params.limit ?? 50));
+  query.set("offset", String(params.offset ?? 0));
+  return apiFetch<AdminPlansFeedResponse>(`/admin/plans/feed?${query.toString()}`);
+}
+
 export type PrivacySettings = {
   enabled: boolean;
   description: string;

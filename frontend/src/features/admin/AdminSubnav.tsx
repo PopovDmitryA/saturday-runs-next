@@ -16,6 +16,7 @@ const LINKS = [
   { href: "/admin/records-digest", label: "Рекорды локаций" },
   { href: "/admin/location-contacts", label: "Контакты локаций" },
   { href: "/admin/location-openings", label: "Открытия локаций" },
+  { href: "/admin/plans", label: "Планы" },
   { href: "/admin/start-dates", label: "Особые даты" },
   { href: "/admin/blog", label: "Блог" },
   { href: "/admin/releases", label: "Релизы" },

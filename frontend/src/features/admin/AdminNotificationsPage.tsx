@@ -57,9 +57,13 @@ function CountList({ title, items, map }: { title: string; items: { key: string;
 }
 
 function AdminNotificationsContent() {
-  const [periodDays, setPeriodDays] = useState<number>(7);
+  // ?kind= и ?period= — ссылки с других страниц админки («Планы» → журнал напоминаний).
+  const [periodDays, setPeriodDays] = useState<number>(() => {
+    const period = Number(new URLSearchParams(window.location.search).get("period"));
+    return PERIODS.some((item) => item.days === period) ? period : 7;
+  });
   const [status, setStatus] = useState<string>("");
-  const [kind, setKind] = useState<string>("");
+  const [kind, setKind] = useState<string>(() => new URLSearchParams(window.location.search).get("kind") ?? "");
   const [offset, setOffset] = useState(0);
   const [data, setData] = useState<AdminNotificationsResponse | null>(null);
   const [loading, setLoading] = useState(true);

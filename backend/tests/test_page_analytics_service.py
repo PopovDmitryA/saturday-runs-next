@@ -71,6 +71,7 @@ from app.services.page_analytics_service import (
         ("/demo", ("demo", "")),
         ("/demo/runs", ("demo", "runs")),
         ("/admin/users", ("admin", "users")),
+        ("/admin/plans", ("admin", "plans")),
         # Оргкабинет — одной строкой на локацию, подстраница в entity_key.
         ("/organizer/kuzminki", ("organizer_location", "kuzminki")),
         ("/organizer/kuzminki/guests", ("organizer_location", "kuzminki/guests")),
