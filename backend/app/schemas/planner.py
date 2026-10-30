@@ -383,6 +383,10 @@ class LocationPlansBlock(BaseModel):
     identity_key: str
     plannable: bool
     reason: str | None = None
+    # «Скоро открытие»: планировать можно, окно просит сверить дату открытия
+    # на сайте системы (official_url — страница локации там).
+    upcoming: bool = False
+    official_url: str | None = None
     dates: list[LocationPlansDate]
     # Планы зрителя на этой локации: все его разовые здесь и
     # вхождения постоянного на даты вкладок; гостю — [].
@@ -414,6 +418,8 @@ class PlanLocationOption(BaseModel):
     mine: bool = False
     # Точка постоянного плана человека.
     regular: bool = False
+    # «Скоро открытие»: старт ещё не проводился, дату сверить на сайте системы.
+    upcoming: bool = False
 
 
 class PlanLocationsResponse(BaseModel):

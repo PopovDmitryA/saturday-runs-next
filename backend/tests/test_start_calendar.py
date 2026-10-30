@@ -127,11 +127,10 @@ def test_identity_rows_for_location_and_catalog_keys(db_session: Session) -> Non
 # ---------------------------------------------------------------- что планируется
 
 
-def test_parkrun_series_paused_upcoming_are_not_plannable(db_session: Session) -> None:
+def test_parkrun_series_paused_are_not_plannable(db_session: Session) -> None:
     cases = [
         (_location(db_session, "parkrun"), REASON_PARKRUN),
         (_location(db_session, "five_verst", is_series=True), REASON_SERIES),
-        (_location(db_session, "five_verst", is_upcoming=True), REASON_UPCOMING),
         (_location(db_session, "s95", is_paused=True), REASON_PAUSED),
     ]
     for location, reason in cases:
@@ -200,6 +199,22 @@ def test_dead_row_does_not_bring_its_system_special_dates(db_session: Session) -
     assert [location.id for location, _code in plannable] == [alive.id]
     dates = start_dates(db_session, plannable, date_from=TODAY, date_to=date(2026, 11, 8), today=TODAY)
     assert holiday not in {item.date for item in dates}
+
+
+def test_upcoming_location_is_plannable_any_saturday(db_session: Session) -> None:
+    """«Скоро открытие» из реестра планируется на любую субботу без единого
+    старта — люди отмечаются на открытие (решение Дмитрия 30.10.2026). ≈№
+    нет: опорного старта ещё не было. Без флага реестра локация без
+    стартов по-прежнему «ещё не открылась»."""
+    soon = _location(db_session, "five_verst", is_upcoming=True)
+    rows, reason = plannable_rows_with_reason(db_session, _rows(db_session, soon), today=TODAY)
+    assert reason is None and [location.id for location, _code in rows] == [soon.id]
+    dates = start_dates(db_session, rows, date_from=TODAY, date_to=TODAY + timedelta(days=21), today=TODAY)
+    assert dates and all(item.date.weekday() == 5 for item in dates)
+    assert all(item.number_forecast is None for item in dates)
+
+    never = _location(db_session, "five_verst")
+    assert plannable_rows_with_reason(db_session, _rows(db_session, never), today=TODAY)[1] == REASON_UPCOMING
 
 
 def test_site_activity_rules_for_planning(db_session: Session) -> None:

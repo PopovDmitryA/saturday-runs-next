@@ -180,6 +180,7 @@ def test_search_keeps_only_plannable_on_date(
         "cancelled": False,
         "mine": False,
         "regular": False,
+        "upcoming": False,
     }
     assert (saturday["kind"], saturday["title"], saturday["limit"], saturday["rest"]) == ("regular", None, 1, False)
 

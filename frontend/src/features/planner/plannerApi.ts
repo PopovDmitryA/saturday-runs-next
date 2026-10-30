@@ -289,6 +289,10 @@ export type LocationPlansBlock = {
   plannable: boolean;
   /** Почему нельзя запланировать (parkrun, пауза, воскресный старт…). */
   reason: string | null;
+  /** «Скоро открытие»: планировать можно, дату открытия сверить на сайте системы. */
+  upcoming?: boolean;
+  /** Страница локации на сайте системы — туда окно отправляет сверить дату. */
+  official_url?: string | null;
   dates: LocationPlansDate[];
   /**
    * Планы зрителя на этой локации: все разовые и вхождения
@@ -590,6 +594,8 @@ export type PlannerLocationOption = {
   mine: boolean;
   /** Локация постоянного плана зрителя. */
   regular: boolean;
+  /** «Скоро открытие»: старт ещё не проводился. */
+  upcoming?: boolean;
 };
 
 export type PlannerLocations = {

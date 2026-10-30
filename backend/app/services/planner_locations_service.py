@@ -202,6 +202,7 @@ class _Picker:
             "cancelled": start.cancelled,
             "mine": identity.key in self.mine_keys or bool(self.mine_ids & set(identity.location_ids)),
             "regular": self._is_series_point(identity),
+            "upcoming": identity.upcoming,
         }
 
     def collect(self, keys: Iterable[str], *, limit: int, check_limit: int) -> tuple[list[dict[str, Any]], bool]:

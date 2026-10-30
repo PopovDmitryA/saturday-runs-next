@@ -328,6 +328,21 @@ class _Identity:
             return self.plannable
         return [row for row in self.rows if row[1] in PLANNABLE_PLATFORMS]
 
+    @property
+    def upcoming(self) -> bool:
+        """«Скоро открытие» по реестру: планировать можно, дату первого старта
+        человек сверяет на сайте системы."""
+        return any(location.is_upcoming for location, _code in self.plannable)
+
+    @property
+    def official_url(self) -> str | None:
+        """Страница локации на сайте системы — туда окно плана отправляет
+        сверить дату открытия."""
+        return next(
+            (location.source_url for location, _code in self.plannable if location.is_upcoming and location.source_url),
+            None,
+        )
+
 
 class _Identities:
     """Кэш идентичностей на один запрос: у человека десятки планов, а
@@ -1936,6 +1951,8 @@ def location_plans_block(db: Session, identity_key: str, viewer: User | None) ->
         "identity_key": identity_key,
         "plannable": bool(identity.plannable),
         "reason": identity.reason,
+        "upcoming": identity.upcoming,
+        "official_url": identity.official_url,
         "dates": dates_payload,
         "mine": mine,
         "elsewhere": elsewhere,

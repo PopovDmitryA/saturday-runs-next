@@ -668,6 +668,23 @@ def test_child_and_closed_profile_are_private(db_session: Session) -> None:
     }
 
 
+def test_upcoming_location_takes_plans_and_points_to_official_site(db_session: Session) -> None:
+    """«Скоро открытие»: план на открытие ставится, блок отдаёт признак и
+    страницу локации на сайте системы — окно просит сверить дату там."""
+    soon = _location(
+        db_session, started=False, is_upcoming=True, source_url="https://5verst.ru/gorodvlesu/"
+    )
+    user = _public_user(db_session, "Анна")
+    _plan(db_session, user, soon, SAT1)
+    block = location_plans_block(db_session, _key(soon), None)
+    assert block["plannable"] is True
+    assert block["upcoming"] is True and block["official_url"] == "https://5verst.ru/gorodvlesu/"
+    assert [person["name"] for person in block["dates"][0]["people"]] == ["Анна"]
+
+    regular = location_plans_block(db_session, _key(_location(db_session)), None)
+    assert regular["upcoming"] is False and regular["official_url"] is None
+
+
 def test_closing_profile_hides_plans_immediately(db_session: Session) -> None:
     park = _location(db_session)
     user = _public_user(db_session, "Анна")

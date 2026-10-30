@@ -79,7 +79,7 @@ from typing import Any
 from uuid import UUID
 
 import redis
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
 from app.core.redis_client import get_redis_client
@@ -404,7 +404,7 @@ def _plans_that_will_not_happen(db: Session, plans: list[AheadPlan], today: date
             location_id
             for (location_id,) in db.query(Location.id).filter(
                 Location.id.in_(plan_location_ids),
-                or_(Location.is_paused.is_(True), Location.is_upcoming.is_(True)),
+                Location.is_paused.is_(True),
             )
         }
         if plan_location_ids

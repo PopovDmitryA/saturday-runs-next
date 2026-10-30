@@ -335,7 +335,10 @@ def _site_inactive_reasons(
 
     Правила те же, что у статуса сайта (location_activity_status):
     - узел каталога закрыт — пауза;
-    - стартов не было ни разу — «ещё не открылась»: звать на пустой парк нельзя;
+    - стартов не было ни разу — «ещё не открылась»: звать на пустой парк нельзя.
+      Исключение — «скоро открытие» из реестра системы (is_upcoming): на неё
+      планируют любую субботу, чтобы отметиться на открытие (решение Дмитрия
+      30.10.2026); дату первого старта человек сверяет на сайте системы;
     - последний старт старше INACTIVE_AFTER_DAYS — пауза. Флаг is_paused
       ставит ночное правило молчания, но строки без координат оно пропускает
       (из-за разъездных серий), и у старых RunPark-строк флага нет никогда:
@@ -357,7 +360,7 @@ def _site_inactive_reasons(
         last = last_start.get(location.id)
         if location.id in closed and not cancelled:
             reasons[location.id] = REASON_PAUSED
-        elif last is None and not manual_active:
+        elif last is None and not manual_active and not location.is_upcoming:
             reasons[location.id] = REASON_UPCOMING
         elif last is not None and last < cutoff and not manual_active and not cancelled:
             reasons[location.id] = REASON_PAUSED
@@ -385,8 +388,6 @@ def plannable_rows_with_reason(
             reasons[location.id] = REASON_PARKRUN
         elif location.is_series:
             reasons[location.id] = REASON_SERIES
-        elif location.is_upcoming:
-            reasons[location.id] = REASON_UPCOMING
         elif location.is_paused and not location.is_cancelled:
             # Отмена сильнее паузы, как у сайта: молчание с отменой — это
             # «Отмена старта» на странице, а не «Не действует».

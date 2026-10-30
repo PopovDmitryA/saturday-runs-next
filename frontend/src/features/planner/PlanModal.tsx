@@ -284,6 +284,8 @@ export function PlanModal({
   const [stage, setStage] = useState<Stage>("form");
   const [dates, setDates] = useState<StartDateItem[] | null>(null);
   const [plannable, setPlannable] = useState(true);
+  // «Скоро открытие»: дату первого старта человек сверяет на сайте системы.
+  const [opening, setOpening] = useState<{ url: string | null } | null>(null);
   const [reason, setReason] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, setLoadVersion] = useState(0);
@@ -567,6 +569,7 @@ export function PlanModal({
         setElsewhere(away);
         const here = blockResult.value.my_series ?? null;
         setHereSeries(here);
+        setOpening(blockResult.value.upcoming ? { url: blockResult.value.official_url ?? null } : null);
         const payload = datesResult.value;
         setDates(payload.dates);
         setPlannable(payload.plannable);
@@ -728,6 +731,7 @@ export function PlanModal({
       applyForm(null);
     }
     setPickerFocus(true);
+    setOpening(null);
     setPlace(null);
   };
 
@@ -1193,6 +1197,19 @@ export function PlanModal({
           {selectedAway.names.length > 1
             ? `На ${planDayLabel(selected)} у вас уже ${selectedAway.names.length} плана — последний из них (${replacing.name}) будет отменён.`
             : `План на ${planDayLabel(selected)} (${replacing.name}) будет отменён.`}
+        </p>
+      )}
+      {opening && (
+        <p className="plan-modal-hint plan-modal-hint-warn">
+          Локация ещё не открылась. Дату первого старта проверьте{" "}
+          {opening.url ? (
+            <a href={opening.url} target="_blank" rel="noreferrer">
+              на сайте системы
+            </a>
+          ) : (
+            "на сайте системы"
+          )}
+          : на открытие отмечаются заранее, а старт может сдвинуться.
         </p>
       )}
       {selectedItem?.cancelled && (

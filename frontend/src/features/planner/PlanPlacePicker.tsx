@@ -320,6 +320,8 @@ export function PlanPlacePicker({
                 <span className="plan-place-tag plan-place-tag-mine">уже в планах</span>
               ) : option.cancelled ? (
                 <span className="plan-place-tag plan-place-tag-cancel">старт отменён</span>
+              ) : option.upcoming ? (
+                <span className="plan-place-tag">скоро открытие</span>
               ) : null}
             </li>
           );
