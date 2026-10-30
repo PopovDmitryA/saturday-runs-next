@@ -17,7 +17,7 @@ import "./adminPlans.css";
 // сколько людей пользуется планировщиком. Админ видит и приватные планы — у
 // них пометка в ленте.
 
-const PERIODS = [30, 90] as const;
+const PERIODS = [7, 30, 90] as const;
 const FEED_LIMIT = 50;
 const SERIES_ICON = "↻";
 
@@ -326,7 +326,7 @@ function Overview({ data }: { data: AdminPlansOverviewResponse }) {
                     <td className="num">{formatInt(item.total - sent - failed)}</td>
                     <td className="num">{formatInt(item.period)}</td>
                     <td>
-                      <a href={`/admin/notifications?kind=${item.kind}&period=30`}>журнал →</a>
+                      <a href={`/admin/notifications?kind=${item.kind}&period=${Math.min(data.period_days, 30)}`}>журнал →</a>
                     </td>
                   </tr>
                 );
