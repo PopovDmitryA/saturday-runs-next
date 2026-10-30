@@ -190,7 +190,10 @@ cmd_up() {
     say "· собираю фронт (node:22-alpine)…"
     # --user обязателен: под root node_modules и dist остаются root-овыми, и
     # потом `git worktree remove` падает с Permission denied без sudo.
+    # node_classic_tls.cjs — иначе npm ci висит на рукопожатии с Cloudflare.
     docker run --rm --user "$(id -u):$(id -g)" -e npm_config_cache=/tmp/.npm -e HOME=/tmp \
+      -v "${WORKTREE}/scripts/lib/node_classic_tls.cjs:/opt/node_classic_tls.cjs:ro" \
+      -e NODE_OPTIONS=--require=/opt/node_classic_tls.cjs \
       -v "${WORKTREE}/frontend:/app" -w /app node:22-alpine \
       sh -c "npm ci --no-audit --no-fund && npm run build" >/dev/null ||
       die "сборка фронта упала"

@@ -37,8 +37,12 @@ say "код: $(git log --oneline -1)"
 
 # Фронт собираем тем же образом, что и на VPS. --user обязателен: под root
 # node_modules и dist становятся root-овыми, и потом git не может их тронуть.
+# node_classic_tls.cjs — классические кривые TLS: иначе npm ci висит на
+# рукопожатии с Cloudflare (см. комментарий в файле).
 say "собираю фронт"
 docker run --rm --user "$(id -u):$(id -g)" -e npm_config_cache=/tmp/.npm -e HOME=/tmp \
+  -v "$HOME_DIR/scripts/lib/node_classic_tls.cjs:/opt/node_classic_tls.cjs:ro" \
+  -e NODE_OPTIONS=--require=/opt/node_classic_tls.cjs \
   -v "$HOME_DIR/frontend:/app" -w /app node:22-alpine \
   sh -c "npm ci --no-audit --no-fund && npm run build" >/dev/null || die "сборка фронта упала"
 echo "$sha" > "$HOME_DIR/.frontend-build-sha"
