@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime
 from typing import Annotated, cast
 
@@ -35,6 +36,7 @@ from app.services.nearby_locations_service import (
 from app.services.nearby_query_log_service import record_nearby_query
 from app.services.news_broadcast_service import list_news_subscribers, send_news_broadcast
 from app.services.platform_titles import platform_title
+from app.services.scan_code_service import qr_png, user_scan_codes
 from app.workers.tasks.nearby import queue_label_place
 
 router = APIRouter(prefix="/internal/bot", tags=["internal-bot"])
@@ -443,3 +445,39 @@ def bot_nearby_point(
     if item is None:
         raise HTTPException(status_code=404, detail="Локация не найдена")
     return NearbyPointResponse.model_validate(item)
+
+
+# Штрихкод участника — кнопка «Мой штрихкод» под напоминанием о плане
+# (plan_reminder_extras): бот присылает QR тому, кто нажал.
+
+
+class ScanCodeResponse(BaseModel):
+    platform_code: str
+    platform_title: str
+    code: str
+    display_name: str | None = None
+    png_base64: str
+
+
+@router.get("/scan-code", response_model=ScanCodeResponse)
+def bot_scan_code(
+    telegram_id: int,
+    platform: str,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[Settings, Depends(_verify_bot_secret)],
+) -> ScanCodeResponse:
+    """Штрихкод человека, нажавшего кнопку, — по его Telegram, а не по
+    адресату сообщения: пересланное напоминание чужой код не покажет."""
+    user = find_user_by_telegram_id(db, telegram_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="no_user")
+    found = user_scan_codes(db, user.id).get(platform)
+    if found is None:
+        raise HTTPException(status_code=404, detail="no_code")
+    return ScanCodeResponse(
+        platform_code=platform,
+        platform_title=platform_title(platform),
+        code=found.code,
+        display_name=found.display_name,
+        png_base64=base64.b64encode(qr_png(found.code)).decode("ascii"),
+    )

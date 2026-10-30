@@ -344,6 +344,22 @@ export function ProfileLinkSection({ byPlatform = {}, onLinksChange, onLinksLoad
     didScrollToProfilesRef.current = true;
   }, [loadingLinks]);
 
+  // #scancode=five_verst — кнопка «Мой штрихкод» под напоминанием о плане в
+  // VK и в письме (в Telegram код присылает бот): сразу окно с QR.
+  useEffect(() => {
+    const match = /^#scancode=([a-z0-9_]+)$/.exec(window.location.hash);
+    if (!match || loadingLinks) {
+      return;
+    }
+    const linked = links.find((link) => link.platform_code === match[1]);
+    const code = linked ? platformScanCode(match[1], linked.barcode_id, linked.external_user_id) : null;
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}#profiles`);
+    document.getElementById("profiles")?.scrollIntoView({ block: "start" });
+    if (linked && code) {
+      setQrModal({ platformCode: match[1], code, displayName: linked.display_name ?? null });
+    }
+  }, [loadingLinks, links]);
+
   useEffect(() => {
     if (!syncInProgress) {
       return;

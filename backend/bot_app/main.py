@@ -24,7 +24,7 @@ from aiogram.types import (
 
 from app.core.log_hygiene import quiet_http_client_logs
 from app.legal.consent_text import consent_bot_message
-from bot_app import admin_ops, nearby
+from bot_app import admin_ops, nearby, scan_code
 from bot_app.broadcast import (
     BROADCAST_CANCEL_CALLBACK,
     BROADCAST_SEND_CALLBACK,
@@ -595,6 +595,10 @@ async def on_nearby_pin(callback: CallbackQuery) -> None:
     await nearby.on_nearby_pin(callback, settings)
 
 
+async def on_scan_code(callback: CallbackQuery) -> None:
+    await scan_code.on_scan_code(callback, settings)
+
+
 async def on_inline_query(inline_query: InlineQuery) -> None:
     await nearby.on_inline_query(inline_query, settings)
 
@@ -676,6 +680,7 @@ async def main() -> None:
     # Геопозиция — только в личке: в группе бот отвечал бы на каждую чужую точку.
     dispatcher.message.register(on_location, F.location, F.chat.type == ChatType.PRIVATE)
     dispatcher.callback_query.register(on_nearby_pin, F.data.startswith(nearby.NEARBY_PIN_PREFIX))
+    dispatcher.callback_query.register(on_scan_code, F.data.startswith(scan_code.SCAN_CODE_PREFIX))
     dispatcher.inline_query.register(on_inline_query)
     dispatcher.callback_query.register(
         on_notify_callback,

@@ -15,6 +15,7 @@ HTML-абзацы, VK — чистый текст (форматирования 
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from urllib.parse import urlsplit
@@ -29,6 +30,34 @@ from app.services.vk_client import VkApiError, send_vk_message
 
 logger = logging.getLogger(__name__)
 
+
+
+@dataclass(frozen=True)
+class MessageButton:
+    """Кнопка под сообщением.
+
+    callback — данные кнопки бота в Telegram: нажатие разбирает бот (прислать
+    штрихкод, точку локации). url — ссылка: кнопкой в VK, строкой в письме и
+    в Telegram, если callback нет. Кнопка без url там, где callback не
+    работает (VK, почта), не показывается.
+    """
+
+    label: str
+    url: str | None = None
+    callback: str | None = None
+
+    def payload(self) -> dict[str, str | None]:
+        return {"label": self.label, "url": self.url, "callback": self.callback}
+
+    @classmethod
+    def from_payload(cls, raw: object) -> MessageButton | None:
+        if not isinstance(raw, dict) or not raw.get("label"):
+            return None
+        return cls(label=str(raw["label"]), url=raw.get("url") or None, callback=raw.get("callback") or None)
+
+
+# Подпись кнопки VK — не длиннее 40 символов, иначе messages.send отказывает.
+VK_BUTTON_LABEL_MAX = 40
 
 
 @dataclass(frozen=True)
@@ -47,6 +76,29 @@ class OutgoingMessage:
     unsubscribe_url: str
     settings_url: str
     html: str | None = None
+    buttons: tuple[MessageButton, ...] = ()
+
+    def telegram_markup(self) -> dict[str, object] | None:
+        rows = []
+        for button in self.buttons:
+            if button.callback:
+                rows.append([{"text": button.label, "callback_data": button.callback}])
+            elif button.url:
+                rows.append([{"text": button.label, "url": button.url}])
+        return {"inline_keyboard": rows} if rows else None
+
+    def vk_keyboard(self) -> str | None:
+        """Встроенная клавиатура VK: только кнопки-ссылки (open_link) — ответы
+        на нажатия в VK никто не слушает."""
+        rows = [
+            [{"action": {"type": "open_link", "link": button.url, "label": button.label[:VK_BUTTON_LABEL_MAX]}}]
+            for button in self.buttons
+            if button.url
+        ]
+        return json.dumps({"inline": True, "buttons": rows}, ensure_ascii=False) if rows else None
+
+    def link_buttons(self) -> list[MessageButton]:
+        return [button for button in self.buttons if button.url]
 
     @property
     def site_url(self) -> str:
@@ -78,10 +130,14 @@ class OutgoingMessage:
         ]
         return "\n".join(parts)
 
-    def plain_text(self) -> str:
+    def plain_text(self, *, with_links: bool = False) -> str:
         """VK: без форматирования, ссылки открытым адресом — VK подсветит сам.
-        Домен в подвале VK тоже делает кликабельным."""
+        Домен в подвале VK тоже делает кликабельным. with_links — кнопки
+        строками: клавиатуру VK не принял."""
         lines = [to_plain(self.title), "", to_plain(self.text)]
+        if with_links:
+            for button in self.link_buttons():
+                lines += ["", f"{to_plain(button.label)}: {button.url}"]
         if self.url:
             lines += ["", f"🔗 {to_plain(self.url_label)}: {self.url}"]
         lines += ["", f"{self.site_name} · настроить уведомления: {self.settings_url}"]
@@ -89,6 +145,8 @@ class OutgoingMessage:
 
     def email_text(self) -> str:
         lines = [to_plain(self.title), "", to_plain(self.text)]
+        for button in self.link_buttons():
+            lines += ["", f"{to_plain(button.label)}: {button.url}"]
         if self.url:
             lines += ["", f"{to_plain(self.url_label)}: {self.url}"]
         lines += ["", f"Отписаться от таких писем: {self.unsubscribe_url}", f"Настроить: {self.settings_url}"]
@@ -110,14 +168,17 @@ def send_telegram(target: str, message: OutgoingMessage) -> SendOutcome:
     settings = get_settings()
     if not settings.telegram_bot_token:
         return SendOutcome(ok=False, error="bot token not configured", permanent=True)
-    return send_telegram_html(target, message.telegram_html())
+    return send_telegram_html(target, message.telegram_html(), reply_markup=message.telegram_markup())
 
 
-def send_telegram_html(target: str, html: str) -> SendOutcome:
-    """Сырой HTML в чат: им же уходит копия админу."""
+def send_telegram_html(target: str, html: str, *, reply_markup: dict[str, object] | None = None) -> SendOutcome:
+    """Сырой HTML в чат: им же уходит копия админу (без кнопок — нажатия
+    бот разбирает по тому, кто нажал, и админу прислал бы своё)."""
     settings = get_settings()
     url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
-    payload = {"chat_id": target, "text": html, "parse_mode": "HTML", "disable_web_page_preview": True}
+    payload: dict[str, object] = {"chat_id": target, "text": html, "parse_mode": "HTML", "disable_web_page_preview": True}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     try:
         response = httpx.post(url, json=payload, proxy=settings.telegram_proxy_url or None, timeout=20.0)
     except httpx.HTTPError as exc:
@@ -140,7 +201,7 @@ def send_vk(target: str, message: OutgoingMessage) -> SendOutcome:
     if not token:
         return SendOutcome(ok=False, error="vk group token not configured", permanent=True)
     try:
-        send_vk_message(token, int(target), message.plain_text())
+        _send_vk_with_keyboard(token, int(target), message)
     except VkApiError as exc:
         text = str(exc)
         # 901 — «нельзя отправить сообщение пользователю без разрешения»,
@@ -152,6 +213,25 @@ def send_vk(target: str, message: OutgoingMessage) -> SendOutcome:
         logger.warning("notify: vk send failed for %s: %s", target, exc)
         return SendOutcome(ok=False, error=f"vk: {exc}"[:200])
     return SendOutcome(ok=True)
+
+
+def _send_vk_with_keyboard(token: str, peer_id: int, message: OutgoingMessage) -> None:
+    """Сообщение с кнопками-ссылками. Клавиатуры в VK работают, только если у
+    сообщества включены «Возможности бота»; выключены (или VK не принял
+    кнопки) — то же сообщение без них: ссылки на маршрут и штрихкод тогда
+    уходят строками в тексте."""
+    keyboard = message.vk_keyboard()
+    if keyboard is None:
+        send_vk_message(token, peer_id, message.plain_text())
+        return
+    try:
+        send_vk_message(token, peer_id, message.plain_text(), keyboard=keyboard)
+    except VkApiError as exc:
+        text = str(exc)
+        if "'error_code': 901" in text or "'error_code': 902" in text:
+            raise
+        logger.warning("notify: vk keyboard refused for %s, sending without it: %s", peer_id, text[:200])
+        send_vk_message(token, peer_id, message.plain_text(with_links=True))
 
 
 def send_email_channel(target: str, message: OutgoingMessage) -> SendOutcome:

@@ -26,6 +26,7 @@ import base64
 import hashlib
 import hmac
 import logging
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -37,10 +38,10 @@ from app.config import Settings, get_settings
 from app.core.email_templates import notification_email
 from app.models import NotificationDelivery, User, UserNotificationPrefs
 from app.notification_kinds import KIND_BY_CODE, NOTIFICATION_KINDS, kind_enabled
-from app.notification_markup import to_email_html
+from app.notification_markup import link, to_email_html
 from app.services import notification_admin_copy as admin_copy
 from app.services import notification_channels_service as channels
-from app.services.notification_senders import SENDERS, OutgoingMessage
+from app.services.notification_senders import SENDERS, MessageButton, OutgoingMessage
 from app.services.platform_titles import PLATFORM_TITLES
 
 logger = logging.getLogger(__name__)
@@ -388,12 +389,14 @@ def notify_user(
     dedupe_key: str,
     url: str | None = None,
     url_label: str = "Открыть на сайте",
+    buttons: Sequence[MessageButton] = (),
     force: bool = False,
     commit: bool = True,
 ) -> NotificationDelivery | None:
     """Поставить уведомление в очередь. None — не нужно (выключено, повтор).
 
     text — в разметке notification_markup (`**жирный**`, `[подпись](url)`).
+    buttons — кнопки под сообщением (notification_senders.MessageButton).
     force — минуя проверки настроек (проверочное сообщение из настроек).
     commit — зафиксировать и сразу отдать воркеру; False оставляет строку в
     транзакции вызывающего, тот сам вызовет enqueue_delivery после commit.
@@ -407,7 +410,13 @@ def notify_user(
         kind=kind,
         dedupe_key=dedupe_key[:128],
         status=STATUS_QUEUED,
-        payload={"title": title, "text": text, "url": url, "url_label": url_label},
+        payload={
+            "title": title,
+            "text": text,
+            "url": url,
+            "url_label": url_label,
+            **({"buttons": [button.payload() for button in buttons]} if buttons else {}),
+        },
     )
     try:
         with db.begin_nested():
@@ -451,6 +460,12 @@ def build_message(settings: Settings, delivery: NotificationDelivery) -> Outgoin
     text = str(payload.get("text") or "")
     url = payload.get("url") or None
     url_label = str(payload.get("url_label") or "Открыть на сайте")
+    raw_buttons = payload.get("buttons") or []
+    buttons = tuple(
+        button
+        for button in (MessageButton.from_payload(raw) for raw in (raw_buttons if isinstance(raw_buttons, list) else []))
+        if button is not None
+    )
     message = OutgoingMessage(
         title=title,
         text=text,
@@ -458,10 +473,13 @@ def build_message(settings: Settings, delivery: NotificationDelivery) -> Outgoin
         url_label=url_label,
         unsubscribe_url=unsub,
         settings_url=settings_link,
+        buttons=buttons,
     )
+    # В письме кнопки — ссылками под текстом.
+    email_body = text + "".join(f"\n\n{link(button.label, button.url)}" for button in message.link_buttons() if button.url)
     html = notification_email(
         title=title,
-        body_html=to_email_html(text),
+        body_html=to_email_html(email_body),
         text_body=message.email_text(),
         url=url,
         url_label=url_label,
@@ -476,6 +494,7 @@ def build_message(settings: Settings, delivery: NotificationDelivery) -> Outgoin
         unsubscribe_url=unsub,
         settings_url=settings_link,
         html=html,
+        buttons=buttons,
     )
 
 

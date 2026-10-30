@@ -25,6 +25,7 @@ from app.notification_markup import to_plain, to_telegram_html
 from app.services import notification_channels_service as channels
 from app.services import notification_service as notify
 from app.services import plan_notification_service as plans
+from app.services import plan_reminder_extras as extras
 from app.services.location_cancellation_notify import CancellationChange, notify_cancellation_changes
 from app.services.notification_channels_service import CheckOutcome
 from app.services.run_plan_service import admin_delete_special_date, admin_update_special_date
@@ -54,6 +55,7 @@ def _settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
     monkeypatch.setattr(notify, "get_settings", lambda: settings)
     monkeypatch.setattr(channels, "get_settings", lambda: settings)
     monkeypatch.setattr(plans, "get_settings", lambda: settings)
+    monkeypatch.setattr(extras, "get_settings", lambda: settings)
     return settings
 
 
@@ -547,3 +549,156 @@ def test_no_reminder_when_special_date_is_gone(db_session: Session, change: str)
     # План на обычную субботу по-прежнему напоминается.
     _plan(db_session, user, location, NEW_YEAR_SAT)
     assert plans.send_plan_reminders(db_session, now=_msk(NEW_YEAR, 19)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Погода, веха, кто ещё и кнопки (решение Дмитрия 30.10.2026)
+
+EVENING = datetime(2026, 10, 30, 16, 0, tzinfo=UTC)
+
+
+def _forecast(db: Session, location: Location, on_date: date) -> None:
+    from datetime import time
+    from decimal import Decimal
+
+    from app.models import StartWeatherForecast
+
+    db.add(
+        StartWeatherForecast(
+            location_id=location.id,
+            target_date=on_date,
+            start_time_local=time(9, 0),
+            temperature_c=Decimal("3.2"),
+            apparent_temperature_c=Decimal("0.5"),
+            precipitation_mm=Decimal("1.4"),
+            precipitation_probability_pct=80,
+            weather_code=61,
+            wind_speed_ms=Decimal("6.1"),
+            horizon_days=1,
+            fetched_at=datetime(2026, 10, 30, 8, 0, tzinfo=UTC),
+        )
+    )
+    db.flush()
+
+
+def test_reminder_tells_weather_and_who_else_plans(db_session: Session) -> None:
+    location = _location(db_session, name="Кузьминки", latitude=55.69, longitude=37.78)
+    _forecast(db_session, location, SAT)
+    user = _user(db_session, "Планирует")
+    friend = _user(db_session, "Анна Смирнова")
+    shy = _user(db_session, "Тихоня")
+    _plan(db_session, user, location, SAT)
+    friend_plan = _plan(db_session, friend, location, SAT)
+    friend_plan.is_public = True
+    shy_plan = _plan(db_session, shy, location, SAT)
+    shy_plan.is_public = False
+    db_session.commit()
+
+    assert plans.send_plan_reminders(db_session, now=EVENING) == 3
+    (delivery,) = _sent(db_session, user)
+    text = delivery.payload["text"]
+    assert "Не опаздывайте!\n\n🌧️ 3°, небольшой дождь, ветер 6 м/с · " in text
+    assert "ветер 6 м/с" in text
+    # Имя — только у публичного плана; приватный — в общем числе.
+    company = next(line for line in text.splitlines() if line.startswith("👥"))
+    assert company.startswith("👥 С вами планируют ещё [2 человека](https://run5k.test/locations/")
+    assert company.endswith(": Анна Смирнова и ещё 1")
+    assert "Тихоня" not in text
+    # Самого себя человек в списке не видит.
+    (friend_delivery,) = _sent(db_session, friend)
+    assert "Анна Смирнова" not in friend_delivery.payload["text"]
+    assert "ещё [2 человека]" in friend_delivery.payload["text"]
+    # Маршрут — кнопкой-ссылкой; штрихкода нет: системы не привязаны.
+    assert delivery.payload["buttons"] == [
+        {"label": "🧭 Проложить маршрут", "url": "https://yandex.ru/maps/?rtext=~55.69,37.78&rtt=auto", "callback": None}
+    ]
+
+
+def test_reminder_alone_has_no_company_line_and_no_weather_without_forecast(db_session: Session) -> None:
+    location = _location(db_session, name="Кузьминки")
+    _forecast(db_session, location, NEXT_SAT)
+    user = _user(db_session, "Один")
+    _plan(db_session, user, location, SAT)
+    assert plans.send_plan_reminders(db_session, now=EVENING) == 1
+    (delivery,) = _sent(db_session, user)
+    assert "👥" not in delivery.payload["text"] and "🌧" not in delivery.payload["text"]
+    # Без координат маршрута нет, кнопок нет вовсе.
+    assert "buttons" not in delivery.payload
+
+
+def test_reminder_offers_scan_code_of_the_plan_system(db_session: Session) -> None:
+    from app.models import Participant, PlatformLink
+
+    location = _location(db_session, name="Кузьминки")
+    user = _user(db_session, "Со штрихкодом")
+    platform = _platform(db_session)
+    participant = Participant(platform_id=platform.id, external_user_id="790123", display_name="Иван ИВАНОВ")
+    db_session.add(participant)
+    db_session.flush()
+    db_session.add(
+        PlatformLink(
+            user_id=user.id,
+            platform_id=platform.id,
+            participant_id=participant.id,
+            external_user_id="790123",
+            external_url="https://five_verst.test/790123",
+        )
+    )
+    _plan(db_session, user, location, SAT)
+    assert plans.send_plan_reminders(db_session, now=EVENING) == 1
+    (delivery,) = _sent(db_session, user)
+    assert delivery.payload["buttons"] == [
+        {
+            "label": "🏷 Мой штрихкод",
+            "url": "https://run5k.test/dashboard#scancode=five_verst",
+            "callback": "scancode:five_verst",
+        }
+    ]
+    message = notify.build_message(notify.get_settings(), delivery)
+    # Telegram — кнопкой бота, VK — ссылкой, письмо — ссылкой под текстом.
+    assert message.telegram_markup() == {
+        "inline_keyboard": [[{"text": "🏷 Мой штрихкод", "callback_data": "scancode:five_verst"}]]
+    }
+    assert '"type": "open_link"' in (message.vk_keyboard() or "")
+    assert "Мой штрихкод: https://run5k.test/dashboard#scancode=five_verst" in message.email_text()
+    assert "dashboard#scancode=five_verst" in (message.html or "")
+
+
+def test_cancelled_start_gets_no_extras_and_no_buttons(db_session: Session) -> None:
+    location = _location(
+        db_session, name="Кузьминки", is_cancelled=True, cancel_reason="Субботник", latitude=55.69, longitude=37.78
+    )
+    _forecast(db_session, location, SAT)
+    user = _user(db_session, "Планирует")
+    _plan(db_session, user, location, SAT)
+    assert plans.send_plan_reminders(db_session, now=EVENING) == 1
+    (delivery,) = _sent(db_session, user)
+    assert "🌧" not in delivery.payload["text"]
+    assert "buttons" not in delivery.payload
+
+
+def test_milestone_lines() -> None:
+    from app.services.planner_guests_service import FIRST_EVER, FIRST_HERE, JUBILEE, JUBILEE_HERE, Mark
+
+    assert extras.milestone_text(Mark(JUBILEE, 50), locations_before=None) == "🎉 Это будет ваша 50-я пробежка"
+    assert extras.milestone_text(Mark(FIRST_HERE), locations_before=11) == (
+        "🆕 Здесь вы впервые — станет вашей 12-й локацией"
+    )
+    assert extras.milestone_text(Mark(FIRST_HERE), locations_before=0) == "🆕 Здесь вы впервые"
+    marks = [Mark(FIRST_HERE), Mark(JUBILEE_HERE, 10), Mark(JUBILEE, 100)]
+    assert min(marks, key=extras._mark_rank).kind == JUBILEE
+    assert min([Mark(JUBILEE, 1), Mark(FIRST_EVER, 1)], key=extras._mark_rank).kind == FIRST_EVER
+
+
+def test_reminder_extras_failure_does_not_block_the_reminder(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    location = _location(db_session, name="Кузьминки")
+    user = _user(db_session, "Планирует")
+    _plan(db_session, user, location, SAT)
+
+    def broken(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("weather is down")
+
+    monkeypatch.setattr(extras, "weather_line", broken)
+    assert plans.send_plan_reminders(db_session, now=EVENING) == 1

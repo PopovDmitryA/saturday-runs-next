@@ -39,6 +39,7 @@ def send_vk_message(
     text: str,
     *,
     reply_to: int | None = None,
+    keyboard: str | None = None,
     timeout: float = 60.0,
 ) -> int | None:
     params: dict[str, Any] = {
@@ -48,6 +49,8 @@ def send_vk_message(
     }
     if reply_to is not None:
         params["reply_to"] = reply_to
+    if keyboard is not None:
+        params["keyboard"] = keyboard
     message_id = call_vk_api("messages.send", token, timeout=timeout, **params)
     return int(message_id) if message_id is not None else None
 

@@ -54,8 +54,10 @@ from app.notification_markup import bold, link
 from app.ru_plural import plural_form
 from app.services import notification_service as notifications
 from app.services.cancellation_notification_service import FALLBACK_TIMEZONE, _zone_of, start_already_passed
+from app.services.plan_reminder_extras import ReminderExtras, reminder_buttons, reminder_extras
 from app.services.planned_starts_service import planned_starts, reminder_candidates
 from app.services.run_plan_service import _Identities, canonical_identity_keys, plan_items, still_on
+from app.services.scan_code_service import user_scan_codes
 from app.services.start_calendar_service import (
     MOSCOW_TZ,
     cancelled_start_date,
@@ -177,15 +179,28 @@ def _skip_line(items: list[dict[str, Any]], plan_date: date) -> str:
     return f"\n\nНе получится? {link('Пропущу', _skip_url(plan_date))}"
 
 
-def compose_reminder(items: list[dict[str, Any]], *, plan_date: date) -> tuple[str, str]:
+def _extra_lines(extra: ReminderExtras | None) -> str:
+    """Погода, веха и кто ещё собирается — строками под стартом."""
+    if extra is None:
+        return ""
+    lines = [line for line in (extra.weather, extra.milestone, extra.company) if line]
+    return "\n" + "\n".join(lines) if lines else ""
+
+
+def compose_reminder(
+    items: list[dict[str, Any]], *, plan_date: date, extras: dict[str, ReminderExtras] | None = None
+) -> tuple[str, str]:
     """(заголовок, текст) напоминания на все планы человека на дату.
 
     `items` — PlanItem владельца (run_plan_service.plan_items); заметку из
     них не берём. План всегда «пробежать», поэтому что человек собирался
     делать, текст не повторяет: «Завтра, сб 31 октября — Кузьминки, старт в
-    9:00 (≈№214). Не опаздывайте!». У постоянного плана — ещё «Не получится?
-    Пропущу». Последней строкой — «Напоминания не нужны? Выключить».
+    9:00 (≈№214). Не опаздывайте!». Под стартом — погода, личная веха и кто
+    ещё собирается (`extras` по ref плана, reminder_extras; решение Дмитрия
+    30.10.2026). У постоянного плана — ещё «Не получится? Пропущу».
+    Последней строкой — «Напоминания не нужны? Выключить».
     """
+    extras = extras or {}
     day = day_label(plan_date)
     skip = _skip_line(items, plan_date)
     all_cancelled = all((item.get("start") or {}).get("cancelled") for item in items)
@@ -196,14 +211,21 @@ def compose_reminder(items: list[dict[str, Any]], *, plan_date: date) -> tuple[s
         location = item["location"]
         place = _location_label(location["name"], location["slug"])
         start = item["start"]
-        text = f"Завтра, {day} — {place}, {_start_phrase(start)}.{tail}{_reason_line(start)}{skip}"
-        return title, f"{text}\n\n{_opt_out_line()}"
-    lines = []
+        text = f"Завтра, {day} — {place}, {_start_phrase(start)}.{tail}{_reason_line(start)}"
+        extra = _extra_lines(extras.get(item["ref"]))
+        if extra:
+            text += "\n" + extra
+        return title, f"{text}{skip}\n\n{_opt_out_line()}"
+    blocks = []
     for item in items:
         location = item["location"]
         place = _location_label(location["name"], location["slug"])
-        lines.append(f"📍 {place} — {_start_phrase(item['start'])}{_reason_line(item['start'])}")
-    text = f"Завтра, {day}, у вас в планах:\n\n" + "\n".join(lines)
+        blocks.append(
+            f"📍 {place} — {_start_phrase(item['start'])}{_reason_line(item['start'])}"
+            f"{_extra_lines(extras.get(item['ref']))}"
+        )
+    separator = "\n\n" if any(extras.get(item["ref"]) for item in items) else "\n"
+    text = f"Завтра, {day}, у вас в планах:\n\n" + separator.join(blocks)
     if tail:
         text += "\n\n" + tail.strip()
     return title, f"{text}{skip}\n\n{_opt_out_line()}"
@@ -285,8 +307,9 @@ def send_plan_reminders(db: Session, now: datetime | None = None) -> int:
         for user in db.execute(select(User).where(User.id.in_({user_id for user_id, _d in groups}))).scalars()
     }
     url = _plans_url()
-    queued = 0
-    for (user_id, plan_date), group in sorted(groups.items(), key=lambda item: (str(item[0][0]), item[0][1])):
+    ordered = sorted(groups.items(), key=lambda item: (str(item[0][0]), item[0][1]))
+    items_by_group: dict[tuple[UUID, date], list[dict[str, Any]]] = {}
+    for (user_id, plan_date), group in ordered:
         user = users.get(user_id)
         if user is None:
             continue
@@ -296,9 +319,33 @@ def send_plan_reminders(db: Session, now: datetime | None = None) -> int:
                 for item in plan_items(db, user, group, today=today, identities=identities)
                 if still_on(identities, item)
             ]
-            if not items:
-                continue
-            title, text = compose_reminder(sorted(items, key=_sort_key), plan_date=plan_date)
+        except Exception:
+            db.rollback()
+            identities = _Identities(db, today)
+            logger.exception("plan reminders: не удалось собрать планы пользователя %s на %s", user_id, plan_date)
+            continue
+        if items:
+            items_by_group[(user_id, plan_date)] = sorted(items, key=_sort_key)
+    try:
+        extras = reminder_extras(db, groups, items_by_group, identities=identities, today=today)
+    except Exception:
+        # Погода, вехи и «кто ещё» — украшение: без них напоминание уходит.
+        db.rollback()
+        identities = _Identities(db, today)
+        logger.exception("plan reminders: не удалось собрать погоду, вехи и попутчиков")
+        extras = {}
+    queued = 0
+    for (user_id, plan_date), items in items_by_group.items():
+        user = users[user_id]
+        try:
+            title, text = compose_reminder(
+                items,
+                plan_date=plan_date,
+                extras={item["ref"]: extras[(user_id, item["ref"])] for item in items if (user_id, item["ref"]) in extras},
+            )
+            buttons = reminder_buttons(
+                items, identities=identities, scan_codes=set(user_scan_codes(db, user_id))
+            )
             delivery = notifications.notify_user(
                 db,
                 user,
@@ -308,6 +355,7 @@ def send_plan_reminders(db: Session, now: datetime | None = None) -> int:
                 dedupe_key=f"{REMINDER_DEDUPE_PREFIX}:{plan_date.isoformat()}",
                 url=url,
                 url_label=PLANS_URL_LABEL,
+                buttons=buttons,
                 commit=False,
             )
             delivery_id = delivery.id if delivery is not None else None
