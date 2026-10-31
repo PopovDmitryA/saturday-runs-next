@@ -12,6 +12,7 @@ from app.api.routes import (
     courses,
     dashboard,
     fastest,
+    funding,
     internal_bot,
     leaderboards,
     location_ratings,
@@ -63,6 +64,7 @@ api_router.include_router(notifications.router)
 api_router.include_router(portal.router)
 api_router.include_router(blog.router)
 api_router.include_router(releases.router)
+api_router.include_router(funding.router)
 api_router.include_router(backlog.router)
 api_router.include_router(sync.router)
 api_router.include_router(settings.router)

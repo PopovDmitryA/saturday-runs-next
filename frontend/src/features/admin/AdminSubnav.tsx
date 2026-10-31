@@ -20,6 +20,7 @@ const LINKS = [
   { href: "/admin/start-dates", label: "Особые даты" },
   { href: "/admin/blog", label: "Блог" },
   { href: "/admin/releases", label: "Релизы" },
+  { href: "/admin/donations", label: "Донаты" },
   { href: "/admin/backlog", label: "Бэклог" },
   { href: "/admin/notifications", label: "Уведомления" },
   { href: "/admin/abuse", label: "Блокировки" },

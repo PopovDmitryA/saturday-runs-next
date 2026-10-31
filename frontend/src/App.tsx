@@ -76,6 +76,7 @@ const OnboardingPage = lazyPage(() => import("./features/onboarding/OnboardingPa
 const PortalMapLab = lazyPage(() => import("./features/portal/PortalMapLab"), (m) => m.PortalMapLab);
 const AdminBlogPage = lazyPage(() => import("./features/admin/AdminBlogPage"), (m) => m.AdminBlogPage);
 const AdminReleasesPage = lazyPage(() => import("./features/admin/AdminReleasesPage"), (m) => m.AdminReleasesPage);
+const AdminFundingPage = lazyPage(() => import("./features/admin/AdminFundingPage"), (m) => m.AdminFundingPage);
 const AdminPlansPage = lazyPage(() => import("./features/admin/AdminPlansPage"), (m) => m.AdminPlansPage);
 const AdminStartDatesPage = lazyPage(() => import("./features/admin/AdminStartDatesPage"), (m) => m.AdminStartDatesPage);
 const AdminBacklogPage = lazyPage(() => import("./features/admin/AdminBacklogPage"), (m) => m.AdminBacklogPage);
@@ -336,6 +337,7 @@ const STATIC_ROUTES: Record<string, () => ReactElement> = {
   "/admin/location-openings": () => <AdminLocationOpeningsPage />,
   "/admin/blog": () => <AdminBlogPage />,
   "/admin/releases": () => <AdminReleasesPage />,
+  "/admin/donations": () => <AdminFundingPage />,
   // Особые даты стартов (1 января и т.п.) — даты для планов кроме суббот.
   "/admin/plans": () => <AdminPlansPage />,
   "/admin/start-dates": () => <AdminStartDatesPage />,

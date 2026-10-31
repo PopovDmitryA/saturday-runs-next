@@ -12,9 +12,24 @@
 
 .donate-block {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 390px;
-  gap: 24px;
-  align-items: stretch;
+  gap: 18px;
+}
+
+.donate-block-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 0 28px;
+  align-items: start;
+}
+
+.donate-block-top > .donate-block-card {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.donate-block-more {
+  grid-column: 1;
+  min-width: 0;
 }
 
 .donate-block-head {
@@ -22,7 +37,7 @@
   align-items: baseline;
   gap: 14px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .donate-block-head h2 {
@@ -60,14 +75,29 @@
 }
 
 .donate-block-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  display: grid;
+  gap: 12px;
   padding: 16px 18px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg-muted);
+}
+
+.donate-block-card-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.donate-block-names-note {
+  display: grid;
+  gap: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
 }
 
 .donate-block-qr-block {
@@ -168,16 +198,250 @@
   white-space: nowrap;
 }
 
+/* Месяц: стрелки и сумма одной строкой, под ними шкала. */
+.donate-month-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: 12px 0 8px;
+}
+
+.donate-month-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.donate-month-name {
+  min-width: 8.5em;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.donate-month-step {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.donate-month-step:hover:not(:disabled) {
+  border-color: var(--tint-amber-border-strong);
+}
+
+.donate-month-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.donate-meter {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  box-shadow: inset 0 0 0 1px var(--border);
+  overflow: hidden;
+}
+
+.donate-meter.compact {
+  flex: 1 1 160px;
+  min-width: 120px;
+  height: 8px;
+}
+
+.donate-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--accent-amber-text);
+  transition: width 0.4s ease;
+}
+
+.donate-block-copy p.donate-summary {
+  margin: 0;
+  color: var(--text);
+}
+
+.donate-meta {
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+/* Будущий месяц с планом: подпись у названия и пояснение вместо шкалы. */
+.donate-month-badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-amber-text);
+  color: var(--accent-amber-text);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 2px;
+}
+
+.donate-block-copy p.donate-future-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Подробности месяца: расходы | кто поддержал. */
+.donate-details-toggle {
+  display: block;
+  margin-top: 14px;
+  text-align: left;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-amber-text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.donate-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--tint-amber-border);
+}
+
+.donate-details-col {
+  min-width: 0;
+}
+
+.donate-details-col h3 {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.donate-lines {
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.donate-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  color: var(--text-2);
+}
+
+.donate-line-donation {
+  display: grid;
+  grid-template-columns: 3.4em minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.donate-line-date {
+  color: var(--text-faint);
+}
+
+.donate-line-anon {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.donate-line-amount {
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.donate-line-total {
+  margin-top: 3px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.donate-line-hint {
+  display: inline-flex;
+  margin-left: 4px;
+  line-height: 1;
+  color: var(--text-faint);
+  cursor: help;
+}
+
+.donate-empty {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+/* /backlog: одна строка текущего месяца. */
+.donate-backlog-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.donate-backlog-line a {
+  color: var(--accent-amber-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .donate-meter-fill {
+    transition: none;
+  }
+}
+
+/* Реквизиты уходят под текст, когда рядом им тесно со списками. */
+@media (max-width: 1000px) {
+  .donate-block-top {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 16px;
+  }
+
+  .donate-block-top > .donate-block-card,
+  .donate-block-more {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .donate-details-toggle {
+    margin-top: 0;
+  }
+}
+
 @media (max-width: 720px) {
-  .donate-block {
+  .donate-details {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 420px) {
-  .donate-block-card {
+  .donate-block-card-main {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .donate-month-name {
+    min-width: 0;
+    flex: 1;
   }
 
   .donate-block-qr-block {

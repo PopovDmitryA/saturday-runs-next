@@ -1986,6 +1986,89 @@ class SiteRelease(Base):
     )
 
 
+class SiteCostItem(Base):
+    """Статья расходов сайта для блока «Поддержать проект» (/about#donate).
+
+    Название и подсказка ⓘ показываются на сайте. Сумма у статьи своя в каждом
+    месяце — строки SiteCostMonth (миграция 120).
+    """
+
+    __tablename__ = "site_cost_items"
+    __table_args__ = (CheckConstraint("btrim(title) <> ''", name="ck_site_cost_items_title"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    hint: Mapped[str | None] = mapped_column(String(400))
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class SiteCostMonth(Base):
+    """Сумма статьи расходов в месяце (рубли). `month` — первое число месяца.
+
+    Будущий месяц — план: на сайте он появится, когда наступит. У месяца без
+    строк расходы читаются копией последнего заполненного месяца
+    (site_funding_service.month_costs).
+    """
+
+    __tablename__ = "site_cost_months"
+    __table_args__ = (
+        CheckConstraint("extract(day from month) = 1", name="ck_site_cost_months_first_day"),
+        CheckConstraint("amount_rub >= 0", name="ck_site_cost_months_amount"),
+        Index("ix_site_cost_months_month", "month"),
+    )
+
+    item_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("site_cost_items.id", ondelete="CASCADE"), primary_key=True
+    )
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    amount_rub: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class SiteDonation(Base):
+    """Перевод в поддержку проекта, внесённый админом.
+
+    Имя — как в переводе («Иван П.») — показывается на сайте, если перевод не
+    отмечен «анонимно» (просьба в комментарии к переводу). У анонимного имя
+    видно только в админке; поэтому таблица закрыта для report_ro.
+    """
+
+    __tablename__ = "site_donations"
+    __table_args__ = (
+        CheckConstraint("amount_rub > 0", name="ck_site_donations_amount"),
+        Index("ix_site_donations_received_on", "received_on"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    received_on: Mapped[date] = mapped_column(Date, nullable=False)
+    amount_rub: Mapped[int] = mapped_column(Integer, nullable=False)
+    donor_name: Mapped[str | None] = mapped_column(String(80))
+    is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class SiteFundingSettings(Base):
+    """Одна строка (id=1): показывать ли блок с цифрами на сайте."""
+
+    __tablename__ = "site_funding_settings"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_site_funding_settings_single_row"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    show_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class HistoryMilestoneSetting(Base):
     """Вкл/выкл конкретного вида вехи «Моя история» (админ-переключатель).
 

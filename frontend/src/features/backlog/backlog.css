@@ -38,9 +38,14 @@
 }
 
 /* В половинной колонке донат не влезает в два столбца — ставим в один. */
-.backlog-hero-donate .donate-block {
+.backlog-hero-donate .donate-block-top {
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
+}
+
+.backlog-hero-donate .donate-block-top > .donate-block-card {
+  grid-column: auto;
+  grid-row: auto;
 }
 
 @media (max-width: 860px) {

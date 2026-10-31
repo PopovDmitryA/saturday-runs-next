@@ -490,7 +490,7 @@ export function PortalAboutPage() {
           </p>
         </section>
 
-        <section className="portal-panel donate-block-panel" aria-label="Поддержать проект">
+        <section id="donate" className="portal-panel donate-block-panel" aria-label="Поддержать проект">
           <DonateBlock />
         </section>
 

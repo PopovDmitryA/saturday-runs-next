@@ -102,6 +102,13 @@ CREATE POLICY report_ro_no_plan_messages ON public.notification_deliveries
   FOR SELECT TO report_ro
   USING (kind NOT IN ('plan_reminders', 'plan_cancellations', 'plan_series'));
 
+-- 5c) Донаты (миграция 120, 31.10.2026): site_donations закрыта — у
+-- анонимных переводов там видно имя, которое на сайте заменено на «Аноним».
+-- Расходы по статьям и настройки роль читает.
+SELECT 'REVOKE ALL ON TABLE public.site_donations FROM report_ro'
+ WHERE to_regclass('public.site_donations') IS NOT NULL
+\gexec
+
 -- 6) Явно убрать любую возможность записи (страховка на случай прежних грантов).
 -- CREATE в public, выданный всем (PUBLIC, умолчание PG14), не трогаем —
 -- решение 24.09.2026.
